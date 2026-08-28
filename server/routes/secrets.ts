@@ -15,6 +15,7 @@ export type SecretsPatch = {
   zaiAuthToken?: unknown
   zaiBaseUrl?: unknown
   bind?: unknown
+  confirmAnyInterface?: unknown
 }
 
 export type SecretsResponse = PublicSecretsView & { bind: string }
@@ -28,6 +29,10 @@ function cleanString(value: unknown): string | null {
 function isBind(value: string): boolean {
   const target = parseBind(value)
   return `${target.hostname}:${target.port}` === value
+}
+
+function isAnyInterfaceHost(hostname: string): boolean {
+  return hostname === '0.0.0.0' || hostname === '::' || hostname === ''
 }
 
 function validUrl(value: string): boolean {
@@ -59,6 +64,13 @@ export async function applyPatch(
   }
   if (bind !== null && !isBind(bind)) {
     return { ok: false, status: 400, error: 'bind must be host:port' }
+  }
+  if (
+    bind !== null &&
+    isAnyInterfaceHost(parseBind(bind).hostname) &&
+    patch.confirmAnyInterface !== true
+  ) {
+    return { ok: false, status: 400, error: 'any-interface bind requires confirmAnyInterface:true' }
   }
 
   if (token !== null || baseUrl !== null) {
