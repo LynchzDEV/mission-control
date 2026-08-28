@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  API_TOKEN_PREFIX,
   AUTH_FILE,
   CONFIG_FILE,
   DEFAULT_BIND,
@@ -13,9 +14,11 @@ import {
   ensureConfigDir,
   parseBind,
   publicView,
+  readApiToken,
   readAuthRecord,
   readConfig,
   readSecrets,
+  rotateApiToken,
   writeAuthRecord,
   writeConfig,
   writeSecrets,
@@ -41,7 +44,7 @@ async function modeOf(path: string): Promise<number> {
 
 describe('defaults', () => {
   test('missing files fall back to documented defaults', async () => {
-    expect(await readSecrets()).toEqual({ zaiAuthToken: null, zaiBaseUrl: DEFAULT_ZAI_BASE_URL })
+    expect(await readSecrets()).toEqual({ zaiAuthToken: null, zaiBaseUrl: DEFAULT_ZAI_BASE_URL, apiToken: null })
     expect(await readAuthRecord()).toEqual({ passwordHash: null, cookieSecret: null })
     expect(await readConfig()).toEqual({ bind: DEFAULT_BIND })
   })
@@ -49,7 +52,7 @@ describe('defaults', () => {
   test('corrupt json falls back instead of throwing', async () => {
     await ensureConfigDir()
     await Bun.write(configPath(SECRETS_FILE), '{ not json')
-    expect(await readSecrets()).toEqual({ zaiAuthToken: null, zaiBaseUrl: DEFAULT_ZAI_BASE_URL })
+    expect(await readSecrets()).toEqual({ zaiAuthToken: null, zaiBaseUrl: DEFAULT_ZAI_BASE_URL, apiToken: null })
   })
 })
 
@@ -59,6 +62,7 @@ describe('round trip', () => {
     expect(await readSecrets()).toEqual({
       zaiAuthToken: TOKEN,
       zaiBaseUrl: 'https://example.test/anthropic',
+      apiToken: null,
     })
   })
 
@@ -110,18 +114,63 @@ describe('publicView', () => {
     expect(view).toEqual({
       zaiBaseUrl: DEFAULT_ZAI_BASE_URL,
       zaiAuthTokenConfigured: true,
+      apiTokenConfigured: false,
     })
   })
 
   test('reports unconfigured for missing or empty token', () => {
-    expect(publicView({ zaiAuthToken: null, zaiBaseUrl: DEFAULT_ZAI_BASE_URL })).toEqual({
+    expect(publicView({ zaiAuthToken: null, zaiBaseUrl: DEFAULT_ZAI_BASE_URL, apiToken: null })).toEqual({
       zaiBaseUrl: DEFAULT_ZAI_BASE_URL,
       zaiAuthTokenConfigured: false,
+      apiTokenConfigured: false,
     })
-    expect(publicView({ zaiAuthToken: '', zaiBaseUrl: DEFAULT_ZAI_BASE_URL })).toEqual({
+    expect(publicView({ zaiAuthToken: '', zaiBaseUrl: DEFAULT_ZAI_BASE_URL, apiToken: '' })).toEqual({
       zaiBaseUrl: DEFAULT_ZAI_BASE_URL,
       zaiAuthTokenConfigured: false,
+      apiTokenConfigured: false,
     })
+  })
+
+  test('never exposes the api token value once generated', async () => {
+    const apiToken = await readApiToken()
+    const view = publicView(await readSecrets())
+
+    expect(JSON.stringify(view)).not.toContain(apiToken)
+    expect(view.apiTokenConfigured).toBe(true)
+  })
+})
+
+describe('readApiToken', () => {
+  test('generates a prefixed token on first read and persists it', async () => {
+    const token = await readApiToken()
+    expect(token.startsWith(API_TOKEN_PREFIX)).toBe(true)
+    expect(token.slice(API_TOKEN_PREFIX.length)).toMatch(/^[0-9a-f]{48}$/)
+
+    const stored = await readSecrets()
+    expect(stored.apiToken).toBe(token)
+  })
+
+  test('is idempotent — repeat reads return the same token', async () => {
+    const first = await readApiToken()
+    const second = await readApiToken()
+    expect(second).toBe(first)
+  })
+
+  test('is persisted at 0600', async () => {
+    await readApiToken()
+    expect(await modeOf(configPath(SECRETS_FILE))).toBe(0o600)
+  })
+})
+
+describe('rotateApiToken', () => {
+  test('replaces the stored token with a new, differently-valued one', async () => {
+    const original = await readApiToken()
+    const rotated = await rotateApiToken()
+
+    expect(rotated).not.toBe(original)
+    expect(rotated.startsWith(API_TOKEN_PREFIX)).toBe(true)
+    expect((await readSecrets()).apiToken).toBe(rotated)
+    expect(await readApiToken()).toBe(rotated)
   })
 })
 

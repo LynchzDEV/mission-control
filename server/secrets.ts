@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -12,9 +13,12 @@ export const SECRETS_FILE = 'secrets.json'
 export const AUTH_FILE = 'auth.json'
 export const CONFIG_FILE = 'config.json'
 
+export const API_TOKEN_PREFIX = 'mct_'
+
 export type Secrets = {
   zaiAuthToken: string | null
   zaiBaseUrl: string
+  apiToken: string | null
 }
 
 export type AuthRecord = {
@@ -29,6 +33,7 @@ export type AppConfig = {
 export type PublicSecretsView = {
   zaiBaseUrl: string
   zaiAuthTokenConfigured: boolean
+  apiTokenConfigured: boolean
 }
 
 export type BindTarget = {
@@ -80,6 +85,7 @@ export async function readSecrets(): Promise<Secrets> {
   return {
     zaiAuthToken: asString(raw.zaiAuthToken),
     zaiBaseUrl: asString(raw.zaiBaseUrl) ?? DEFAULT_ZAI_BASE_URL,
+    apiToken: asString(raw.apiToken),
   }
 }
 
@@ -87,6 +93,24 @@ export async function writeSecrets(patch: Partial<Secrets>): Promise<Secrets> {
   const merged: Secrets = { ...(await readSecrets()), ...patch }
   await writeJsonFile(SECRETS_FILE, merged)
   return merged
+}
+
+function generateApiToken(): string {
+  return `${API_TOKEN_PREFIX}${randomBytes(24).toString('hex')}`
+}
+
+export async function readApiToken(): Promise<string> {
+  const existing = (await readSecrets()).apiToken
+  if (existing !== null) return existing
+  const generated = generateApiToken()
+  await writeSecrets({ apiToken: generated })
+  return generated
+}
+
+export async function rotateApiToken(): Promise<string> {
+  const generated = generateApiToken()
+  await writeSecrets({ apiToken: generated })
+  return generated
 }
 
 export async function readAuthRecord(): Promise<AuthRecord> {
@@ -129,5 +153,6 @@ export function publicView(secrets: Secrets): PublicSecretsView {
   return {
     zaiBaseUrl: secrets.zaiBaseUrl,
     zaiAuthTokenConfigured: typeof secrets.zaiAuthToken === 'string' && secrets.zaiAuthToken !== '',
+    apiTokenConfigured: typeof secrets.apiToken === 'string' && secrets.apiToken !== '',
   }
 }
