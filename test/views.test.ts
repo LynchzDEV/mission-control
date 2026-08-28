@@ -60,6 +60,11 @@ const PAGES: [string, string[]][] = [
       'id="m3"',
       'id="fsvg"',
       'id="chips"',
+      'id="station-claude"',
+      'id="station-glm"',
+      'id="station-codex"',
+      'id="block-clock"',
+      'id="review-count"',
     ],
   ],
   [
@@ -90,6 +95,14 @@ describe('tab views', () => {
       expect(html).toContain('data-key="5"')
       expect(html).toContain('/js/nav.js')
     }
+  })
+
+  test('lanes ships no hard-coded station rows or invented counters', async () => {
+    const { html } = await render('/lanes')
+    expect(html).not.toContain('class="task"')
+    expect(html).not.toContain('orders-export')
+    expect(html).not.toContain('moni-audio')
+    expect(html).toContain('0 DIFFS TO REVIEW')
   })
 
   test('lanes serves the mascot vendor scripts and no CDN url', async () => {
@@ -170,7 +183,7 @@ describe('client islands', () => {
 })
 
 describe('flow route', () => {
-  test('serves the placeholder session map behind the session guard', async () => {
+  test('serves the live session map behind the session guard', async () => {
     expect((await app.handle(new Request('http://localhost/api/flow'))).status).toBe(401)
 
     const response = await app.handle(
@@ -181,10 +194,13 @@ describe('flow route', () => {
       source: string
       current: string
       sessions: Record<string, Record<string, [string, string]>>
+      reviewCount: number
+      mergedToday: number
     }
-    expect(body.source).toBe('placeholder')
-    expect(Object.keys(body.sessions)).toContain('moni-audio-v2')
-    expect(body.sessions[body.current]).toBeDefined()
-    expect(body.sessions['hermez-fb-retry']?.spec?.[0]).toBe('active')
+    expect(body.source).toBe('live')
+    expect(body.sessions).toEqual({})
+    expect(body.current).toBe('')
+    expect(body.reviewCount).toBe(0)
+    expect(body.mergedToday).toBe(0)
   })
 })

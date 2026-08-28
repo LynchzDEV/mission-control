@@ -1,48 +1,10 @@
 import { type Anime, type Animation, anime, getJson, markFixture, readRecord, token } from './shared'
 
-type StageState = 'done' | 'active' | 'queued' | 'future'
+type StageState = 'done' | 'active' | 'queued' | 'future' | 'error'
 type Stage = [StageState, string]
 type SessionFlow = Record<string, Stage>
 
 const STAGES = ['spec', 'impl', 'codex', 'verify', 'merged'] as const
-
-const FIXTURE_SESSIONS: Record<string, SessionFlow> = {
-  'moni-audio-v2': {
-    spec: ['done', 'CLAUDE'],
-    impl: ['done', 'GLM · wt/moni-audio'],
-    codex: ['queued', 'CODEX · QUEUED'],
-    verify: ['active', 'CLAUDE · NOW · 4m'],
-    merged: ['future', ''],
-  },
-  'orders-export-fix': {
-    spec: ['done', 'CLAUDE'],
-    impl: ['active', 'GLM · 26m · wt/orders-export'],
-    codex: ['queued', 'CODEX · QUEUED'],
-    verify: ['future', ''],
-    merged: ['future', ''],
-  },
-  'campaign-occasions': {
-    spec: ['done', 'CLAUDE'],
-    impl: ['active', 'GLM · 11m · wt/campaign-ai'],
-    codex: ['future', 'CODEX'],
-    verify: ['future', ''],
-    merged: ['future', ''],
-  },
-  'lead-csv-import': {
-    spec: ['done', 'CLAUDE'],
-    impl: ['active', 'GLM · 2m · wt/lead-csv'],
-    codex: ['future', 'CODEX'],
-    verify: ['future', ''],
-    merged: ['future', ''],
-  },
-  'hermez-fb-retry': {
-    spec: ['active', 'CLAUDE · NOW · 12m'],
-    impl: ['future', 'GLM'],
-    codex: ['future', 'CODEX'],
-    verify: ['future', ''],
-    merged: ['future', ''],
-  },
-}
 
 const PULSE = {
   boxShadow: [
@@ -55,8 +17,8 @@ const PULSE = {
   ease: 'inOutSine',
 }
 
-let SESSIONS: Record<string, SessionFlow> = FIXTURE_SESSIONS
-let CUR = 'moni-audio-v2'
+let SESSIONS: Record<string, SessionFlow> = {}
+let CUR = ''
 
 let pulse: Animation | null = null
 
@@ -81,7 +43,7 @@ function parseSessions(raw: unknown): Record<string, SessionFlow> | null {
     }
     parsed[key] = session
   }
-  return Object.keys(parsed).length === 0 ? null : parsed
+  return parsed
 }
 
 export function setSession(k: string): void {
@@ -95,7 +57,9 @@ export function setSession(k: string): void {
     if (nd === null || lc === null) continue
     nd.className = 'node ' + d[st]![0]
     nd.style.boxShadow = ''
-    if (st !== 'merged') lc.textContent = d[st]![1] || (lc.textContent ?? '').split(' ·')[0]!
+    const chip = d[st]![1]
+    if (chip !== '') lc.textContent = chip
+    else if (st !== 'merged') lc.textContent = (lc.textContent ?? '').split(' ·')[0]!
   }
   document
     .querySelectorAll<HTMLElement>('#chips .chip')
@@ -195,12 +159,12 @@ async function hydrate(): Promise<void> {
   const parsed = result.ok ? parseSessions(result.data.sessions) : null
   if (parsed === null) {
     markFixture('flow', true)
-  } else {
-    SESSIONS = parsed
-    const current = result.data.current
-    if (typeof current === 'string' && parsed[current] !== undefined) CUR = current
-    markFixture('flow', result.data.source === 'placeholder')
+    return
   }
+  SESSIONS = parsed
+  const current = result.data.current
+  CUR = typeof current === 'string' && parsed[current] !== undefined ? current : (Object.keys(parsed)[0] ?? '')
+  markFixture('flow', false)
   buildChips()
   setSession(CUR)
 }
@@ -218,9 +182,13 @@ export function installFlow(): void {
     })
     pulseActive(A)
   }
-  document
-    .querySelectorAll<HTMLElement>('.task[data-s]')
-    .forEach((el) => (el.onclick = () => setSession(el.dataset.s ?? '')))
+  // Station rows are rendered by the lanes island after this runs, so the click has to be delegated.
+  document.addEventListener('click', (event) => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    const task = target.closest<HTMLElement>('.task[data-s]')
+    if (task !== null) setSession(task.dataset.s ?? '')
+  })
   void hydrate()
   addEventListener('resize', () => drawFlow())
 }

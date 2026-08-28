@@ -337,7 +337,67 @@ describe('jsonl reload', () => {
     const reloaded = second.getJob(result.job.id)
     expect(reloaded).toBeDefined()
     expect(reloaded?.status).toBe('done')
+    expect(reloaded?.reviewedAt).toBeNull()
     expect(second.listJobs().some((job) => job.id === result.job.id)).toBe(true)
+  })
+
+  test('a reviewedAt stamp survives a manager reload', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const first = createJobManager({ home })
+
+    const result = await first.createJob(
+      { engine: 'claude', cwd: repo, prompt: 'review-me', label: 'reviewed' },
+      echoResolver,
+    )
+    if (!result.ok) throw new Error('expected job to be created')
+    await waitForStatus(first, result.job.id)
+
+    const marked = await first.markReviewed(result.job.id, 1_700_000_000_000)
+    expect(marked.ok).toBe(true)
+
+    const second = createJobManager({ home })
+    expect(second.getJob(result.job.id)?.reviewedAt).toBe(1_700_000_000_000)
+  })
+
+  test('markReviewed 404s for an unknown id and is idempotent for a known one', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const manager = createJobManager({ home })
+
+    const missing = await manager.markReviewed('nope')
+    expect(missing).toEqual({ ok: false, status: 404, error: 'job not found' })
+
+    const result = await manager.createJob(
+      { engine: 'claude', cwd: repo, prompt: 'once', label: 'idempotent' },
+      echoResolver,
+    )
+    if (!result.ok) throw new Error('expected job to be created')
+    await waitForStatus(manager, result.job.id)
+
+    const first = await manager.markReviewed(result.job.id, 1_700_000_000_000)
+    const again = await manager.markReviewed(result.job.id, 1_800_000_000_000)
+    expect(first.ok && again.ok && again.job.reviewedAt).toBe(1_700_000_000_000)
+  })
+
+  test('a record persisted before reviewedAt existed loads as unreviewed', async () => {
+    const legacy = {
+      id: 'legacy-1',
+      engine: 'glm',
+      cwd: home,
+      label: 'legacy',
+      pid: 42,
+      status: 'done',
+      startedAt: 1,
+      endedAt: 2,
+      exitCode: 0,
+      diffStat: '1 file changed',
+    }
+    await mkdir(configDir, { recursive: true })
+    await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(legacy)}\n`)
+
+    const manager = createJobManager({ home })
+    expect(manager.getJob('legacy-1')?.reviewedAt).toBeNull()
   })
 })
 

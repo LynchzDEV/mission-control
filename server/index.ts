@@ -21,6 +21,7 @@ import { createJobManager } from './jobs'
 import { createTerminalRegistry } from './terminals'
 import { realEngineResolver } from './jobs-engine-iface'
 import { jobsRoutes } from './routes/jobs'
+import { metaRoutes } from './routes/meta'
 import { terminalsRoutes } from './routes/terminals'
 import { flowRoutes } from './routes/flow'
 import { currentView, secretsRoutes } from './routes/secrets'
@@ -163,6 +164,9 @@ function guardedApi() {
 }
 
 export async function createApp(): Promise<Elysia> {
+  const jobManager = createJobManager()
+  const terminalRegistry = createTerminalRegistry()
+
   const app = new Elysia()
     .use(cookie())
     .get('/', async ({ request }) => {
@@ -209,9 +213,10 @@ export async function createApp(): Promise<Elysia> {
     .use(tabPages())
     .use(guardedApi())
     .use(quotaRoutes)
-    .use(jobsRoutes(createJobManager(), realEngineResolver))
-    .use(terminalsRoutes(createTerminalRegistry()))
-    .use(flowRoutes)
+    .use(metaRoutes(jobManager))
+    .use(jobsRoutes(jobManager, realEngineResolver))
+    .use(terminalsRoutes(terminalRegistry))
+    .use(flowRoutes(jobManager, terminalRegistry))
     .use(secretsRoutes)
 
   if (await publicDirExists()) {

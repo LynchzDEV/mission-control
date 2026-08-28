@@ -144,6 +144,51 @@ describe('GET /api/jobs', () => {
   })
 })
 
+describe('POST /api/jobs/:id/reviewed', () => {
+  test('rejects an unauthenticated request', async () => {
+    const app = buildApp(createJobManager(), echoResolver)
+    const response = await app.handle(post('/api/jobs/does-not-exist/reviewed', {}))
+    expect(response.status).toBe(401)
+  })
+
+  test('404s for an unknown job id', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), echoResolver)
+    const response = await app.handle(post('/api/jobs/does-not-exist/reviewed', {}, cookie))
+    expect(response.status).toBe(404)
+  })
+
+  test('stamps reviewedAt, keeps it stable on a repeat call, and drops the job from the flow queue', async () => {
+    const cookie = await authCookie()
+    const manager = createJobManager()
+    const app = buildApp(manager, echoResolver)
+
+    const created = await app.handle(
+      post('/api/jobs', { engine: 'glm', cwd: repo, prompt: 'hi', label: 'reviewed-me' }, cookie),
+    )
+    const job = (await created.json()) as { id: string }
+    const finished = await pollUntilDone(app, cookie, job.id)
+    expect(finished.status).toBe('done')
+
+    const listed = await app.handle(get('/api/jobs', cookie))
+    const { jobs } = (await listed.json()) as { jobs: Array<{ id: string; reviewedAt: number | null }> }
+    expect(jobs.find((entry) => entry.id === job.id)?.reviewedAt).toBeNull()
+
+    const marked = await app.handle(post(`/api/jobs/${job.id}/reviewed`, {}, cookie))
+    expect(marked.status).toBe(200)
+    const reviewed = (await marked.json()) as { reviewedAt: number }
+    expect(typeof reviewed.reviewedAt).toBe('number')
+
+    const again = await app.handle(post(`/api/jobs/${job.id}/reviewed`, {}, cookie))
+    expect(((await again.json()) as { reviewedAt: number }).reviewedAt).toBe(reviewed.reviewedAt)
+
+    const relisted = await app.handle(get('/api/jobs', cookie))
+    const listedAgain = (await relisted.json()) as { jobs: Array<{ id: string; reviewedAt: number | null }> }
+    expect(listedAgain.jobs.find((entry) => entry.id === job.id)?.reviewedAt).toBe(reviewed.reviewedAt)
+    expect(manager.getJob(job.id)?.reviewedAt).toBe(reviewed.reviewedAt)
+  })
+})
+
 describe('GET /api/jobs/:id/log', () => {
   test('404s for an unknown job id', async () => {
     const cookie = await authCookie()

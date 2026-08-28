@@ -27,6 +27,7 @@ export type JobRecord = {
   endedAt: number | null
   exitCode: number | null
   diffStat: string | null
+  reviewedAt: number | null
 }
 
 export type CreateJobParams = {
@@ -42,12 +43,21 @@ export type CreateJobResult =
 
 export type KillJobResult = { ok: true } | { ok: false; status: number; error: string }
 
+export type MarkReviewedResult =
+  | { ok: true; job: JobRecord }
+  | { ok: false; status: number; error: string }
+
 export type JobManager = {
   createJob(params: CreateJobParams, resolver: EngineResolver): Promise<CreateJobResult>
   killJob(id: string): Promise<KillJobResult>
+  markReviewed(id: string, at?: number): Promise<MarkReviewedResult>
   listJobs(): JobRecord[]
   getJob(id: string): JobRecord | undefined
   logPath(id: string): string
+}
+
+export function normalizeJobRecord(raw: Record<string, unknown>): JobRecord {
+  return { ...(raw as unknown as JobRecord), reviewedAt: typeof raw.reviewedAt === 'number' ? raw.reviewedAt : null }
 }
 
 function loadJobs(path: string): Map<string, JobRecord> {
@@ -62,7 +72,7 @@ function loadJobs(path: string): Map<string, JobRecord> {
     const trimmed = line.trim()
     if (trimmed === '') continue
     try {
-      const record = JSON.parse(trimmed) as JobRecord
+      const record = normalizeJobRecord(JSON.parse(trimmed) as Record<string, unknown>)
       jobs.set(record.id, record)
     } catch {
       continue
@@ -280,6 +290,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       endedAt: null,
       exitCode: null,
       diffStat: null,
+      reviewedAt: null,
     }
     await persist(record)
 
@@ -306,6 +317,15 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     return { ok: true }
   }
 
+  async function markReviewed(id: string, at: number = Date.now()): Promise<MarkReviewedResult> {
+    const record = jobs.get(id)
+    if (record === undefined) return { ok: false, status: 404, error: 'job not found' }
+    if (record.reviewedAt !== null) return { ok: true, job: record }
+    const reviewed: JobRecord = { ...record, reviewedAt: at }
+    await persist(reviewed)
+    return { ok: true, job: reviewed }
+  }
+
   function listJobs(): JobRecord[] {
     return [...jobs.values()].sort((a, b) => b.startedAt - a.startedAt)
   }
@@ -314,7 +334,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     return jobs.get(id)
   }
 
-  return { createJob, killJob, listJobs, getJob, logPath }
+  return { createJob, killJob, markReviewed, listJobs, getJob, logPath }
 }
 
 export async function readLogFile(path: string): Promise<string> {

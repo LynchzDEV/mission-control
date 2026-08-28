@@ -212,6 +212,15 @@ body {
   border-left-color: var(--mc-amber);
 }
 
+.node.error {
+  opacity: 1;
+  border-left-color: var(--mc-red);
+}
+
+.node.error .nn {
+  color: var(--mc-red);
+}
+
 .alabel {
   position: absolute;
   font-size: 8px;

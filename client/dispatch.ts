@@ -9,40 +9,8 @@ type Job = {
   startedAt: number | null
   endedAt: number | null
   diffStat: string
+  reviewedAt: number | null
 }
-
-const FIXTURE_JOBS: Job[] = [
-  {
-    id: 'fixture-1',
-    engine: 'glm',
-    label: 'orders-export-fix',
-    cwd: '~/code/portal/.worktree/orders-export',
-    status: 'running',
-    startedAt: Date.now() - 26 * 60_000,
-    endedAt: null,
-    diffStat: '',
-  },
-  {
-    id: 'fixture-2',
-    engine: 'glm',
-    label: 'campaign-occasions',
-    cwd: '~/code/portal/.worktree/campaign-ai',
-    status: 'running',
-    startedAt: Date.now() - 11 * 60_000,
-    endedAt: null,
-    diffStat: '',
-  },
-  {
-    id: 'fixture-3',
-    engine: 'claude',
-    label: 'moni-audio-v2',
-    cwd: '~/code/portal/.worktree/moni-audio',
-    status: 'done',
-    startedAt: Date.now() - 64 * 60_000,
-    endedAt: Date.now() - 4 * 60_000,
-    diffStat: '7 files changed, 214 insertions(+), 31 deletions(-)',
-  },
-]
 
 const LIVE_POLL_MS = 5_000
 const ABSENT_POLL_MS = 60_000
@@ -64,6 +32,7 @@ function toJob(raw: Record<string, unknown>): Job {
     startedAt: readNumber(raw.startedAt),
     endedAt: readNumber(raw.endedAt),
     diffStat: str(raw.diffStat),
+    reviewedAt: readNumber(raw.reviewedAt),
   }
 }
 
@@ -123,7 +92,9 @@ function renderJobs(jobs: Job[]): void {
 function renderReview(jobs: Job[]): void {
   const body = document.querySelector<HTMLTableSectionElement>('#review-body')
   if (body === null) return
-  const queue = jobs.filter((job) => job.status === 'done' && job.diffStat !== '')
+  const queue = jobs.filter(
+    (job) => job.status === 'done' && job.diffStat !== '' && job.reviewedAt === null,
+  )
   body.textContent = ''
   if (queue.length === 0) {
     const row = body.insertRow()
@@ -145,7 +116,22 @@ function renderReview(jobs: Job[]): void {
     copy.textContent = 'COPY REVIEW CMD'
     copy.onclick = () => void copyCommand(job)
     actions.appendChild(copy)
+    const reviewed = document.createElement('button')
+    reviewed.className = 'btn'
+    reviewed.textContent = 'MARK REVIEWED'
+    reviewed.onclick = () => void markReviewed(job)
+    actions.appendChild(reviewed)
   }
+}
+
+async function markReviewed(job: Job): Promise<void> {
+  const result = await postJson(`/api/jobs/${job.id}/reviewed`, {})
+  const message = document.querySelector<HTMLElement>('#review-msg')
+  if (message !== null) {
+    message.textContent = result.ok ? 'REVIEWED' : errorText(result).toUpperCase()
+    message.classList.toggle('ok', result.ok)
+  }
+  await refresh()
 }
 
 async function copyCommand(job: Job): Promise<void> {
@@ -177,10 +163,6 @@ function openLog(job: Job): void {
   title.textContent = `${job.label} · ${job.id}`
   body.textContent = ''
   stream?.close()
-  if (job.id.startsWith('fixture-')) {
-    body.textContent = '[fixture job — no live log until P3 serves /api/jobs/:id/stream]\n'
-    return
-  }
   stream = new EventSource(`/api/jobs/${job.id}/stream`)
   stream.onmessage = (event) => {
     body.textContent += `${event.data}\n`
@@ -195,11 +177,10 @@ function openLog(job: Job): void {
 async function refresh(): Promise<void> {
   const result = await getJson('/api/jobs')
   const jobs = result.ok ? readArray(result.data.jobs).map(toJob) : []
-  const useFixture = !result.ok
-  markFixture('jobs', useFixture)
-  renderJobs(useFixture ? FIXTURE_JOBS : jobs)
-  renderReview(useFixture ? FIXTURE_JOBS : jobs)
-  schedule(useFixture ? ABSENT_POLL_MS : LIVE_POLL_MS)
+  markFixture('jobs', !result.ok)
+  renderJobs(jobs)
+  renderReview(jobs)
+  schedule(result.ok ? LIVE_POLL_MS : ABSENT_POLL_MS)
 }
 
 function schedule(delay: number): void {
