@@ -1,0 +1,7 @@
+  PID     ELAPSED COMMAND
+    1     3-04:12:09 /sbin/launchd
+ 4821       01:22:05 /opt/homebrew/bin/claude
+ 4899       00:05:10 /usr/local/bin/codex exec --json do the thing
+ 5010          00:41 node /Users/lynchz/mission-control/server/index.ts
+ 5133       12:00:00 grep --color=auto claude
+ 5200          00:03 ps -axo pid,etime,command

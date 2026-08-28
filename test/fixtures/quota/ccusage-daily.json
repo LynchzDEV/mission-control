@@ -1,0 +1,18 @@
+{
+  "daily": [
+    {
+      "period": "2026-08-27",
+      "totalTokens": 51000000,
+      "totalCost": 60.5
+    },
+    {
+      "period": "2026-08-28",
+      "totalTokens": 196433023,
+      "totalCost": 235.0491458000002
+    }
+  ],
+  "totals": {
+    "totalTokens": 247433023,
+    "totalCost": 295.5491458
+  }
+}
