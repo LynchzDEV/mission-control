@@ -17,6 +17,19 @@ function formatSSEData(content: string): string {
     .join('\n')}\n\n`
 }
 
+export function safeEnqueue<T>(
+  controller: { enqueue(chunk: T): void },
+  isClosed: () => boolean,
+  chunk: T,
+): void {
+  if (isClosed()) return
+  try {
+    controller.enqueue(chunk)
+  } catch {
+    // controller was torn down between the guard check and this call
+  }
+}
+
 function sseHeaders(): HeadersInit {
   return {
     'content-type': 'text/event-stream; charset=utf-8',
@@ -48,9 +61,9 @@ export function createLogStreamResponse(path: string, signal: AbortSignal): Resp
       const pushUpdates = async (): Promise<void> => {
         if (closed) return
         const chunk = await readLogSince(path, offset)
-        if (chunk.content === '') return
+        if (closed || chunk.content === '') return
         offset = chunk.offset
-        controller.enqueue(encoder.encode(formatSSEData(chunk.content)))
+        safeEnqueue(controller, () => closed, encoder.encode(formatSSEData(chunk.content)))
       }
 
       try {

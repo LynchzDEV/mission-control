@@ -10,7 +10,7 @@ import { createApp } from '../server/index'
 import { createJobManager } from '../server/jobs'
 import type { JobManager } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
-import { jobsRoutes } from '../server/routes/jobs'
+import { jobsRoutes, safeEnqueue } from '../server/routes/jobs'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 
 const PASSWORD = 'correct-horse-battery'
@@ -232,6 +232,29 @@ describe('GET /api/jobs/:id/stream', () => {
     } finally {
       server.stop(true)
     }
+  })
+})
+
+describe('safeEnqueue', () => {
+  test('skips enqueue once already closed', () => {
+    let called = false
+    safeEnqueue({ enqueue: () => (called = true) }, () => true, 'chunk')
+    expect(called).toBe(false)
+  })
+
+  test('enqueues when not closed', () => {
+    let received: string | null = null
+    safeEnqueue<string>({ enqueue: (chunk) => (received = chunk) }, () => false, 'chunk')
+    expect(received).toBe('chunk')
+  })
+
+  test('swallows a throw from enqueue on an already-torn-down controller', () => {
+    const torndown = {
+      enqueue: () => {
+        throw new TypeError('Invalid state: Controller is already closed')
+      },
+    }
+    expect(() => safeEnqueue(torndown, () => false, 'chunk')).not.toThrow()
   })
 })
 
