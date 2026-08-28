@@ -21,6 +21,7 @@ import { createJobManager } from './jobs'
 import { createTerminalRegistry } from './terminals'
 import { realEngineResolver } from './jobs-engine-iface'
 import { jobsRoutes } from './routes/jobs'
+import { metaRoutes } from './routes/meta'
 import { terminalsRoutes } from './routes/terminals'
 import { flowRoutes } from './routes/flow'
 import { currentView, secretsRoutes } from './routes/secrets'
@@ -212,6 +213,7 @@ export async function createApp(): Promise<Elysia> {
     .use(tabPages())
     .use(guardedApi())
     .use(quotaRoutes)
+    .use(metaRoutes(jobManager))
     .use(jobsRoutes(jobManager, realEngineResolver))
     .use(terminalsRoutes(terminalRegistry))
     .use(flowRoutes(jobManager, terminalRegistry))

@@ -1,10 +1,17 @@
 import { Elysia } from 'elysia'
 
 import { requireSession } from '../auth'
+import { createTokenSampler, type TokenSampler } from '../meta'
 import { createQuotaCache, fetchExternalSessions, fetchQuotaComposite, type QuotaComposite } from '../quota'
 import { readSecrets } from '../secrets'
 
-const quotaCache = createQuotaCache<QuotaComposite>(async () => fetchQuotaComposite(await readSecrets()))
+export const tokenSampler: TokenSampler = createTokenSampler()
+
+export const quotaCache = createQuotaCache<QuotaComposite>(async () => {
+  const composite = await fetchQuotaComposite(await readSecrets())
+  if (composite.claude.available) tokenSampler.record(composite.claude.tokens, Date.now())
+  return composite
+})
 
 export const quotaRoutes = new Elysia()
   .onBeforeHandle(requireSession)
