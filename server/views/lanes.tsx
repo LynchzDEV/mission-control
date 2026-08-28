@@ -44,41 +44,58 @@ function Flow(): JSX.Element {
           </marker>
         </defs>
       </svg>
-      <div class="node" id="nd-spec" style="left:2%;top:96px">
+      <div id="plan-nodes"></div>
+      <div class="node tpl" id="nd-spec" style="left:2%;top:96px">
         <div class="nn">SPEC</div>
         <div class="lane-chip c-claude" id="lc-spec">
           CLAUDE
         </div>
       </div>
-      <div class="node" id="nd-impl" style="left:19.5%;top:96px">
+      <div class="node tpl" id="nd-impl" style="left:19.5%;top:96px">
         <div class="nn">IMPLEMENT</div>
         <div class="lane-chip c-glm" id="lc-impl">
           GLM
         </div>
       </div>
-      <div class="node" id="nd-codex" style="left:47%;top:38px">
+      <div class="node tpl" id="nd-codex" style="left:47%;top:38px">
         <div class="nn">CROSS-REVIEW</div>
         <div class="lane-chip c-white" id="lc-codex">
           CODEX
         </div>
       </div>
-      <div class="node" id="nd-verify" style="left:55.5%;top:96px">
+      <div class="node tpl" id="nd-verify" style="left:55.5%;top:96px">
         <div class="nn">VERIFY + MERGE</div>
         <div class="lane-chip c-claude" id="lc-verify">
           CLAUDE
         </div>
       </div>
-      <div class="node" id="nd-merged" style="left:80.5%;top:96px">
+      <div class="node tpl" id="nd-merged" style="left:80.5%;top:96px">
         <div class="nn">MERGED → UAT</div>
         <div class="lane-chip" id="lc-merged">
           0 TODAY
         </div>
       </div>
-      <div class="alabel" style="left:37%;top:64px">
+      <div class="alabel tpl" style="left:37%;top:64px">
         diff sent
       </div>
-      <div class="alabel" style="left:46%;top:104px;color:var(--mc-fg-dim)">
+      <div class="alabel tpl" style="left:46%;top:104px;color:var(--mc-fg-dim)">
         review back
+      </div>
+    </div>
+  )
+}
+
+function FlowPanel(): JSX.Element {
+  return (
+    <div class="flowpanel off" id="flowpanel">
+      <div class="fcol" id="plan-col">
+        <div class="lab">PLAN</div>
+        <div id="plan-steps"></div>
+        <div class="pnext" id="plan-next"></div>
+      </div>
+      <div class="fcol" id="activity-col">
+        <div class="lab">ACTIVITY</div>
+        <div id="activity-feed"></div>
       </div>
     </div>
   )
@@ -232,6 +249,7 @@ export function LanesPage(): string {
     children: (
       <>
         {Flow()}
+        {FlowPanel()}
         {Racks()}
       </>
     ),
