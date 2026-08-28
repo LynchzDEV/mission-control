@@ -20,6 +20,14 @@ import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
 import { createJobManager } from './jobs'
 import { realEngineResolver } from './jobs-engine-iface'
 import { jobsRoutes } from './routes/jobs'
+import { flowRoutes } from './routes/flow'
+import { currentView, secretsRoutes } from './routes/secrets'
+import { DispatchPage } from './views/dispatch'
+import { LanesPage } from './views/lanes'
+import { LoginPage, SetupPage } from './views/login'
+import { ReviewPage } from './views/review'
+import { SettingsPage } from './views/settings'
+import { TerminalsPage } from './views/terminals'
 
 const ROOT = resolve(import.meta.dir, '..')
 const CLIENT_DIR = join(ROOT, 'client')
@@ -62,35 +70,48 @@ export async function transpileClientModule(requested: string): Promise<string |
   return code
 }
 
-function page(title: string, body: string): Response {
-  const markup = `<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head>
-<body>${body}</body>
-</html>
-`
+function page(markup: string): Response {
   return new Response(markup, { headers: HTML_HEADERS })
 }
 
 function setupPage(): Response {
-  return page(
-    'Mission Control — Setup',
-    `<main data-page="setup"><h1>MISSION CONTROL</h1><p>First run. Choose a password (min ${MIN_PASSWORD_LENGTH} characters).</p><form id="setup-form"><input type="password" name="password" autocomplete="new-password"><button type="submit">CREATE</button></form></main>`,
-  )
+  return page(SetupPage({ minPasswordLength: MIN_PASSWORD_LENGTH }))
 }
 
 function loginPage(): Response {
-  return page(
-    'Mission Control — Login',
-    '<main data-page="login"><h1>MISSION CONTROL</h1><form id="login-form"><input type="password" name="password" autocomplete="current-password"><button type="submit">LOG IN</button></form></main>',
-  )
+  return page(LoginPage())
 }
 
 function appShellPage(): Response {
-  return page(
-    'Mission Control',
-    '<main data-page="app"><h1>MISSION CONTROL</h1><nav>LANES | DISPATCH | TERMINALS | REVIEW | SETTINGS</nav><p>Signed in.</p></main>',
-  )
+  return page(LanesPage())
+}
+
+async function settingsPage(): Promise<string> {
+  const view = await currentView()
+  return SettingsPage({ ...view, minPasswordLength: MIN_PASSWORD_LENGTH })
+}
+
+const TAB_PAGES: Record<string, () => string | Promise<string>> = {
+  '/lanes': LanesPage,
+  '/dispatch': DispatchPage,
+  '/terminals': TerminalsPage,
+  '/review': ReviewPage,
+  '/settings': settingsPage,
+}
+
+function tabPages() {
+  const instance = new Elysia()
+  for (const [path, view] of Object.entries(TAB_PAGES)) {
+    instance.get(path, async ({ request, set }) => {
+      if (!(await verifyCookieHeader(request.headers.get('cookie')))) {
+        set.status = 302
+        set.headers.location = '/'
+        return ''
+      }
+      return page(await view())
+    })
+  }
+  return instance
 }
 
 type CookieJar = Record<
@@ -183,9 +204,12 @@ export async function createApp(): Promise<Elysia> {
       ;(jar as unknown as CookieJar)[SESSION_COOKIE]?.remove()
       return { ok: true }
     })
+    .use(tabPages())
     .use(guardedApi())
     .use(quotaRoutes)
     .use(jobsRoutes(createJobManager(), realEngineResolver))
+    .use(flowRoutes)
+    .use(secretsRoutes)
 
   if (await publicDirExists()) {
     app.use(staticPlugin({ assets: PUBLIC_DIR, prefix: '' }))

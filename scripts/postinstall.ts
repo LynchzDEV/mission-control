@@ -2,7 +2,8 @@ import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dir, '..')
-const VENDOR_OUT = join(ROOT, 'public', 'vendor')
+const PUBLIC_OUT = join(ROOT, 'public')
+const VENDOR_OUT = join(PUBLIC_OUT, 'vendor')
 
 type VendorAsset = {
   label: string
@@ -42,6 +43,22 @@ const ASSETS: VendorAsset[] = [
     ],
     dest: 'textmode.filters.umd.js',
   },
+  {
+    label: 'anime.js',
+    sources: [
+      'node_modules/animejs/dist/bundles/anime.umd.min.js',
+      'node_modules/animejs/lib/anime.iife.min.js',
+    ],
+    dest: 'anime.umd.min.js',
+  },
+]
+
+const PUBLIC_ASSETS: VendorAsset[] = [
+  {
+    label: 'theme tokens',
+    sources: ['design/theme-tokens.css'],
+    dest: 'theme-tokens.css',
+  },
 ]
 
 export type PostinstallResult = {
@@ -65,32 +82,43 @@ async function firstExistingFile(candidates: string[]): Promise<string | null> {
   return null
 }
 
-export async function runPostinstall(): Promise<PostinstallResult> {
-  const copied: string[] = []
-  const skipped: string[] = []
-
+async function copyGroup(
+  assets: VendorAsset[],
+  outDir: string,
+  result: PostinstallResult,
+): Promise<void> {
   try {
-    await mkdir(VENDOR_OUT, { recursive: true })
+    await mkdir(outDir, { recursive: true })
   } catch (error) {
-    skipped.push(`public/vendor — could not create directory (${describe(error)})`)
-    return { copied, skipped }
+    result.skipped.push(
+      `${outDir.slice(ROOT.length + 1)} — could not create directory (${describe(error)})`,
+    )
+    return
   }
 
-  for (const asset of ASSETS) {
+  for (const asset of assets) {
     try {
       const source = await firstExistingFile(asset.sources.map((path) => join(ROOT, path)))
       if (source === null) {
-        skipped.push(`${asset.label} — no source found (looked in ${asset.sources.join(', ')})`)
+        result.skipped.push(
+          `${asset.label} — no source found (looked in ${asset.sources.join(', ')})`,
+        )
         continue
       }
-      await copyFile(source, join(VENDOR_OUT, asset.dest))
-      copied.push(`${asset.dest} <- ${source.slice(ROOT.length + 1)}`)
+      const dest = join(outDir, asset.dest)
+      await copyFile(source, dest)
+      result.copied.push(`${dest.slice(ROOT.length + 1)} <- ${source.slice(ROOT.length + 1)}`)
     } catch (error) {
-      skipped.push(`${asset.label} — copy failed (${describe(error)})`)
+      result.skipped.push(`${asset.label} — copy failed (${describe(error)})`)
     }
   }
+}
 
-  return { copied, skipped }
+export async function runPostinstall(): Promise<PostinstallResult> {
+  const result: PostinstallResult = { copied: [], skipped: [] }
+  await copyGroup(ASSETS, VENDOR_OUT, result)
+  await copyGroup(PUBLIC_ASSETS, PUBLIC_OUT, result)
+  return result
 }
 
 if (import.meta.main) {
