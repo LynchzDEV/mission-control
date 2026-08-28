@@ -62,7 +62,8 @@ describe('session tokens', () => {
 
     expect(verifySessionToken(SECRET, `${expiry + 60_000}.${nonce}.${signature}`)).toBe(false)
     expect(verifySessionToken(SECRET, `${expiry}.${nonce}x.${signature}`)).toBe(false)
-    expect(verifySessionToken(SECRET, `${expiry}.${nonce}.${signature.slice(0, -2)}00`)).toBe(false)
+    const flippedLast = signature.slice(-1) === '0' ? '1' : '0'
+    expect(verifySessionToken(SECRET, `${expiry}.${nonce}.${signature.slice(0, -1)}${flippedLast}`)).toBe(false)
     expect(verifySessionToken('b'.repeat(64), token)).toBe(false)
   })
 
