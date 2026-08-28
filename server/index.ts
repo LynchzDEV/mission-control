@@ -15,6 +15,7 @@ import {
   requireSession,
   verifyCookieHeader,
 } from './auth'
+import { quotaRoutes } from './routes/quota'
 import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
 
 const ROOT = resolve(import.meta.dir, '..')
@@ -180,6 +181,7 @@ export async function createApp(): Promise<Elysia> {
       return { ok: true }
     })
     .use(guardedApi())
+    .use(quotaRoutes)
 
   if (await publicDirExists()) {
     app.use(staticPlugin({ assets: PUBLIC_DIR, prefix: '' }))
