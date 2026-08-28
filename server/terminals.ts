@@ -54,8 +54,7 @@ type Subscriber = { data: OutputListener; close?: CloseListener }
 type Session = {
   record: TerminalRecord
   pty: IPty
-  chunks: string[]
-  bytes: number
+  buffer: RingBuffer
   listeners: Set<Subscriber>
 }
 
@@ -71,17 +70,28 @@ export function clampDimension(value: unknown, fallback: number): number {
   return rounded
 }
 
-function appendChunk(session: Session, chunk: string): void {
-  session.chunks.push(chunk)
-  session.bytes += Buffer.byteLength(chunk)
-  while (session.chunks.length > 1 && session.bytes > RING_BUFFER_BYTES) {
-    session.bytes -= Buffer.byteLength(session.chunks.shift() as string)
+export type RingBuffer = { chunks: Buffer[]; bytes: number }
+
+export function createRingBuffer(): RingBuffer {
+  return { chunks: [], bytes: 0 }
+}
+
+export function pushToRingBuffer(buffer: RingBuffer, chunk: string, limitBytes: number): void {
+  const encoded = Buffer.from(chunk, 'utf-8')
+  buffer.chunks.push(encoded)
+  buffer.bytes += encoded.length
+  while (buffer.chunks.length > 1 && buffer.bytes > limitBytes) {
+    buffer.bytes -= (buffer.chunks.shift() as Buffer).length
   }
-  if (session.bytes > RING_BUFFER_BYTES) {
-    const kept = (session.chunks[0] as string).slice(session.bytes - RING_BUFFER_BYTES)
-    session.chunks[0] = kept
-    session.bytes = Buffer.byteLength(kept)
+  if (buffer.bytes > limitBytes) {
+    const kept = (buffer.chunks[0] as Buffer).subarray(buffer.bytes - limitBytes)
+    buffer.chunks[0] = Buffer.from(kept)
+    buffer.bytes = kept.length
   }
+}
+
+export function replayRingBuffer(buffer: RingBuffer): string {
+  return Buffer.concat(buffer.chunks).toString('utf-8')
 }
 
 function terminalCommand(engine: EngineName): string {
@@ -145,11 +155,11 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       createdAt: Date.now(),
       title: `${engine.toUpperCase()} · ${basename(cwdCheck.path)}`,
     }
-    const session: Session = { record, pty, chunks: [], bytes: 0, listeners: new Set() }
+    const session: Session = { record, pty, buffer: createRingBuffer(), listeners: new Set() }
     sessions.set(id, session)
 
     pty.onData((chunk) => {
-      appendChunk(session, chunk)
+      pushToRingBuffer(session.buffer, chunk, RING_BUFFER_BYTES)
       for (const subscriber of session.listeners) subscriber.data(chunk)
     })
     pty.onExit(() => forget(id))
@@ -194,7 +204,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     },
     replay(id) {
       const session = sessions.get(id)
-      return session === undefined ? '' : session.chunks.join('')
+      return session === undefined ? '' : replayRingBuffer(session.buffer)
     },
     subscribe(id, listener, onClose) {
       const session = sessions.get(id)
