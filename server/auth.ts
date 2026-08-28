@@ -1,6 +1,34 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
-import { readAuthRecord, writeAuthRecord } from './secrets'
+import { readApiToken, readAuthRecord, writeAuthRecord } from './secrets'
+
+const TOKEN_SCOPED_GET_ONLY_PATHS = new Set(['/api/flow', '/api/quota', '/api/meta'])
+const TOKEN_SCOPED_PREFIX = '/api/jobs'
+
+// The one shared gate for what a Bearer API token may touch — extend this, not requireSession's callers.
+export function allowToken(pathname: string, method: string): boolean {
+  const upperMethod = method.toUpperCase()
+  if (pathname === TOKEN_SCOPED_PREFIX || pathname.startsWith(`${TOKEN_SCOPED_PREFIX}/`)) {
+    return upperMethod === 'GET' || upperMethod === 'POST'
+  }
+  return TOKEN_SCOPED_GET_ONLY_PATHS.has(pathname) && upperMethod === 'GET'
+}
+
+function extractBearerToken(header: string | null): string | null {
+  if (header === null) return null
+  const match = /^Bearer (.+)$/.exec(header)
+  return match?.[1] ?? null
+}
+
+export async function verifyBearerToken(header: string | null): Promise<boolean> {
+  const provided = extractBearerToken(header)
+  if (provided === null || provided === '') return false
+  const expected = await readApiToken()
+  const providedBuf = Buffer.from(provided)
+  const expectedBuf = Buffer.from(expected)
+  if (providedBuf.length !== expectedBuf.length) return false
+  return timingSafeEqual(providedBuf, expectedBuf)
+}
 
 export const MIN_PASSWORD_LENGTH = 10
 export const MAX_FAILED_ATTEMPTS = 5
@@ -195,6 +223,15 @@ export type GuardContext = {
 
 export async function requireSession(context: GuardContext) {
   if (await verifyCookieHeader(context.request.headers.get('cookie'))) return
+
+  const { pathname } = new URL(context.request.url)
+  if (
+    allowToken(pathname, context.request.method) &&
+    (await verifyBearerToken(context.request.headers.get('authorization')))
+  ) {
+    return
+  }
+
   context.set.status = 401
   return { error: 'unauthorized' }
 }
