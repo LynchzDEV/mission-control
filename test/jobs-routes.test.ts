@@ -280,6 +280,62 @@ describe('GET /api/jobs/:id/stream', () => {
   })
 })
 
+describe('GET /api/jobs/:id/activity', () => {
+  const STREAM_LINE =
+    '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"server/flow.ts"}}]}}'
+
+  test('rejects an unauthenticated request and 404s an unknown id', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), echoResolver)
+
+    expect((await app.handle(get('/api/jobs/nope/activity'))).status).toBe(401)
+    expect((await app.handle(get('/api/jobs/nope/activity', cookie))).status).toBe(404)
+  })
+
+  test('parses the job log into a feed and reports the running activity on the list row', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), echoResolver)
+
+    const created = await app.handle(
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: STREAM_LINE, label: 'activity-smoke' }, cookie),
+    )
+    const job = (await created.json()) as { id: string }
+    await pollUntilDone(app, cookie, job.id)
+
+    const feed = (await (await app.handle(get(`/api/jobs/${job.id}/activity`, cookie))).json()) as {
+      status: string
+      currentActivity: string | null
+      events: Array<{ kind: string; title: string; detail: string }>
+    }
+    expect(feed.status).toBe('done')
+    expect(feed.events).toEqual([{ kind: 'tool', title: 'Edit', detail: 'server/flow.ts' }])
+    expect(feed.currentActivity).toBe('Edit · server/flow.ts')
+
+    const { jobs } = (await (await app.handle(get('/api/jobs', cookie))).json()) as {
+      jobs: Array<{ id: string; currentActivity: string | null }>
+    }
+    expect(jobs.find((row) => row.id === job.id)?.currentActivity).toBe('Edit · server/flow.ts')
+  })
+
+  test('returns an empty feed for a job whose output is not stream-json', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), echoResolver)
+
+    const created = await app.handle(
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'plain text output', label: 'plain' }, cookie),
+    )
+    const job = (await created.json()) as { id: string }
+    await pollUntilDone(app, cookie, job.id)
+
+    const feed = (await (await app.handle(get(`/api/jobs/${job.id}/activity`, cookie))).json()) as {
+      currentActivity: string | null
+      events: unknown[]
+    }
+    expect(feed.events).toEqual([])
+    expect(feed.currentActivity).toBeNull()
+  })
+})
+
 describe('safeEnqueue', () => {
   test('skips enqueue once already closed', () => {
     let called = false

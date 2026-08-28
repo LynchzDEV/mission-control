@@ -46,6 +46,12 @@ const PAGES: [string, string[]][] = [
   [
     '/lanes',
     [
+      'id="plan-nodes"',
+      'id="flowpanel"',
+      'id="plan-steps"',
+      'id="plan-next"',
+      'id="activity-feed"',
+      'class="node tpl" id="nd-spec"',
       'id="nd-spec"',
       'id="nd-impl"',
       'id="nd-codex"',

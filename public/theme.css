@@ -954,3 +954,160 @@ table.grid tr.empty td {
 
 .flow.empty .node,.flow.empty .fsvg,.flow.empty .alabel{display:none}
 .flow.empty::after{content:'NO ACTIVE SESSIONS \00b7 DISPATCH A JOB TO SEE ITS FLOW';position:absolute;left:0;right:0;top:96px;text-align:center;font-size:10px;letter-spacing:.25em;color:var(--mc-fg-dim)}
+
+/* ---------- lanes: plan-driven flow nodes + plan/activity panel ---------- */
+
+.flow.planned .node.tpl,
+.flow.planned .alabel.tpl {
+  display: none;
+}
+
+.node.step {
+  width: 12.5%;
+  min-width: 118px;
+}
+
+.node.step .nn {
+  font-size: 10px;
+  line-height: 1.35;
+  max-height: 27px;
+  overflow: hidden;
+}
+
+.alabel.next {
+  position: absolute;
+  color: var(--mc-green);
+  white-space: nowrap;
+}
+
+.c-user {
+  color: var(--mc-fg);
+}
+
+.flowpanel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--mc-border);
+  flex: none;
+  max-height: 168px;
+  overflow: auto;
+}
+
+.flowpanel.off {
+  display: none;
+}
+
+.fcol {
+  padding: 14px 28px;
+  border-right: 1px solid var(--mc-border);
+  min-width: 0;
+}
+
+.fcol:last-child {
+  border-right: 0;
+}
+
+.fcol.off {
+  opacity: 0.35;
+}
+
+.pstep {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--mc-hairline);
+  font-size: 11px;
+  color: var(--mc-fg);
+}
+
+.pstep .glyph {
+  font-style: normal;
+  width: 10px;
+  color: var(--mc-fg-dim);
+}
+
+.pstep .num {
+  font-weight: normal;
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  color: var(--mc-fg-dim);
+}
+
+.pstep .title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pstep .chip {
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  padding: 2px 5px;
+  border: 1px solid var(--mc-border);
+}
+
+.pstep.pending {
+  opacity: 0.45;
+}
+
+.pstep.active .glyph,
+.pstep.active .title {
+  color: var(--mc-green);
+}
+
+.pstep.done .title {
+  text-decoration: line-through;
+  color: var(--mc-fg-dim);
+}
+
+.pnext {
+  margin-top: 10px;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  color: var(--mc-green);
+}
+
+.pnext:empty {
+  display: none;
+}
+
+.aevent {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--mc-hairline);
+  font-size: 11px;
+  color: var(--mc-fg-dim);
+}
+
+.aevent .glyph {
+  font-style: normal;
+  width: 10px;
+  color: var(--mc-green);
+}
+
+.aevent .title {
+  font-weight: normal;
+  color: var(--mc-fg);
+}
+
+.aevent .detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aevent.error .glyph,
+.aevent.error .title {
+  color: var(--mc-red);
+}
+
+.aevent.text .glyph {
+  color: var(--mc-fg-dim);
+}

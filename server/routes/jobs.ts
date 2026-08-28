@@ -3,12 +3,14 @@ import { watch } from 'node:fs'
 import { Elysia } from 'elysia'
 
 import { requireSession } from '../auth'
+import { parseActivity } from '../activity'
 import type { CreateJobParams, JobManager } from '../jobs'
 import { readLogFile, readLogSince, readLogTail } from '../jobs'
 import type { EngineResolver } from '../jobs-engine-iface'
 
 export const SSE_TAIL_BYTES = 4096
 export const HEARTBEAT_MS = 15_000
+export const ACTIVITY_FEED_MAX = 50
 
 function formatSSEData(content: string): string {
   return `${content
@@ -119,7 +121,18 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
       }
       return result.job
     })
-    .get('/api/jobs', () => ({ jobs: manager.listJobs() }))
+    .get('/api/jobs', () => ({
+      jobs: manager.listJobs().map((job) => ({ ...job, currentActivity: manager.currentActivity(job.id) })),
+    }))
+    .get('/api/jobs/:id/activity', async ({ params, set }) => {
+      const job = manager.getJob(params.id)
+      if (job === undefined) {
+        set.status = 404
+        return { error: 'job not found' }
+      }
+      const events = parseActivity(await readLogFile(manager.logPath(params.id)), ACTIVITY_FEED_MAX)
+      return { status: job.status, currentActivity: manager.currentActivity(params.id), events }
+    })
     .get('/api/jobs/:id/log', async ({ params, set }) => {
       const job = manager.getJob(params.id)
       if (job === undefined) {
