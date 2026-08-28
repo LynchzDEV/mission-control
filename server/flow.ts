@@ -145,6 +145,16 @@ function pickCurrent(sessions: Record<string, SessionFlow>): string {
   return attention ?? keys[0] ?? ''
 }
 
+export function planOnlySession(): SessionFlow {
+  return {
+    spec: ['done', 'CLAUDE'],
+    impl: ['future', 'GLM'],
+    codex: ['future', 'CODEX'],
+    verify: ['future', 'CLAUDE'],
+    merged: ['future', '0 TODAY'],
+  }
+}
+
 export function deriveFlow(input: FlowInput): FlowSnapshot {
   const ordered = [...input.jobs].sort((a, b) => b.startedAt - a.startedAt)
   const grouped = groupByLabel(ordered)
