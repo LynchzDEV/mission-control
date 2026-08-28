@@ -7,7 +7,12 @@ import { Elysia } from 'elysia'
 
 import { SESSION_COOKIE, completeSetup, resetLoginLimiter } from '../server/auth'
 import { createApp } from '../server/index'
-import { CLOSE_TERMINAL_NOT_FOUND, readSocketMessage, terminalsRoutes } from '../server/routes/terminals'
+import {
+  CLOSE_TERMINAL_ENDED,
+  CLOSE_TERMINAL_NOT_FOUND,
+  readSocketMessage,
+  terminalsRoutes,
+} from '../server/routes/terminals'
 import { createTerminalRegistry, type TerminalRegistry } from '../server/terminals'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 
@@ -292,6 +297,28 @@ describe('WS /ws/terminal/:id', () => {
       await second.close()
       await new Promise((resolve) => setTimeout(resolve, 50))
       expect(registry.get(terminal.id)).toBeDefined()
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('closes the attached socket when the session is deleted', async () => {
+    const cookie = await authCookie()
+    const app = buildApp()
+    const server = app.listen({ hostname: '127.0.0.1', port: 0 })
+    const port = server.server?.port
+
+    try {
+      const created = await app.handle(
+        request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo }),
+      )
+      const terminal = (await created.json()) as { id: string }
+      const probe = openSocket(`ws://127.0.0.1:${port}/ws/terminal/${terminal.id}`, cookie)
+      await probe.opened
+
+      await app.handle(request(`/api/terminals/${terminal.id}`, 'DELETE', cookie))
+      await waitFor(() => probe.closes.length > 0)
+      expect(probe.closes[0]?.code).toBe(CLOSE_TERMINAL_ENDED)
     } finally {
       server.stop(true)
     }

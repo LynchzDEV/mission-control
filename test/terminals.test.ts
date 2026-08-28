@@ -159,6 +159,34 @@ describe('registry lifecycle over a real pty', () => {
     expect(seen).toBe(frozen)
   })
 
+  test('close listeners fire once when the shell exits and again on kill', async () => {
+    const exited = await registry.createTerminal({ engine: 'claude', cwd: repo })
+    if (!exited.ok) throw new Error('unreachable')
+    let exitClosed = 0
+    registry.subscribe(
+      exited.terminal.id,
+      () => {},
+      () => {
+        exitClosed += 1
+      },
+    )
+    registry.write(exited.terminal.id, 'exit\n')
+    await waitFor(() => exitClosed === 1)
+
+    const killed = await registry.createTerminal({ engine: 'claude', cwd: repo })
+    if (!killed.ok) throw new Error('unreachable')
+    let killClosed = 0
+    registry.subscribe(
+      killed.terminal.id,
+      () => {},
+      () => {
+        killClosed += 1
+      },
+    )
+    registry.kill(killed.terminal.id)
+    expect(killClosed).toBe(1)
+  })
+
   test('write, resize, kill, replay and subscribe are no-ops for unknown ids', () => {
     expect(registry.write('missing', 'x')).toBe(false)
     expect(registry.resize('missing', 80, 24)).toBe(false)

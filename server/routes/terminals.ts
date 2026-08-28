@@ -4,6 +4,7 @@ import { requireSession, verifyCookieHeader } from '../auth'
 import type { TerminalRegistry } from '../terminals'
 
 export const CLOSE_TERMINAL_NOT_FOUND = 4404
+export const CLOSE_TERMINAL_ENDED = 4410
 
 type ControlMessage =
   | { kind: 'resize'; cols: unknown; rows: unknown }
@@ -91,9 +92,15 @@ function terminalSocket(registry: TerminalRegistry): Elysia {
       detach(ws.id)
       detachers.set(
         ws.id,
-        registry.subscribe(id, (chunk) => {
-          ws.send(chunk)
-        }),
+        registry.subscribe(
+          id,
+          (chunk) => {
+            ws.send(chunk)
+          },
+          () => {
+            ws.close(CLOSE_TERMINAL_ENDED, 'terminal ended')
+          },
+        ),
       )
     },
     message(ws, message) {

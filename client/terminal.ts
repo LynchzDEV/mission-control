@@ -21,6 +21,9 @@ type XtermGlobals = {
   FitAddon?: { FitAddon: new () => FitAddonInstance }
 }
 
+const CLOSE_TERMINAL_NOT_FOUND = 4404
+const CLOSE_TERMINAL_ENDED = 4410
+
 const ACCENT: Record<string, string> = {
   claude: 'c-claude',
   glm: 'c-glm',
@@ -168,8 +171,15 @@ function attach(id: string): void {
     const data = event.data
     instance.write(typeof data === 'string' ? data : new TextDecoder().decode(data as ArrayBuffer))
   }
-  connection.onclose = () => {
-    if (socket === connection) instance.write('\r\n[detached]\r\n')
+  connection.onclose = (event) => {
+    if (socket !== connection) return
+    if (event.code === CLOSE_TERMINAL_ENDED || event.code === CLOSE_TERMINAL_NOT_FOUND) {
+      instance.write('\r\n[session ended]\r\n')
+      say('SESSION ENDED')
+      void refresh()
+      return
+    }
+    instance.write('\r\n[detached]\r\n')
   }
   instance.onData((data) => {
     if (connection.readyState === WebSocket.OPEN) connection.send(new TextEncoder().encode(data))

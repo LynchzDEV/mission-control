@@ -35,6 +35,7 @@ export type CreateTerminalResult =
   | { ok: false; status: number; error: string }
 
 export type OutputListener = (chunk: string) => void
+export type CloseListener = () => void
 
 export type TerminalRegistry = {
   createTerminal(params: CreateTerminalParams): Promise<CreateTerminalResult>
@@ -44,16 +45,18 @@ export type TerminalRegistry = {
   resize(id: string, cols: unknown, rows: unknown): boolean
   kill(id: string): boolean
   replay(id: string): string
-  subscribe(id: string, listener: OutputListener): () => void
+  subscribe(id: string, listener: OutputListener, onClose?: CloseListener): () => void
   shutdown(): void
 }
+
+type Subscriber = { data: OutputListener; close?: CloseListener }
 
 type Session = {
   record: TerminalRecord
   pty: IPty
   chunks: string[]
   bytes: number
-  listeners: Set<OutputListener>
+  listeners: Set<Subscriber>
 }
 
 function isEngineName(value: string): value is EngineName {
@@ -97,7 +100,9 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     const session = sessions.get(id)
     if (session === undefined) return
     sessions.delete(id)
+    const subscribers = [...session.listeners]
     session.listeners.clear()
+    for (const subscriber of subscribers) subscriber.close?.()
   }
 
   async function createTerminal(params: CreateTerminalParams): Promise<CreateTerminalResult> {
@@ -145,7 +150,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
 
     pty.onData((chunk) => {
       appendChunk(session, chunk)
-      for (const listener of session.listeners) listener(chunk)
+      for (const subscriber of session.listeners) subscriber.data(chunk)
     })
     pty.onExit(() => forget(id))
 
@@ -191,11 +196,12 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       const session = sessions.get(id)
       return session === undefined ? '' : session.chunks.join('')
     },
-    subscribe(id, listener) {
+    subscribe(id, listener, onClose) {
       const session = sessions.get(id)
       if (session === undefined) return () => {}
-      session.listeners.add(listener)
-      return () => session.listeners.delete(listener)
+      const subscriber: Subscriber = { data: listener, close: onClose }
+      session.listeners.add(subscriber)
+      return () => session.listeners.delete(subscriber)
     },
     shutdown() {
       for (const id of [...sessions.keys()]) kill(id)
