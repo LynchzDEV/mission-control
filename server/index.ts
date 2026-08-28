@@ -16,6 +16,9 @@ import {
   verifyCookieHeader,
 } from './auth'
 import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
+import { createJobManager } from './jobs'
+import { fakeEchoResolver } from './jobs-engine-iface'
+import { jobsRoutes } from './routes/jobs'
 
 const ROOT = resolve(import.meta.dir, '..')
 const CLIENT_DIR = join(ROOT, 'client')
@@ -180,6 +183,7 @@ export async function createApp(): Promise<Elysia> {
       return { ok: true }
     })
     .use(guardedApi())
+    .use(jobsRoutes(createJobManager(), fakeEchoResolver)) // TODO-P-merge: swap fakeEchoResolver for engines.ts
 
   if (await publicDirExists()) {
     app.use(staticPlugin({ assets: PUBLIC_DIR, prefix: '' }))
