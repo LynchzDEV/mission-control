@@ -1,0 +1,8 @@
+{
+  "limits": [
+    {
+      "type": "TOKENS_LIMIT",
+      "percentage": 88
+    }
+  ]
+}
