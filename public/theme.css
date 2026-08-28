@@ -156,6 +156,14 @@ body {
   height: 100%;
 }
 
+.arrowhead {
+  fill: var(--mc-edge);
+}
+
+.arrowhead.amber {
+  fill: var(--mc-amber);
+}
+
 .node {
   position: absolute;
   width: 150px;

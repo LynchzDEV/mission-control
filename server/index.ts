@@ -16,7 +16,8 @@ import {
   verifyCookieHeader,
 } from './auth'
 import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
-import { Layout } from './views/layout'
+import { flowRoutes } from './routes/flow'
+import { LanesPage } from './views/lanes'
 import { LoginPage, SetupPage } from './views/login'
 
 const ROOT = resolve(import.meta.dir, '..')
@@ -73,15 +74,26 @@ function loginPage(): Response {
 }
 
 function appShellPage(): Response {
-  return page(
-    Layout({
-      title: 'Mission Control',
-      page: 'app',
-      tab: 'lanes',
-      islands: ['nav'],
-      children: '',
-    }),
-  )
+  return page(LanesPage())
+}
+
+const TAB_PAGES: Record<string, () => string> = {
+  '/lanes': LanesPage,
+}
+
+function tabPages() {
+  const instance = new Elysia()
+  for (const [path, view] of Object.entries(TAB_PAGES)) {
+    instance.get(path, async ({ request, set }) => {
+      if (!(await verifyCookieHeader(request.headers.get('cookie')))) {
+        set.status = 302
+        set.headers.location = '/'
+        return ''
+      }
+      return page(view())
+    })
+  }
+  return instance
 }
 
 type CookieJar = Record<
@@ -174,7 +186,9 @@ export async function createApp(): Promise<Elysia> {
       ;(jar as unknown as CookieJar)[SESSION_COOKIE]?.remove()
       return { ok: true }
     })
+    .use(tabPages())
     .use(guardedApi())
+    .use(flowRoutes)
 
   if (await publicDirExists()) {
     app.use(staticPlugin({ assets: PUBLIC_DIR, prefix: '' }))

@@ -44,8 +44,8 @@ export function errorText(result: ApiResult): string {
   return result.status === 0 ? 'server unreachable' : `request failed (${result.status})`
 }
 
-export function markFixture(on: boolean): void {
-  document.querySelectorAll<HTMLElement>('.fixture').forEach((tag) => {
+export function markFixture(source: string, on: boolean): void {
+  document.querySelectorAll<HTMLElement>(`.fixture[data-src="${source}"]`).forEach((tag) => {
     tag.classList.toggle('on', on)
   })
 }
@@ -62,6 +62,22 @@ export function readRecord(value: unknown): JsonRecord {
 export function readArray(value: unknown): JsonRecord[] {
   if (!Array.isArray(value)) return []
   return value.filter((entry): entry is JsonRecord => readRecord(entry) === entry)
+}
+
+export type AnimeParams = Record<string, unknown>
+
+export type Anime = {
+  animate(targets: unknown, params: AnimeParams): { pause?: () => void }
+  stagger(value: number, options?: Record<string, unknown>): unknown
+}
+
+export function anime(): Anime | null {
+  const found = (window as unknown as { anime?: Anime }).anime
+  return found !== undefined && typeof found.animate === 'function' ? found : null
+}
+
+export function token(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
 export function text(selector: string, value: string): void {

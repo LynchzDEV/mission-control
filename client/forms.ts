@@ -81,10 +81,10 @@ function pill(selector: string, label: string, tone: 'ok' | 'bad' | 'setpill'): 
 async function refreshEngineStatus(): Promise<void> {
   const quota = await getJson('/api/quota')
   if (!quota.ok) {
-    markFixture(true)
+    markFixture('quota', true)
     return
   }
-  markFixture(false)
+  markFixture('quota', false)
   const claude = readRecord(quota.data.claude)
   const glm = readRecord(quota.data.glm)
   const codex = readRecord(quota.data.codex)
