@@ -4,7 +4,7 @@
 
 Mission Control is a self-hosted cockpit for developers who use more than one AI coding CLI. Point it at your engines — Claude Code, a GLM lane through any Anthropic-compatible endpoint (z.ai coding plan), OpenAI Codex CLI — and get live quota dashboards, one-click job dispatch, real terminals in the browser, and a review queue for everything your agents produce.
 
-![Lanes](docs/images/lanes.png)
+![Mission Control — lanes](docs/images/lanes.gif)
 
 ## Why
 
