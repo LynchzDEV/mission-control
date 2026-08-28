@@ -120,7 +120,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       return { ok: false, status: 400, error: 'unknown engine' }
     }
     const engine = params.engine
-    const cwdCheck = await validateWorkspaceCwd(params.cwd, home)
+    const cwdCheck = await validateWorkspaceCwd(params.cwd, home, { requireGit: false })
     if (!cwdCheck.ok) return { ok: false, status: 400, error: cwdCheck.error }
 
     let env: Record<string, string>

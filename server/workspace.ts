@@ -7,6 +7,7 @@ export type CwdCheck = { ok: true; path: string } | { ok: false; error: string }
 export async function validateWorkspaceCwd(
   cwd: string,
   home: string = homedir(),
+  opts: { requireGit?: boolean } = {},
 ): Promise<CwdCheck> {
   let info
   try {
@@ -34,12 +35,14 @@ export async function validateWorkspaceCwd(
     return { ok: false, error: 'cwd must be under $HOME' }
   }
 
-  const gitCheck = Bun.spawn(['git', '-C', real, 'rev-parse', '--git-dir'], {
-    stdout: 'ignore',
-    stderr: 'ignore',
-  })
-  const exitCode = await gitCheck.exited
-  if (exitCode !== 0) return { ok: false, error: 'cwd is not a git repository' }
+  if (opts.requireGit !== false) {
+    const gitCheck = Bun.spawn(['git', '-C', real, 'rev-parse', '--git-dir'], {
+      stdout: 'ignore',
+      stderr: 'ignore',
+    })
+    const exitCode = await gitCheck.exited
+    if (exitCode !== 0) return { ok: false, error: 'cwd is not a git repository' }
+  }
 
   return { ok: true, path: real }
 }

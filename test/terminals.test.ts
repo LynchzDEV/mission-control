@@ -77,11 +77,11 @@ describe('createTerminal cwd validation', () => {
     expect(result.error).toBe('cwd must be under $HOME')
   })
 
-  test('rejects a directory that is not a git repository', async () => {
+  test('accepts a non-git directory (terminals need no repo)', async () => {
     const result = await registry.createTerminal({ engine: 'claude', cwd: plain })
-    expect(result.ok).toBe(false)
-    if (result.ok) throw new Error('unreachable')
-    expect(result.error).toBe('cwd is not a git repository')
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('unreachable')
+    registry.kill(result.session.id)
   })
 
   test('rejects a cwd that does not exist', async () => {
@@ -226,4 +226,22 @@ describe('ring buffer byte-exact trimming', () => {
     expect(replayed).toBe(GLYPH.repeat(3))
     expect(replayed).not.toContain('�')
   })
+})
+
+test('terminal cwd does not require a git repository', async () => {
+  const { mkdtemp } = await import('node:fs/promises')
+  const { tmpdir, homedir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { mkdir, rm } = await import('node:fs/promises')
+  const dir = join(homedir(), '.mc-term-nogit-test')
+  await mkdir(dir, { recursive: true })
+  try {
+    const { validateWorkspaceCwd } = await import('../server/workspace')
+    const res = await validateWorkspaceCwd(dir, homedir(), { requireGit: false })
+    expect(res.ok).toBe(true)
+    const strict = await validateWorkspaceCwd(dir, homedir())
+    expect(strict.ok).toBe(false)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })
