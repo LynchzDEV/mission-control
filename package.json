@@ -11,6 +11,8 @@
     "@elysiajs/cookie": "^0.8.0",
     "@elysiajs/html": "^1.4.2",
     "@elysiajs/static": "^1.4.10",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "animejs": "^4.5.0",
     "bun-pty": "^0.4.10",
     "elysia": "^1.4.30",
