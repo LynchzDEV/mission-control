@@ -18,9 +18,12 @@ import {
 import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
 import { flowRoutes } from './routes/flow'
 import { currentView, secretsRoutes } from './routes/secrets'
+import { DispatchPage } from './views/dispatch'
 import { LanesPage } from './views/lanes'
 import { LoginPage, SetupPage } from './views/login'
+import { ReviewPage } from './views/review'
 import { SettingsPage } from './views/settings'
+import { TerminalsPage } from './views/terminals'
 
 const ROOT = resolve(import.meta.dir, '..')
 const CLIENT_DIR = join(ROOT, 'client')
@@ -86,6 +89,9 @@ async function settingsPage(): Promise<string> {
 
 const TAB_PAGES: Record<string, () => string | Promise<string>> = {
   '/lanes': LanesPage,
+  '/dispatch': DispatchPage,
+  '/terminals': TerminalsPage,
+  '/review': ReviewPage,
   '/settings': settingsPage,
 }
 
