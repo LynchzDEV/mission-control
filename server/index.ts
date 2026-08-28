@@ -163,6 +163,9 @@ function guardedApi() {
 }
 
 export async function createApp(): Promise<Elysia> {
+  const jobManager = createJobManager()
+  const terminalRegistry = createTerminalRegistry()
+
   const app = new Elysia()
     .use(cookie())
     .get('/', async ({ request }) => {
@@ -209,9 +212,9 @@ export async function createApp(): Promise<Elysia> {
     .use(tabPages())
     .use(guardedApi())
     .use(quotaRoutes)
-    .use(jobsRoutes(createJobManager(), realEngineResolver))
-    .use(terminalsRoutes(createTerminalRegistry()))
-    .use(flowRoutes)
+    .use(jobsRoutes(jobManager, realEngineResolver))
+    .use(terminalsRoutes(terminalRegistry))
+    .use(flowRoutes(jobManager, terminalRegistry))
     .use(secretsRoutes)
 
   if (await publicDirExists()) {
