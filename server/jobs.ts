@@ -1,10 +1,10 @@
 import { createWriteStream } from 'node:fs'
-import { appendFile, chmod, mkdir, readFile, realpath, stat } from 'node:fs/promises'
+import { appendFile, chmod, mkdir, readFile, stat } from 'node:fs/promises'
 import { chmodSync, mkdirSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { dirname, join, sep } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { DIR_MODE, FILE_MODE, configDir } from './secrets'
+import { validateWorkspaceCwd } from './workspace'
 import type { EngineResolver, EngineSpawn } from './jobs-engine-iface'
 
 export const JOBS_FILE = 'jobs.jsonl'
@@ -81,44 +81,8 @@ function ensureDirsSync(dir: string, logsDir: string): void {
   chmodSync(logsDir, DIR_MODE)
 }
 
-export type CwdCheck = { ok: true; path: string } | { ok: false; error: string }
-
-export async function validateJobCwd(cwd: string, home: string = homedir()): Promise<CwdCheck> {
-  let info
-  try {
-    info = await stat(cwd)
-  } catch {
-    return { ok: false, error: 'cwd does not exist' }
-  }
-  if (!info.isDirectory()) return { ok: false, error: 'cwd is not a directory' }
-
-  let real: string
-  try {
-    real = await realpath(cwd)
-  } catch {
-    return { ok: false, error: 'cwd could not be resolved' }
-  }
-
-  let realHome: string
-  try {
-    realHome = await realpath(home)
-  } catch {
-    realHome = home
-  }
-
-  if (real !== realHome && !real.startsWith(realHome + sep)) {
-    return { ok: false, error: 'cwd must be under $HOME' }
-  }
-
-  const gitCheck = Bun.spawn(['git', '-C', real, 'rev-parse', '--git-dir'], {
-    stdout: 'ignore',
-    stderr: 'ignore',
-  })
-  const exitCode = await gitCheck.exited
-  if (exitCode !== 0) return { ok: false, error: 'cwd is not a git repository' }
-
-  return { ok: true, path: real }
-}
+export type { CwdCheck } from './workspace'
+export { validateWorkspaceCwd as validateJobCwd } from './workspace'
 
 async function captureDiffStat(cwd: string): Promise<string | null> {
   try {
@@ -189,7 +153,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   }
 
   async function createJob(params: CreateJobParams, resolver: EngineResolver): Promise<CreateJobResult> {
-    const cwdCheck = await validateJobCwd(params.cwd, home)
+    const cwdCheck = await validateWorkspaceCwd(params.cwd, home)
     if (!cwdCheck.ok) return { ok: false, status: 400, error: cwdCheck.error }
 
     ensureDirsSync(dir, logsDir)

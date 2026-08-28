@@ -25,10 +25,11 @@ export type LayoutProps = {
   chrome?: boolean
   islands?: string[]
   vendor?: string[]
+  styles?: string[]
   children?: JSX.Element | JSX.Element[] | string
 }
 
-function head(title: string, vendor: string[], islands: string[]): JSX.Element {
+function head(title: string, vendor: string[], islands: string[], styles: string[]): JSX.Element {
   return (
     <head>
       <meta charset="utf-8" />
@@ -36,6 +37,9 @@ function head(title: string, vendor: string[], islands: string[]): JSX.Element {
       <title>{title}</title>
       <link rel="stylesheet" href="/theme-tokens.css" />
       <link rel="stylesheet" href="/theme.css" />
+      {styles.map((href) => (
+        <link rel="stylesheet" href={href} />
+      ))}
       {vendor.map((file) => (
         <script src={`/vendor/${file}`}></script>
       ))}
@@ -79,7 +83,7 @@ export function Layout(props: LayoutProps): string {
 
   return `<!doctype html>\n${(
     <html lang="en">
-      {head(props.title, props.vendor ?? [], props.islands ?? [])}
+      {head(props.title, props.vendor ?? [], props.islands ?? [], props.styles ?? [])}
       {body}
     </html>
   )}`

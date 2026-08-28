@@ -875,3 +875,70 @@ table.grid tr.empty td {
 .c-white {
   color: var(--mc-white);
 }
+
+/* ---------- terminals ---------- */
+
+.termnone {
+  padding: 12px 20px;
+  border-right: 1px solid var(--mc-border);
+  font-family: var(--mc-font-mono);
+  font-size: 11px;
+  color: var(--mc-fg-dim);
+}
+
+.strip a .tag {
+  margin-right: 8px;
+  font-family: var(--mc-font-pixel);
+  font-size: 7px;
+  letter-spacing: 0.1em;
+}
+
+.strip a .x {
+  margin-left: 10px;
+  color: var(--mc-fg-dim);
+}
+
+.strip a .x:hover {
+  color: var(--mc-red);
+}
+
+.termbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--mc-hairline);
+}
+
+.termbar select,
+.termbar input {
+  background: var(--mc-bg-raised);
+  border: 1px solid var(--mc-border);
+  color: var(--mc-fg);
+  padding: 9px 10px;
+  font-family: var(--mc-font-mono);
+  font-size: 12px;
+}
+
+.termbar input {
+  flex: 1;
+}
+
+.termbar select:focus,
+.termbar input:focus {
+  outline: none;
+  border-color: var(--mc-green);
+}
+
+.termbar .msg {
+  margin-top: 0;
+}
+
+#term-pane.live {
+  display: block;
+  flex: 1;
+  padding: 8px 10px;
+  overflow: hidden;
+  letter-spacing: normal;
+  text-align: left;
+}
