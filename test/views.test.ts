@@ -67,7 +67,7 @@ const PAGES: [string, string[]][] = [
     ['API TOKEN', 'BASE URL', 'MODEL MAP', 'CONNECTION', 'class="applab"', 'GLM PEAK', 'id="bind"'],
   ],
   ['/dispatch', ['id="dispatch-form"', 'id="jobs-body"', 'id="log-drawer"', 'id="prompt"']],
-  ['/terminals', ['id="term-strip"', 'id="term-pane"']],
+  ['/terminals', ['id="term-strip"', 'id="term-pane"', 'id="term-form"', 'id="term-engine"', 'id="term-cwd"']],
   ['/review', ['id="review-body"', 'REVIEW QUEUE']],
 ]
 
@@ -99,6 +99,15 @@ describe('tab views', () => {
     expect(html).toContain('/vendor/anime.umd.min.js')
     expect(html).not.toContain('cdn.jsdelivr.net')
     expect(html).not.toContain('fonts.googleapis.com')
+  })
+
+  test('terminals serves the vendored xterm assets and its island', async () => {
+    const { html } = await render('/terminals')
+    expect(html).toContain('/vendor/xterm.js')
+    expect(html).toContain('/vendor/addon-fit.js')
+    expect(html).toContain('href="/vendor/xterm.css"')
+    expect(html).toContain('/js/terminal.js')
+    expect(html).not.toContain('cdn.jsdelivr.net')
   })
 
   test('every tab marks its own tab active exactly once', async () => {
