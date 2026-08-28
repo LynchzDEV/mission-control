@@ -57,7 +57,7 @@ function terminalApi(registry: TerminalRegistry): Elysia {
       }
       return result.terminal
     })
-    .get('/api/terminals', () => registry.list())
+    .get('/api/terminals', () => ({ sessions: registry.list() }))
     .delete('/api/terminals/:id', ({ params, set }) => {
       if (!registry.kill(params.id)) {
         set.status = 404

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import {
   JOBS_FILE,
+  LOGS_DIR,
   createJobManager,
   readLogSince,
   readLogTail,
@@ -216,6 +217,35 @@ describe('job lifecycle', () => {
     const firstIndex = listed.findIndex((job) => job.id === first.job.id)
     const secondIndex = listed.findIndex((job) => job.id === second.job.id)
     expect(secondIndex).toBeLessThan(firstIndex)
+  })
+})
+
+describe('log stream failures', () => {
+  test('a job whose log stream errors settles as failed instead of crashing the process', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const manager = createJobManager({ home })
+
+    const fixedId = 'fixed-log-stream-error-id'
+    const originalRandomUUID = crypto.randomUUID
+    crypto.randomUUID = (() => fixedId) as typeof crypto.randomUUID
+    try {
+      await mkdir(join(configDir, LOGS_DIR, `${fixedId}.log`), { recursive: true })
+
+      const result = await manager.createJob(
+        { engine: 'claude', cwd: repo, prompt: 'irrelevant', label: 'log-error' },
+        echoResolver,
+      )
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.job.id).toBe(fixedId)
+
+      const finished = await waitForStatus(manager, fixedId)
+      expect(finished.status).toBe('failed')
+      expect(finished.diffStat).toBeNull()
+    } finally {
+      crypto.randomUUID = originalRandomUUID
+    }
   })
 })
 

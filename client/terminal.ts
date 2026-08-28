@@ -204,8 +204,7 @@ async function killSession(id: string): Promise<void> {
 
 async function refresh(): Promise<void> {
   const result = await getJson('/api/terminals')
-  const raw = Array.isArray(result.data) ? result.data : (result.data as { sessions?: unknown }).sessions
-  sessions = result.ok ? readArray(raw).map(toSession) : []
+  sessions = result.ok ? readArray(result.data.sessions).map(toSession) : []
   if (attachedId !== null && !sessions.some((session) => session.id === attachedId)) {
     detach()
     resetPane()

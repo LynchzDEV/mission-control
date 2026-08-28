@@ -133,23 +133,33 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     await appendJsonl(jsonlPath, record)
   }
 
+  async function settleFailed(id: string, record: JobRecord): Promise<void> {
+    processes.delete(id)
+    await persist({ ...record, status: 'failed', endedAt: Date.now(), exitCode: null, diffStat: null })
+  }
+
   async function finalizeJob(
     id: string,
     proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>,
     logStream: ReturnType<typeof createWriteStream>,
+    streamState: { failed: boolean },
     cwd: string,
     record: JobRecord,
   ): Promise<void> {
-    await Promise.all([pump(proc.stdout, logStream), pump(proc.stderr, logStream)])
-    const exitCode = await proc.exited
-    await new Promise<void>((resolveClose) => logStream.end(resolveClose))
-    await chmod(logPath(id), FILE_MODE)
+    try {
+      await Promise.all([pump(proc.stdout, logStream), pump(proc.stderr, logStream)])
+      const exitCode = await proc.exited
+      await new Promise<void>((resolveClose) => logStream.end(resolveClose))
+      if (!streamState.failed) await chmod(logPath(id), FILE_MODE).catch(() => {})
 
-    const status: JobStatus = exitCode === 0 ? 'done' : 'failed'
-    const diffStat = status === 'done' ? await captureDiffStat(cwd) : null
+      const status: JobStatus = !streamState.failed && exitCode === 0 ? 'done' : 'failed'
+      const diffStat = status === 'done' ? await captureDiffStat(cwd) : null
 
-    processes.delete(id)
-    await persist({ ...record, status, endedAt: Date.now(), exitCode, diffStat })
+      processes.delete(id)
+      await persist({ ...record, status, endedAt: Date.now(), exitCode, diffStat })
+    } catch {
+      await settleFailed(id, record)
+    }
   }
 
   async function createJob(params: CreateJobParams, resolver: EngineResolver): Promise<CreateJobResult> {
@@ -167,6 +177,10 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const id = crypto.randomUUID()
     const path = logPath(id)
     const logStream = createWriteStream(path, { mode: FILE_MODE, flags: 'a' })
+    const streamState = { failed: false }
+    logStream.on('error', () => {
+      streamState.failed = true
+    })
 
     let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>
     try {
@@ -197,7 +211,9 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     }
     await persist(record)
 
-    void finalizeJob(id, proc, logStream, cwdCheck.path, record)
+    void finalizeJob(id, proc, logStream, streamState, cwdCheck.path, record).catch(() =>
+      settleFailed(id, record).catch(() => {}),
+    )
 
     return { ok: true, job: record }
   }

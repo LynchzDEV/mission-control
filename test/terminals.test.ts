@@ -7,7 +7,10 @@ import {
   DEFAULT_COLS,
   MAX_DIMENSION,
   clampDimension,
+  createRingBuffer,
   createTerminalRegistry,
+  pushToRingBuffer,
+  replayRingBuffer,
   type TerminalRegistry,
 } from '../server/terminals'
 import { initScratchGitRepo } from './support/scratch-git-repo'
@@ -193,5 +196,34 @@ describe('registry lifecycle over a real pty', () => {
     expect(registry.kill('missing')).toBe(false)
     expect(registry.replay('missing')).toBe('')
     expect(() => registry.subscribe('missing', () => {})()).not.toThrow()
+  })
+})
+
+describe('ring buffer byte-exact trimming', () => {
+  const GLYPH = '─' // U+2500, 3 bytes in UTF-8, 1 UTF-16 code unit
+
+  test('trims to an exact byte count when the boundary lands on a character edge', () => {
+    const buffer = createRingBuffer()
+    pushToRingBuffer(buffer, GLYPH.repeat(5), 9)
+    const replayed = replayRingBuffer(buffer)
+    expect(replayed).toBe(GLYPH.repeat(3))
+    expect(Buffer.byteLength(replayed, 'utf-8')).toBe(9)
+  })
+
+  test('a mid-character boundary yields one lossy leading replacement char, never a blanked replay', () => {
+    const buffer = createRingBuffer()
+    pushToRingBuffer(buffer, GLYPH.repeat(5), 10)
+    const replayed = replayRingBuffer(buffer)
+    expect(replayed).toBe(`�${GLYPH.repeat(3)}`)
+    expect(replayed.length).toBeGreaterThan(0)
+  })
+
+  test('evicts whole chunks across the boundary before trimming the remainder', () => {
+    const buffer = createRingBuffer()
+    pushToRingBuffer(buffer, GLYPH.repeat(2), 9)
+    pushToRingBuffer(buffer, GLYPH.repeat(4), 9)
+    const replayed = replayRingBuffer(buffer)
+    expect(replayed).toBe(GLYPH.repeat(3))
+    expect(replayed).not.toContain('�')
   })
 })

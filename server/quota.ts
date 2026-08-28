@@ -1,7 +1,14 @@
 import type { Secrets } from './secrets'
 
 export type ClaudeQuota =
-  | { available: true; active: boolean; tokens: number; costUSD: number | null; resetsAt: string | null }
+  | {
+      available: true
+      active: boolean
+      tokens: number
+      costUSD: number | null
+      resetsAt: string | null
+      blockPercent: number | null
+    }
   | { available: false; reason: string }
 
 export type GlmQuota =
@@ -44,6 +51,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+function readBlockPercent(block: Record<string, unknown>): number | null {
+  const status = block.tokenLimitStatus
+  if (!isRecord(status) || typeof status.percentUsed !== 'number') return null
+  return status.percentUsed
+}
+
 export function parseCcusageBlocksJson(raw: string): ClaudeQuota {
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -52,12 +65,12 @@ export function parseCcusageBlocksJson(raw: string): ClaudeQuota {
     }
     const active = parsed.blocks.find((block) => isRecord(block) && block.isActive === true)
     if (active === undefined) {
-      return { available: true, active: false, tokens: 0, costUSD: null, resetsAt: null }
+      return { available: true, active: false, tokens: 0, costUSD: null, resetsAt: null, blockPercent: null }
     }
     const tokens = typeof active.totalTokens === 'number' ? active.totalTokens : 0
     const costUSD = typeof active.costUSD === 'number' ? active.costUSD : null
     const resetsAt = typeof active.endTime === 'string' ? active.endTime : null
-    return { available: true, active: true, tokens, costUSD, resetsAt }
+    return { available: true, active: true, tokens, costUSD, resetsAt, blockPercent: readBlockPercent(active) }
   } catch {
     return { available: false, reason: 'malformed ccusage blocks json' }
   }
@@ -73,7 +86,7 @@ export function parseCcusageDailyJson(raw: string): ClaudeQuota {
     if (!isRecord(latest)) return { available: false, reason: 'unexpected ccusage daily entry shape' }
     const tokens = typeof latest.totalTokens === 'number' ? latest.totalTokens : 0
     const costUSD = typeof latest.totalCost === 'number' ? latest.totalCost : null
-    return { available: true, active: false, tokens, costUSD, resetsAt: null }
+    return { available: true, active: false, tokens, costUSD, resetsAt: null, blockPercent: null }
   } catch {
     return { available: false, reason: 'malformed ccusage daily json' }
   }

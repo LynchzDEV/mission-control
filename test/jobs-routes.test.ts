@@ -10,7 +10,7 @@ import { createApp } from '../server/index'
 import { createJobManager } from '../server/jobs'
 import type { JobManager } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
-import { jobsRoutes } from '../server/routes/jobs'
+import { jobsRoutes, safeEnqueue } from '../server/routes/jobs'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 
 const PASSWORD = 'correct-horse-battery'
@@ -68,7 +68,7 @@ async function pollUntilDone(
   const deadline = Date.now() + timeoutMs
   for (;;) {
     const response = await app.handle(get('/api/jobs', cookie))
-    const jobs = (await response.json()) as Array<{ id: string; status: string; diffStat: string | null }>
+    const { jobs } = (await response.json()) as { jobs: Array<{ id: string; status: string; diffStat: string | null }> }
     const job = jobs.find((entry) => entry.id === id)
     if (job !== undefined && job.status !== 'running') return job
     if (Date.now() > deadline) throw new Error(`job ${id} did not settle within ${timeoutMs}ms`)
@@ -137,7 +137,7 @@ describe('GET /api/jobs', () => {
     const job = (await created.json()) as { id: string }
 
     const response = await app.handle(get('/api/jobs', cookie))
-    const jobs = (await response.json()) as Array<{ label: string }>
+    const { jobs } = (await response.json()) as { jobs: Array<{ label: string }> }
     expect(jobs.some((entry) => entry.label === 'listed')).toBe(true)
 
     await pollUntilDone(app, cookie, job.id)
@@ -235,6 +235,29 @@ describe('GET /api/jobs/:id/stream', () => {
   })
 })
 
+describe('safeEnqueue', () => {
+  test('skips enqueue once already closed', () => {
+    let called = false
+    safeEnqueue({ enqueue: () => (called = true) }, () => true, 'chunk')
+    expect(called).toBe(false)
+  })
+
+  test('enqueues when not closed', () => {
+    let received: string | null = null
+    safeEnqueue<string>({ enqueue: (chunk) => (received = chunk) }, () => false, 'chunk')
+    expect(received).toBe('chunk')
+  })
+
+  test('swallows a throw from enqueue on an already-torn-down controller', () => {
+    const torndown = {
+      enqueue: () => {
+        throw new TypeError('Invalid state: Controller is already closed')
+      },
+    }
+    expect(() => safeEnqueue(torndown, () => false, 'chunk')).not.toThrow()
+  })
+})
+
 describe('mounted in the real app', () => {
   test('createApp wires the jobs routes behind the session guard', async () => {
     configDir = await mkdtemp(join(tmpdir(), 'mc-jobs-routes-config-'))
@@ -251,6 +274,6 @@ describe('mounted in the real app', () => {
 
     const listed = await app.handle(get('/api/jobs', cookie))
     expect(listed.status).toBe(200)
-    expect(await listed.json()).toEqual([])
+    expect(await listed.json()).toEqual({ jobs: [] })
   })
 })

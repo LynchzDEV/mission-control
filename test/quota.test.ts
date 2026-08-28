@@ -31,7 +31,7 @@ function secrets(patch: Partial<Secrets> = {}): Secrets {
 }
 
 describe('ccusage blocks parsing', () => {
-  test('reports the active block tokens and reset time', async () => {
+  test('reports the active block tokens, reset time, and block percent', async () => {
     const result = parseCcusageBlocksJson(await fixture('ccusage-blocks-active.json'))
     expect(result).toEqual({
       available: true,
@@ -39,12 +39,38 @@ describe('ccusage blocks parsing', () => {
       tokens: 95718961,
       costUSD: 101.02,
       resetsAt: '2026-08-28T11:00:00.000Z',
+      blockPercent: 68.4,
     })
+  })
+
+  test('blockPercent is null when the active block carries no tokenLimitStatus', () => {
+    const noLimit = JSON.stringify({
+      blocks: [
+        {
+          id: '2026-08-28T06:00:00.000Z',
+          startTime: '2026-08-28T06:00:00.000Z',
+          endTime: '2026-08-28T11:00:00.000Z',
+          isActive: true,
+          isGap: false,
+          costUSD: 101.02,
+          totalTokens: 95718961,
+        },
+      ],
+    })
+    const result = parseCcusageBlocksJson(noLimit)
+    expect(result).toMatchObject({ available: true, active: true, blockPercent: null })
   })
 
   test('reports inactive with zero tokens when no block is active', async () => {
     const result = parseCcusageBlocksJson(await fixture('ccusage-blocks-inactive.json'))
-    expect(result).toEqual({ available: true, active: false, tokens: 0, costUSD: null, resetsAt: null })
+    expect(result).toEqual({
+      available: true,
+      active: false,
+      tokens: 0,
+      costUSD: null,
+      resetsAt: null,
+      blockPercent: null,
+    })
   })
 
   test('malformed output never throws, always available:false', async () => {
@@ -66,6 +92,7 @@ describe('ccusage daily fallback parsing', () => {
       tokens: 196433023,
       costUSD: 235.0491458000002,
       resetsAt: null,
+      blockPercent: null,
     })
   })
 
