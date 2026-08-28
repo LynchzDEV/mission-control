@@ -94,7 +94,9 @@ function element(tag: string, className: string, textContent = ''): HTMLElement 
 }
 
 function planNodeIds(): string[] {
-  return [...document.querySelectorAll<HTMLElement>('#plan-nodes .node')].map((node) => node.id)
+  const ids: string[] = []
+  document.querySelectorAll<HTMLElement>('#plan-nodes .node').forEach((node) => ids.push(node.id))
+  return ids
 }
 
 function renderPlanNodes(plan: Plan | null): void {
