@@ -1,4 +1,4 @@
-import { errorText, getJson, markFixture, postJson, readRecord } from './shared'
+import { anime, errorText, getJson, markFixture, postJson, readRecord } from './shared'
 
 function say(element: HTMLElement | null, message: string, ok: boolean): void {
   if (element === null) return
@@ -39,10 +39,22 @@ function collect(button: HTMLElement): Record<string, string> {
   return payload
 }
 
+function reveal(button: HTMLElement): boolean {
+  const id = button.dataset.reveal
+  if (id === undefined) return false
+  const input = document.querySelector<HTMLInputElement>(`#${id}`)
+  if (input === null || !input.hidden) return false
+  input.hidden = false
+  input.focus()
+  button.textContent = 'SAVE'
+  return true
+}
+
 function installSecretRows(): void {
   document.querySelectorAll<HTMLElement>('[data-post]').forEach((button) => {
     button.addEventListener('click', async (event) => {
       event.preventDefault()
+      if (reveal(button)) return
       const status = document.querySelector<HTMLElement>(`#${button.dataset.status ?? ''}`)
       const payload = collect(button)
       if (Object.keys(payload).length === 0) {
@@ -51,10 +63,19 @@ function installSecretRows(): void {
       }
       const result = await postJson(button.dataset.post ?? '', payload)
       say(status, result.ok ? 'SAVED' : errorText(result).toUpperCase(), result.ok)
-      if (result.ok) {
-        for (const name of Object.keys(payload)) {
-          const input = document.querySelector<HTMLInputElement>(`#${name}`)
-          if (input !== null && input.type === 'password') input.value = ''
+      if (!result.ok) return
+      for (const name of Object.keys(payload)) {
+        const input = document.querySelector<HTMLInputElement>(`#${name}`)
+        if (input === null || input.type !== 'password') continue
+        input.value = ''
+        input.hidden = true
+        button.textContent = 'REPLACE'
+      }
+      if (result.data.zaiAuthTokenConfigured === true) {
+        const pillEl = document.querySelector<HTMLElement>('#s-token')
+        if (pillEl !== null) {
+          pillEl.textContent = 'SET ●●●'
+          pillEl.className = 'pill setpill'
         }
       }
     })
@@ -105,7 +126,29 @@ function installStatusProbes(): void {
   })
 }
 
+function installColumnEntrance(): void {
+  const A = anime()
+  if (A === null || document.querySelector('.cols') === null) {
+    document.querySelectorAll<HTMLElement>('.col').forEach((el) => (el.style.opacity = '1'))
+    return
+  }
+  A.animate('.col', {
+    opacity: [0, 1],
+    translateY: [14, 0],
+    delay: A.stagger(120),
+    duration: 550,
+    ease: 'outExpo',
+  })
+  A.animate('.app .frow', {
+    opacity: [0, 1],
+    delay: A.stagger(90, { start: 450 }),
+    duration: 400,
+    ease: 'outQuad',
+  })
+}
+
 installGate()
 installSecretRows()
 installTodoRows()
 installStatusProbes()
+installColumnEntrance()

@@ -17,8 +17,10 @@ import {
 } from './auth'
 import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
 import { flowRoutes } from './routes/flow'
+import { currentView, secretsRoutes } from './routes/secrets'
 import { LanesPage } from './views/lanes'
 import { LoginPage, SetupPage } from './views/login'
+import { SettingsPage } from './views/settings'
 
 const ROOT = resolve(import.meta.dir, '..')
 const CLIENT_DIR = join(ROOT, 'client')
@@ -77,8 +79,14 @@ function appShellPage(): Response {
   return page(LanesPage())
 }
 
-const TAB_PAGES: Record<string, () => string> = {
+async function settingsPage(): Promise<string> {
+  const view = await currentView()
+  return SettingsPage({ ...view, minPasswordLength: MIN_PASSWORD_LENGTH })
+}
+
+const TAB_PAGES: Record<string, () => string | Promise<string>> = {
   '/lanes': LanesPage,
+  '/settings': settingsPage,
 }
 
 function tabPages() {
@@ -90,7 +98,7 @@ function tabPages() {
         set.headers.location = '/'
         return ''
       }
-      return page(view())
+      return page(await view())
     })
   }
   return instance
@@ -189,6 +197,7 @@ export async function createApp(): Promise<Elysia> {
     .use(tabPages())
     .use(guardedApi())
     .use(flowRoutes)
+    .use(secretsRoutes)
 
   if (await publicDirExists()) {
     app.use(staticPlugin({ assets: PUBLIC_DIR, prefix: '' }))
