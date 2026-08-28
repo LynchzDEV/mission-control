@@ -1,102 +1,13 @@
 /** @jsxImportSource @kitajs/html */
 import { Layout } from './layout'
 
-type TaskRow = {
-  session: string
-  name: string
-  right: string
-  rightClass?: string
-  stages: ('done' | 'cur' | '')[]
-  note: string
-}
-
-function Task(row: TaskRow): JSX.Element {
+function Station(engine: string): JSX.Element {
   return (
-    <div class="task" data-s={row.session}>
-      <div class="t1">
-        <b>{row.name}</b>
-        <span class={row.rightClass ?? ''}>{row.right}</span>
-      </div>
-      <div class="t2">
-        <div class="stg">
-          {row.stages.map((state) => (
-            <i class={state}></i>
-          ))}
-        </div>
-        {row.note}
-      </div>
-    </div>
-  )
-}
-
-function Station(rows: TaskRow[]): JSX.Element {
-  return (
-    <div class="station">
+    <div class="station" id={`station-${engine}`}>
       <div class="lab">AT THIS STATION</div>
-      {rows.map((row) => Task(row))}
     </div>
   )
 }
-
-const CLAUDE_TASKS: TaskRow[] = [
-  {
-    session: 'hermez-fb-retry',
-    name: 'hermez-fb-retry',
-    right: 'SPEC · 12m',
-    stages: ['cur', '', '', ''],
-    note: 'writing spec',
-  },
-  {
-    session: 'moni-audio-v2',
-    name: 'moni-audio-v2',
-    right: 'REVIEW · 4m',
-    stages: ['done', 'done', 'cur', ''],
-    note: 'verifying diff from GLM',
-  },
-]
-
-const GLM_TASKS: TaskRow[] = [
-  {
-    session: 'orders-export-fix',
-    name: 'orders-export-fix',
-    right: 'IMPL · 26m',
-    stages: ['done', 'cur', '', ''],
-    note: 'wt: .worktree/orders-export',
-  },
-  {
-    session: 'campaign-occasions',
-    name: 'campaign-occasions',
-    right: 'IMPL · 11m',
-    stages: ['done', 'cur', '', ''],
-    note: 'wt: .worktree/campaign-ai',
-  },
-  {
-    session: 'lead-csv-import',
-    name: 'lead-csv-import',
-    right: 'IMPL · 2m',
-    stages: ['done', 'cur', '', ''],
-    note: 'wt: .worktree/lead-csv',
-  },
-]
-
-const CODEX_TASKS: TaskRow[] = [
-  {
-    session: 'moni-audio-v2',
-    name: 'moni-audio-v2',
-    right: 'QUEUED',
-    rightClass: 'c-red',
-    stages: ['done', 'done', 'cur', ''],
-    note: 'cross-review waiting on auth',
-  },
-  {
-    session: 'orders-export-fix',
-    name: 'orders-export-fix',
-    right: 'QUEUED',
-    rightClass: 'c-red',
-    stages: ['done', 'done', 'cur', ''],
-    note: 'cross-review waiting on auth',
-  },
-]
 
 function Flow(): JSX.Element {
   return (
@@ -160,7 +71,7 @@ function Flow(): JSX.Element {
       <div class="node" id="nd-merged" style="left:80.5%;top:96px">
         <div class="nn">MERGED → UAT</div>
         <div class="lane-chip" id="lc-merged">
-          18 TODAY
+          0 TODAY
         </div>
       </div>
       <div class="alabel" style="left:37%;top:64px">
@@ -187,7 +98,7 @@ function Racks(): JSX.Element {
             <span id="n1">0</span>
             <small>
               {' '}
-              M TOK · <span id="n1pct">88</span>% BLOCK
+              M TOK · <span id="n1pct">0</span>% BLOCK
             </small>
             <span class="fixture" data-src="quota">
               FIXTURE
@@ -200,7 +111,7 @@ function Racks(): JSX.Element {
         <div class="sec">
           <div class="kv">
             <span>JOBS / PTY / EXT</span>
-            <b id="k-claude-live">1 / 2 / 1</b>
+            <b id="k-claude-live">0 / 0 / 0</b>
           </div>
           <div class="kv">
             <span>AUTH</span>
@@ -209,7 +120,7 @@ function Racks(): JSX.Element {
             </b>
           </div>
         </div>
-        {Station(CLAUDE_TASKS)}
+        {Station('claude')}
         <div class="acts">
           <a href="/dispatch">DISPATCH</a>
           <a href="/terminals">TERMINAL</a>
@@ -228,7 +139,7 @@ function Racks(): JSX.Element {
             <span id="n2">0</span>
             <small>
               {' '}
-              % OF 5H · <span id="n2peak">PEAK x2 02:19</span>
+              % OF 5H · <span id="n2peak">PEAK —</span>
             </small>
             <span class="fixture" data-src="quota">
               FIXTURE
@@ -241,14 +152,14 @@ function Racks(): JSX.Element {
         <div class="sec">
           <div class="kv">
             <span>SLOTS / WORKTREES</span>
-            <b id="k-glm-slots">3/50 · 4</b>
+            <b id="k-glm-slots">0/50 · 0</b>
           </div>
           <div class="kv">
             <span>DONE LAST 8H</span>
-            <b id="k-glm-done">18</b>
+            <b id="k-glm-done">0</b>
           </div>
         </div>
-        {Station(GLM_TASKS)}
+        {Station('glm')}
         <div class="acts">
           <a href="/dispatch">DISPATCH</a>
           <a href="/terminals">TERMINAL</a>
@@ -280,7 +191,7 @@ function Racks(): JSX.Element {
           <div class="kv">
             <span>REVIEWS BLOCKED</span>
             <b class="c-red" id="k-codex-blocked">
-              2
+              0
             </b>
           </div>
           <div class="kv">
@@ -288,7 +199,7 @@ function Racks(): JSX.Element {
             <b id="k-codex-pty">NONE · 0</b>
           </div>
         </div>
-        {Station(CODEX_TASKS)}
+        {Station('codex')}
         <div class="acts">
           <a href="/settings" class="c-red">
             RE-AUTH
@@ -309,9 +220,9 @@ export function LanesPage(): string {
     vendor: ['anime.umd.min.js', 'textmode.umd.js', 'textmode.filters.umd.js'],
     meta: (
       <>
-        <span id="block-clock">03:11 / 5:00 BLOCK</span> · TOK/MIN <span id="tpm">0</span>K ·{' '}
+        <span id="block-clock">—:— / 5:00 BLOCK</span> · TOK/MIN <span id="tpm">0</span>K ·{' '}
         <span class="c-amber" id="review-count">
-          9 DIFFS TO REVIEW
+          0 DIFFS TO REVIEW
         </span>
         <span class="fixture" data-src="meta">
           FIXTURE

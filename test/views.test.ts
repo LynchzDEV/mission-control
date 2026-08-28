@@ -60,6 +60,11 @@ const PAGES: [string, string[]][] = [
       'id="m3"',
       'id="fsvg"',
       'id="chips"',
+      'id="station-claude"',
+      'id="station-glm"',
+      'id="station-codex"',
+      'id="block-clock"',
+      'id="review-count"',
     ],
   ],
   [
@@ -90,6 +95,14 @@ describe('tab views', () => {
       expect(html).toContain('data-key="5"')
       expect(html).toContain('/js/nav.js')
     }
+  })
+
+  test('lanes ships no hard-coded station rows or invented counters', async () => {
+    const { html } = await render('/lanes')
+    expect(html).not.toContain('class="task"')
+    expect(html).not.toContain('orders-export')
+    expect(html).not.toContain('moni-audio')
+    expect(html).toContain('0 DIFFS TO REVIEW')
   })
 
   test('lanes serves the mascot vendor scripts and no CDN url', async () => {
