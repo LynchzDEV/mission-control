@@ -25,7 +25,13 @@
       "isActive": true,
       "isGap": false,
       "costUSD": 101.02,
-      "totalTokens": 95718961
+      "totalTokens": 95718961,
+      "tokenLimitStatus": {
+        "limit": 140000000,
+        "projectedUsage": 101000000,
+        "percentUsed": 68.4,
+        "status": "ok"
+      }
     }
   ]
 }

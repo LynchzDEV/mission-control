@@ -65,10 +65,10 @@ function paintFixture(): void {
 
 function paintClaude(claude: Record<string, unknown>): void {
   const tokens = readNumber(claude.tokens)
-  const percent = readNumber(claude.blockPercent) ?? readNumber(claude.percent)
+  const percent = readNumber(claude.blockPercent)
   rollTo('n1', tokens === null ? FIXTURE.claudeMTok : tokens / 1_000_000, 2)
-  if (percent !== null) text('#n1pct', String(Math.round(percent)))
-  fillTo('b1', percent ?? (tokens !== null ? 0 : FIXTURE.claudeBlockPct), 250)
+  text('#n1pct', percent === null ? '—' : String(Math.round(percent)))
+  fillTo('b1', percent ?? 0, 250)
   if (claude.available === false) text('#k-claude-auth', 'NO DATA')
 }
 
