@@ -44,7 +44,11 @@ const FIXTURE_JOBS: Job[] = [
   },
 ]
 
+const LIVE_POLL_MS = 5_000
+const ABSENT_POLL_MS = 60_000
+
 let stream: EventSource | null = null
+let timer: ReturnType<typeof setTimeout> | undefined
 
 function str(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value !== '' ? value : fallback
@@ -196,6 +200,12 @@ async function refresh(): Promise<void> {
   markFixture('jobs', useFixture)
   renderJobs(useFixture ? FIXTURE_JOBS : jobs)
   renderReview(useFixture ? FIXTURE_JOBS : jobs)
+  schedule(useFixture ? ABSENT_POLL_MS : LIVE_POLL_MS)
+}
+
+function schedule(delay: number): void {
+  clearTimeout(timer)
+  timer = setTimeout(() => void refresh(), delay)
 }
 
 function installForm(): void {
@@ -233,7 +243,6 @@ export function installDispatch(): void {
   }
   installForm()
   void refresh()
-  setInterval(() => void refresh(), 5000)
 }
 
 installDispatch()

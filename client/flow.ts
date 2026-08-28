@@ -1,4 +1,4 @@
-import { anime, getJson, markFixture, readRecord, token } from './shared'
+import { type Anime, type Animation, anime, getJson, markFixture, readRecord, token } from './shared'
 
 type StageState = 'done' | 'active' | 'queued' | 'future'
 type Stage = [StageState, string]
@@ -58,6 +58,16 @@ const PULSE = {
 let SESSIONS: Record<string, SessionFlow> = FIXTURE_SESSIONS
 let CUR = 'moni-audio-v2'
 
+let pulse: Animation | null = null
+
+function pulseActive(A: Anime): void {
+  pulse?.revert?.()
+  pulse = null
+  document.querySelectorAll<HTMLElement>('.node').forEach((n) => (n.style.boxShadow = ''))
+  if (document.querySelector('.node.active') === null) return
+  pulse = A.animate('.node.active', PULSE)
+}
+
 function parseSessions(raw: unknown): Record<string, SessionFlow> | null {
   const record = readRecord(raw)
   const parsed: Record<string, SessionFlow> = {}
@@ -92,7 +102,7 @@ export function setSession(k: string): void {
     .forEach((c) => c.classList.toggle('on', c.dataset.s === k))
   if (A !== null) {
     A.animate('.node', { opacity: { from: 0.2 }, duration: 350, ease: 'outQuad' })
-    A.animate('.node.active', PULSE)
+    pulseActive(A)
   }
   drawFlow()
 }
@@ -206,7 +216,7 @@ export function installFlow(): void {
       duration: 500,
       ease: 'outExpo',
     })
-    A.animate('.node.active', PULSE)
+    pulseActive(A)
   }
   document
     .querySelectorAll<HTMLElement>('.task[data-s]')

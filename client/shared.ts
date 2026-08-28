@@ -66,8 +66,10 @@ export function readArray(value: unknown): JsonRecord[] {
 
 export type AnimeParams = Record<string, unknown>
 
+export type Animation = { pause?: () => void; revert?: () => void }
+
 export type Anime = {
-  animate(targets: unknown, params: AnimeParams): { pause?: () => void }
+  animate(targets: unknown, params: AnimeParams): Animation
   stagger(value: number, options?: Record<string, unknown>): unknown
 }
 

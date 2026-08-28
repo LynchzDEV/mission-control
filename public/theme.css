@@ -149,11 +149,13 @@ body {
   color: var(--mc-fg);
 }
 
+/* the arrow layer covers the whole flow band, so it must not eat chip clicks */
 .fsvg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  pointer-events: none;
 }
 
 .arrowhead {

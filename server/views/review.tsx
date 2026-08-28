@@ -38,7 +38,7 @@ export function ReviewPage(): string {
           <div>
             <span class="msg" id="review-msg"></span>
           </div>
-          <div>COPY REVIEW CMD · cd &lt;cwd&gt; &amp;&amp; claude --continue</div>
+          <div safe>{'COPY REVIEW CMD · cd <cwd> && claude --continue'}</div>
         </div>
       </>
     ),
