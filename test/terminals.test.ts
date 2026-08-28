@@ -81,7 +81,7 @@ describe('createTerminal cwd validation', () => {
     const result = await registry.createTerminal({ engine: 'claude', cwd: plain })
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error('unreachable')
-    registry.kill(result.session.id)
+    registry.kill(result.terminal.id)
   })
 
   test('rejects a cwd that does not exist', async () => {
