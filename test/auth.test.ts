@@ -8,6 +8,7 @@ import {
   MAX_FAILED_ATTEMPTS,
   MIN_PASSWORD_LENGTH,
   SESSION_COOKIE,
+  allowToken,
   attemptLogin,
   completeSetup,
   createRateLimiter,
@@ -17,11 +18,12 @@ import {
   parseCookieHeader,
   resetLoginLimiter,
   signSessionToken,
+  verifyBearerToken,
   verifyCookieHeader,
   verifyPasswordHash,
   verifySessionToken,
 } from '../server/auth'
-import { readAuthRecord } from '../server/secrets'
+import { readApiToken, readAuthRecord } from '../server/secrets'
 
 const PASSWORD = 'correct-horse-battery'
 const SECRET = 'a'.repeat(64)
@@ -177,6 +179,61 @@ describe('login', () => {
     expect(await attemptLogin('wrong-password-here', 'ip')).toMatchObject({ status: 429 })
     expect(await attemptLogin(PASSWORD, 'ip')).toMatchObject({ ok: false, status: 429 })
     expect(await attemptLogin(PASSWORD, 'other-ip')).toMatchObject({ ok: true })
+  })
+})
+
+describe('allowToken', () => {
+  test('allows GET and POST on /api/jobs and its subpaths', () => {
+    expect(allowToken('/api/jobs', 'GET')).toBe(true)
+    expect(allowToken('/api/jobs', 'POST')).toBe(true)
+    expect(allowToken('/api/jobs/abc/log', 'GET')).toBe(true)
+    expect(allowToken('/api/jobs/abc/reviewed', 'POST')).toBe(true)
+    expect(allowToken('/api/jobs/abc/kill', 'POST')).toBe(true)
+  })
+
+  test('allows GET only on /api/flow, /api/quota, /api/meta', () => {
+    for (const path of ['/api/flow', '/api/quota', '/api/meta']) {
+      expect(allowToken(path, 'GET')).toBe(true)
+      expect(allowToken(path, 'POST')).toBe(false)
+    }
+  })
+
+  test('is case-insensitive on method', () => {
+    expect(allowToken('/api/jobs', 'get')).toBe(true)
+    expect(allowToken('/api/flow', 'get')).toBe(true)
+  })
+
+  test('rejects settings, secrets, and terminals paths entirely', () => {
+    for (const path of ['/api/secrets', '/api/secrets/api-token/reveal', '/api/terminals', '/settings']) {
+      expect(allowToken(path, 'GET')).toBe(false)
+      expect(allowToken(path, 'POST')).toBe(false)
+    }
+  })
+
+  test('rejects a path that merely shares the /api/jobs prefix without a separator', () => {
+    expect(allowToken('/api/jobsx', 'GET')).toBe(false)
+  })
+
+  test('rejects other methods on scoped paths', () => {
+    expect(allowToken('/api/jobs', 'DELETE')).toBe(false)
+    expect(allowToken('/api/flow', 'DELETE')).toBe(false)
+  })
+})
+
+describe('verifyBearerToken', () => {
+  test('accepts the real token and rejects a wrong one', async () => {
+    const token = await readApiToken()
+    expect(await verifyBearerToken(`Bearer ${token}`)).toBe(true)
+    expect(await verifyBearerToken(`Bearer ${token}x`)).toBe(false)
+    expect(await verifyBearerToken('Bearer wrong-token-entirely')).toBe(false)
+  })
+
+  test('rejects a missing or malformed header', async () => {
+    await readApiToken()
+    expect(await verifyBearerToken(null)).toBe(false)
+    expect(await verifyBearerToken('')).toBe(false)
+    expect(await verifyBearerToken('Bearer')).toBe(false)
+    expect(await verifyBearerToken('Basic dXNlcjpwYXNz')).toBe(false)
   })
 })
 
