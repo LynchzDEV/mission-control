@@ -3,6 +3,7 @@ import { appendFile, chmod, mkdir, readFile, stat } from 'node:fs/promises'
 import { chmodSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
+import { ACTIVITY_THROTTLE_MS, createActivityThrottle, currentActivity, parseActivity } from './activity'
 import { DIR_MODE, FILE_MODE, configDir, readSecrets } from './secrets'
 import { validateWorkspaceCwd } from './workspace'
 import type { EngineResolver, EngineSpawn } from './jobs-engine-iface'
@@ -11,6 +12,7 @@ export const JOBS_FILE = 'jobs.jsonl'
 export const LOGS_DIR = 'logs'
 export const KILL_ESCALATION_MS = 5_000
 export const MIN_REDACTED_SECRET_LENGTH = 8
+export const ACTIVITY_TAIL_CHARS = 16_384
 
 const REDACTED_PLACEHOLDER = '[REDACTED]'
 
@@ -53,6 +55,7 @@ export type JobManager = {
   markReviewed(id: string, at?: number): Promise<MarkReviewedResult>
   listJobs(): JobRecord[]
   getJob(id: string): JobRecord | undefined
+  currentActivity(id: string): string | null
   logPath(id: string): string
 }
 
@@ -164,8 +167,14 @@ async function pump(
   stream: ReadableStream<Uint8Array> | undefined,
   sink: NodeJS.WritableStream,
   redactor: LogRedactor,
+  onText: (text: string) => void = () => {},
 ): Promise<void> {
   if (stream === undefined) return
+  const write = (text: string): void => {
+    if (text === '') return
+    sink.write(text)
+    onText(text)
+  }
   const decoder = new TextDecoder()
   const reader = stream.getReader()
   for (;;) {
@@ -173,23 +182,18 @@ async function pump(
     if (done) break
     if (value !== undefined) {
       const text = decoder.decode(value, { stream: true })
-      if (text !== '') {
-        const redacted = redactor.redact(text)
-        if (redacted !== '') sink.write(redacted)
-      }
+      if (text !== '') write(redactor.redact(text))
     }
   }
   const tailText = decoder.decode()
-  if (tailText !== '') {
-    const redacted = redactor.redact(tailText)
-    if (redacted !== '') sink.write(redacted)
-  }
-  const flushed = redactor.flush()
-  if (flushed !== '') sink.write(flushed)
+  if (tailText !== '') write(redactor.redact(tailText))
+  write(redactor.flush())
 }
 
 export type JobManagerOptions = {
   home?: string
+  activityIntervalMs?: number
+  now?: () => number
 }
 
 export function createJobManager(options: JobManagerOptions = {}): JobManager {
@@ -198,10 +202,27 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   const logsDir = join(dir, LOGS_DIR)
   const jobs = loadJobs(jsonlPath)
   const home = options.home
+  const activityIntervalMs = options.activityIntervalMs ?? ACTIVITY_THROTTLE_MS
+  const clock = options.now ?? Date.now
   const processes = new Map<string, Bun.Subprocess<'ignore', 'pipe', 'pipe'>>()
+  const activities = new Map<string, string>()
+  const tails = new Map<string, string>()
 
   function logPath(id: string): string {
     return join(logsDir, `${id}.log`)
+  }
+
+  function refreshActivity(id: string): void {
+    const line = currentActivity(parseActivity(tails.get(id) ?? ''))
+    if (line !== null) activities.set(id, line)
+  }
+
+  function collectActivity(id: string, throttle: ReturnType<typeof createActivityThrottle>) {
+    return (text: string): void => {
+      const combined = (tails.get(id) ?? '') + text
+      tails.set(id, combined.slice(Math.max(0, combined.length - ACTIVITY_TAIL_CHARS)))
+      if (throttle.ready()) refreshActivity(id)
+    }
   }
 
   async function persist(record: JobRecord): Promise<void> {
@@ -223,11 +244,15 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     record: JobRecord,
     redactToken: string | null,
   ): Promise<void> {
+    const throttle = createActivityThrottle(activityIntervalMs, clock)
+    const collect = collectActivity(id, throttle)
     try {
       await Promise.all([
-        pump(proc.stdout, logStream, createLogRedactor(redactToken)),
-        pump(proc.stderr, logStream, createLogRedactor(redactToken)),
+        pump(proc.stdout, logStream, createLogRedactor(redactToken), collect),
+        pump(proc.stderr, logStream, createLogRedactor(redactToken), collect),
       ])
+      refreshActivity(id)
+      tails.delete(id)
       const exitCode = await proc.exited
       await new Promise<void>((resolveClose) => logStream.end(resolveClose))
       if (!streamState.failed) await chmod(logPath(id), FILE_MODE).catch(() => {})
@@ -238,6 +263,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       processes.delete(id)
       await persist({ ...record, status, endedAt: Date.now(), exitCode, diffStat })
     } catch {
+      tails.delete(id)
       await settleFailed(id, record)
     }
   }
@@ -334,7 +360,11 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     return jobs.get(id)
   }
 
-  return { createJob, killJob, markReviewed, listJobs, getJob, logPath }
+  function jobActivity(id: string): string | null {
+    return activities.get(id) ?? null
+  }
+
+  return { createJob, killJob, markReviewed, listJobs, getJob, currentActivity: jobActivity, logPath }
 }
 
 export async function readLogFile(path: string): Promise<string> {
