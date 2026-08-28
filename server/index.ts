@@ -17,6 +17,9 @@ import {
 } from './auth'
 import { quotaRoutes } from './routes/quota'
 import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
+import { createJobManager } from './jobs'
+import { realEngineResolver } from './jobs-engine-iface'
+import { jobsRoutes } from './routes/jobs'
 
 const ROOT = resolve(import.meta.dir, '..')
 const CLIENT_DIR = join(ROOT, 'client')
@@ -182,6 +185,7 @@ export async function createApp(): Promise<Elysia> {
     })
     .use(guardedApi())
     .use(quotaRoutes)
+    .use(jobsRoutes(createJobManager(), realEngineResolver))
 
   if (await publicDirExists()) {
     app.use(staticPlugin({ assets: PUBLIC_DIR, prefix: '' }))
