@@ -158,10 +158,24 @@ export function parseGlmLimitPayload(payload: unknown): GlmLimitPercentages | nu
 
   let fiveHourPct: number | null = null
   let monthlyPct: number | null = null
+  const creditEntries: Array<Record<string, unknown>> = []
   for (const item of limits) {
     if (!isRecord(item) || typeof item.percentage !== 'number') continue
     if (item.type === 'TOKENS_LIMIT') fiveHourPct = item.percentage
     if (item.type === 'TIME_LIMIT') monthlyPct = item.percentage
+    if (item.type === 'CREDIT_LIMIT') creditEntries.push(item)
+  }
+
+  // 2026-08 schema: CREDIT_LIMIT rows; unit 3 = hour window (number 5 → 5h), unit 6 = month.
+  if (fiveHourPct === null) {
+    for (const item of creditEntries) {
+      const pct = item.percentage as number
+      if (item.unit === 3) fiveHourPct = pct
+      else if (item.unit === 6) monthlyPct = monthlyPct ?? pct
+    }
+    if (fiveHourPct === null && creditEntries.length > 0) {
+      fiveHourPct = creditEntries[0].percentage as number
+    }
   }
 
   if (fiveHourPct === null) return null

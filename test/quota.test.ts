@@ -391,3 +391,14 @@ describe('fetchExternalSessions', () => {
     expect(await fetchExternalSessions(new Set(), run)).toEqual([])
   })
 })
+describe('glm CREDIT_LIMIT schema (2026-08)', () => {
+  test('maps unit 3 to fiveHourPct and unit 6 to monthlyPct', async () => {
+    const payload = JSON.parse(await fixture('zai-limit-credit.json'))
+    expect(parseGlmLimitPayload(payload)).toEqual({ fiveHourPct: 0, monthlyPct: 20 })
+  })
+  test('falls back to first credit entry when units are unknown', () => {
+    const payload = { data: { limits: [{ type: 'CREDIT_LIMIT', unit: 99, percentage: 42 }] } }
+    expect(parseGlmLimitPayload(payload)).toEqual({ fiveHourPct: 42, monthlyPct: null })
+  })
+})
+
