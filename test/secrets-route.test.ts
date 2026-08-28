@@ -69,8 +69,58 @@ describe('GET /api/secrets', () => {
     expect(body).toEqual({
       zaiBaseUrl: 'https://api.z.ai/api/anthropic',
       zaiAuthTokenConfigured: false,
+      apiTokenConfigured: true,
       bind: '127.0.0.1:7777',
     })
+  })
+})
+
+describe('POST /api/secrets/api-token/reveal', () => {
+  test('requires a cookie', async () => {
+    const response = await app.handle(
+      new Request('http://localhost/api/secrets/api-token/reveal', { method: 'POST' }),
+    )
+    expect(response.status).toBe(401)
+  })
+
+  test('returns the token value once per call', async () => {
+    const response = await app.handle(
+      new Request('http://localhost/api/secrets/api-token/reveal', {
+        method: 'POST',
+        headers: { cookie },
+      }),
+    )
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { apiToken: string }
+    expect(body.apiToken.startsWith('mct_')).toBe(true)
+  })
+})
+
+describe('POST /api/secrets/api-token/rotate', () => {
+  test('requires a cookie', async () => {
+    const response = await app.handle(
+      new Request('http://localhost/api/secrets/api-token/rotate', { method: 'POST' }),
+    )
+    expect(response.status).toBe(401)
+  })
+
+  test('invalidates the previous token', async () => {
+    const revealed = await app.handle(
+      new Request('http://localhost/api/secrets/api-token/reveal', { method: 'POST', headers: { cookie } }),
+    )
+    const before = ((await revealed.json()) as { apiToken: string }).apiToken
+
+    const rotated = await app.handle(
+      new Request('http://localhost/api/secrets/api-token/rotate', { method: 'POST', headers: { cookie } }),
+    )
+    expect(rotated.status).toBe(200)
+    const after = ((await rotated.json()) as { apiToken: string }).apiToken
+    expect(after).not.toBe(before)
+
+    const rejected = await app.handle(
+      new Request('http://localhost/api/jobs', { headers: { authorization: `Bearer ${before}` } }),
+    )
+    expect(rejected.status).toBe(401)
   })
 })
 
@@ -85,6 +135,7 @@ describe('POST /api/secrets', () => {
       ok: true,
       zaiBaseUrl: 'https://api.z.ai/api/anthropic',
       zaiAuthTokenConfigured: true,
+      apiTokenConfigured: true,
       bind: '127.0.0.1:7777',
     })
 

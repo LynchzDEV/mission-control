@@ -5,8 +5,10 @@ import {
   type PublicSecretsView,
   parseBind,
   publicView,
+  readApiToken,
   readConfig,
   readSecrets,
+  rotateApiToken,
   writeConfig,
   writeSecrets,
 } from '../secrets'
@@ -45,8 +47,8 @@ function validUrl(value: string): boolean {
 }
 
 export async function currentView(): Promise<SecretsResponse> {
-  const [secrets, config] = await Promise.all([readSecrets(), readConfig()])
-  return { ...publicView(secrets), bind: config.bind }
+  const [secrets, config, apiToken] = await Promise.all([readSecrets(), readConfig(), readApiToken()])
+  return { ...publicView({ ...secrets, apiToken }), bind: config.bind }
 }
 
 export async function applyPatch(
@@ -95,3 +97,5 @@ export const secretsRoutes = new Elysia()
     }
     return { ok: true, ...result.view }
   })
+  .post('/api/secrets/api-token/reveal', async () => ({ apiToken: await readApiToken() }))
+  .post('/api/secrets/api-token/rotate', async () => ({ apiToken: await rotateApiToken() }))
