@@ -18,8 +18,10 @@ import {
 import { quotaRoutes } from './routes/quota'
 import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
 import { createJobManager } from './jobs'
+import { createTerminalRegistry } from './terminals'
 import { realEngineResolver } from './jobs-engine-iface'
 import { jobsRoutes } from './routes/jobs'
+import { terminalsRoutes } from './routes/terminals'
 import { flowRoutes } from './routes/flow'
 import { currentView, secretsRoutes } from './routes/secrets'
 import { DispatchPage } from './views/dispatch'
@@ -208,6 +210,7 @@ export async function createApp(): Promise<Elysia> {
     .use(guardedApi())
     .use(quotaRoutes)
     .use(jobsRoutes(createJobManager(), realEngineResolver))
+    .use(terminalsRoutes(createTerminalRegistry()))
     .use(flowRoutes)
     .use(secretsRoutes)
 
