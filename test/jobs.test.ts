@@ -7,13 +7,14 @@ import {
   JOBS_FILE,
   LOGS_DIR,
   createJobManager,
+  createLogRedactor,
   readLogSince,
   readLogTail,
   validateJobCwd,
 } from '../server/jobs'
 import type { JobManager, JobRecord } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
-import { configPath } from '../server/secrets'
+import { configPath, writeSecrets } from '../server/secrets'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 
 let configDir: string
@@ -195,6 +196,34 @@ describe('job lifecycle', () => {
     expect(finished?.diffStat).toContain('README.md')
   })
 
+  test('a job whose engine echoes the configured zai token never writes it to the log file', async () => {
+    const TOKEN = 'super-secret-zai-token-abcdef123456'
+    await writeSecrets({ zaiAuthToken: TOKEN })
+
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const manager = createJobManager({ home })
+    const echoTokenResolver: EngineResolver = () => ({
+      cmd: 'echo',
+      args: [`leaking ${TOKEN} in verbose output`],
+      env: {},
+    })
+
+    const result = await manager.createJob(
+      { engine: 'glm', cwd: repo, prompt: 'irrelevant', label: 'redact' },
+      echoTokenResolver,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const finished = await waitForStatus(manager, result.job.id)
+    expect(finished?.status).toBe('done')
+
+    const log = await readFile(manager.logPath(result.job.id), 'utf8')
+    expect(log).toContain('[REDACTED]')
+    expect(log).not.toContain(TOKEN)
+  })
+
   test('listJobs returns newest first', async () => {
     const repo = join(home, 'repo')
     await initGitRepo(repo)
@@ -217,6 +246,48 @@ describe('job lifecycle', () => {
     const firstIndex = listed.findIndex((job) => job.id === first.job.id)
     const secondIndex = listed.findIndex((job) => job.id === second.job.id)
     expect(secondIndex).toBeLessThan(firstIndex)
+  })
+})
+
+describe('createLogRedactor', () => {
+  const TOKEN = 'zai-token-1234567890'
+
+  test('redacts a token fully contained within one chunk', () => {
+    const redactor = createLogRedactor(TOKEN)
+    const out = redactor.redact(`before ${TOKEN} after`) + redactor.flush()
+    expect(out).toBe('before [REDACTED] after')
+    expect(out).not.toContain(TOKEN)
+  })
+
+  test('redacts a token split across two chunk writes', () => {
+    const redactor = createLogRedactor(TOKEN)
+    const splitAt = Math.floor(TOKEN.length / 2)
+    const first = redactor.redact(`before ${TOKEN.slice(0, splitAt)}`)
+    const second = redactor.redact(`${TOKEN.slice(splitAt)} after`)
+    const out = first + second + redactor.flush()
+    expect(out).toBe('before [REDACTED] after')
+    expect(out).not.toContain(TOKEN)
+  })
+
+  test('leaves a chunk with no token untouched', () => {
+    const redactor = createLogRedactor(TOKEN)
+    const text = 'nothing sensitive in this line\n'
+    const out = redactor.redact(text) + redactor.flush()
+    expect(out).toBe(text)
+  })
+
+  test('disables redaction when the secret is shorter than the minimum length', () => {
+    const redactor = createLogRedactor('short1')
+    const text = 'contains short1 verbatim'
+    const out = redactor.redact(text) + redactor.flush()
+    expect(out).toBe(text)
+  })
+
+  test('passes chunks through unchanged when no secret is configured', () => {
+    const redactor = createLogRedactor(null)
+    const text = 'anything goes here'
+    const out = redactor.redact(text) + redactor.flush()
+    expect(out).toBe(text)
   })
 })
 

@@ -3,13 +3,16 @@ import { appendFile, chmod, mkdir, readFile, stat } from 'node:fs/promises'
 import { chmodSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { DIR_MODE, FILE_MODE, configDir } from './secrets'
+import { DIR_MODE, FILE_MODE, configDir, readSecrets } from './secrets'
 import { validateWorkspaceCwd } from './workspace'
 import type { EngineResolver, EngineSpawn } from './jobs-engine-iface'
 
 export const JOBS_FILE = 'jobs.jsonl'
 export const LOGS_DIR = 'logs'
 export const KILL_ESCALATION_MS = 5_000
+export const MIN_REDACTED_SECRET_LENGTH = 8
+
+const REDACTED_PLACEHOLDER = '[REDACTED]'
 
 export type JobStatus = 'running' | 'done' | 'failed'
 
@@ -102,14 +105,77 @@ async function captureDiffStat(cwd: string): Promise<string | null> {
   }
 }
 
-async function pump(stream: ReadableStream<Uint8Array> | undefined, sink: NodeJS.WritableStream): Promise<void> {
+export type LogRedactor = {
+  redact(chunk: string): string
+  flush(): string
+}
+
+// The longest suffix of `text` that is also a prefix of `secret` (capped at maxLen) — the
+// part of `text` that could still grow into a full match once more input arrives.
+function suffixPrefixOverlap(text: string, secret: string, maxLen: number): number {
+  const upper = Math.min(maxLen, text.length)
+  for (let len = upper; len > 0; len--) {
+    if (text.endsWith(secret.slice(0, len))) return len
+  }
+  return 0
+}
+
+// Holds back only the trailing chars of unprocessed input that could still be the start of
+// a secret continuing into the next chunk, so a secret split across two writes is still
+// matched once the next chunk arrives.
+export function createLogRedactor(secret: string | null): LogRedactor {
+  if (secret === null || secret.length < MIN_REDACTED_SECRET_LENGTH) {
+    return { redact: (chunk) => chunk, flush: () => '' }
+  }
+  const holdBack = secret.length - 1
+  let carry = ''
+
+  return {
+    redact(chunk: string): string {
+      const combined = carry + chunk
+      const replaced = combined.split(secret).join(REDACTED_PLACEHOLDER)
+      const overlap = suffixPrefixOverlap(combined, secret, holdBack)
+      if (overlap === 0) {
+        carry = ''
+        return replaced
+      }
+      carry = combined.slice(combined.length - overlap)
+      return replaced.slice(0, replaced.length - overlap)
+    },
+    flush(): string {
+      const remaining = carry
+      carry = ''
+      return remaining
+    },
+  }
+}
+
+async function pump(
+  stream: ReadableStream<Uint8Array> | undefined,
+  sink: NodeJS.WritableStream,
+  redactor: LogRedactor,
+): Promise<void> {
   if (stream === undefined) return
+  const decoder = new TextDecoder()
   const reader = stream.getReader()
   for (;;) {
     const { done, value } = await reader.read()
     if (done) break
-    if (value !== undefined) sink.write(value)
+    if (value !== undefined) {
+      const text = decoder.decode(value, { stream: true })
+      if (text !== '') {
+        const redacted = redactor.redact(text)
+        if (redacted !== '') sink.write(redacted)
+      }
+    }
   }
+  const tailText = decoder.decode()
+  if (tailText !== '') {
+    const redacted = redactor.redact(tailText)
+    if (redacted !== '') sink.write(redacted)
+  }
+  const flushed = redactor.flush()
+  if (flushed !== '') sink.write(flushed)
 }
 
 export type JobManagerOptions = {
@@ -145,9 +211,13 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     streamState: { failed: boolean },
     cwd: string,
     record: JobRecord,
+    redactToken: string | null,
   ): Promise<void> {
     try {
-      await Promise.all([pump(proc.stdout, logStream), pump(proc.stderr, logStream)])
+      await Promise.all([
+        pump(proc.stdout, logStream, createLogRedactor(redactToken)),
+        pump(proc.stderr, logStream, createLogRedactor(redactToken)),
+      ])
       const exitCode = await proc.exited
       await new Promise<void>((resolveClose) => logStream.end(resolveClose))
       if (!streamState.failed) await chmod(logPath(id), FILE_MODE).catch(() => {})
@@ -182,6 +252,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       streamState.failed = true
     })
 
+    const secrets = await readSecrets()
+
     let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>
     try {
       proc = Bun.spawn([spawnSpec.cmd, ...spawnSpec.args], {
@@ -211,9 +283,15 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     }
     await persist(record)
 
-    void finalizeJob(id, proc, logStream, streamState, cwdCheck.path, record).catch(() =>
-      settleFailed(id, record).catch(() => {}),
-    )
+    void finalizeJob(
+      id,
+      proc,
+      logStream,
+      streamState,
+      cwdCheck.path,
+      record,
+      secrets.zaiAuthToken,
+    ).catch(() => settleFailed(id, record).catch(() => {}))
 
     return { ok: true, job: record }
   }
