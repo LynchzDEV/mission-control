@@ -68,7 +68,7 @@ async function pollUntilDone(
   const deadline = Date.now() + timeoutMs
   for (;;) {
     const response = await app.handle(get('/api/jobs', cookie))
-    const jobs = (await response.json()) as Array<{ id: string; status: string; diffStat: string | null }>
+    const { jobs } = (await response.json()) as { jobs: Array<{ id: string; status: string; diffStat: string | null }> }
     const job = jobs.find((entry) => entry.id === id)
     if (job !== undefined && job.status !== 'running') return job
     if (Date.now() > deadline) throw new Error(`job ${id} did not settle within ${timeoutMs}ms`)
@@ -137,7 +137,7 @@ describe('GET /api/jobs', () => {
     const job = (await created.json()) as { id: string }
 
     const response = await app.handle(get('/api/jobs', cookie))
-    const jobs = (await response.json()) as Array<{ label: string }>
+    const { jobs } = (await response.json()) as { jobs: Array<{ label: string }> }
     expect(jobs.some((entry) => entry.label === 'listed')).toBe(true)
 
     await pollUntilDone(app, cookie, job.id)
@@ -251,6 +251,6 @@ describe('mounted in the real app', () => {
 
     const listed = await app.handle(get('/api/jobs', cookie))
     expect(listed.status).toBe(200)
-    expect(await listed.json()).toEqual([])
+    expect(await listed.json()).toEqual({ jobs: [] })
   })
 })

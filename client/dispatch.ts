@@ -194,8 +194,7 @@ function openLog(job: Job): void {
 
 async function refresh(): Promise<void> {
   const result = await getJson('/api/jobs')
-  const raw = Array.isArray(result.data.jobs) ? result.data.jobs : result.data
-  const jobs = result.ok ? readArray(raw).map(toJob) : []
+  const jobs = result.ok ? readArray(result.data.jobs).map(toJob) : []
   const useFixture = !result.ok
   markFixture('jobs', useFixture)
   renderJobs(useFixture ? FIXTURE_JOBS : jobs)

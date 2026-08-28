@@ -106,7 +106,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
       }
       return result.job
     })
-    .get('/api/jobs', () => manager.listJobs())
+    .get('/api/jobs', () => ({ jobs: manager.listJobs() }))
     .get('/api/jobs/:id/log', async ({ params, set }) => {
       const job = manager.getJob(params.id)
       if (job === undefined) {

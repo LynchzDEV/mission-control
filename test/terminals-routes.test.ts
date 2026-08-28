@@ -177,7 +177,7 @@ describe('POST /api/terminals', () => {
     expect(terminal.pid).toBeGreaterThan(0)
 
     const listed = await app.handle(request('/api/terminals', 'GET', cookie))
-    const sessions = (await listed.json()) as Array<{ id: string }>
+    const { sessions } = (await listed.json()) as { sessions: Array<{ id: string }> }
     expect(sessions.map((entry) => entry.id)).toEqual([terminal.id])
   })
 })
@@ -341,6 +341,6 @@ describe('mounted in the real app', () => {
 
     const listed = await app.handle(request('/api/terminals', 'GET', cookie))
     expect(listed.status).toBe(200)
-    expect(await listed.json()).toEqual([])
+    expect(await listed.json()).toEqual({ sessions: [] })
   })
 })
