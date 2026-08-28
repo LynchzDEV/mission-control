@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="theme-tokens.css">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/animejs@4.0.2/lib/anime.iife.min.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:var(--mc-bg);color:var(--mc-fg);font-family:var(--mc-font-mono);font-size:13px;height:100vh;overflow:hidden}
+.top{display:flex;justify-content:space-between;align-items:center;padding:14px 28px;font-size:10px;letter-spacing:.2em;color:var(--mc-fg-dim);border-bottom:1px solid var(--mc-border)}
+.top .l{font-family:var(--mc-font-pixel);font-size:12px;color:var(--mc-green)}
+.cols{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid var(--mc-border)}
+.col{border-right:1px solid var(--mc-border);opacity:0}
+.col:last-child{border-right:0}
+.chead{padding:22px 24px;border-bottom:1px solid var(--mc-border)}
+.chead .nm{font-family:var(--mc-font-pixel);font-size:13px}
+.chead .role{font-size:9px;letter-spacing:.25em;color:var(--mc-fg-dim);margin-top:8px}
+.frow{display:grid;grid-template-columns:110px 1fr 64px;gap:12px;align-items:center;padding:16px 24px;border-bottom:1px solid #1a1a20;min-height:64px}
+.frow:last-child{border-bottom:0}
+.frow .k{font-size:9px;letter-spacing:.2em;color:var(--mc-fg-dim)}
+.frow .v{font-size:12px}
+.frow .v input{width:100%;background:var(--mc-bg-raised);border:1px solid var(--mc-border);color:var(--mc-fg);padding:9px 10px;font-family:var(--mc-font-mono);font-size:12px}
+.frow .v input:focus{outline:none;border-color:var(--mc-green)}
+.frow .a{text-align:right}
+.frow .a a{font-size:9px;letter-spacing:.15em;color:var(--mc-fg-dim);text-decoration:none;border-bottom:1px solid var(--mc-border);padding-bottom:2px}
+.frow .a a:hover{color:var(--mc-fg)}
+.pill{display:inline-block;font-size:9px;letter-spacing:.15em;padding:4px 8px;border:1px solid var(--mc-border)}
+.ok{color:var(--mc-green);border-color:var(--mc-green)}
+.bad{color:var(--mc-red);border-color:var(--mc-red)}
+.setpill{color:var(--mc-fg);border-color:var(--mc-fg-dim)}
+.app{display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid var(--mc-border)}
+.app .frow{border-right:1px solid var(--mc-border);border-bottom:0}
+.app .frow:last-child{border-right:0}
+.applab{padding:16px 28px 0;font-size:9px;letter-spacing:.25em;color:var(--mc-fg-dim)}
+.foot{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:space-between;padding:14px 28px;font-size:10px;letter-spacing:.2em;color:var(--mc-fg-dim);border-top:1px solid var(--mc-border)}
+.c-claude{color:var(--mc-coral)}.c-glm{color:var(--mc-cyan)}.c-white{color:var(--mc-white)}.c-red{color:var(--mc-red)}.c-green{color:var(--mc-green)}
+</style></head><body>
+
+<div class="top">
+  <div class="l">MISSION CONTROL</div>
+  <div>SETTINGS · all values stored server-side · tokens never echoed</div>
+</div>
+
+<div class="cols">
+  <div class="col">
+    <div class="chead"><div class="nm c-claude">CLAUDE</div><div class="role">TECH LEAD · ANTHROPIC SUB</div></div>
+    <div class="frow"><div class="k">AUTH</div><div class="v"><span class="pill ok">LOGGED IN</span></div><div class="a"><a href="#">TEST</a></div></div>
+    <div class="frow"><div class="k">BINARY</div><div class="v">claude 2.1.34</div><div class="a"><a href="#">CHECK</a></div></div>
+    <div class="frow"><div class="k">QUOTA SRC</div><div class="v">ccusage blocks --json</div><div class="a"><a href="#">RUN</a></div></div>
+    <div class="frow"><div class="k">ROLE</div><div class="v">spec · review · verify · merge</div><div class="a"></div></div>
+  </div>
+
+  <div class="col">
+    <div class="chead"><div class="nm c-glm">GLM</div><div class="role">JUNIOR FLEET · Z.AI CODING PLAN</div></div>
+    <div class="frow"><div class="k">API TOKEN</div><div class="v"><span class="pill setpill">SET ●●●</span></div><div class="a"><a href="#">REPLACE</a></div></div>
+    <div class="frow"><div class="k">BASE URL</div><div class="v"><input value="https://api.z.ai/api/anthropic"></div><div class="a"><a href="#">SAVE</a></div></div>
+    <div class="frow"><div class="k">MODEL MAP</div><div class="v">opus/sonnet/haiku → glm-5.3-flash</div><div class="a"><a href="#">EDIT</a></div></div>
+    <div class="frow"><div class="k">CONNECTION</div><div class="v"><span class="pill ok">QUOTA API OK</span></div><div class="a"><a href="#">TEST</a></div></div>
+  </div>
+
+  <div class="col">
+    <div class="chead"><div class="nm c-white">CODEX</div><div class="role">OUTSIDE CRITIC · CHATGPT PRO</div></div>
+    <div class="frow"><div class="k">OAUTH</div><div class="v"><span class="pill bad">EXPIRED · exit 1</span></div><div class="a"><a href="#" class="c-red">RE-AUTH</a></div></div>
+    <div class="frow"><div class="k">BINARY</div><div class="v">codex 0.29.0</div><div class="a"><a href="#">CHECK</a></div></div>
+    <div class="frow"><div class="k">QUOTA SRC</div><div class="v">none · login status only</div><div class="a"></div></div>
+    <div class="frow"><div class="k">ROLE</div><div class="v">cross-review · overflow impl</div><div class="a"></div></div>
+  </div>
+</div>
+
+<div class="applab">APP</div>
+<div class="app">
+  <div class="frow"><div class="k">PASSWORD</div><div class="v"><input type="password" placeholder="new password (min 10)"></div><div class="a"><a href="#">CHANGE</a></div></div>
+  <div class="frow"><div class="k">BIND</div><div class="v"><input value="127.0.0.1:7777"></div><div class="a"><a href="#">SAVE</a></div></div>
+  <div class="frow"><div class="k">GLM PEAK</div><div class="v">warn before dispatch in peak window</div><div class="a"><span class="pill ok">ON</span></div></div>
+</div>
+
+<div class="foot"><div>SSE ● WS ●</div><div>SETTINGS · symmetric 3-col, mirrors lanes racks</div></div>
+
+<script>
+const {animate,stagger}=window.anime;
+animate('.col',{opacity:[0,1],translateY:[14,0],delay:stagger(120),duration:550,ease:'outExpo'});
+animate('.app .frow',{opacity:[0,1],delay:stagger(90,{start:450}),duration:400,ease:'outQuad'});
+</script>
+</body></html>
