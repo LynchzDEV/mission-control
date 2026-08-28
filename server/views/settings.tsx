@@ -4,6 +4,7 @@ import { Layout } from './layout'
 export type SettingsProps = {
   zaiBaseUrl: string
   zaiAuthTokenConfigured: boolean
+  apiTokenConfigured: boolean
   bind: string
   minPasswordLength: number
 }
@@ -226,6 +227,24 @@ function AppBand(props: SettingsProps): JSX.Element {
         label: 'GLM PEAK',
         value: 'warn before dispatch in peak window',
         action: <span class="pill ok">ON</span>,
+      })}
+      {Row({
+        label: 'API TOKEN',
+        value: (
+          <span class={`pill ${props.apiTokenConfigured ? 'setpill' : 'bad'}`} id="s-api-token">
+            {props.apiTokenConfigured ? 'SET ●●●' : 'UNSET'}
+          </span>
+        ),
+        action: (
+          <>
+            <button type="button" data-api-token-reveal="reveal" data-status="s-msg">
+              REVEAL
+            </button>
+            <button type="button" data-api-token-rotate="rotate" data-status="s-msg">
+              ROTATE
+            </button>
+          </>
+        ),
       })}
     </div>
   )

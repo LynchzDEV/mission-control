@@ -82,6 +82,46 @@ function installSecretRows(): void {
   })
 }
 
+function installApiTokenRow(): void {
+  const revealButton = document.querySelector<HTMLElement>('[data-api-token-reveal]')
+  const rotateButton = document.querySelector<HTMLElement>('[data-api-token-rotate]')
+  const pillEl = document.querySelector<HTMLElement>('#s-api-token')
+
+  function status(button: HTMLElement): HTMLElement | null {
+    return document.querySelector<HTMLElement>(`#${button.dataset.status ?? ''}`)
+  }
+
+  revealButton?.addEventListener('click', async (event) => {
+    event.preventDefault()
+    const result = await postJson('/api/secrets/api-token/reveal', {})
+    if (!result.ok) {
+      say(status(revealButton), errorText(result).toUpperCase(), false)
+      return
+    }
+    const value = typeof result.data.apiToken === 'string' ? result.data.apiToken : ''
+    try {
+      await navigator.clipboard.writeText(value)
+      say(status(revealButton), `${value} · COPIED`, true)
+    } catch {
+      say(status(revealButton), value, true)
+    }
+  })
+
+  rotateButton?.addEventListener('click', async (event) => {
+    event.preventDefault()
+    const result = await postJson('/api/secrets/api-token/rotate', {})
+    if (!result.ok) {
+      say(status(rotateButton), errorText(result).toUpperCase(), false)
+      return
+    }
+    if (pillEl !== null) {
+      pillEl.textContent = 'SET ●●●'
+      pillEl.className = 'pill setpill'
+    }
+    say(status(rotateButton), 'ROTATED', true)
+  })
+}
+
 function installTodoRows(): void {
   document.querySelectorAll<HTMLElement>('[data-todo]').forEach((button) => {
     button.addEventListener('click', (event) => {
@@ -149,6 +189,7 @@ function installColumnEntrance(): void {
 
 installGate()
 installSecretRows()
+installApiTokenRow()
 installTodoRows()
 installStatusProbes()
 installColumnEntrance()
