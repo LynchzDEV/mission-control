@@ -96,15 +96,42 @@ describe('POST /api/secrets', () => {
     expect(JSON.parse(readBack).zaiAuthTokenConfigured).toBe(true)
   })
 
-  test('updates the base url and the bind address', async () => {
+  test('updates the base url and a non-wildcard bind address', async () => {
     const response = await app.handle(
-      post({ zaiBaseUrl: 'https://proxy.example.com/anthropic', bind: '0.0.0.0:7788' }),
+      post({ zaiBaseUrl: 'https://proxy.example.com/anthropic', bind: '100.101.102.103:7788' }),
     )
     expect(response.status).toBe(200)
 
     const body = await (await app.handle(get())).json()
     expect(body.zaiBaseUrl).toBe('https://proxy.example.com/anthropic')
+    expect(body.bind).toBe('100.101.102.103:7788')
+  })
+
+  test('rejects a 0.0.0.0 bind without confirmAnyInterface', async () => {
+    const response = await app.handle(post({ bind: '0.0.0.0:7788' }))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: 'any-interface bind requires confirmAnyInterface:true',
+    })
+
+    const body = await (await app.handle(get())).json()
+    expect(body.bind).toBe('127.0.0.1:7777')
+  })
+
+  test('accepts a 0.0.0.0 bind when confirmAnyInterface is true', async () => {
+    const response = await app.handle(post({ bind: '0.0.0.0:7788', confirmAnyInterface: true }))
+    expect(response.status).toBe(200)
+
+    const body = await (await app.handle(get())).json()
     expect(body.bind).toBe('0.0.0.0:7788')
+  })
+
+  test('accepts a tailscale-style non-wildcard IP without confirmAnyInterface', async () => {
+    const response = await app.handle(post({ bind: '100.64.1.2:7788' }))
+    expect(response.status).toBe(200)
+
+    const body = await (await app.handle(get())).json()
+    expect(body.bind).toBe('100.64.1.2:7788')
   })
 
   test('a partial write leaves the other values alone', async () => {
