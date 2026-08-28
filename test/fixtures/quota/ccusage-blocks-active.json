@@ -31,6 +31,12 @@
         "projectedUsage": 101000000,
         "percentUsed": 68.4,
         "status": "ok"
+      },
+      "tokenCounts": {
+        "inputTokens": 631,
+        "outputTokens": 88583,
+        "cacheCreationInputTokens": 1699499,
+        "cacheReadInputTokens": 56698594
       }
     }
   ]

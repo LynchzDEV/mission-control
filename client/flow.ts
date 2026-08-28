@@ -162,9 +162,15 @@ async function hydrate(): Promise<void> {
     return
   }
   SESSIONS = parsed
+  markFixture('flow', false)
+  const flowEl = document.querySelector('.flow')
+  if (Object.keys(parsed).length === 0) {
+    if (flowEl !== null) flowEl.classList.add('empty')
+    return
+  }
+  if (flowEl !== null) flowEl.classList.remove('empty')
   const current = result.data.current
   CUR = typeof current === 'string' && parsed[current] !== undefined ? current : (Object.keys(parsed)[0] ?? '')
-  markFixture('flow', false)
   buildChips()
   setSession(CUR)
 }

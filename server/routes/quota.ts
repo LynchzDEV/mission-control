@@ -9,7 +9,10 @@ export const tokenSampler: TokenSampler = createTokenSampler()
 
 export const quotaCache = createQuotaCache<QuotaComposite>(async () => {
   const composite = await fetchQuotaComposite(await readSecrets())
-  if (composite.claude.available) tokenSampler.record(composite.claude.tokens, Date.now())
+  if (composite.claude.available) {
+    const burn = composite.claude.nonCacheTokens ?? null
+    if (burn !== null) tokenSampler.record(burn, Date.now())
+  }
   return composite
 })
 

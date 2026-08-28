@@ -951,3 +951,6 @@ table.grid tr.empty td {
   letter-spacing: normal;
   text-align: left;
 }
+
+.flow.empty .node,.flow.empty .fsvg,.flow.empty .alabel{display:none}
+.flow.empty::after{content:'NO ACTIVE SESSIONS \00b7 DISPATCH A JOB TO SEE ITS FLOW';position:absolute;left:0;right:0;top:96px;text-align:center;font-size:10px;letter-spacing:.25em;color:var(--mc-fg-dim)}

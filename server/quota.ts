@@ -51,6 +51,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+function readNonCacheTokens(block: Record<string, unknown>): number | null {
+  const counts = block.tokenCounts
+  if (!isRecord(counts)) return null
+  const input = typeof counts.inputTokens === 'number' ? counts.inputTokens : null
+  const output = typeof counts.outputTokens === 'number' ? counts.outputTokens : null
+  if (input === null && output === null) return null
+  return (input ?? 0) + (output ?? 0)
+}
+
 function readBlockPercent(block: Record<string, unknown>): number | null {
   const status = block.tokenLimitStatus
   if (!isRecord(status) || typeof status.percentUsed !== 'number') return null
@@ -65,12 +74,12 @@ export function parseCcusageBlocksJson(raw: string): ClaudeQuota {
     }
     const active = parsed.blocks.find((block) => isRecord(block) && block.isActive === true)
     if (active === undefined) {
-      return { available: true, active: false, tokens: 0, costUSD: null, resetsAt: null, blockPercent: null }
+      return { available: true, active: false, tokens: 0, costUSD: null, resetsAt: null, blockPercent: null, nonCacheTokens: null }
     }
     const tokens = typeof active.totalTokens === 'number' ? active.totalTokens : 0
     const costUSD = typeof active.costUSD === 'number' ? active.costUSD : null
     const resetsAt = typeof active.endTime === 'string' ? active.endTime : null
-    return { available: true, active: true, tokens, costUSD, resetsAt, blockPercent: readBlockPercent(active) }
+    return { available: true, active: true, tokens, costUSD, resetsAt, blockPercent: readBlockPercent(active), nonCacheTokens: readNonCacheTokens(active) }
   } catch {
     return { available: false, reason: 'malformed ccusage blocks json' }
   }

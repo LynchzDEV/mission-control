@@ -96,8 +96,15 @@ function paintClaude(claude: JsonRecord): void {
 
 function paintGlm(glm: JsonRecord, peak: JsonRecord): void {
   const percent = readNumber(glm.fiveHourPct) ?? readNumber(glm.percent) ?? readNumber(glm.usedPercent)
-  rollTo('n2', percent ?? FIXTURE.glmPct, 0)
-  fillTo('b2', percent ?? FIXTURE.glmPct, 350)
+  if (glm.available === false) {
+    text('#n2', '—')
+    fillTo('b2', 0, 0)
+    const sub = document.getElementById('n2sub')
+    if (sub !== null) sub.textContent = 'NOT CONFIGURED · SET TOKEN IN SETTINGS'
+  } else {
+    rollTo('n2', percent ?? 0, 0)
+    fillTo('b2', percent ?? 0, 350)
+  }
   const minutes = readNumber(peak.minutesToChange)
   const label = peak.peak === true ? 'PEAK x2' : 'OFF-PEAK'
   text('#n2peak', minutes === null ? label : `${label} ${minutes}m`)

@@ -139,7 +139,7 @@ function Racks(): JSX.Element {
             <span id="n2">0</span>
             <small>
               {' '}
-              % OF 5H · <span id="n2peak">PEAK —</span>
+              <span id="n2sub">% OF 5H</span> · <span id="n2peak">PEAK —</span>
             </small>
             <span class="fixture" data-src="quota">
               FIXTURE
