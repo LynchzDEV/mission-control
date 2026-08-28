@@ -137,6 +137,14 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
       }
       return createLogStreamResponse(manager.logPath(params.id), request.signal)
     })
+    .post('/api/jobs/:id/reviewed', async ({ params, set }) => {
+      const result = await manager.markReviewed(params.id)
+      if (!result.ok) {
+        set.status = result.status
+        return { error: result.error }
+      }
+      return result.job
+    })
     .post('/api/jobs/:id/kill', async ({ params, set }) => {
       const result = await manager.killJob(params.id)
       if (!result.ok) {
