@@ -198,6 +198,14 @@ describe('allowToken', () => {
     }
   })
 
+  test('allows POST/PATCH on per-label plan endpoints', () => {
+    expect(allowToken('/api/flow/my-ticket/plan', 'POST')).toBe(true)
+    expect(allowToken('/api/flow/my-ticket/plan/2', 'PATCH')).toBe(true)
+    expect(allowToken('/api/flow/my-ticket/plan', 'GET')).toBe(false)
+    expect(allowToken('/api/flow/my-ticket/plan/x', 'PATCH')).toBe(false)
+    expect(allowToken('/api/flow/my-ticket/other', 'POST')).toBe(false)
+  })
+
   test('is case-insensitive on method', () => {
     expect(allowToken('/api/jobs', 'get')).toBe(true)
     expect(allowToken('/api/flow', 'get')).toBe(true)
