@@ -7,6 +7,10 @@ import {
   STORE_KEY,
   clampFlowH,
   clampPanelH,
+  fitVerticalLayout,
+  isDefaultLayout,
+  maxFlowH,
+  maxPanelH,
   normalizePair,
   normalizeTriple,
   parseLayout,
@@ -29,7 +33,6 @@ type DragStart = {
   rackFr: [number, number, number]
   planFr: [number, number]
   containerPx: number
-  maxPx: number
 }
 
 let layout: LayoutState = { ...DEFAULT_LAYOUT }
@@ -69,6 +72,10 @@ function activityColEl(): HTMLElement | null {
   return document.getElementById('activity-col')
 }
 
+function resetButtonEl(): HTMLElement | null {
+  return document.getElementById('reset-layout')
+}
+
 function panelVisible(): boolean {
   const panel = panelEl()
   return panel !== null && !panel.classList.contains('off')
@@ -93,6 +100,35 @@ function applyLayout(): void {
   setVar(body, '--panel-h', layout.panelH, 'px')
   setFrVars(body, ['--rack-1', '--rack-2', '--rack-3'], layout.rackFr)
   setFrVars(body, ['--plan-1', '--plan-2'], layout.planFr)
+  syncResetButton()
+}
+
+function syncResetButton(): void {
+  resetButtonEl()?.classList.toggle('off', isDefaultLayout(layout))
+}
+
+function heightOf(el: HTMLElement | null): number {
+  return el === null ? 0 : el.getBoundingClientRect().height
+}
+
+function viewportH(): number {
+  return bodyEl()?.clientHeight ?? 0
+}
+
+function panelH(): number {
+  return panelVisible() ? heightOf(panelEl()) : 0
+}
+
+function refitVertical(): void {
+  if (layout.flowH === null && layout.panelH === null) return
+  const flowNow = layout.flowH ?? heightOf(flowEl())
+  const panelNow = panelVisible() ? (layout.panelH ?? heightOf(panelEl())) : 0
+  const fit = fitVerticalLayout(flowNow, panelNow, viewportH())
+  const flowH = layout.flowH === null ? null : Math.round(fit.flowH)
+  const panelHeight = layout.panelH === null || !panelVisible() ? layout.panelH : Math.round(fit.panelH)
+  if (flowH === layout.flowH && panelHeight === layout.panelH) return
+  layout = { ...layout, flowH, panelH: panelHeight }
+  applyLayout()
 }
 
 function loadLayout(): LayoutState {
@@ -111,7 +147,9 @@ function saveLayout(): void {
   }
 }
 
-function positionHorizontal(kind: DividerKind, edge: number | null, body: DOMRect): void {
+type Origin = { top: number; left: number }
+
+function positionHorizontal(kind: DividerKind, edge: number | null, origin: Origin): void {
   const el = dividerEl(kind)
   if (el === null) return
   if (edge === null) {
@@ -121,10 +159,10 @@ function positionHorizontal(kind: DividerKind, edge: number | null, body: DOMRec
   el.classList.remove('mc-divider-hidden')
   el.style.left = '0'
   el.style.right = '0'
-  el.style.top = `${edge - body.top - HIT_PX / 2}px`
+  el.style.top = `${edge - origin.top - HIT_PX / 2}px`
 }
 
-function positionVertical(kind: DividerKind, edge: number | null, span: DOMRect | null, body: DOMRect): void {
+function positionVertical(kind: DividerKind, edge: number | null, span: DOMRect | null, origin: Origin): void {
   const el = dividerEl(kind)
   if (el === null) return
   if (edge === null || span === null) {
@@ -132,8 +170,8 @@ function positionVertical(kind: DividerKind, edge: number | null, span: DOMRect 
     return
   }
   el.classList.remove('mc-divider-hidden')
-  el.style.left = `${edge - body.left - HIT_PX / 2}px`
-  el.style.top = `${span.top - body.top}px`
+  el.style.left = `${edge - origin.left - HIT_PX / 2}px`
+  el.style.top = `${span.top - origin.top}px`
   el.style.height = `${span.height}px`
 }
 
@@ -141,22 +179,23 @@ function positionDividers(): void {
   const body = bodyEl()
   if (body === null) return
   const bodyRect = body.getBoundingClientRect()
+  const origin: Origin = { top: bodyRect.top - body.scrollTop, left: bodyRect.left - body.scrollLeft }
 
-  positionHorizontal('flow', flowEl()?.getBoundingClientRect().bottom ?? null, bodyRect)
+  positionHorizontal('flow', flowEl()?.getBoundingClientRect().bottom ?? null, origin)
 
   const panel = panelEl()
   const showPanel = panelVisible()
-  positionHorizontal('panel', showPanel && panel !== null ? panel.getBoundingClientRect().bottom : null, bodyRect)
+  positionHorizontal('panel', showPanel && panel !== null ? panel.getBoundingClientRect().bottom : null, origin)
 
   const racksRect = racksEl()?.getBoundingClientRect() ?? null
   const [rack1, rack2] = rackEls()
-  positionVertical('rack-1', rack1 ? rack1.getBoundingClientRect().right : null, racksRect, bodyRect)
-  positionVertical('rack-2', rack2 ? rack2.getBoundingClientRect().right : null, racksRect, bodyRect)
+  positionVertical('rack-1', rack1 ? rack1.getBoundingClientRect().right : null, racksRect, origin)
+  positionVertical('rack-2', rack2 ? rack2.getBoundingClientRect().right : null, racksRect, origin)
 
   const planCol = planColEl()
   const panelRect = showPanel && panel !== null ? panel.getBoundingClientRect() : null
   const planEdge = showPanel && planCol !== null ? planCol.getBoundingClientRect().right : null
-  positionVertical('plan', planEdge, panelRect, bodyRect)
+  positionVertical('plan', planEdge, panelRect, origin)
 }
 
 function currentRackFr(): [number, number, number] {
@@ -184,9 +223,7 @@ function currentPlanFr(): [number, number] {
 
 function beginDrag(kind: DividerKind, event: PointerEvent): void {
   const el = dividerEl(kind)
-  const body = bodyEl()
-  if (el === null || body === null) return
-  const bodyRect = body.getBoundingClientRect()
+  if (el === null || bodyEl() === null) return
 
   const containerPx =
     kind === 'rack-1' || kind === 'rack-2'
@@ -204,7 +241,6 @@ function beginDrag(kind: DividerKind, event: PointerEvent): void {
     rackFr: currentRackFr(),
     planFr: currentPlanFr(),
     containerPx,
-    maxPx: Math.max(bodyRect.height - 100, MIN_FLOW_H),
   }
 
   el.classList.add('dragging')
@@ -218,9 +254,9 @@ function applyDrag(event: PointerEvent): void {
   const deltaY = event.clientY - drag.clientY
 
   if (drag.kind === 'flow') {
-    layout = { ...layout, flowH: clampFlowH(drag.flowH + deltaY, drag.maxPx) }
+    layout = { ...layout, flowH: clampFlowH(drag.flowH + deltaY, maxFlowH(viewportH(), panelH())) }
   } else if (drag.kind === 'panel') {
-    layout = { ...layout, panelH: clampPanelH(drag.panelH + deltaY, drag.maxPx) }
+    layout = { ...layout, panelH: clampPanelH(drag.panelH + deltaY, maxPanelH(viewportH(), heightOf(flowEl()))) }
   } else if (drag.kind === 'rack-1') {
     const next = recomputeTripleFr(drag.rackFr, drag.containerPx, 0, deltaX, MIN_RACK_PX)
     layout = { ...layout, rackFr: normalizeTriple(next) }
@@ -270,6 +306,14 @@ function resetAxis(kind: DividerKind): void {
   dispatchEvent(new Event('resize'))
 }
 
+function resetLayout(): void {
+  layout = { ...DEFAULT_LAYOUT }
+  applyLayout()
+  positionDividers()
+  saveLayout()
+  dispatchEvent(new Event('resize'))
+}
+
 function wireDivider(kind: DividerKind): void {
   const el = dividerEl(kind)
   if (el === null) return
@@ -285,11 +329,16 @@ export function installResize(): void {
 
   layout = loadLayout()
   applyLayout()
+  refitVertical()
   positionDividers()
   dispatchEvent(new Event('resize'))
 
   for (const kind of DIVIDER_KINDS) wireDivider(kind)
-  addEventListener('resize', () => positionDividers())
+  resetButtonEl()?.addEventListener('click', resetLayout)
+  addEventListener('resize', () => {
+    refitVertical()
+    positionDividers()
+  })
   observeLayoutChanges()
 }
 
@@ -300,6 +349,7 @@ function queueReposition(): void {
   repositionQueued = true
   requestAnimationFrame(() => {
     repositionQueued = false
+    refitVertical()
     positionDividers()
   })
 }

@@ -11,10 +11,15 @@ import {
   DEFAULT_LAYOUT,
   MIN_FLOW_H,
   MIN_PANEL_H,
+  MIN_RACKS_H,
   MIN_RACK_PX,
   clamp,
   clampFlowH,
   clampPanelH,
+  fitVerticalLayout,
+  isDefaultLayout,
+  maxFlowH,
+  maxPanelH,
   normalizePair,
   normalizeTriple,
   parseLayout,
@@ -43,6 +48,80 @@ describe('clampFlowH / clampPanelH', () => {
   test('never exceeds the given max, even when max is below the minimum', () => {
     expect(clampFlowH(9999, 400)).toBe(400)
     expect(clampFlowH(9999, 50)).toBe(MIN_FLOW_H)
+  })
+})
+
+describe('maxFlowH / maxPanelH from live rects', () => {
+  test('leaves the racks their minimum height', () => {
+    expect(maxFlowH(828, 150)).toBe(828 - 150 - MIN_RACKS_H)
+    expect(maxPanelH(828, 400)).toBe(828 - 400 - MIN_RACKS_H)
+  })
+
+  test('a flow drag can never push the racks off the viewport', () => {
+    const bodyPx = 828
+    const panelPx = 150
+    const flowH = clampFlowH(9999, maxFlowH(bodyPx, panelPx))
+    expect(bodyPx - flowH - panelPx).toBeGreaterThanOrEqual(MIN_RACKS_H)
+  })
+
+  test('a panel drag can never push the racks off the viewport', () => {
+    const bodyPx = 828
+    const flowPx = 400
+    const panelH = clampPanelH(9999, maxPanelH(bodyPx, flowPx))
+    expect(bodyPx - flowPx - panelH).toBeGreaterThanOrEqual(MIN_RACKS_H)
+  })
+
+  test('falls back to the section minimum when the viewport cannot hold everything', () => {
+    expect(maxFlowH(240, 150)).toBe(MIN_FLOW_H)
+    expect(maxPanelH(240, 150)).toBe(MIN_PANEL_H)
+  })
+})
+
+describe('fitVerticalLayout', () => {
+  test('leaves a layout that already fits untouched', () => {
+    expect(fitVerticalLayout(300, 150, 828)).toEqual({ flowH: 300, panelH: 150 })
+  })
+
+  test('clamps a stored oversize flow height back inside the viewport', () => {
+    const fit = fitVerticalLayout(728, 150, 828)
+    expect(fit.flowH).toBeLessThan(728)
+    expect(fit.flowH + fit.panelH).toBeLessThanOrEqual(828 - MIN_RACKS_H)
+    expect(828 - fit.flowH - fit.panelH).toBeGreaterThanOrEqual(MIN_RACKS_H)
+  })
+
+  test('shrinks both sections proportionally when both are oversize', () => {
+    const fit = fitVerticalLayout(600, 400, 828)
+    expect(fit.flowH).toBeGreaterThan(MIN_FLOW_H)
+    expect(fit.panelH).toBeGreaterThan(MIN_PANEL_H)
+    expect(fit.flowH).toBeGreaterThan(fit.panelH)
+    expect(828 - fit.flowH - fit.panelH).toBeGreaterThanOrEqual(MIN_RACKS_H)
+    expect(828 - fit.flowH - fit.panelH).toBeLessThan(MIN_RACKS_H + 3)
+  })
+
+  test('treats a hidden panel as zero height and never invents one', () => {
+    const fit = fitVerticalLayout(900, 0, 828)
+    expect(fit.panelH).toBe(0)
+    expect(fit.flowH).toBe(828 - MIN_RACKS_H)
+  })
+
+  test('bottoms out at the section minimums when the viewport is far too short', () => {
+    expect(fitVerticalLayout(700, 300, 260)).toEqual({ flowH: MIN_FLOW_H, panelH: MIN_PANEL_H })
+  })
+
+  test('never returns a section below its minimum', () => {
+    const fit = fitVerticalLayout(10, 10, 828)
+    expect(fit.flowH).toBe(MIN_FLOW_H)
+    expect(fit.panelH).toBe(MIN_PANEL_H)
+  })
+})
+
+describe('isDefaultLayout', () => {
+  test('is true only when every axis is untouched', () => {
+    expect(isDefaultLayout(DEFAULT_LAYOUT)).toBe(true)
+    expect(isDefaultLayout({ ...DEFAULT_LAYOUT, flowH: 300 })).toBe(false)
+    expect(isDefaultLayout({ ...DEFAULT_LAYOUT, panelH: 90 })).toBe(false)
+    expect(isDefaultLayout({ ...DEFAULT_LAYOUT, rackFr: [1, 2, 1] })).toBe(false)
+    expect(isDefaultLayout({ ...DEFAULT_LAYOUT, planFr: [2, 1] })).toBe(false)
   })
 })
 
@@ -164,6 +243,15 @@ describe('lanes view: dividers + resize island', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  test('/lanes carries the reset-layout control, hidden until a divider moves', async () => {
+    const response = await app.handle(new Request('http://localhost/lanes', { headers: { cookie } }))
+    const html = await response.text()
+
+    expect(html).toContain('id="reset-layout"')
+    expect(html).toContain('class="reset-layout off"')
+    expect(html).toContain('RESET LAYOUT')
+  })
+
   test('/lanes serves all five divider elements and the resize island script', async () => {
     const response = await app.handle(new Request('http://localhost/lanes', { headers: { cookie } }))
     const html = await response.text()
@@ -184,6 +272,7 @@ describe('lanes view: dividers + resize island', () => {
     const code = await response.text()
     expect(code).toContain('mc.lanes.layout')
     expect(code).toContain('pointerdown')
+    expect(code).toContain('reset-layout')
     expect(code).not.toContain('./resize-layout')
     expect(code).not.toContain(': LayoutState')
   })

@@ -1,12 +1,21 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  FLOW_BOTTOM_INSET,
+  FLOW_NODE_H,
+  FLOW_ROW_GAP,
+  FLOW_TOP_INSET,
   LANE_LEFT,
   MAX_ROW_NODES,
   NEXT_LABEL_DROP,
   ROW_TOPS_SINGLE,
   ROW_TOPS_SPLIT,
+  TEMPLATE_RAISE_MAX,
+  TEMPLATE_RAISE_MIN,
   assigneeClass,
+  flowContentH,
+  rowTops,
+  templateTops,
   nextLabelSpec,
   parsePlan,
   planNodeSpecs,
@@ -63,6 +72,107 @@ describe('planLayout', () => {
 
   test('lays out nothing for an empty plan', () => {
     expect(planLayout(0)).toEqual([])
+  })
+})
+
+describe('rowTops', () => {
+  test('centres a single row in the space below the caption', () => {
+    const [top] = rowTops(1, 520)
+    const band = 520 - FLOW_TOP_INSET - FLOW_BOTTOM_INSET
+    expect(top).toBeCloseTo(FLOW_TOP_INSET + (band - FLOW_NODE_H) / 2, 5)
+    expect(top).toBeGreaterThan(FLOW_TOP_INSET)
+  })
+
+  test('moves the single row down as the container grows', () => {
+    const short = rowTops(1, 190)[0] as number
+    const tall = rowTops(1, 700)[0] as number
+    expect(tall).toBeGreaterThan(short)
+  })
+
+  test('spaces two rows evenly and never overlaps them', () => {
+    const [first, second] = rowTops(2, 700) as [number, number]
+    const band = 700 - FLOW_TOP_INSET - FLOW_BOTTOM_INSET
+    expect(second - first).toBeCloseTo(band / 2, 5)
+    expect(second - first).toBeGreaterThanOrEqual(FLOW_NODE_H)
+  })
+
+  test('keeps a minimum row pitch when the container is too short to space evenly', () => {
+    const [first, second] = rowTops(2, 190) as [number, number]
+    expect(second - first).toBe(FLOW_NODE_H + FLOW_ROW_GAP)
+  })
+
+  test('returns nothing for zero rows', () => {
+    expect(rowTops(0, 520)).toEqual([])
+  })
+})
+
+describe('flowContentH', () => {
+  test('reports the height a short container has to scroll to', () => {
+    const tops = rowTops(2, 190)
+    expect(flowContentH(tops)).toBe((tops[1] as number) + FLOW_NODE_H + FLOW_BOTTOM_INSET)
+    expect(flowContentH(tops)).toBeGreaterThan(190)
+  })
+
+  test('a one-row layout always fits its own container', () => {
+    for (const height of [190, 320, 520, 800]) {
+      expect(flowContentH(rowTops(1, height))).toBeLessThanOrEqual(height)
+    }
+  })
+
+  test('is zero when there is nothing to place', () => {
+    expect(flowContentH([])).toBe(0)
+  })
+})
+
+describe('templateTops', () => {
+  test('raises the cross-review node above the main row and scales the gap', () => {
+    const short = templateTops(190)
+    const tall = templateTops(700)
+    expect(short.main - short.raised).toBe(TEMPLATE_RAISE_MIN)
+    expect(tall.main - tall.raised).toBe(TEMPLATE_RAISE_MAX)
+    expect(tall.main).toBeGreaterThan(short.main)
+    expect(tall.raised).toBeGreaterThan(short.raised)
+  })
+
+  test('fits the default flow height without scrolling', () => {
+    const tops = templateTops(190)
+    expect(flowContentH([tops.raised, tops.main])).toBeLessThanOrEqual(190)
+  })
+
+  test('drops the labels between and just below the rows', () => {
+    const tops = templateTops(520)
+    expect(tops.labelA).toBeGreaterThan(tops.raised)
+    expect(tops.labelA).toBeLessThan(tops.main)
+    expect(tops.labelB).toBeGreaterThan(tops.main)
+  })
+})
+
+describe('planLayout with a live container height', () => {
+  test('derives node tops from the container instead of the fixed fallback', () => {
+    const boxes = planLayout(3, 520)
+    expect(boxes[0]?.top).not.toBe(ROW_TOPS_SINGLE[0])
+    expect(boxes[0]?.top).toBe(`${Math.round(rowTops(1, 520)[0] as number)}px`)
+  })
+
+  test('keeps the horizontal layout identical whatever the height', () => {
+    const flat = planLayout(8).map((box) => box.left)
+    expect(planLayout(8, 520).map((box) => box.left)).toEqual(flat)
+    expect(planLayout(8, 900).map((box) => box.left)).toEqual(flat)
+  })
+
+  test('falls back to the fixed rows when no height is known', () => {
+    expect(planLayout(3, 0).map((box) => box.top)).toEqual([ROW_TOPS_SINGLE[0], ROW_TOPS_SINGLE[0], ROW_TOPS_SINGLE[0]])
+  })
+
+  test('the next-step label follows the last row down', () => {
+    const label = nextLabelSpec({ steps: [{ title: 'a', assignee: 'glm', status: 'active' }], next: 'ship' }, 700)
+    const expected = Math.round(rowTops(1, 700)[0] as number) + NEXT_LABEL_DROP
+    expect(label?.top).toBe(`${expected}px`)
+  })
+
+  test('node specs move with the container height', () => {
+    const plan = { steps: [{ title: 'a', assignee: 'glm', status: 'active' }], next: '' }
+    expect(planNodeSpecs(plan, 190)[0]?.top).not.toBe(planNodeSpecs(plan, 700)[0]?.top)
   })
 })
 

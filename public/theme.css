@@ -92,6 +92,8 @@ body {
   display: flex;
   flex-direction: column;
   position: relative;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .fixture {
@@ -115,6 +117,8 @@ body {
   height: var(--flow-h, 190px);
   border-bottom: 1px solid var(--mc-border);
   flex: none;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .flow .cap {
@@ -278,7 +282,7 @@ body {
   display: grid;
   grid-template-columns: var(--rack-1, 1fr) var(--rack-2, 1fr) var(--rack-3, 1fr);
   flex: 1;
-  min-height: 0;
+  min-height: 200px;
 }
 
 .rack {
@@ -286,6 +290,7 @@ body {
   display: flex;
   flex-direction: column;
   opacity: 0;
+  overflow: hidden;
 }
 
 .rack:last-child {
@@ -390,6 +395,7 @@ body {
 .station {
   padding: 16px 24px;
   flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -1737,4 +1743,27 @@ body.mcd-open .mcd {
   .mc-divider {
     display: none;
   }
+}
+
+.reset-layout {
+  position: absolute;
+  right: 28px;
+  top: 14px;
+  z-index: 6;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  color: var(--mc-fg-dim);
+  cursor: pointer;
+}
+
+.reset-layout.off {
+  display: none;
+}
+
+.reset-layout:hover {
+  color: var(--mc-fg);
 }
