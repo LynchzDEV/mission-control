@@ -1,7 +1,13 @@
 import { Elysia } from 'elysia'
 
+import {
+  type ArchiveStore,
+  createArchiveStore,
+  sessionLastActivity,
+  sessionsDueForAutoArchive,
+} from '../archive'
 import { requireSession } from '../auth'
-import { deriveFlow, planOnlySession, sessionKey, type SessionFlow } from '../flow'
+import { deriveFlow, isSessionFinished, jobsForSession, planOnlySession, sessionKey, type SessionFlow } from '../flow'
 import type { JobManager, JobRecord } from '../jobs'
 import { createPlanStore, isStepStatus, parsePlanInput, type Plan, type PlanStore } from '../plans'
 import type { TerminalRegistry } from '../terminals'
@@ -12,6 +18,8 @@ export type FlowSession = SessionFlow & {
   plan: Plan | null
   currentActivity: string | null
   activityJobId: string | null
+  archived: boolean
+  finished: boolean
 }
 
 export type FlowResponse = {
@@ -20,6 +28,12 @@ export type FlowResponse = {
   sessions: Record<string, FlowSession>
   reviewCount: number
   mergedToday: number
+  archivedCount: number
+}
+
+export type FlowSnapshotOptions = {
+  now?: number
+  includeArchived?: boolean
 }
 
 function activityJob(jobs: readonly JobRecord[], label: string): JobRecord | null {
@@ -30,40 +44,77 @@ function activityJob(jobs: readonly JobRecord[], label: string): JobRecord | nul
   return pool.reduce((best, job) => (job.startedAt > best.startedAt ? job : best))
 }
 
-export function flowSnapshot(
+export async function flowSnapshot(
   manager: JobManager,
   registry: TerminalRegistry,
   plans: PlanStore,
-  now: number = Date.now(),
-): FlowResponse {
+  archives: ArchiveStore,
+  options: FlowSnapshotOptions = {},
+): Promise<FlowResponse> {
+  const now = options.now ?? Date.now()
+  const includeArchived = options.includeArchived ?? false
   const jobs = manager.listJobs()
   const derived = deriveFlow({ jobs, terminals: registry.list(), now })
   const stored = plans.all()
 
   const labels = [...new Set([...Object.keys(derived.sessions), ...Object.keys(stored)])]
+
+  const due = sessionsDueForAutoArchive(
+    labels
+      .filter((label) => !archives.isArchived(label))
+      .map((label) => {
+        const plan = stored[label] ?? null
+        const labelJobs = jobsForSession(jobs, label)
+        return {
+          label,
+          finished: isSessionFinished(plan, labelJobs),
+          lastActivity: sessionLastActivity(labelJobs, plan),
+        }
+      }),
+    now,
+  )
+  for (const label of due) await archives.archive(label, now)
+
   const sessions: Record<string, FlowSession> = {}
   for (const label of labels) {
+    const archived = archives.isArchived(label)
+    if (archived && !includeArchived) continue
     const job = activityJob(jobs, label)
+    const plan = stored[label] ?? null
     sessions[label] = {
       ...(derived.sessions[label] ?? planOnlySession()),
-      plan: stored[label] ?? null,
+      plan,
       currentActivity: job === null ? null : manager.currentActivity(job.id),
       activityJobId: job?.id ?? null,
+      archived,
+      finished: isSessionFinished(plan, jobsForSession(jobs, label)),
     }
   }
 
-  const current = derived.current !== '' ? derived.current : (labels[0] ?? '')
-  return { ...derived, source: 'live', sessions, current }
+  const visibleKeys = Object.keys(sessions)
+  const current = derived.current !== '' && sessions[derived.current] !== undefined ? derived.current : (visibleKeys[0] ?? '')
+  const archivedCount = labels.filter((label) => archives.isArchived(label)).length
+  return { ...derived, source: 'live', sessions, current, archivedCount }
 }
 
 export function flowRoutes(
   manager: JobManager,
   registry: TerminalRegistry,
   plans: PlanStore = createPlanStore(),
+  archives: ArchiveStore = createArchiveStore(),
 ): Elysia {
   return new Elysia()
     .onBeforeHandle(requireSession)
-    .get('/api/flow', () => flowSnapshot(manager, registry, plans))
+    .get('/api/flow', async ({ query }) => {
+      const includeArchived = query?.includeArchived === '1' || query?.includeArchived === 'true'
+      return await flowSnapshot(manager, registry, plans, archives, { includeArchived })
+    })
+    .post('/api/flow/:label/archive', async ({ params }) => {
+      return await archives.archive(decodeURIComponent(params.label))
+    })
+    .post('/api/flow/:label/unarchive', async ({ params }) => {
+      return await archives.unarchive(decodeURIComponent(params.label))
+    })
     .post('/api/flow/:label/plan', async ({ params, body, set }) => {
       const parsed = parsePlanInput(body)
       if (!parsed.ok) {

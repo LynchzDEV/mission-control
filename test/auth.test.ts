@@ -206,6 +206,13 @@ describe('allowToken', () => {
     expect(allowToken('/api/flow/my-ticket/other', 'POST')).toBe(false)
   })
 
+  test('allows POST on per-label archive/unarchive endpoints', () => {
+    expect(allowToken('/api/flow/my-ticket/archive', 'POST')).toBe(true)
+    expect(allowToken('/api/flow/my-ticket/unarchive', 'POST')).toBe(true)
+    expect(allowToken('/api/flow/my-ticket/archive', 'GET')).toBe(false)
+    expect(allowToken('/api/flow/my-ticket/unarchive', 'PATCH')).toBe(false)
+  })
+
   test('is case-insensitive on method', () => {
     expect(allowToken('/api/jobs', 'get')).toBe(true)
     expect(allowToken('/api/flow', 'get')).toBe(true)

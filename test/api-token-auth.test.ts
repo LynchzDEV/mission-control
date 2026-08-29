@@ -102,6 +102,13 @@ describe('bearer token scope', () => {
     expect(response.status).toBe(401)
   })
 
+  test('works for POST /api/flow/:label/archive and /unarchive', async () => {
+    const archived = await app.handle(bearer('/api/flow/token-archive-smoke/archive', 'POST', {}))
+    expect(archived.status).toBe(200)
+    const unarchived = await app.handle(bearer('/api/flow/token-archive-smoke/unarchive', 'POST', {}))
+    expect(unarchived.status).toBe(200)
+  })
+
   test('the cookie flow still works alongside the token scope', async () => {
     const response = await app.handle(new Request('http://localhost/api/jobs', { headers: { cookie } }))
     expect(response.status).toBe(200)
