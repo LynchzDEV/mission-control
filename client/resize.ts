@@ -8,6 +8,7 @@ import {
   clampFlowH,
   clampPanelH,
   fitVerticalLayout,
+  isDefaultLayout,
   maxFlowH,
   maxPanelH,
   normalizePair,
@@ -71,6 +72,10 @@ function activityColEl(): HTMLElement | null {
   return document.getElementById('activity-col')
 }
 
+function resetButtonEl(): HTMLElement | null {
+  return document.getElementById('reset-layout')
+}
+
 function panelVisible(): boolean {
   const panel = panelEl()
   return panel !== null && !panel.classList.contains('off')
@@ -95,6 +100,11 @@ function applyLayout(): void {
   setVar(body, '--panel-h', layout.panelH, 'px')
   setFrVars(body, ['--rack-1', '--rack-2', '--rack-3'], layout.rackFr)
   setFrVars(body, ['--plan-1', '--plan-2'], layout.planFr)
+  syncResetButton()
+}
+
+function syncResetButton(): void {
+  resetButtonEl()?.classList.toggle('off', isDefaultLayout(layout))
 }
 
 function heightOf(el: HTMLElement | null): number {
@@ -296,6 +306,14 @@ function resetAxis(kind: DividerKind): void {
   dispatchEvent(new Event('resize'))
 }
 
+function resetLayout(): void {
+  layout = { ...DEFAULT_LAYOUT }
+  applyLayout()
+  positionDividers()
+  saveLayout()
+  dispatchEvent(new Event('resize'))
+}
+
 function wireDivider(kind: DividerKind): void {
   const el = dividerEl(kind)
   if (el === null) return
@@ -316,6 +334,7 @@ export function installResize(): void {
   dispatchEvent(new Event('resize'))
 
   for (const kind of DIVIDER_KINDS) wireDivider(kind)
+  resetButtonEl()?.addEventListener('click', resetLayout)
   addEventListener('resize', () => {
     refitVertical()
     positionDividers()

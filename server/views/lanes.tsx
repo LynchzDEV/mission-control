@@ -241,6 +241,14 @@ function Divider(kind: string, orientation: 'h' | 'v'): JSX.Element {
   )
 }
 
+function LayoutReset(): JSX.Element {
+  return (
+    <button type="button" class="reset-layout off" id="reset-layout">
+      RESET LAYOUT
+    </button>
+  )
+}
+
 function Dividers(): JSX.Element {
   return (
     <>
@@ -277,6 +285,7 @@ export function LanesPage(): string {
         {FlowPanel()}
         {Racks()}
         {Dividers()}
+        {LayoutReset()}
       </>
     ),
   })

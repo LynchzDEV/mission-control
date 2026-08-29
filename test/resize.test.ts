@@ -17,6 +17,7 @@ import {
   clampFlowH,
   clampPanelH,
   fitVerticalLayout,
+  isDefaultLayout,
   maxFlowH,
   maxPanelH,
   normalizePair,
@@ -111,6 +112,16 @@ describe('fitVerticalLayout', () => {
     const fit = fitVerticalLayout(10, 10, 828)
     expect(fit.flowH).toBe(MIN_FLOW_H)
     expect(fit.panelH).toBe(MIN_PANEL_H)
+  })
+})
+
+describe('isDefaultLayout', () => {
+  test('is true only when every axis is untouched', () => {
+    expect(isDefaultLayout(DEFAULT_LAYOUT)).toBe(true)
+    expect(isDefaultLayout({ ...DEFAULT_LAYOUT, flowH: 300 })).toBe(false)
+    expect(isDefaultLayout({ ...DEFAULT_LAYOUT, panelH: 90 })).toBe(false)
+    expect(isDefaultLayout({ ...DEFAULT_LAYOUT, rackFr: [1, 2, 1] })).toBe(false)
+    expect(isDefaultLayout({ ...DEFAULT_LAYOUT, planFr: [2, 1] })).toBe(false)
   })
 })
 
@@ -232,6 +243,15 @@ describe('lanes view: dividers + resize island', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  test('/lanes carries the reset-layout control, hidden until a divider moves', async () => {
+    const response = await app.handle(new Request('http://localhost/lanes', { headers: { cookie } }))
+    const html = await response.text()
+
+    expect(html).toContain('id="reset-layout"')
+    expect(html).toContain('class="reset-layout off"')
+    expect(html).toContain('RESET LAYOUT')
+  })
+
   test('/lanes serves all five divider elements and the resize island script', async () => {
     const response = await app.handle(new Request('http://localhost/lanes', { headers: { cookie } }))
     const html = await response.text()
@@ -252,6 +272,7 @@ describe('lanes view: dividers + resize island', () => {
     const code = await response.text()
     expect(code).toContain('mc.lanes.layout')
     expect(code).toContain('pointerdown')
+    expect(code).toContain('reset-layout')
     expect(code).not.toContain('./resize-layout')
     expect(code).not.toContain(': LayoutState')
   })

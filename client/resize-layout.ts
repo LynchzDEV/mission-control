@@ -91,6 +91,10 @@ export function fitVerticalLayout(
   }
 }
 
+export function isDefaultLayout(state: LayoutState): boolean {
+  return state.flowH === null && state.panelH === null && state.rackFr === null && state.planFr === null
+}
+
 export function recomputePairFr(
   fr: [number, number],
   containerPx: number,
