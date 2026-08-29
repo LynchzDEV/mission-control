@@ -1,0 +1,65 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../theme-tokens.css">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>*{box-sizing:border-box}body{margin:0;background:var(--mc-bg);color:var(--mc-fg);font-family:var(--mc-font-mono);font-size:13px;height:100vh;overflow:hidden}
+
+
+
+
+
+
+
+
+
+
+
+
+
+.drawer{position:fixed;inset:0;width:100%;background:var(--mc-bg);border-left:1px solid var(--mc-border);display:flex;flex-direction:column;box-shadow:-8px 0 0 #000}
+.dh{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--mc-border);font-size:10px;letter-spacing:.2em;color:var(--mc-fg-dim)}
+.dh b{font-family:var(--mc-font-pixel);font-size:11px;color:var(--mc-fg);font-weight:normal;letter-spacing:0}
+.dh .st{color:var(--mc-green)}
+.tx{flex:1;overflow:auto;padding:18px 24px 18px 20px;font-size:12.5px;line-height:1.55}
+.row{display:grid;grid-template-columns:22px 1fr;gap:0 8px;margin:0 0 10px}
+.g{color:var(--mc-fg-dim);text-align:center;line-height:1.55}
+.user{color:var(--mc-fg);white-space:pre-wrap}
+.user .g,.row.user .g{color:var(--mc-green)}
+.think{color:var(--mc-fg-dim);font-style:italic;white-space:pre-wrap;max-height:2.6em;overflow:hidden;position:relative;cursor:pointer}
+.think.open{max-height:none}
+.think:not(.open)::after{content:'…';position:absolute;right:0;bottom:0;background:var(--mc-bg);padding-left:8px}
+.tool .nm{color:var(--mc-fg)}
+.tool .arg{color:var(--mc-fg-dim)}
+.res{color:var(--mc-fg-dim);white-space:pre-wrap;margin:2px 0 0 0;padding-left:0;max-height:3.2em;overflow:hidden;cursor:pointer}
+.res.open{max-height:none}
+.res.err{color:var(--mc-red)}
+.text{white-space:pre-wrap}
+.final{border-top:1px solid var(--mc-border);margin-top:14px;padding-top:12px}
+.final .g{color:var(--mc-green)}
+.foot{border-top:1px solid var(--mc-border);padding:12px 20px;display:flex;gap:10px;align-items:flex-end}
+.foot textarea{flex:1;background:var(--mc-bg-raised);border:1px solid var(--mc-border);color:var(--mc-fg);padding:10px 12px;font:inherit;font-size:12px;resize:none;height:44px}
+.foot textarea:focus{outline:none;border-color:var(--mc-green)}
+.foot button{font-family:var(--mc-font-pixel);font-size:8px;padding:14px 16px;background:transparent;border:2px solid var(--mc-green);color:var(--mc-green);cursor:pointer}
+.hint{font-size:9px;letter-spacing:.15em;color:var(--mc-fg-dim);padding:0 20px 10px}
+.c-claude{color:var(--mc-coral)}
+</style></head>
+<body><div class="drawer">
+    <div class="dh"><div><b>thread-ux-sample</b> &nbsp;·&nbsp; <span class="c-claude">CLAUDE</span> &nbsp;·&nbsp; 21s &nbsp;·&nbsp; <span class="st">DONE</span></div><div>7 TOOLS · 4 THOUGHTS · ESC CLOSE</div></div>
+    <div class="tx" id="tx"></div>
+    <div class="hint">↵ SEND · ⇧↵ NEWLINE · continues the same session (resume)</div>
+    <div class="foot"><textarea placeholder="reply to this agent…"></textarea><button>SEND</button></div>
+  </div><script>
+fetch('fixture.json').then(r=>r.json()).then(d=>{
+  const tx=document.getElementById('tx');const add=h=>tx.insertAdjacentHTML('beforeend',h);
+  const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const msgs=d.messages;let lastText=null;
+  msgs.forEach((m,i)=>{
+    if(m.role==='user'){add(`<div class="row user"><div class="g">›</div><div class="user">${esc(m.text)}</div></div>`);return}
+    if(m.kind==='thinking'){add(`<div class="row"><div class="g">✻</div><div class="think" onclick="this.classList.toggle('open')">${esc(m.text)}</div></div>`);return}
+    if(m.kind==='tool'){const err=m.resultIsError;add(`<div class="row tool"><div class="g">⏺</div><div><span class="nm">${esc(m.title)}</span><span class="arg">(${esc(m.detail)})</span>
+      <div class="res ${err?'err':''}" onclick="this.classList.toggle('open')">⎿ ${esc(m.result||'(no output)')}</div></div></div>`);return}
+    if(m.kind==='text'){lastText=m;add(`<div class="row"><div class="g">⏺</div><div class="text">${esc(m.text)}</div></div>`);return}
+    if(m.role==='result'){add(`<div class="row final"><div class="g">✓</div><div class="text">${esc(m.text)}</div></div>`)}
+  });
+  tx.scrollTop=tx.scrollHeight;
+});
+
+</script></body></html>

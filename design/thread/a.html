@@ -1,0 +1,44 @@
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mission Control — Terminals</title><link rel="stylesheet" href="real/theme-tokens.css"><link rel="stylesheet" href="real/theme.css"><style>
+.mc-dim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;display:none}
+.mc-drawer{display:none;position:fixed;top:0;right:0;bottom:0;width:58%;z-index:50;border-left:1px solid var(--mc-border);box-shadow:-8px 0 0 #000;background:var(--mc-bg)}
+.mc-drawer iframe{border:0;width:100%;height:100%;display:block}
+body.drawer-open .mc-dim,body.drawer-open .mc-drawer{display:block}
+.vnote{position:fixed;left:16px;bottom:14px;z-index:60;font-size:9px;letter-spacing:.2em;color:var(--mc-fg-dim);background:var(--mc-bg);border:1px solid var(--mc-border);padding:8px 12px;max-width:38%}
+</style><style>
+.mini{margin:6px 0 4px;border-left:1px solid var(--mc-border);padding-left:8px;font-size:10.5px;line-height:1.7;color:var(--mc-fg-dim)}
+.mini .ml{display:grid;grid-template-columns:12px 1fr;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini .ml span:last-child{overflow:hidden;text-overflow:ellipsis}
+.mini .ml b{color:var(--mc-fg);font-weight:normal}
+.mini .ml.err b,.mini .ml.err{color:var(--mc-red)}
+.mini .ml.think{font-style:italic}
+.mini .ml.live{color:var(--mc-green)}
+.mini .ml.req{color:var(--mc-fg)}.mini .ml.req i{color:var(--mc-green)}
+.mini .ml.resp{color:var(--mc-fg)}.mini .ml.resp i{color:var(--mc-green)}
+.mini .ml.wait{color:var(--mc-fg-dim);font-style:italic}
+.mini .ml.live i{animation:mcpulse 1s infinite}
+@keyframes mcpulse{50%{opacity:.2}}
+.mini .more{color:var(--mc-fg-dim);cursor:pointer;letter-spacing:.15em;font-size:9px;margin-top:2px}
+.mini .more:hover{color:var(--mc-fg)}
+</style></head><body data-page="app"><div class="top"><div class="l">MISSION CONTROL</div><div id="meta">TERMINALS · live pty sessions · persist while the server runs</div></div><nav class="tabs" id="tabs"><a href="#" class="" data-key="1" data-tab="lanes"><i>1</i>LANES</a><a href="#" class="" data-key="2" data-tab="dispatch"><i>2</i>DISPATCH</a><a href="#" class="on" data-key="3" data-tab="terminals"><i>3</i>TERMINALS</a><a href="#" class="" data-key="4" data-tab="review"><i>4</i>REVIEW</a><a href="#" class="" data-key="5" data-tab="settings"><i>5</i>SETTINGS</a></nav><div class="body" data-tab="terminals"><div class="termgrid" id="termgrid"><div class="termmain"><div class="strip" id="term-strip"><span class="termnone" id="term-none">NO SESSIONS</span><button type="button" id="term-new">+ NEW TERMINAL</button></div><form class="termbar" id="term-form" hidden=""><select id="term-engine" name="engine"><option value="claude">CLAUDE · tech lead</option><option value="glm">GLM · junior fleet</option><option value="codex">CODEX · outside critic</option></select><input id="term-cwd" name="cwd" placeholder="~/code/some-repo"><button class="btn go" type="submit">OPEN</button><button class="btn" type="button" id="term-cancel">CANCEL</button><span class="msg" id="term-msg"></span></form><div class="empty-pane" id="term-pane">NO SESSION ATTACHED<br>bun-pty bridge · ws /ws/terminal/:id</div></div><aside class="agents" id="agents-panel"><div class="phead ahead"><button type="button" class="atoggle" id="agents-toggle" title="collapse the agents panel">AGENTS ◂</button></div><div class="ascroll" id="agents-scroll"><div class="alab">RUNNING</div><div id="agents-running"><div class="arec" data-job="running-1"><div class="r1"><i class="glyph run">●</i><b class="aname">orders-export-fix</b><span class="tag c-glm">GLM</span><span class="ael">4m12s</span></div><div class="r2">Bash · Run the test suite</div><div class="mini">
+<div class="ml req"><i>›</i><span>Fix the width bug in the orders export filter panel, add a test, commit.</span></div>
+<div class="ml"><i>⏺</i><span><b>Read</b> src/export/orders.ts</span></div>
+<div class="ml"><i>⏺</i><span><b>Edit</b> src/export/orders.ts</span></div>
+<div class="ml think"><i>✻</i><span>Now run the suite to confirm the width fix…</span></div>
+<div class="ml live"><i>●</i><span><b>Bash</b> Run the test suite</span></div>
+<div class="ml resp wait"><i>…</i><span>waiting for response</span></div>
+<div class="more talk-open-run">▸ OPEN FULL TRANSCRIPT · 12 more</div></div><div class="aacts"><button class="btn xs" type="button">TALK ▾</button><button class="btn xs" type="button">LOG ▾</button><button class="btn xs" type="button">KILL</button></div></div></div><div class="alab">RECENT</div><div id="agents-recent"><div class="arec" data-job="95998ffa-69bd-4b23-a42c-6e33b0024d77"><div class="r1"><i class="glyph done">✓</i><b class="aname">thread-ux-sample</b><span class="tag c-claude">CLAUDE</span><span class="ael">21s</span></div><div class="r2">—</div><div class="mini">
+<div class="ml req"><i>›</i><span>Read notes.txt, then append a second line 'world' to it using a shell command…</span></div>
+<div class="ml"><i>⏺</i><span><b>Bash</b> Append 'world' to notes.txt</span></div>
+<div class="ml err"><i>⎿</i><span>Output redirection was blocked…</span></div>
+<div class="ml"><i>⏺</i><span><b>Edit</b> /Users/lynchz/mc-vis-repo/notes.txt</span></div>
+<div class="ml resp"><i>✓</i><span>I read notes.txt which contained "hello", then appended "world" as a second line…</span></div>
+<div class="ml req"><i>›</i><span>what word did you say?</span></div>
+<div class="ml resp"><i>✓</i><span>world</span></div>
+<div class="more talk-open">▸ OPEN FULL TRANSCRIPT · 7 tools · 4 thoughts</div></div><div class="aacts"><button class="btn xs talk-open" type="button">TALK ▾</button></div></div></div><div class="aempty" id="agents-empty" hidden="">NO AGENTS RUNNING</div></div><div class="afoot">shows cockpit-dispatched jobs · in-terminal subagents are not observable</div></aside></div></div><div class="mc-dim"></div><div class="mc-drawer"><iframe src="a-inner.html"></iframe></div>
+<div class="vnote">A · TUI TRANSCRIPT — Claude-Code gutter grammar; thinking + results collapse to 2 lines, click to expand · TALK ▾ toggles · ESC closes</div>
+<script>
+document.querySelectorAll('.talk-open').forEach(b=>b.onclick=()=>document.body.classList.toggle('drawer-open'));
+document.querySelector('.mc-dim').onclick=()=>document.body.classList.remove('drawer-open');
+addEventListener('keydown',e=>{if(e.key==='Escape')document.body.classList.remove('drawer-open')});
+document.body.classList.add('drawer-open');
+</script></body></html>
