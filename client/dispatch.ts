@@ -1,4 +1,4 @@
-import { errorText, getJson, markFixture, postJson, readArray, readNumber } from './shared'
+import { errorText, getJson, markFixture, postJson, readArray, readNumber, streamJobLog } from './shared'
 
 type Job = {
   id: string
@@ -163,15 +163,16 @@ function openLog(job: Job): void {
   title.textContent = `${job.label} · ${job.id}`
   body.textContent = ''
   stream?.close()
-  stream = new EventSource(`/api/jobs/${job.id}/stream`)
-  stream.onmessage = (event) => {
-    body.textContent += `${event.data}\n`
-    body.scrollTop = body.scrollHeight
-  }
-  stream.onerror = () => {
-    body.textContent += '[stream closed]\n'
-    stream?.close()
-  }
+  stream = streamJobLog(
+    job.id,
+    (line) => {
+      body.textContent += `${line}\n`
+      body.scrollTop = body.scrollHeight
+    },
+    () => {
+      body.textContent += '[stream closed]\n'
+    },
+  )
 }
 
 async function refresh(): Promise<void> {

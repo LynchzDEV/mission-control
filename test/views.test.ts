@@ -78,7 +78,27 @@ const PAGES: [string, string[]][] = [
     ['API TOKEN', 'BASE URL', 'MODEL MAP', 'CONNECTION', 'class="applab"', 'GLM PEAK', 'id="bind"'],
   ],
   ['/dispatch', ['id="dispatch-form"', 'id="jobs-body"', 'id="log-drawer"', 'id="prompt"']],
-  ['/terminals', ['id="term-strip"', 'id="term-pane"', 'id="term-form"', 'id="term-engine"', 'id="term-cwd"']],
+  [
+    '/terminals',
+    [
+      'id="term-strip"',
+      'id="term-pane"',
+      'id="term-form"',
+      'id="term-engine"',
+      'id="term-cwd"',
+      'id="termgrid"',
+      'class="termmain"',
+      'id="agents-panel"',
+      'id="agents-toggle"',
+      'id="agents-running"',
+      'id="agents-recent"',
+      'id="agents-empty"',
+      'RUNNING',
+      'RECENT',
+      'NO AGENTS RUNNING · dispatch from /dispatch or via mc-dispatch',
+      'shows cockpit-dispatched jobs · in-terminal subagents are not observable',
+    ],
+  ],
   ['/review', ['id="review-body"', 'REVIEW QUEUE']],
 ]
 
@@ -126,7 +146,18 @@ describe('tab views', () => {
     expect(html).toContain('/vendor/addon-fit.js')
     expect(html).toContain('href="/vendor/xterm.css"')
     expect(html).toContain('/js/terminal.js')
+    expect(html).toContain('/js/agents.js')
     expect(html).not.toContain('cdn.jsdelivr.net')
+  })
+
+  test('the agents panel ships empty and only on the terminals tab', async () => {
+    const { html } = await render('/terminals')
+    expect(html).not.toContain('class="agent"')
+    expect(html).not.toContain('class="arec"')
+
+    for (const [path] of PAGES.filter(([entry]) => entry !== '/terminals')) {
+      expect((await render(path)).html).not.toContain('id="agents-panel"')
+    }
   })
 
   test('every tab marks its own tab active exactly once', async () => {
@@ -174,7 +205,7 @@ describe('gate views', () => {
 })
 
 describe('client islands', () => {
-  const ISLANDS = ['nav', 'forms', 'sprites', 'flow', 'lanes', 'dispatch']
+  const ISLANDS = ['nav', 'forms', 'sprites', 'flow', 'lanes', 'dispatch', 'terminal', 'agents']
 
   for (const island of ISLANDS) {
     test(`/js/${island}.js transpiles to browser javascript`, async () => {

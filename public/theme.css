@@ -993,6 +993,225 @@ table.grid tr.empty td {
   text-align: left;
 }
 
+/* ---------- terminals: agents side panel ---------- */
+
+.termgrid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  flex: 1;
+  min-height: 0;
+}
+
+.termgrid.agents-off {
+  grid-template-columns: 1fr auto;
+}
+
+.termmain {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.agents {
+  border-left: 1px solid var(--mc-border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ahead {
+  padding: 0;
+  display: flex;
+}
+
+.atoggle {
+  flex: 1;
+  text-align: left;
+  padding: 16px 20px;
+  background: none;
+  border: 0;
+  font-family: var(--mc-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  color: var(--mc-fg-dim);
+  cursor: pointer;
+}
+
+.atoggle:hover {
+  color: var(--mc-green);
+}
+
+.ascroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.agents-off .ascroll,
+.agents-off .afoot {
+  display: none;
+}
+
+.alab {
+  padding: 14px 20px 8px;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  color: var(--mc-fg-dim);
+}
+
+.aempty {
+  padding: 6px 20px 18px;
+  font-size: 9px;
+  line-height: 2;
+  letter-spacing: 0.15em;
+  color: var(--mc-fg-dim);
+}
+
+.afoot {
+  padding: 12px 20px;
+  border-top: 1px solid var(--mc-border);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  line-height: 1.9;
+  color: var(--mc-fg-dim);
+  flex: none;
+}
+
+.agent,
+.arec {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--mc-hairline);
+}
+
+.agent .a1,
+.arec .r1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.arec .r1 {
+  cursor: pointer;
+}
+
+.arec .r1:hover .aname {
+  color: var(--mc-green);
+}
+
+.aname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: normal;
+  color: var(--mc-fg);
+}
+
+.agent .tag,
+.arec .tag {
+  font-family: var(--mc-font-pixel);
+  font-size: 7px;
+  letter-spacing: 0.1em;
+}
+
+.arec .glyph {
+  font-style: normal;
+  width: 10px;
+  color: var(--mc-fg-dim);
+}
+
+.arec .glyph.failed {
+  color: var(--mc-red);
+}
+
+.agent .a2,
+.arec .r2 {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--mc-fg-dim);
+}
+
+.arec .r2 {
+  white-space: pre-wrap;
+}
+
+.ael {
+  font-variant-numeric: tabular-nums;
+}
+
+.acwd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acur {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--mc-green);
+}
+
+.acur:empty {
+  display: none;
+}
+
+.atick {
+  margin-top: 6px;
+}
+
+.atick:empty {
+  display: none;
+}
+
+.atick .aevent {
+  font-size: 10px;
+}
+
+.aacts {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn.xs {
+  padding: 7px 10px;
+  font-size: 7px;
+}
+
+.alog {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  max-height: 180px;
+  overflow: auto;
+  background: var(--mc-bg-raised);
+  border: 1px solid var(--mc-border);
+  font-family: var(--mc-font-mono);
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--mc-fg-dim);
+  white-space: pre-wrap;
+}
+
+@media (max-width: 900px) {
+  .termgrid,
+  .termgrid.agents-off {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .agents {
+    border-left: 0;
+    border-top: 1px solid var(--mc-border);
+    max-height: 45vh;
+  }
+}
+
 .flow.empty .node,.flow.empty .fsvg,.flow.empty .alabel{display:none}
 .flow.empty::after{content:'NO ACTIVE SESSIONS \00b7 DISPATCH A JOB TO SEE ITS FLOW';position:absolute;left:0;right:0;top:96px;text-align:center;font-size:10px;letter-spacing:.25em;color:var(--mc-fg-dim)}
 
