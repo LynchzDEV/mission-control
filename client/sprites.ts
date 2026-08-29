@@ -12,6 +12,7 @@ type Sketch = {
   point(): void
   filter(name: string, options: Record<string, number>): void
   draw(loop: () => void): void
+  dispose?(): void
 }
 
 type TextmodeNamespace = {
@@ -25,6 +26,9 @@ declare const window: Window & {
 }
 
 const HEAD_HEIGHT = 150
+
+const active = new Map<string, Sketch>()
+const lastWidth = new Map<string, number>()
 
 export function tm(canvas: HTMLCanvasElement, fontSize: number, w: number, h: number): Sketch | null {
   const NS = window.textmode
@@ -70,8 +74,13 @@ function mk(id: string, sketch: (t: Sketch) => void): void {
   const c = document.getElementById(id) as HTMLCanvasElement | null
   if (c === null || c.parentElement === null) return
   const w = c.parentElement.clientWidth
+  if (lastWidth.get(id) === w) return
+  active.get(id)?.dispose?.()
   const t = tm(c, 12, w, HEAD_HEIGHT)
-  if (t) t.draw(() => sketch(t))
+  if (t === null) return
+  active.set(id, t)
+  lastWidth.set(id, w)
+  t.draw(() => sketch(t))
 }
 
 export function sketchIdle(t: Sketch): void {
@@ -183,3 +192,4 @@ export function installMascots(): void {
 }
 
 installMascots()
+addEventListener('resize', installMascots)

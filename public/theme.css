@@ -91,6 +91,7 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .fixture {
@@ -111,7 +112,7 @@ body {
 
 .flow {
   position: relative;
-  height: 190px;
+  height: var(--flow-h, 190px);
   border-bottom: 1px solid var(--mc-border);
   flex: none;
 }
@@ -275,7 +276,7 @@ body {
 
 .racks {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: var(--rack-1, 1fr) var(--rack-2, 1fr) var(--rack-3, 1fr);
   flex: 1;
   min-height: 0;
 }
@@ -1206,10 +1207,11 @@ table.grid tr.empty td {
 
 .flowpanel {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: var(--plan-1, 1fr) var(--plan-2, 1fr);
   border-bottom: 1px solid var(--mc-border);
   flex: none;
-  max-height: 168px;
+  height: var(--panel-h, auto);
+  max-height: var(--panel-h, 168px);
   overflow: auto;
 }
 
@@ -1681,3 +1683,58 @@ body.mcd-open .mcd {
 
 .arecent-toggle{background:none;border:0;padding:0;cursor:pointer;color:var(--mc-fg-dim);font:inherit;font-size:9px;letter-spacing:.25em;text-align:left;width:100%}
 .arecent-toggle:hover{color:var(--mc-fg)}
+
+/* ---------- lanes: draggable dividers ---------- */
+
+.mc-divider {
+  position: absolute;
+  z-index: 5;
+  touch-action: none;
+}
+
+.mc-divider-hidden {
+  display: none;
+}
+
+.mc-divider-h {
+  height: 7px;
+  cursor: row-resize;
+}
+
+.mc-divider-v {
+  width: 7px;
+  cursor: col-resize;
+}
+
+.mc-divider .line {
+  position: absolute;
+  background: transparent;
+}
+
+.mc-divider-h .line {
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 1px;
+}
+
+.mc-divider-v .line {
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+}
+
+.mc-divider:hover .line {
+  background: var(--mc-fg-dim);
+}
+
+.mc-divider.dragging .line {
+  background: var(--mc-green);
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+  .mc-divider {
+    display: none;
+  }
+}

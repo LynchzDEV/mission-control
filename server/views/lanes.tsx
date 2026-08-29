@@ -228,12 +228,37 @@ function Racks(): JSX.Element {
   )
 }
 
+function Divider(kind: string, orientation: 'h' | 'v'): JSX.Element {
+  return (
+    <div
+      class={`mc-divider mc-divider-${orientation}`}
+      data-resize={kind}
+      role="separator"
+      aria-orientation={orientation === 'h' ? 'horizontal' : 'vertical'}
+    >
+      <i class="line"></i>
+    </div>
+  )
+}
+
+function Dividers(): JSX.Element {
+  return (
+    <>
+      {Divider('flow', 'h')}
+      {Divider('panel', 'h')}
+      {Divider('rack-1', 'v')}
+      {Divider('rack-2', 'v')}
+      {Divider('plan', 'v')}
+    </>
+  )
+}
+
 export function LanesPage(): string {
   return Layout({
     title: 'Mission Control — Lanes',
     page: 'app',
     tab: 'lanes',
-    islands: ['nav', 'sprites', 'flow', 'lanes'],
+    islands: ['nav', 'sprites', 'flow', 'lanes', 'resize'],
     vendor: ['anime.umd.min.js', 'textmode.umd.js', 'textmode.filters.umd.js'],
     meta: (
       <>
@@ -251,6 +276,7 @@ export function LanesPage(): string {
         {Flow()}
         {FlowPanel()}
         {Racks()}
+        {Dividers()}
       </>
     ),
   })

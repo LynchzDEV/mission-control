@@ -259,7 +259,7 @@ describe('gate views', () => {
 })
 
 describe('client islands', () => {
-  const ISLANDS = ['nav', 'forms', 'sprites', 'flow', 'lanes', 'dispatch', 'terminal', 'agents']
+  const ISLANDS = ['nav', 'forms', 'sprites', 'flow', 'lanes', 'resize', 'dispatch', 'terminal', 'agents']
 
   for (const island of ISLANDS) {
     test(`/js/${island}.js transpiles to browser javascript`, async () => {
