@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import { Elysia } from 'elysia'
 
+import { createArchiveStore } from '../server/archive'
 import { SESSION_COOKIE, completeSetup, resetLoginLimiter } from '../server/auth'
 import { createJobManager } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
@@ -35,6 +36,8 @@ type FlowSessionBody = {
   plan: PlanBody | null
   currentActivity: string | null
   activityJobId: string | null
+  archived: boolean
+  finished: boolean
 }
 
 type FlowBody = {
@@ -43,6 +46,7 @@ type FlowBody = {
   sessions: Record<string, FlowSessionBody>
   reviewCount: number
   mergedToday: number
+  archivedCount: number
 }
 
 const PLAN_STEPS = [
@@ -250,5 +254,94 @@ describe('session plans', () => {
       'Implement it',
       'Cross-review',
     ])
+  })
+})
+
+describe('session archiving', () => {
+  function archiveApp(archives = createArchiveStore()) {
+    const manager = createJobManager()
+    const app = new Elysia()
+      .use(jobsRoutes(manager, echoResolver))
+      .use(flowRoutes(manager, createTerminalRegistry(), createPlanStore(), archives))
+    return { manager, app }
+  }
+
+  async function finishedJob(
+    app: Elysia,
+    manager: ReturnType<typeof createJobManager>,
+    cookie: string,
+    label: string,
+  ): Promise<void> {
+    const created = await app.handle(
+      post('/api/jobs', { engine: 'glm', cwd: repo, prompt: 'hi', label }, cookie),
+    )
+    const job = (await created.json()) as { id: string }
+    const deadline = Date.now() + 3_000
+    for (;;) {
+      if (manager.getJob(job.id)?.status !== 'running') break
+      if (Date.now() > deadline) throw new Error('job did not settle')
+      await new Promise((wait) => setTimeout(wait, 20))
+    }
+    await app.handle(post(`/api/jobs/${job.id}/reviewed`, {}, cookie))
+  }
+
+  test('requires a session on both archive endpoints', async () => {
+    const { app } = archiveApp()
+    expect(
+      (await app.handle(new Request('http://localhost/api/flow/x/archive', { method: 'POST' }))).status,
+    ).toBe(401)
+    expect(
+      (await app.handle(new Request('http://localhost/api/flow/x/unarchive', { method: 'POST' }))).status,
+    ).toBe(401)
+  })
+
+  test('a finished session archives, is excluded by default, and reappears with includeArchived', async () => {
+    const cookie = await authCookie()
+    const { app, manager } = archiveApp()
+    await finishedJob(app, manager, cookie, 'archive-smoke')
+
+    const before = (await (await app.handle(get('/api/flow', cookie))).json()) as FlowBody
+    expect(before.sessions['archive-smoke']?.finished).toBe(true)
+    expect(before.sessions['archive-smoke']?.archived).toBe(false)
+
+    expect((await app.handle(post('/api/flow/archive-smoke/archive', {}, cookie))).status).toBe(200)
+
+    const defaultView = (await (await app.handle(get('/api/flow', cookie))).json()) as FlowBody
+    expect(defaultView.sessions['archive-smoke']).toBeUndefined()
+    expect(defaultView.archivedCount).toBe(1)
+
+    const withArchived = (await (await app.handle(get('/api/flow?includeArchived=1', cookie))).json()) as FlowBody
+    expect(withArchived.sessions['archive-smoke']?.archived).toBe(true)
+    expect(withArchived.archivedCount).toBe(1)
+
+    expect((await app.handle(post('/api/flow/archive-smoke/unarchive', {}, cookie))).status).toBe(200)
+    const restored = (await (await app.handle(get('/api/flow', cookie))).json()) as FlowBody
+    expect(restored.sessions['archive-smoke']?.archived).toBe(false)
+    expect(restored.archivedCount).toBe(0)
+  })
+
+  test('archiving persists across a store reload', async () => {
+    const cookie = await authCookie()
+    const archives = createArchiveStore()
+    const { app, manager } = archiveApp(archives)
+    await finishedJob(app, manager, cookie, 'archive-reload')
+    await app.handle(post('/api/flow/archive-reload/archive', {}, cookie))
+
+    const reloadedArchives = createArchiveStore()
+    expect(reloadedArchives.isArchived('archive-reload')).toBe(true)
+  })
+
+  test('mergedToday still counts an archived session', async () => {
+    const cookie = await authCookie()
+    const { app, manager } = archiveApp()
+    await finishedJob(app, manager, cookie, 'archive-merged')
+
+    const before = (await (await app.handle(get('/api/flow', cookie))).json()) as FlowBody
+    expect(before.mergedToday).toBe(1)
+
+    await app.handle(post('/api/flow/archive-merged/archive', {}, cookie))
+
+    const after = (await (await app.handle(get('/api/flow', cookie))).json()) as FlowBody
+    expect(after.mergedToday).toBe(1)
   })
 })

@@ -1,6 +1,7 @@
 import { basename } from 'node:path'
 
 import type { JobRecord } from './jobs'
+import type { Plan } from './plans'
 import type { TerminalRecord } from './terminals'
 
 export type StageState = 'done' | 'active' | 'queued' | 'future' | 'error'
@@ -37,6 +38,10 @@ export function sessionKey(job: JobRecord): string {
 
 export function awaitsReview(job: JobRecord): boolean {
   return job.status === 'done' && job.diffStat !== null && job.diffStat !== '' && job.reviewedAt === null
+}
+
+export function jobsForSession(jobs: readonly JobRecord[], label: string): JobRecord[] {
+  return jobs.filter((job) => sessionKey(job) === label)
 }
 
 export function countPendingReviews(jobs: readonly JobRecord[]): number {
@@ -104,6 +109,12 @@ function verifyStage(jobs: readonly JobRecord[], now: number): Stage {
 
 function fullyReviewed(jobs: readonly JobRecord[]): boolean {
   return jobs.length > 0 && jobs.every((job) => job.reviewedAt !== null)
+}
+
+// A plan governs "finished"; without one, every job of the label must be reviewed.
+export function isSessionFinished(plan: Plan | null, jobs: readonly JobRecord[]): boolean {
+  if (plan !== null) return plan.steps.length > 0 && plan.steps.every((step) => step.status === 'done')
+  return fullyReviewed(jobs)
 }
 
 function sameDay(a: number, b: number): boolean {

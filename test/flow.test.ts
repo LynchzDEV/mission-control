@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
-import { awaitsReview, countPendingReviews, deriveFlow, sessionKey } from '../server/flow'
+import { awaitsReview, countPendingReviews, deriveFlow, isSessionFinished, sessionKey } from '../server/flow'
 import type { SessionFlow } from '../server/flow'
 import type { JobRecord } from '../server/jobs'
+import type { Plan } from '../server/plans'
 import type { TerminalRecord } from '../server/terminals'
 
 const NOW = Date.parse('2026-08-28T12:00:00.000Z')
@@ -233,6 +234,52 @@ describe('snapshot shape', () => {
       'spec',
       'verify',
     ])
+  })
+})
+
+describe('isSessionFinished', () => {
+  function plan(overrides: Partial<Plan> = {}): Plan {
+    return { label: 'demo', steps: [], next: null, updatedAt: 0, ...overrides }
+  }
+
+  test('with a plan, finished only once every step is done', () => {
+    const allDone = plan({
+      steps: [
+        { title: 'a', assignee: 'claude', status: 'done' },
+        { title: 'b', assignee: 'glm', status: 'done' },
+      ],
+    })
+    expect(isSessionFinished(allDone, [])).toBe(true)
+  })
+
+  test('with a plan, one pending or active step is not finished', () => {
+    const partial = plan({
+      steps: [
+        { title: 'a', assignee: 'claude', status: 'done' },
+        { title: 'b', assignee: 'glm', status: 'active' },
+      ],
+    })
+    expect(isSessionFinished(partial, [])).toBe(false)
+  })
+
+  test('without a plan, finished once every job of the label is reviewed', () => {
+    const jobs = [
+      job({ id: 'a', status: 'done', endedAt: NOW - MINUTE, reviewedAt: NOW - MINUTE }),
+      job({ id: 'b', status: 'done', endedAt: NOW - MINUTE, reviewedAt: NOW }),
+    ]
+    expect(isSessionFinished(null, jobs)).toBe(true)
+  })
+
+  test('without a plan, one unreviewed job is not finished', () => {
+    const jobs = [
+      job({ id: 'a', status: 'done', endedAt: NOW - MINUTE, reviewedAt: NOW }),
+      job({ id: 'b', status: 'done', endedAt: NOW - MINUTE, reviewedAt: null }),
+    ]
+    expect(isSessionFinished(null, jobs)).toBe(false)
+  })
+
+  test('no plan and no jobs is not finished', () => {
+    expect(isSessionFinished(null, [])).toBe(false)
   })
 })
 

@@ -149,6 +149,47 @@ body {
   color: var(--mc-fg);
 }
 
+.chip .x {
+  margin-left: 6px;
+  color: var(--mc-fg-dim);
+}
+
+.chip .x:hover {
+  color: var(--mc-red);
+}
+
+.chip.archived {
+  opacity: 0.4;
+  border-style: dashed;
+  cursor: default;
+}
+
+.chip.archived .x {
+  color: var(--mc-fg-dim);
+  cursor: pointer;
+}
+
+.chip.archived .x:hover {
+  color: var(--mc-green);
+}
+
+.archived-toggle {
+  margin-left: 10px;
+  padding: 4px 8px;
+  color: var(--mc-fg-dim);
+  cursor: pointer;
+  letter-spacing: 0.1em;
+}
+
+.archived-toggle:hover {
+  color: var(--mc-fg);
+}
+
+.archived-toggle.on {
+  color: var(--mc-fg);
+  border-bottom: 1px solid var(--mc-border);
+}
+
 /* the arrow layer covers the whole flow band, so it must not eat chip clicks */
 .fsvg {
   position: absolute;
