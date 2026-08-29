@@ -2,6 +2,8 @@ export const STORE_KEY = 'mc.lanes.layout'
 export const MIN_FLOW_H = 120
 export const MIN_PANEL_H = 80
 export const MIN_RACK_PX = 180
+// Mirrored by `.racks { min-height }` in theme.css — both must move together.
+export const MIN_RACKS_H = 200
 export const HIT_PX = 7
 
 export type LayoutState = {
@@ -56,6 +58,37 @@ export function clampFlowH(px: number, maxPx: number): number {
 
 export function clampPanelH(px: number, maxPx: number): number {
   return clamp(px, MIN_PANEL_H, Math.max(MIN_PANEL_H, maxPx))
+}
+
+export function maxFlowH(bodyPx: number, panelPx: number, minRacksPx = MIN_RACKS_H): number {
+  return Math.max(MIN_FLOW_H, bodyPx - panelPx - minRacksPx)
+}
+
+export function maxPanelH(bodyPx: number, flowPx: number, minRacksPx = MIN_RACKS_H): number {
+  return Math.max(MIN_PANEL_H, bodyPx - flowPx - minRacksPx)
+}
+
+export function fitVerticalLayout(
+  flowPx: number,
+  panelPx: number,
+  bodyPx: number,
+  minRacksPx = MIN_RACKS_H,
+): { flowH: number; panelH: number } {
+  const minPanel = panelPx > 0 ? MIN_PANEL_H : 0
+  const flow = Math.max(MIN_FLOW_H, flowPx)
+  const panel = panelPx > 0 ? Math.max(MIN_PANEL_H, panelPx) : 0
+  const room = bodyPx - minRacksPx
+  if (flow + panel <= room) return { flowH: flow, panelH: panel }
+
+  const slack = room - MIN_FLOW_H - minPanel
+  const stretch = flow - MIN_FLOW_H + (panel - minPanel)
+  if (slack <= 0 || stretch <= 0) return { flowH: MIN_FLOW_H, panelH: minPanel }
+
+  const scale = slack / stretch
+  return {
+    flowH: Math.floor(MIN_FLOW_H + (flow - MIN_FLOW_H) * scale),
+    panelH: Math.floor(minPanel + (panel - minPanel) * scale),
+  }
 }
 
 export function recomputePairFr(
