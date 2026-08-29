@@ -35,13 +35,6 @@ const STEP_GLYPH: Record<string, string> = {
   pending: '·',
 }
 
-export const ACTIVITY_GLYPH: Record<string, string> = {
-  tool: '▸',
-  text: '·',
-  result: '✓',
-  error: '✕',
-}
-
 export function assigneeClass(assignee: string): string {
   return ASSIGNEE_CLASS[assignee] ?? 'c-user'
 }

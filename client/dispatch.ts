@@ -1,4 +1,10 @@
-import { createThreadPanel, type ThreadPanel } from './thread-panel'
+import {
+  CARD_POLL_MS,
+  DRAWER_POLL_MS,
+  createMiniFeed,
+  type MiniFeed,
+} from './thread-view'
+import { installDrawer, isDrawerOpen, openDrawer } from './thread-drawer'
 import { errorText, getJson, markFixture, postJson, readArray, readNumber, streamJobLog } from './shared'
 
 type Job = {
@@ -17,8 +23,9 @@ const LIVE_POLL_MS = 5_000
 const ABSENT_POLL_MS = 60_000
 
 let stream: EventSource | null = null
-let thread: ThreadPanel | null = null
 let timer: ReturnType<typeof setTimeout> | undefined
+
+const feeds = new Map<string, MiniFeed>()
 
 function str(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value !== '' ? value : fallback
@@ -51,9 +58,33 @@ function cellText(row: HTMLTableRowElement, value: string, className = ''): void
   if (className !== '') cell.className = className
 }
 
+// The feed element outlives the table row it sits in, so a poll that rebuilds the table keeps
+// every already-rendered transcript line instead of refetching the thread.
+function miniFeed(job: Job): MiniFeed {
+  const existing = feeds.get(job.id)
+  if (existing !== undefined) return existing
+  const feed = createMiniFeed(job.id, {
+    onOpen: () => openDrawer({ id: job.id, label: job.label, engine: job.engine, elapsed: elapsed(job) }),
+    pollMs: () => (isDrawerOpen(job.id) ? DRAWER_POLL_MS : CARD_POLL_MS),
+  })
+  feeds.set(job.id, feed)
+  feed.start()
+  return feed
+}
+
+function dropFeeds(jobs: Job[]): void {
+  const live = new Set(jobs.map((job) => job.id))
+  for (const [id, feed] of feeds) {
+    if (live.has(id)) continue
+    feed.stop()
+    feeds.delete(id)
+  }
+}
+
 function renderJobs(jobs: Job[]): void {
   const body = document.querySelector<HTMLTableSectionElement>('#jobs-body')
   if (body === null) return
+  dropFeeds(jobs)
   body.textContent = ''
   if (jobs.length === 0) {
     const row = body.insertRow()
@@ -78,8 +109,9 @@ function renderJobs(jobs: Job[]): void {
     const actions = row.insertCell()
     const talk = document.createElement('button')
     talk.className = 'btn'
-    talk.textContent = 'TALK'
-    talk.onclick = () => openThread(job)
+    talk.textContent = 'TALK ▾'
+    talk.onclick = () =>
+      openDrawer({ id: job.id, label: job.label, engine: job.engine, elapsed: elapsed(job) })
     actions.appendChild(talk)
     const tail = document.createElement('button')
     tail.className = 'btn'
@@ -93,6 +125,12 @@ function renderJobs(jobs: Job[]): void {
       kill.onclick = () => void killJob(job)
       actions.appendChild(kill)
     }
+
+    const feedRow = body.insertRow()
+    feedRow.className = 'minirow'
+    const feedCell = feedRow.insertCell()
+    feedCell.colSpan = 6
+    feedCell.appendChild(miniFeed(job).root)
   }
 }
 
@@ -182,18 +220,6 @@ function openLog(job: Job): void {
   )
 }
 
-function openThread(job: Job): void {
-  const title = document.querySelector<HTMLElement>('#thread-job')
-  const host = document.querySelector<HTMLElement>('#thread-host')
-  if (title === null || host === null) return
-  title.textContent = `${job.label} · ${job.id}`
-  thread?.stop()
-  host.textContent = ''
-  thread = createThreadPanel(job.id, { reply: true })
-  host.appendChild(thread.root)
-  thread.start()
-}
-
 async function refresh(): Promise<void> {
   const result = await getJson('/api/jobs')
   const jobs = result.ok ? readArray(result.data.jobs).map(toJob) : []
@@ -241,6 +267,7 @@ export function installDispatch(): void {
   if (document.querySelector('#jobs-body') === null && document.querySelector('#review-body') === null) {
     return
   }
+  installDrawer()
   installForm()
   void refresh()
 }

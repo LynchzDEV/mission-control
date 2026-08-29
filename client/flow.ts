@@ -10,7 +10,7 @@ import {
   type SessionFlow,
   type StageState,
 } from './plan-view'
-import { createThreadPanel, type ThreadPanel } from './thread-panel'
+import { createFullFeed, type Feed } from './thread-view'
 import {
   type Anime,
   type Animation,
@@ -54,7 +54,7 @@ let ARCHIVE_OPEN = false
 let ARCHIVED_COUNT = 0
 
 let pulse: Animation | null = null
-let processView: ThreadPanel | null = null
+let processView: Feed | null = null
 
 function pulseActive(A: Anime): void {
   pulse?.revert?.()
@@ -187,8 +187,6 @@ function stopProcess(): void {
   processView = null
 }
 
-// Lanes shows the same transcript the AGENTS cards do, minus the reply box — the decision of
-// what to say next belongs on /terminals and /dispatch, not on the board.
 function startProcess(session: Session): void {
   stopProcess()
   const host = document.getElementById('activity-feed')
@@ -203,7 +201,7 @@ function startProcess(session: Session): void {
     return
   }
 
-  processView = createThreadPanel(session.jobId, { reply: false })
+  processView = createFullFeed(session.jobId)
   host.appendChild(processView.root)
   processView.start()
   column.classList.remove('off')
