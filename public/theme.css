@@ -1372,4 +1372,235 @@ table.grid tr.empty td {
   color: var(--mc-fg-dim);
 }
 
+/* ---------- thread: conversational process view ---------- */
+
+.tslot[hidden] {
+  display: none;
+}
+
+.tpanel {
+  margin-top: 10px;
+  border: 1px solid var(--mc-border);
+  background: var(--mc-bg-raised);
+}
+
+.tlist {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 8px 10px;
+}
+
+.tproc .tpanel {
+  margin-top: 0;
+  border: 0;
+  background: none;
+}
+
+.tproc .tlist {
+  max-height: 340px;
+  padding: 0;
+}
+
+.trow {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--mc-hairline);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--mc-fg-dim);
+}
+
+.trow:last-child {
+  border-bottom: 0;
+}
+
+.trow .glyph {
+  font-style: normal;
+  width: 10px;
+  flex: none;
+  color: var(--mc-green);
+}
+
+.trow.thinking .glyph,
+.trow.text .glyph {
+  color: var(--mc-fg-dim);
+}
+
+.trow.err .glyph,
+.trow.err .title {
+  color: var(--mc-red);
+}
+
+.tsay {
+  margin-left: auto;
+  max-width: 82%;
+  width: fit-content;
+  padding: 6px 10px;
+  border: 1px solid var(--mc-edge-dim);
+  color: var(--mc-fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.trow.text,
+.trow.result {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ttext {
+  flex: 1;
+  min-width: 0;
+  color: var(--mc-fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.trow.result .ttext {
+  color: var(--mc-green);
+}
+
+.trow.err .ttext {
+  color: var(--mc-red);
+}
+
+.thead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.thead.open-able {
+  cursor: pointer;
+}
+
+.thead.open-able:hover .title {
+  color: var(--mc-green);
+}
+
+.thead .caret {
+  font-style: normal;
+  width: 8px;
+  flex: none;
+  color: var(--mc-fg-dim);
+}
+
+.thead .title {
+  font-weight: normal;
+  flex: none;
+  color: var(--mc-fg);
+}
+
+.trow.thinking .title {
+  font-style: italic;
+  color: var(--mc-fg-dim);
+}
+
+.thead .detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trow.thinking .detail {
+  font-style: italic;
+}
+
+.tres {
+  flex: none;
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mc-edge);
+}
+
+.tbody {
+  margin: 6px 0 4px 16px;
+}
+
+.tbody.think {
+  font-style: italic;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tlab {
+  margin-bottom: 4px;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  color: var(--mc-fg-dim);
+}
+
+.tpre {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  max-height: 200px;
+  overflow: auto;
+  background: var(--mc-bg);
+  border: 1px solid var(--mc-hairline);
+  font-family: var(--mc-font-mono);
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--mc-fg-dim);
+  white-space: pre;
+}
+
+.trow.pending .glyph {
+  animation: tpulse 1.1s ease-in-out infinite;
+}
+
+.trow.working {
+  color: var(--mc-green);
+  animation: tpulse 1.1s ease-in-out infinite;
+}
+
+@keyframes tpulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.tform {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--mc-border);
+}
+
+.tinput {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 9px;
+  resize: vertical;
+  background: var(--mc-bg);
+  border: 1px solid var(--mc-border);
+  font-family: var(--mc-font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--mc-fg);
+}
+
+.tinput:focus {
+  outline: none;
+  border-color: var(--mc-green);
+}
+
+.tinput:disabled {
+  color: var(--mc-fg-dim);
+}
+
+.tnote {
+  padding: 0 10px 10px;
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  line-height: 1.9;
+  color: var(--mc-fg-dim);
+}
+
+.tnote[hidden] {
+  display: none;
+}
+
 .termbar[hidden]{display:none}

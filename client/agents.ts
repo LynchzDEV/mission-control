@@ -1,4 +1,5 @@
 import { ACTIVITY_GLYPH } from './plan-view'
+import { createThreadPanel, type ThreadPanel } from './thread-panel'
 import { getJson, postJson, readArray, streamJobLog, type JsonRecord } from './shared'
 
 export type AgentJob = {
@@ -114,6 +115,12 @@ export function tickerLines(events: JsonRecord[]): TickerLine[] {
     }))
 }
 
+type ThreadSlot = {
+  host: HTMLElement
+  button: HTMLButtonElement
+  panel: ThreadPanel | null
+}
+
 type CardRefs = {
   root: HTMLElement
   elapsed: HTMLElement
@@ -121,6 +128,7 @@ type CardRefs = {
   ticker: HTMLElement
   log: HTMLElement
   logButton: HTMLButtonElement
+  talk: ThreadSlot
   stream: EventSource | null
   job: AgentJob
 }
@@ -128,6 +136,7 @@ type CardRefs = {
 type RecentRefs = {
   root: HTMLElement
   feed: HTMLElement
+  talk: ThreadSlot
   loaded: boolean
   job: AgentJob
 }
@@ -164,6 +173,33 @@ function renderTicker(target: HTMLElement, lines: TickerLine[]): void {
 function closeStream(card: CardRefs): void {
   card.stream?.close()
   card.stream = null
+}
+
+function talkSlot(): ThreadSlot {
+  const host = el('div', 'tslot')
+  host.hidden = true
+  const button = el('button', 'btn xs', 'TALK ▾') as HTMLButtonElement
+  button.type = 'button'
+  return { host, button, panel: null }
+}
+
+function toggleTalk(slot: ThreadSlot, jobId: string): void {
+  const open = slot.host.hidden
+  slot.host.hidden = !open
+  slot.button.textContent = open ? 'TALK ▴' : 'TALK ▾'
+  if (!open) {
+    slot.panel?.stop()
+    return
+  }
+  if (slot.panel === null) {
+    slot.panel = createThreadPanel(jobId, { reply: true })
+    slot.host.appendChild(slot.panel.root)
+  }
+  slot.panel.start()
+}
+
+function closeTalk(slot: ThreadSlot): void {
+  slot.panel?.stop()
 }
 
 function toggleLog(card: CardRefs): void {
@@ -211,13 +247,15 @@ function buildCard(job: AgentJob): CardRefs {
   logButton.type = 'button'
   const killButton = el('button', 'btn xs', 'KILL') as HTMLButtonElement
   killButton.type = 'button'
+  const talk = talkSlot()
   const actions = el('div', 'aacts')
-  actions.append(logButton, killButton)
+  actions.append(talk.button, logButton, killButton)
 
-  root.append(head, meta, current, ticker, actions, log)
+  root.append(head, meta, current, ticker, actions, talk.host, log)
 
-  const card: CardRefs = { root, elapsed, current, ticker, log, logButton, stream: null, job }
+  const card: CardRefs = { root, elapsed, current, ticker, log, logButton, talk, stream: null, job }
   logButton.onclick = () => toggleLog(card)
+  talk.button.onclick = () => toggleTalk(talk, card.job.id)
   killButton.onclick = () => void killJob(card.job.id)
   return card
 }
@@ -235,6 +273,7 @@ function renderRunning(jobs: AgentJob[], now: number): void {
   for (const [id, card] of cards) {
     if (seen.has(id)) continue
     closeStream(card)
+    closeTalk(card.talk)
     card.root.remove()
     cards.delete(id)
   }
@@ -275,10 +314,17 @@ function buildRecent(job: AgentJob, now: number): RecentRefs {
 
   const feed = el('div', 'atick')
   feed.hidden = true
-  root.append(line, el('div', 'r2', job.diffStat === '' ? '—' : job.diffStat), feed)
+  const talk = talkSlot()
+  const actions = el('div', 'aacts')
+  actions.append(talk.button)
+  root.append(line, el('div', 'r2', job.diffStat === '' ? '—' : job.diffStat), feed, actions, talk.host)
 
-  const refs: RecentRefs = { root, feed, loaded: false, job }
+  const refs: RecentRefs = { root, feed, talk, loaded: false, job }
   line.onclick = () => void toggleRecent(refs)
+  talk.button.onclick = (event) => {
+    event.stopPropagation()
+    toggleTalk(talk, refs.job.id)
+  }
   return refs
 }
 
@@ -288,6 +334,7 @@ function renderRecent(jobs: AgentJob[], now: number): void {
   const seen = new Set(jobs.map((job) => job.id))
   for (const [id, refs] of recents) {
     if (seen.has(id)) continue
+    closeTalk(refs.talk)
     refs.root.remove()
     recents.delete(id)
   }

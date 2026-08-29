@@ -94,8 +94,8 @@ function FlowPanel(): JSX.Element {
         <div class="pnext" id="plan-next"></div>
       </div>
       <div class="fcol" id="activity-col">
-        <div class="lab">ACTIVITY</div>
-        <div id="activity-feed"></div>
+        <div class="lab">ACTIVITY · PROCESS</div>
+        <div class="tproc" id="activity-feed"></div>
       </div>
     </div>
   )

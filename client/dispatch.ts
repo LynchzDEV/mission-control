@@ -1,3 +1,4 @@
+import { createThreadPanel, type ThreadPanel } from './thread-panel'
 import { errorText, getJson, markFixture, postJson, readArray, readNumber, streamJobLog } from './shared'
 
 type Job = {
@@ -16,6 +17,7 @@ const LIVE_POLL_MS = 5_000
 const ABSENT_POLL_MS = 60_000
 
 let stream: EventSource | null = null
+let thread: ThreadPanel | null = null
 let timer: ReturnType<typeof setTimeout> | undefined
 
 function str(value: unknown, fallback = ''): string {
@@ -74,6 +76,11 @@ function renderJobs(jobs: Job[]): void {
     cellText(row, job.diffStat === '' ? '—' : job.diffStat, 'dim')
 
     const actions = row.insertCell()
+    const talk = document.createElement('button')
+    talk.className = 'btn'
+    talk.textContent = 'TALK'
+    talk.onclick = () => openThread(job)
+    actions.appendChild(talk)
     const tail = document.createElement('button')
     tail.className = 'btn'
     tail.textContent = 'LOG'
@@ -173,6 +180,18 @@ function openLog(job: Job): void {
       body.textContent += '[stream closed]\n'
     },
   )
+}
+
+function openThread(job: Job): void {
+  const title = document.querySelector<HTMLElement>('#thread-job')
+  const host = document.querySelector<HTMLElement>('#thread-host')
+  if (title === null || host === null) return
+  title.textContent = `${job.label} · ${job.id}`
+  thread?.stop()
+  host.textContent = ''
+  thread = createThreadPanel(job.id, { reply: true })
+  host.appendChild(thread.root)
+  thread.start()
 }
 
 async function refresh(): Promise<void> {
