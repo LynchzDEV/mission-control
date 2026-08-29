@@ -52,6 +52,7 @@ const PAGES: [string, string[]][] = [
       'id="plan-next"',
       'id="activity-feed"',
       'class="tproc" id="activity-feed"',
+      'id="mc-drawer"',
       'ACTIVITY · PROCESS',
       'class="node tpl" id="nd-spec"',
       'id="nd-spec"',
@@ -85,8 +86,7 @@ const PAGES: [string, string[]][] = [
       'id="dispatch-form"',
       'id="jobs-body"',
       'id="log-drawer"',
-      'id="thread-drawer"',
-      'id="thread-host"',
+      'id="mc-drawer"',
       'id="prompt"',
     ],
   ],
@@ -105,6 +105,8 @@ const PAGES: [string, string[]][] = [
       'id="agents-running"',
       'id="agents-recent"',
       'id="agents-empty"',
+      'id="mc-dim"',
+      'id="mc-drawer"',
       'RUNNING',
       'RECENT',
       'NO AGENTS RUNNING · dispatch from /dispatch or via mc-dispatch',
@@ -117,15 +119,15 @@ const PAGES: [string, string[]][] = [
 const ISLAND_MARKERS: [string, string[]][] = [
   [
     'agents.js',
-    ['TALK \u25be', 'tslot', '/thread', 'createThreadPanel', 'reply to this agent'],
+    ['TALK \u25be', 'OPEN FULL TRANSCRIPT', 'mc-drawer', '/thread', '/reply', 'reply to this agent'],
   ],
-  ['dispatch.js', ['TALK', 'thread-host', '/thread', '/reply']],
-  ['flow.js', ['/thread', 'activity-feed']],
+  ['dispatch.js', ['TALK \u25be', 'OPEN FULL TRANSCRIPT', 'mc-drawer', '/thread', '/reply']],
+  ['flow.js', ['/thread', 'activity-feed', 'mcd-tx']],
 ]
 
-describe('thread panel islands', () => {
+describe('transcript islands', () => {
   for (const [file, markers] of ISLAND_MARKERS) {
-    test(`/js/${file} ships the thread panel`, async () => {
+    test(`/js/${file} ships the shared transcript renderer`, async () => {
       const response = await app.handle(new Request(`http://localhost/js/${file}`, { headers: { cookie } }))
       expect(response.status).toBe(200)
       const code = await response.text()
@@ -135,12 +137,22 @@ describe('thread panel islands', () => {
     })
   }
 
-  test('only the reply-capable mounts build a reply box', async () => {
+  test('the lanes mount carries no reply box and no drawer chrome', async () => {
     const lanes = await (
       await app.handle(new Request('http://localhost/js/flow.js', { headers: { cookie } }))
     ).text()
-    expect(lanes).toContain('reply: false')
-    expect(lanes).not.toContain('reply: true')
+    expect(lanes).not.toContain('reply to this agent')
+    expect(lanes).not.toContain('/reply')
+    expect(lanes).not.toContain('mc-drawer')
+  })
+
+  test('the mini card view and the drawer share one renderer', async () => {
+    const agents = await (
+      await app.handle(new Request('http://localhost/js/agents.js', { headers: { cookie } }))
+    ).text()
+    expect(agents).toContain('"mini"')
+    expect(agents).toContain('waiting for response')
+    expect(agents).toContain('SEND \u00b7 \u21e7')
   })
 })
 

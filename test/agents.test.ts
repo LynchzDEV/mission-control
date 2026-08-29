@@ -2,15 +2,14 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   RECENT_LIMIT,
-  TICKER_ROWS,
   accentClass,
   baseName,
   formatElapsed,
   jobElapsed,
   shortId,
+  secondLine,
   splitAgents,
   statusGlyph,
-  tickerLines,
   toAgentJob,
   type AgentJob,
 } from '../client/agents'
@@ -163,36 +162,20 @@ describe('splitAgents', () => {
   })
 })
 
-describe('tickerLines', () => {
-  const events = Array.from({ length: 9 }, (_unused, index) => ({
-    kind: 'tool',
-    title: 'Edit',
-    detail: `file-${index}.ts`,
-  }))
-
-  test(`keeps the newest ${TICKER_ROWS} events, newest first`, () => {
-    const lines = tickerLines(events)
-
-    expect(lines.length).toBe(TICKER_ROWS)
-    expect(lines.map((line) => line.detail)).toEqual([
-      'file-8.ts',
-      'file-7.ts',
-      'file-6.ts',
-      'file-5.ts',
-      'file-4.ts',
-    ])
+describe('secondLine', () => {
+  test('a running card shows what the agent is doing right now', () => {
+    expect(secondLine(job({ status: 'running', activity: 'Bash · Run the test suite' }))).toBe(
+      'Bash · Run the test suite',
+    )
   })
 
-  test('passes a shorter feed through untouched apart from ordering', () => {
-    expect(tickerLines(events.slice(0, 2)).map((line) => line.detail)).toEqual([
-      'file-1.ts',
-      'file-0.ts',
-    ])
-    expect(tickerLines([])).toEqual([])
+  test('a running card with no activity yet falls back to the repo it works in', () => {
+    expect(secondLine(job({ status: 'running', activity: '' }))).toBe('repo')
   })
 
-  test('defaults a missing kind to text and blanks missing strings', () => {
-    expect(tickerLines([{ title: 42 }])).toEqual([{ kind: 'text', title: '', detail: '' }])
+  test('a finished card shows its diff, or a dash when nothing changed', () => {
+    expect(secondLine(job({ status: 'done', diffStat: '3 files +40 -2' }))).toBe('3 files +40 -2')
+    expect(secondLine(job({ status: 'done', diffStat: '' }))).toBe('—')
   })
 })
 
@@ -212,7 +195,7 @@ describe('presentation helpers', () => {
   })
 
   test('statusGlyph marks running, done, failed and anything else', () => {
-    expect(statusGlyph('running')).toBe('▸')
+    expect(statusGlyph('running')).toBe('●')
     expect(statusGlyph('done')).toBe('✓')
     expect(statusGlyph('failed')).toBe('✕')
     expect(statusGlyph('weird')).toBe('·')

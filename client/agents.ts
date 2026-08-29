@@ -1,5 +1,11 @@
-import { ACTIVITY_GLYPH } from './plan-view'
-import { createThreadPanel, type ThreadPanel } from './thread-panel'
+import {
+  CARD_POLL_MS,
+  DRAWER_POLL_MS,
+  createMiniFeed,
+  engineClass,
+  type MiniFeed,
+} from './thread-view'
+import { installDrawer, isDrawerOpen, openDrawer } from './thread-drawer'
 import { getJson, postJson, readArray, streamJobLog, type JsonRecord } from './shared'
 
 export type AgentJob = {
@@ -14,10 +20,7 @@ export type AgentJob = {
   activity: string
 }
 
-export type TickerLine = { kind: string; title: string; detail: string }
-
 export const RECENT_LIMIT = 8
-export const TICKER_ROWS = 5
 export const AGENTS_STORE_KEY = 'mc.agents.open'
 
 const POLL_MS = 3_000
@@ -25,14 +28,8 @@ const ELAPSED_TICK_MS = 1_000
 const ABSENT_POLL_MS = 30_000
 const SHORT_ID_CHARS = 8
 
-const ACCENT: Record<string, string> = {
-  claude: 'c-claude',
-  glm: 'c-glm',
-  codex: 'c-white',
-}
-
 const STATUS_GLYPH: Record<string, string> = {
-  running: '▸',
+  running: '●',
   done: '✓',
   failed: '✕',
 }
@@ -69,9 +66,7 @@ export function baseName(path: string): string {
   return parts.length === 0 ? path : (parts[parts.length - 1] as string)
 }
 
-export function accentClass(engine: string): string {
-  return ACCENT[engine] ?? 'c-white'
-}
+export { engineClass as accentClass }
 
 export function statusGlyph(status: string): string {
   return STATUS_GLYPH[status] ?? '·'
@@ -104,46 +99,25 @@ export function splitAgents(jobs: AgentJob[]): { running: AgentJob[]; recent: Ag
   }
 }
 
-export function tickerLines(events: JsonRecord[]): TickerLine[] {
-  return events
-    .slice(-TICKER_ROWS)
-    .reverse()
-    .map((event) => ({
-      kind: str(event.kind, 'text'),
-      title: str(event.title),
-      detail: str(event.detail),
-    }))
+export function secondLine(job: AgentJob): string {
+  if (job.status === 'running') return job.activity === '' ? baseName(job.cwd) : job.activity
+  return job.diffStat === '' ? '—' : job.diffStat
 }
 
-type ThreadSlot = {
-  host: HTMLElement
-  button: HTMLButtonElement
-  panel: ThreadPanel | null
-}
-
-type CardRefs = {
+type Card = {
   root: HTMLElement
+  glyph: HTMLElement
   elapsed: HTMLElement
-  current: HTMLElement
-  ticker: HTMLElement
-  log: HTMLElement
-  logButton: HTMLButtonElement
-  talk: ThreadSlot
+  second: HTMLElement
+  feed: MiniFeed
+  log: HTMLElement | null
+  logButton: HTMLButtonElement | null
   stream: EventSource | null
+  live: boolean
   job: AgentJob
 }
 
-type RecentRefs = {
-  root: HTMLElement
-  feed: HTMLElement
-  talk: ThreadSlot
-  loaded: boolean
-  job: AgentJob
-}
-
-const cards = new Map<string, CardRefs>()
-const recents = new Map<string, RecentRefs>()
-const talkOpen = new Set<string>()
+const cards = new Map<string, Card>()
 let timer: ReturnType<typeof setTimeout> | undefined
 let ticking: ReturnType<typeof setInterval> | undefined
 
@@ -158,54 +132,13 @@ function host(id: string): HTMLElement | null {
   return document.getElementById(id)
 }
 
-function renderTicker(target: HTMLElement, lines: TickerLine[]): void {
-  target.textContent = ''
-  for (const line of lines) {
-    const row = el('div', `aevent ${line.kind}`)
-    row.append(
-      el('i', 'glyph', ACTIVITY_GLYPH[line.kind] ?? '·'),
-      el('b', 'title', line.title),
-      el('span', 'detail', line.detail),
-    )
-    target.appendChild(row)
-  }
-}
-
-function closeStream(card: CardRefs): void {
+function closeStream(card: Card): void {
   card.stream?.close()
   card.stream = null
 }
 
-function talkSlot(): ThreadSlot {
-  const host = el('div', 'tslot')
-  host.hidden = true
-  const button = el('button', 'btn xs', 'TALK ▾') as HTMLButtonElement
-  button.type = 'button'
-  return { host, button, panel: null }
-}
-
-function toggleTalk(slot: ThreadSlot, jobId: string): void {
-  const open = slot.host.hidden
-  slot.host.hidden = !open
-  slot.button.textContent = open ? 'TALK ▴' : 'TALK ▾'
-  if (!open) {
-    talkOpen.delete(jobId)
-    slot.panel?.stop()
-    return
-  }
-  talkOpen.add(jobId)
-  if (slot.panel === null) {
-    slot.panel = createThreadPanel(jobId, { reply: true })
-    slot.host.appendChild(slot.panel.root)
-  }
-  slot.panel.start()
-}
-
-function closeTalk(slot: ThreadSlot): void {
-  slot.panel?.stop()
-}
-
-function toggleLog(card: CardRefs): void {
+function toggleLog(card: Card): void {
+  if (card.log === null || card.logButton === null) return
   const open = card.log.hidden
   card.log.hidden = !open
   card.logButton.textContent = open ? 'LOG ▴' : 'LOG ▾'
@@ -214,76 +147,110 @@ function toggleLog(card: CardRefs): void {
     return
   }
   card.log.textContent = ''
+  const log = card.log
   card.stream = streamJobLog(
     card.job.id,
     (line) => {
-      card.log.textContent += `${line}\n`
-      card.log.scrollTop = card.log.scrollHeight
+      log.textContent += `${line}\n`
+      log.scrollTop = log.scrollHeight
     },
     () => {
-      card.log.textContent += '[stream closed]\n'
+      log.textContent += '[stream closed]\n'
     },
   )
 }
 
-function buildCard(job: AgentJob): CardRefs {
-  const root = el('div', 'agent')
+function show(card: Card): void {
+  openDrawer({
+    id: card.job.id,
+    label: card.job.label,
+    engine: card.job.engine,
+    elapsed: jobElapsed(card.job, Date.now()),
+  })
+}
+
+function buildCard(job: AgentJob, now: number): Card {
+  const live = job.status === 'running'
+  const root = el('div', 'arec')
   root.dataset.job = job.id
 
-  const head = el('div', 'a1')
-  head.append(
+  const glyph = el('i', `glyph ${job.status}`, statusGlyph(job.status))
+  const elapsed = el('span', 'ael', jobElapsed(job, now))
+  const line = el('div', 'r1')
+  line.append(
+    glyph,
     el('b', 'aname', job.label),
-    el('span', `tag ${accentClass(job.engine)}`, job.engine.toUpperCase()),
+    el('span', `tag ${engineClass(job.engine)}`, job.engine.toUpperCase()),
+    elapsed,
   )
 
-  const elapsed = el('span', 'ael', '—')
-  const meta = el('div', 'a2')
-  meta.append(elapsed, el('span', 'acwd', baseName(job.cwd)))
-
-  const current = el('div', 'acur', job.activity)
-  const ticker = el('div', 'atick')
-
-  const log = el('pre', 'alog')
-  log.hidden = true
-
-  const logButton = el('button', 'btn xs', 'LOG ▾') as HTMLButtonElement
-  logButton.type = 'button'
-  const killButton = el('button', 'btn xs', 'KILL') as HTMLButtonElement
-  killButton.type = 'button'
-  const talk = talkSlot()
+  const second = el('div', 'r2', secondLine(job))
+  const talkButton = el('button', 'btn xs', 'TALK ▾') as HTMLButtonElement
+  talkButton.type = 'button'
   const actions = el('div', 'aacts')
-  actions.append(talk.button, logButton, killButton)
+  actions.appendChild(talkButton)
 
-  root.append(head, meta, current, ticker, actions, talk.host, log)
+  const logButton = live ? (el('button', 'btn xs', 'LOG ▾') as HTMLButtonElement) : null
+  const killButton = live ? (el('button', 'btn xs', 'KILL') as HTMLButtonElement) : null
+  const log = live ? el('pre', 'alog') : null
+  if (logButton !== null && killButton !== null && log !== null) {
+    logButton.type = 'button'
+    killButton.type = 'button'
+    log.hidden = true
+    actions.append(logButton, killButton)
+  }
 
-  const card: CardRefs = { root, elapsed, current, ticker, log, logButton, talk, stream: null, job }
-  logButton.onclick = () => toggleLog(card)
-  talk.button.onclick = () => toggleTalk(talk, card.job.id)
-  killButton.onclick = () => void killJob(card.job.id)
+  const feed = createMiniFeed(job.id, {
+    onOpen: () => show(card),
+    pollMs: () => (isDrawerOpen(job.id) ? DRAWER_POLL_MS : CARD_POLL_MS),
+  })
+
+  root.append(line, second, feed.root, actions)
+  if (log !== null) root.appendChild(log)
+
+  const card: Card = {
+    root,
+    glyph,
+    elapsed,
+    second,
+    feed,
+    log,
+    logButton,
+    stream: null,
+    live,
+    job,
+  }
+  talkButton.onclick = () => show(card)
+  if (logButton !== null) logButton.onclick = () => toggleLog(card)
+  if (killButton !== null) killButton.onclick = () => void killJob(card.job.id)
+  feed.start()
   return card
 }
 
-function syncCard(card: CardRefs, job: AgentJob, now: number): void {
-  card.job = job
-  card.elapsed.textContent = jobElapsed(job, now)
-  card.current.textContent = job.activity
+function dropCard(id: string, card: Card): void {
+  closeStream(card)
+  card.feed.stop()
+  card.root.remove()
+  cards.delete(id)
 }
 
-function renderRunning(jobs: AgentJob[], now: number): void {
-  const target = host('agents-running')
+function syncCard(card: Card, job: AgentJob, now: number): void {
+  card.job = job
+  card.elapsed.textContent = jobElapsed(job, now)
+  card.second.textContent = secondLine(job)
+}
+
+function renderGroup(targetId: string, jobs: AgentJob[], now: number): void {
+  const target = host(targetId)
   if (target === null) return
-  const seen = new Set(jobs.map((job) => job.id))
-  for (const [id, card] of cards) {
-    if (seen.has(id)) continue
-    closeStream(card)
-    closeTalk(card.talk)
-    card.root.remove()
-    cards.delete(id)
-  }
   for (const job of jobs) {
+    const existing = cards.get(job.id)
+    if (existing !== undefined && existing.live !== (job.status === 'running')) {
+      dropCard(job.id, existing)
+    }
     let card = cards.get(job.id)
     if (card === undefined) {
-      card = buildCard(job)
+      card = buildCard(job, now)
       cards.set(job.id, card)
     }
     syncCard(card, job, now)
@@ -291,79 +258,9 @@ function renderRunning(jobs: AgentJob[], now: number): void {
   }
 }
 
-async function toggleRecent(refs: RecentRefs): Promise<void> {
-  const open = refs.feed.hidden
-  refs.feed.hidden = !open
-  if (!open || refs.loaded) return
-  refs.loaded = true
-  const result = await getJson(`/api/jobs/${refs.job.id}/activity`)
-  renderTicker(refs.feed, tickerLines(result.ok ? readArray(result.data.events) : []))
-  if (refs.feed.childElementCount === 0) {
-    refs.feed.appendChild(el('div', 'aevent', 'NO ACTIVITY RECORDED'))
-  }
-}
-
-function buildRecent(job: AgentJob, now: number): RecentRefs {
-  const root = el('div', 'arec')
-  root.dataset.job = job.id
-
-  const line = el('div', 'r1')
-  line.append(
-    el('i', `glyph ${job.status}`, statusGlyph(job.status)),
-    el('b', 'aname', job.label),
-    el('span', `tag ${accentClass(job.engine)}`, job.engine.toUpperCase()),
-    el('span', 'ael', jobElapsed(job, now)),
-  )
-
-  const feed = el('div', 'atick')
-  feed.hidden = true
-  const talk = talkSlot()
-  const actions = el('div', 'aacts')
-  actions.append(talk.button)
-  root.append(line, el('div', 'r2', job.diffStat === '' ? '—' : job.diffStat), feed, actions, talk.host)
-
-  const refs: RecentRefs = { root, feed, talk, loaded: false, job }
-  line.onclick = () => void toggleRecent(refs)
-  talk.button.onclick = (event) => {
-    event.stopPropagation()
-    toggleTalk(talk, refs.job.id)
-  }
-  if (talkOpen.has(job.id)) toggleTalk(talk, job.id)
-  return refs
-}
-
-function renderRecent(jobs: AgentJob[], now: number): void {
-  const target = host('agents-recent')
-  if (target === null) return
-  const seen = new Set(jobs.map((job) => job.id))
-  for (const [id, refs] of recents) {
-    if (seen.has(id)) continue
-    closeTalk(refs.talk)
-    refs.root.remove()
-    recents.delete(id)
-  }
-  for (const job of jobs) {
-    let refs = recents.get(job.id)
-    if (refs === undefined) {
-      refs = buildRecent(job, now)
-      recents.set(job.id, refs)
-    }
-    refs.job = job
-    target.appendChild(refs.root)
-  }
-}
-
 async function killJob(id: string): Promise<void> {
   await postJson(`/api/jobs/${id}/kill`, {})
   await refresh()
-}
-
-async function pullTicker(job: AgentJob): Promise<void> {
-  const card = cards.get(job.id)
-  if (card === undefined) return
-  const result = await getJson(`/api/jobs/${job.id}/activity`)
-  if (!result.ok) return
-  renderTicker(card.ticker, tickerLines(readArray(result.data.events)))
 }
 
 function markEmpty(empty: boolean): void {
@@ -376,10 +273,13 @@ async function refresh(): Promise<void> {
   const result = await getJson('/api/jobs')
   const jobs = result.ok ? readArray(result.data.jobs).map(toAgentJob) : []
   const groups = splitAgents(jobs)
-  renderRunning(groups.running, now)
-  renderRecent(groups.recent, now)
+  const seen = new Set([...groups.running, ...groups.recent].map((job) => job.id))
+  for (const [id, card] of cards) {
+    if (!seen.has(id)) dropCard(id, card)
+  }
+  renderGroup('agents-running', groups.running, now)
+  renderGroup('agents-recent', groups.recent, now)
   markEmpty(groups.running.length === 0 && groups.recent.length === 0)
-  await Promise.all(groups.running.map(pullTicker))
   schedule(result.ok ? POLL_MS : ABSENT_POLL_MS)
 }
 
@@ -426,6 +326,7 @@ function applyPanelOpen(open: boolean): void {
 
 export function installAgents(): void {
   if (host('agents-panel') === null) return
+  installDrawer()
   applyPanelOpen(readPanelOpen())
   host('agents-toggle')?.addEventListener('click', () => {
     const open = !readPanelOpen()

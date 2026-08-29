@@ -29,6 +29,10 @@ export type LayoutProps = {
   children?: JSX.Element | JSX.Element[] | string
 }
 
+function Drawer(): JSX.Element[] {
+  return [<div class="mcd-dim" id="mc-dim"></div>, <div class="mcd" id="mc-drawer"></div>]
+}
+
 function head(title: string, vendor: string[], islands: string[], styles: string[]): JSX.Element {
   return (
     <head>
@@ -78,6 +82,7 @@ export function Layout(props: LayoutProps): string {
       <div class="body" data-tab={props.tab ?? 'gate'}>
         {props.children ?? ''}
       </div>
+      {chrome ? Drawer() : ''}
     </body>
   )
 

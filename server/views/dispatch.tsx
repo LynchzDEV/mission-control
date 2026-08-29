@@ -76,12 +76,6 @@ function JobsPane(): JSX.Element {
         </div>
         <pre id="log-body"></pre>
       </div>
-      <div class="drawer" id="thread-drawer">
-        <div class="phead">
-          THREAD · <span id="thread-job">no job selected</span>
-        </div>
-        <div id="thread-host"></div>
-      </div>
     </div>
   )
 }
