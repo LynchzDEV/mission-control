@@ -7,6 +7,8 @@ import { parseActivity } from '../activity'
 import type { CreateJobParams, JobManager } from '../jobs'
 import { readLogFile, readLogSince, readLogTail } from '../jobs'
 import type { EngineResolver } from '../jobs-engine-iface'
+import { engineSupportsResume } from '../jobs-engine-iface'
+import { assembleThread, replySessionId, threadChain, threadIsRunning, threadRootOf } from '../threads'
 
 export const SSE_TAIL_BYTES = 4096
 export const HEARTBEAT_MS = 15_000
@@ -149,6 +151,68 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
         return { error: 'job not found' }
       }
       return createLogStreamResponse(manager.logPath(params.id), request.signal)
+    })
+    .get('/api/jobs/:id/thread', async ({ params, set }) => {
+      const job = manager.getJob(params.id)
+      if (job === undefined) {
+        set.status = 404
+        return { error: 'job not found' }
+      }
+      const rootId = threadRootOf(job)
+      const chain = threadChain(manager.listJobs(), rootId)
+      const messages = await assembleThread(chain, (jobId) => readLogFile(manager.logPath(jobId)))
+      return {
+        rootId,
+        engine: job.engine,
+        running: threadIsRunning(chain),
+        sessionId: replySessionId(chain),
+        canReply: engineSupportsResume(job.engine) && replySessionId(chain) !== null,
+        messages,
+      }
+    })
+    .post('/api/jobs/:id/reply', async ({ params, body, set }) => {
+      const payload = body as { message?: unknown } | null
+      const message = typeof payload?.message === 'string' ? payload.message.trim() : ''
+      if (message === '') {
+        set.status = 400
+        return { error: 'message is required' }
+      }
+
+      const parent = manager.getJob(params.id)
+      if (parent === undefined) {
+        set.status = 404
+        return { error: 'job not found' }
+      }
+      if (!engineSupportsResume(parent.engine)) {
+        set.status = 400
+        return { error: 'engine does not support conversation resume' }
+      }
+
+      const rootId = threadRootOf(parent)
+      const chain = threadChain(manager.listJobs(), rootId)
+      const sessionId = replySessionId(chain)
+      if (sessionId === null) {
+        set.status = 400
+        return { error: 'job has no session id to resume yet' }
+      }
+
+      const result = await manager.createJob(
+        {
+          engine: parent.engine,
+          cwd: parent.cwd,
+          prompt: message,
+          label: parent.label,
+          parentJobId: parent.id,
+          threadRoot: rootId,
+          resumeSessionId: sessionId,
+        },
+        resolver,
+      )
+      if (!result.ok) {
+        set.status = result.status
+        return { error: result.error }
+      }
+      return result.job
     })
     .post('/api/jobs/:id/reviewed', async ({ params, set }) => {
       const result = await manager.markReviewed(params.id)
