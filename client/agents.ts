@@ -3,7 +3,10 @@ import {
   DRAWER_POLL_MS,
   createMiniFeed,
   engineClass,
+  groupByThread,
+  sortThreadsByActivity,
   type MiniFeed,
+  type ThreadGroup,
 } from './thread-view'
 import { installDrawer, isDrawerOpen, openDrawer } from './thread-drawer'
 import { getJson, postJson, readArray, streamJobLog, type JsonRecord } from './shared'
@@ -18,7 +21,10 @@ export type AgentJob = {
   endedAt: number | null
   diffStat: string
   activity: string
+  threadRoot: string
 }
+
+export type AgentThread = ThreadGroup<AgentJob>
 
 export const RECENT_LIMIT = 8
 export const AGENTS_STORE_KEY = 'mc.agents.open'
@@ -58,6 +64,7 @@ export function toAgentJob(raw: JsonRecord): AgentJob {
     endedAt: num(raw.endedAt),
     diffStat: str(raw.diffStat),
     activity: str(raw.currentActivity),
+    threadRoot: str(raw.threadRoot, id),
   }
 }
 
@@ -91,11 +98,13 @@ export function jobElapsed(job: AgentJob, now: number): string {
   return formatElapsed((job.endedAt ?? now) - job.startedAt)
 }
 
-export function splitAgents(jobs: AgentJob[]): { running: AgentJob[]; recent: AgentJob[] } {
-  const newest = [...jobs].sort((left, right) => (right.startedAt ?? 0) - (left.startedAt ?? 0))
+// Jobs sharing a threadRoot are one conversation and render as one card: RECENT_LIMIT below
+// bounds threads, not raw job rows.
+export function splitAgents(jobs: AgentJob[]): { running: AgentThread[]; recent: AgentThread[] } {
+  const threads = sortThreadsByActivity(groupByThread(jobs))
   return {
-    running: newest.filter((job) => job.status === 'running'),
-    recent: newest.filter((job) => job.status !== 'running').slice(0, RECENT_LIMIT),
+    running: threads.filter((thread) => thread.newestJob.status === 'running'),
+    recent: threads.filter((thread) => thread.newestJob.status !== 'running').slice(0, RECENT_LIMIT),
   }
 }
 
@@ -114,7 +123,7 @@ type Card = {
   logButton: HTMLButtonElement | null
   stream: EventSource | null
   live: boolean
-  job: AgentJob
+  thread: AgentThread
 }
 
 const cards = new Map<string, Card>()
@@ -149,7 +158,7 @@ function toggleLog(card: Card): void {
   card.log.textContent = ''
   const log = card.log
   card.stream = streamJobLog(
-    card.job.id,
+    card.thread.newestJob.id,
     (line) => {
       log.textContent += `${line}\n`
       log.scrollTop = log.scrollHeight
@@ -161,18 +170,20 @@ function toggleLog(card: Card): void {
 }
 
 function show(card: Card): void {
+  const job = card.thread.newestJob
   openDrawer({
-    id: card.job.id,
-    label: card.job.label,
-    engine: card.job.engine,
-    elapsed: jobElapsed(card.job, Date.now()),
+    id: card.thread.threadRoot,
+    label: job.label,
+    engine: job.engine,
+    elapsed: jobElapsed(job, Date.now()),
   })
 }
 
-function buildCard(job: AgentJob, now: number): Card {
-  const live = job.status === 'running'
+function buildCard(thread: AgentThread, now: number): Card {
+  const live = thread.runningJob !== null
+  const job = thread.newestJob
   const root = el('div', 'arec')
-  root.dataset.job = job.id
+  root.dataset.thread = thread.threadRoot
 
   const glyph = el('i', `glyph ${job.status}`, statusGlyph(job.status))
   const elapsed = el('span', 'ael', jobElapsed(job, now))
@@ -200,9 +211,9 @@ function buildCard(job: AgentJob, now: number): Card {
     actions.append(logButton, killButton)
   }
 
-  const feed = createMiniFeed(job.id, {
+  const feed = createMiniFeed(thread.threadRoot, {
     onOpen: () => show(card),
-    pollMs: () => (isDrawerOpen(job.id) ? DRAWER_POLL_MS : CARD_POLL_MS),
+    pollMs: () => (isDrawerOpen(thread.threadRoot) ? DRAWER_POLL_MS : CARD_POLL_MS),
   })
 
   root.append(line, second, feed.root, actions)
@@ -218,42 +229,47 @@ function buildCard(job: AgentJob, now: number): Card {
     logButton,
     stream: null,
     live,
-    job,
+    thread,
   }
   talkButton.onclick = () => show(card)
   if (logButton !== null) logButton.onclick = () => toggleLog(card)
-  if (killButton !== null) killButton.onclick = () => void killJob(card.job.id)
+  if (killButton !== null) {
+    killButton.onclick = () => {
+      const target = card.thread.runningJob
+      if (target !== null) void killJob(target.id)
+    }
+  }
   feed.start()
   return card
 }
 
-function dropCard(id: string, card: Card): void {
+function dropCard(threadRoot: string, card: Card): void {
   closeStream(card)
   card.feed.stop()
   card.root.remove()
-  cards.delete(id)
+  cards.delete(threadRoot)
 }
 
-function syncCard(card: Card, job: AgentJob, now: number): void {
-  card.job = job
-  card.elapsed.textContent = jobElapsed(job, now)
-  card.second.textContent = secondLine(job)
+function syncCard(card: Card, thread: AgentThread, now: number): void {
+  card.thread = thread
+  card.elapsed.textContent = jobElapsed(thread.newestJob, now)
+  card.second.textContent = secondLine(thread.newestJob)
 }
 
-function renderGroup(targetId: string, jobs: AgentJob[], now: number): void {
+function renderGroup(targetId: string, threads: AgentThread[], now: number): void {
   const target = host(targetId)
   if (target === null) return
-  for (const job of jobs) {
-    const existing = cards.get(job.id)
-    if (existing !== undefined && existing.live !== (job.status === 'running')) {
-      dropCard(job.id, existing)
+  for (const thread of threads) {
+    const existing = cards.get(thread.threadRoot)
+    if (existing !== undefined && existing.live !== (thread.runningJob !== null)) {
+      dropCard(thread.threadRoot, existing)
     }
-    let card = cards.get(job.id)
+    let card = cards.get(thread.threadRoot)
     if (card === undefined) {
-      card = buildCard(job, now)
-      cards.set(job.id, card)
+      card = buildCard(thread, now)
+      cards.set(thread.threadRoot, card)
     }
-    syncCard(card, job, now)
+    syncCard(card, thread, now)
     target.appendChild(card.root)
   }
 }
@@ -273,9 +289,9 @@ async function refresh(): Promise<void> {
   const result = await getJson('/api/jobs')
   const jobs = result.ok ? readArray(result.data.jobs).map(toAgentJob) : []
   const groups = splitAgents(jobs)
-  const seen = new Set([...groups.running, ...groups.recent].map((job) => job.id))
-  for (const [id, card] of cards) {
-    if (!seen.has(id)) dropCard(id, card)
+  const seen = new Set([...groups.running, ...groups.recent].map((thread) => thread.threadRoot))
+  for (const [threadRoot, card] of cards) {
+    if (!seen.has(threadRoot)) dropCard(threadRoot, card)
   }
   renderGroup('agents-running', groups.running, now)
   renderGroup('agents-recent', groups.recent, now)
@@ -298,7 +314,7 @@ async function cycle(): Promise<void> {
 
 function updateElapsed(): void {
   const now = Date.now()
-  for (const card of cards.values()) card.elapsed.textContent = jobElapsed(card.job, now)
+  for (const card of cards.values()) card.elapsed.textContent = jobElapsed(card.thread.newestJob, now)
 }
 
 export function readPanelOpen(): boolean {
