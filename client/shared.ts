@@ -44,6 +44,20 @@ export function errorText(result: ApiResult): string {
   return result.status === 0 ? 'server unreachable' : `request failed (${result.status})`
 }
 
+export function streamJobLog(
+  id: string,
+  onLine: (line: string) => void,
+  onEnd: () => void,
+): EventSource {
+  const stream = new EventSource(`/api/jobs/${id}/stream`)
+  stream.onmessage = (event: MessageEvent) => onLine(String(event.data))
+  stream.onerror = () => {
+    onEnd()
+    stream.close()
+  }
+  return stream
+}
+
 export function markFixture(source: string, on: boolean): void {
   document.querySelectorAll<HTMLElement>(`.fixture[data-src="${source}"]`).forEach((tag) => {
     tag.classList.toggle('on', on)
