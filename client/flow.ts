@@ -1,11 +1,15 @@
 import {
+  NEXT_LABEL_DROP,
   STAGES,
   assigneeClass,
+  flowContentH,
   nextLabelSpec,
   parsePlan,
+  planLayout,
   planNodeSpecs,
   stepGlyph,
   templateNodeSpecs,
+  templateTops,
   type Plan,
   type SessionFlow,
   type StageState,
@@ -114,15 +118,22 @@ function planNodeIds(): string[] {
   return ids
 }
 
+const TEMPLATE_ROW_IDS = ['nd-spec', 'nd-impl', 'nd-verify', 'nd-merged']
+
+function flowContainer(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.flow')
+}
+
 function renderPlanNodes(plan: Plan | null): void {
   const host = document.getElementById('plan-nodes')
-  const flow = document.querySelector('.flow')
+  const flow = flowContainer()
   if (host === null || flow === null) return
   host.textContent = ''
   flow.classList.toggle('planned', plan !== null)
   if (plan === null) return
 
-  for (const spec of planNodeSpecs(plan)) {
+  const containerH = flow.clientHeight
+  for (const spec of planNodeSpecs(plan, containerH)) {
     const node = element('div', spec.className)
     node.id = spec.id
     node.style.left = spec.left
@@ -131,7 +142,7 @@ function renderPlanNodes(plan: Plan | null): void {
     host.appendChild(node)
   }
 
-  const next = nextLabelSpec(plan)
+  const next = nextLabelSpec(plan, containerH)
   if (next === null) return
   const label = element('div', 'alabel next', next.text)
   label.style.left = next.left
@@ -226,7 +237,7 @@ export function setSession(k: string): void {
     A.animate('.node', { opacity: { from: 0.2 }, duration: 350, ease: 'outQuad' })
     pulseActive(A)
   }
-  drawFlow()
+  layoutFlow()
 }
 
 async function archiveSession(label: string): Promise<void> {
@@ -384,6 +395,49 @@ function templateEdges(svg: Element, box: DOMRect): SVGPathElement[] {
   ]
 }
 
+function placePlanNodes(containerH: number): number[] {
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>('#plan-nodes .node'))
+  const boxes = planLayout(nodes.length, containerH)
+  nodes.forEach((node, index) => {
+    const box = boxes[index]
+    if (box !== undefined) node.style.top = box.top
+  })
+
+  const tops = boxes.map((box) => Number.parseInt(box.top, 10))
+  const label = document.querySelector<HTMLElement>('#plan-nodes .alabel.next')
+  const last = tops[tops.length - 1]
+  if (label !== null && last !== undefined) label.style.top = `${last + NEXT_LABEL_DROP}px`
+  return tops
+}
+
+function placeTemplateNodes(containerH: number): number[] {
+  const tops = templateTops(containerH)
+  for (const id of TEMPLATE_ROW_IDS) {
+    const node = document.getElementById(id)
+    if (node !== null) node.style.top = `${Math.round(tops.main)}px`
+  }
+  const raised = document.getElementById('nd-codex')
+  if (raised !== null) raised.style.top = `${Math.round(tops.raised)}px`
+
+  const labels = Array.from(document.querySelectorAll<HTMLElement>('.flow .alabel.tpl'))
+  if (labels[0] !== undefined) labels[0].style.top = `${Math.round(tops.labelA)}px`
+  if (labels[1] !== undefined) labels[1].style.top = `${Math.round(tops.labelB)}px`
+  return [tops.raised, tops.main]
+}
+
+export function layoutFlow(): void {
+  const flow = flowContainer()
+  if (flow === null) return
+  const containerH = flow.clientHeight
+  const tops = flow.classList.contains('planned')
+    ? placePlanNodes(containerH)
+    : placeTemplateNodes(containerH)
+
+  const svg = document.getElementById('fsvg')
+  if (svg !== null) svg.style.height = `${Math.max(containerH, Math.round(flowContentH(tops)))}px`
+  drawFlow()
+}
+
 export function drawFlow(): void {
   const svg = document.getElementById('fsvg')
   if (svg === null) return
@@ -478,7 +532,25 @@ export function installFlow(): void {
   })
   void hydrate()
   setInterval(() => void hydrate(), FLOW_REFRESH_MS)
-  addEventListener('resize', () => drawFlow())
+  addEventListener('resize', () => layoutFlow())
+  observeFlowArea()
+}
+
+let relayoutQueued = false
+
+function queueLayoutFlow(): void {
+  if (relayoutQueued) return
+  relayoutQueued = true
+  requestAnimationFrame(() => {
+    relayoutQueued = false
+    layoutFlow()
+  })
+}
+
+function observeFlowArea(): void {
+  const flow = flowContainer()
+  if (flow === null || typeof ResizeObserver === 'undefined') return
+  new ResizeObserver(() => queueLayoutFlow()).observe(flow)
 }
 
 installFlow()
