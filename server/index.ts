@@ -229,7 +229,13 @@ export async function createApp(): Promise<Elysia> {
 if (import.meta.main) {
   const config = await readConfig().catch(() => ({ bind: DEFAULT_BIND }))
   const target = parseBind(config.bind)
+  const occupied = await fetch(`http://${target.hostname}:${target.port}/api/health`, { signal: AbortSignal.timeout(800) })
+    .then(() => true, () => false)
+  if (occupied) {
+    console.error(`mission-control: ${target.hostname}:${target.port} already answers — another instance is running, refusing to double-bind`)
+    process.exit(1)
+  }
   const app = await createApp()
-  app.listen({ hostname: target.hostname, port: target.port })
+  app.listen({ hostname: target.hostname, port: target.port, reusePort: false })
   console.log(`mission-control listening on http://${target.hostname}:${target.port}`)
 }
