@@ -401,6 +401,119 @@ describe('jsonl reload', () => {
   })
 })
 
+describe('session id capture', () => {
+  const sessionLine = '{"type":"system","subtype":"init","session_id":"sess-42"}'
+  const streamResolver: EngineResolver = () => ({ cmd: 'echo', args: [sessionLine], env: {} })
+
+  test('pulls the session id out of the stream and persists it on the record', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const manager = createJobManager({ home })
+
+    const created = await manager.createJob(
+      { engine: 'claude', cwd: repo, prompt: 'say alpha', label: 'thread' },
+      streamResolver,
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(created.job.sessionId).toBeNull()
+
+    const settled = await waitForStatus(manager, created.job.id)
+    expect(settled.sessionId).toBe('sess-42')
+    expect(settled.status).toBe('done')
+
+    const lines = (await readFile(configPath(JOBS_FILE), 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as JobRecord)
+    expect(lines[lines.length - 1]?.sessionId).toBe('sess-42')
+  })
+
+  test('records the prompt and its own id as the thread root for an original dispatch', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const manager = createJobManager({ home })
+
+    const created = await manager.createJob(
+      { engine: 'claude', cwd: repo, prompt: 'say alpha', label: 'thread' },
+      streamResolver,
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+
+    expect(created.job.prompt).toBe('say alpha')
+    expect(created.job.parentJobId).toBeNull()
+    expect(created.job.threadRoot).toBe(created.job.id)
+  })
+
+  test('carries the reply thread fields through and hands the resolver the session to resume', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const manager = createJobManager({ home })
+    const seen: Array<string | undefined> = []
+    const capturing: EngineResolver = (params) => {
+      seen.push(params.resumeSessionId)
+      return { cmd: 'echo', args: [sessionLine], env: {} }
+    }
+
+    const created = await manager.createJob(
+      {
+        engine: 'claude',
+        cwd: repo,
+        prompt: 'what word did you say?',
+        label: 'thread',
+        parentJobId: 'parent-1',
+        threadRoot: 'root-1',
+        resumeSessionId: 'sess-42',
+      },
+      capturing,
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+
+    expect(seen).toEqual(['sess-42'])
+    expect(created.job.parentJobId).toBe('parent-1')
+    expect(created.job.threadRoot).toBe('root-1')
+  })
+
+  test('leaves sessionId null when the engine never prints one', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const manager = createJobManager({ home })
+
+    const created = await manager.createJob(
+      { engine: 'claude', cwd: repo, prompt: 'plain text', label: 'thread' },
+      echoResolver,
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect((await waitForStatus(manager, created.job.id)).sessionId).toBeNull()
+  })
+
+  test('a record written before threads existed loads as its own single-turn thread', async () => {
+    const legacy = {
+      id: 'legacy-2',
+      engine: 'glm',
+      cwd: home,
+      label: 'legacy',
+      pid: 42,
+      status: 'done',
+      startedAt: 1,
+      endedAt: 2,
+      exitCode: 0,
+      diffStat: null,
+    }
+    await mkdir(configDir, { recursive: true })
+    await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(legacy)}\n`)
+
+    const loaded = createJobManager({ home }).getJob('legacy-2')
+    expect(loaded?.prompt).toBe('')
+    expect(loaded?.sessionId).toBeNull()
+    expect(loaded?.parentJobId).toBeNull()
+    expect(loaded?.threadRoot).toBe('legacy-2')
+  })
+})
+
 describe('log tail/offset reader', () => {
   test('readLogTail returns only the last N bytes and the total size as offset', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'mc-jobs-log-'))

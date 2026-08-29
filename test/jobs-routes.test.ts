@@ -9,7 +9,8 @@ import { SESSION_COOKIE, completeSetup, resetLoginLimiter } from '../server/auth
 import { createApp } from '../server/index'
 import { createJobManager } from '../server/jobs'
 import type { JobManager } from '../server/jobs'
-import type { EngineResolver } from '../server/jobs-engine-iface'
+import type { EngineResolver, EngineResolverParams } from '../server/jobs-engine-iface'
+import { engineArgs } from '../server/jobs-engine-iface'
 import { jobsRoutes, safeEnqueue } from '../server/routes/jobs'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 
@@ -333,6 +334,208 @@ describe('GET /api/jobs/:id/activity', () => {
     }
     expect(feed.events).toEqual([])
     expect(feed.currentActivity).toBeNull()
+  })
+})
+
+const SESSION_LINE = '{"type":"system","subtype":"init","session_id":"sess-1"}'
+
+// Echoes one real init line so the pump finds a session id exactly the way it does for claude.
+const sessionResolver: EngineResolver = () => ({ cmd: 'echo', args: [SESSION_LINE], env: {} })
+
+function capturingResolver(calls: EngineResolverParams[]): EngineResolver {
+  return (params) => {
+    calls.push(params)
+    return { cmd: 'echo', args: [SESSION_LINE], env: {} }
+  }
+}
+
+async function dispatch(
+  app: Elysia,
+  cookie: string,
+  body: Record<string, unknown>,
+): Promise<{ id: string }> {
+  const response = await app.handle(post('/api/jobs', body, cookie))
+  return (await response.json()) as { id: string }
+}
+
+describe('POST /api/jobs/:id/reply', () => {
+  test('rejects an unauthenticated request', async () => {
+    const app = buildApp(createJobManager(), sessionResolver)
+    const response = await app.handle(post('/api/jobs/anything/reply', { message: 'hi' }))
+    expect(response.status).toBe(401)
+  })
+
+  test('404s for an unknown job', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), sessionResolver)
+    const response = await app.handle(post('/api/jobs/nope/reply', { message: 'hi' }, cookie))
+    expect(response.status).toBe(404)
+  })
+
+  test('rejects a blank message', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), sessionResolver)
+    const job = await dispatch(app, cookie, { engine: 'claude', cwd: repo, prompt: 'p', label: 'l' })
+    await pollUntilDone(app, cookie, job.id)
+
+    const response = await app.handle(post(`/api/jobs/${job.id}/reply`, { message: '   ' }, cookie))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'message is required' })
+  })
+
+  test('chains a new job whose argv carries --resume with the parent session id', async () => {
+    const cookie = await authCookie()
+    const calls: EngineResolverParams[] = []
+    const app = buildApp(createJobManager(), capturingResolver(calls))
+
+    const parent = await dispatch(app, cookie, {
+      engine: 'claude',
+      cwd: repo,
+      prompt: 'reply with the word alpha',
+      label: 'thread-work',
+    })
+    await pollUntilDone(app, cookie, parent.id)
+
+    const response = await app.handle(
+      post(`/api/jobs/${parent.id}/reply`, { message: 'what word did you say?' }, cookie),
+    )
+    expect(response.status).toBe(200)
+    const child = (await response.json()) as {
+      id: string
+      engine: string
+      cwd: string
+      label: string
+      prompt: string
+      parentJobId: string
+      threadRoot: string
+    }
+
+    expect(child.id).not.toBe(parent.id)
+    expect(child.engine).toBe('claude')
+    expect(child.label).toBe('thread-work')
+    expect(child.prompt).toBe('what word did you say?')
+    expect(child.parentJobId).toBe(parent.id)
+    expect(child.threadRoot).toBe(parent.id)
+
+    expect(calls[1]?.resumeSessionId).toBe('sess-1')
+    expect(engineArgs('claude', 'what word did you say?', calls[1]?.resumeSessionId)).toEqual([
+      '--resume',
+      'sess-1',
+      '-p',
+      'what word did you say?',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+    ])
+    expect(calls[0]?.resumeSessionId).toBeUndefined()
+  })
+
+  test('a reply to the reply stays on the same thread root', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), sessionResolver)
+    const root = await dispatch(app, cookie, { engine: 'claude', cwd: repo, prompt: 'one', label: 'l' })
+    await pollUntilDone(app, cookie, root.id)
+
+    const first = (await (
+      await app.handle(post(`/api/jobs/${root.id}/reply`, { message: 'two' }, cookie))
+    ).json()) as { id: string }
+    await pollUntilDone(app, cookie, first.id)
+
+    const second = (await (
+      await app.handle(post(`/api/jobs/${first.id}/reply`, { message: 'three' }, cookie))
+    ).json()) as { threadRoot: string; parentJobId: string }
+
+    expect(second.threadRoot).toBe(root.id)
+    expect(second.parentJobId).toBe(first.id)
+  })
+
+  test('400s while the job has produced no session id', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), echoResolver)
+    const job = await dispatch(app, cookie, { engine: 'claude', cwd: repo, prompt: 'no json here', label: 'l' })
+    await pollUntilDone(app, cookie, job.id)
+
+    const response = await app.handle(post(`/api/jobs/${job.id}/reply`, { message: 'hi' }, cookie))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'job has no session id to resume yet' })
+  })
+
+  test('400s for an engine with no verified resume invocation', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), sessionResolver)
+    const job = await dispatch(app, cookie, { engine: 'mystery', cwd: repo, prompt: 'p', label: 'l' })
+    await pollUntilDone(app, cookie, job.id)
+
+    const response = await app.handle(post(`/api/jobs/${job.id}/reply`, { message: 'hi' }, cookie))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'engine does not support conversation resume' })
+  })
+})
+
+describe('GET /api/jobs/:id/thread', () => {
+  test('rejects an unauthenticated request and 404s an unknown job', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), sessionResolver)
+
+    expect((await app.handle(get('/api/jobs/x/thread'))).status).toBe(401)
+    expect((await app.handle(get('/api/jobs/x/thread', cookie))).status).toBe(404)
+  })
+
+  test('returns the ordered conversation for the whole chain from either end', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), sessionResolver)
+    const root = await dispatch(app, cookie, {
+      engine: 'claude',
+      cwd: repo,
+      prompt: 'reply with the word alpha',
+      label: 'l',
+    })
+    await pollUntilDone(app, cookie, root.id)
+
+    const child = (await (
+      await app.handle(post(`/api/jobs/${root.id}/reply`, { message: 'what word did you say?' }, cookie))
+    ).json()) as { id: string }
+    await pollUntilDone(app, cookie, child.id)
+
+    for (const id of [root.id, child.id]) {
+      const thread = (await (await app.handle(get(`/api/jobs/${id}/thread`, cookie))).json()) as {
+        rootId: string
+        engine: string
+        running: boolean
+        canReply: boolean
+        sessionId: string | null
+        messages: Array<{ role: string; kind: string; text: string; jobId: string }>
+      }
+
+      expect(thread.rootId).toBe(root.id)
+      expect(thread.engine).toBe('claude')
+      expect(thread.running).toBe(false)
+      expect(thread.canReply).toBe(true)
+      expect(thread.sessionId).toBe('sess-1')
+
+      const prompts = thread.messages.filter((message) => message.role === 'user')
+      expect(prompts.map((message) => message.text)).toEqual([
+        'reply with the word alpha',
+        'what word did you say?',
+      ])
+      expect(prompts.map((message) => message.jobId)).toEqual([root.id, child.id])
+    }
+  })
+
+  test('reports canReply false while no session id has appeared', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), echoResolver)
+    const job = await dispatch(app, cookie, { engine: 'claude', cwd: repo, prompt: 'plain', label: 'l' })
+    await pollUntilDone(app, cookie, job.id)
+
+    const thread = (await (await app.handle(get(`/api/jobs/${job.id}/thread`, cookie))).json()) as {
+      canReply: boolean
+      sessionId: string | null
+      messages: unknown[]
+    }
+    expect(thread.canReply).toBe(false)
+    expect(thread.sessionId).toBeNull()
+    expect(thread.messages).toHaveLength(1)
   })
 })
 

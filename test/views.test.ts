@@ -51,6 +51,8 @@ const PAGES: [string, string[]][] = [
       'id="plan-steps"',
       'id="plan-next"',
       'id="activity-feed"',
+      'class="tproc" id="activity-feed"',
+      'ACTIVITY · PROCESS',
       'class="node tpl" id="nd-spec"',
       'id="nd-spec"',
       'id="nd-impl"',
@@ -77,7 +79,17 @@ const PAGES: [string, string[]][] = [
     '/settings',
     ['API TOKEN', 'BASE URL', 'MODEL MAP', 'CONNECTION', 'class="applab"', 'GLM PEAK', 'id="bind"'],
   ],
-  ['/dispatch', ['id="dispatch-form"', 'id="jobs-body"', 'id="log-drawer"', 'id="prompt"']],
+  [
+    '/dispatch',
+    [
+      'id="dispatch-form"',
+      'id="jobs-body"',
+      'id="log-drawer"',
+      'id="thread-drawer"',
+      'id="thread-host"',
+      'id="prompt"',
+    ],
+  ],
   [
     '/terminals',
     [
@@ -101,6 +113,36 @@ const PAGES: [string, string[]][] = [
   ],
   ['/review', ['id="review-body"', 'REVIEW QUEUE']],
 ]
+
+const ISLAND_MARKERS: [string, string[]][] = [
+  [
+    'agents.js',
+    ['TALK \u25be', 'tslot', '/thread', 'createThreadPanel', 'reply to this agent'],
+  ],
+  ['dispatch.js', ['TALK', 'thread-host', '/thread', '/reply']],
+  ['flow.js', ['/thread', 'activity-feed']],
+]
+
+describe('thread panel islands', () => {
+  for (const [file, markers] of ISLAND_MARKERS) {
+    test(`/js/${file} ships the thread panel`, async () => {
+      const response = await app.handle(new Request(`http://localhost/js/${file}`, { headers: { cookie } }))
+      expect(response.status).toBe(200)
+      const code = await response.text()
+      for (const marker of markers) {
+        expect(code).toContain(marker)
+      }
+    })
+  }
+
+  test('only the reply-capable mounts build a reply box', async () => {
+    const lanes = await (
+      await app.handle(new Request('http://localhost/js/flow.js', { headers: { cookie } }))
+    ).text()
+    expect(lanes).toContain('reply: false')
+    expect(lanes).not.toContain('reply: true')
+  })
+})
 
 describe('tab views', () => {
   for (const [path, markers] of PAGES) {
