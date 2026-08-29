@@ -170,4 +170,33 @@ describe('createActivityThrottle', () => {
     clock += 10_000
     expect(throttle.ready()).toBe(true)
   })
+
+  test('remainingMs is zero before the first call, since a first call always passes', () => {
+    const throttle = createActivityThrottle(2_000, () => 1_000)
+    expect(throttle.remainingMs()).toBe(0)
+  })
+
+  test('remainingMs counts down to zero across the window, then resets on the next pass', () => {
+    let clock = 1_000
+    const throttle = createActivityThrottle(2_000, () => clock)
+
+    expect(throttle.ready()).toBe(true)
+    expect(throttle.remainingMs()).toBe(2_000)
+
+    clock += 500
+    expect(throttle.remainingMs()).toBe(1_500)
+
+    clock += 1_500
+    expect(throttle.remainingMs()).toBe(0)
+    expect(throttle.ready()).toBe(true)
+    expect(throttle.remainingMs()).toBe(2_000)
+  })
+
+  test('remainingMs never goes negative once the window has long passed', () => {
+    let clock = 1_000
+    const throttle = createActivityThrottle(2_000, () => clock)
+    throttle.ready()
+    clock += 100_000
+    expect(throttle.remainingMs()).toBe(0)
+  })
 })
