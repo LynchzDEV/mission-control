@@ -12,13 +12,15 @@ import {
   statusGlyph,
   toAgentJob,
   type AgentJob,
+  type AgentThread,
 } from '../client/agents'
 
 const NOW = 1_700_000_000_000
 
 function job(overrides: Partial<AgentJob> = {}): AgentJob {
+  const id = overrides.id ?? 'job-0'
   return {
-    id: 'job-0',
+    id,
     engine: 'glm',
     label: 'job-0',
     cwd: '/Users/x/code/repo',
@@ -27,12 +29,13 @@ function job(overrides: Partial<AgentJob> = {}): AgentJob {
     endedAt: null,
     diffStat: '',
     activity: '',
+    threadRoot: id,
     ...overrides,
   }
 }
 
 describe('toAgentJob', () => {
-  test('maps a jobs-list row including currentActivity', () => {
+  test('maps a jobs-list row including currentActivity and threadRoot', () => {
     const mapped = toAgentJob({
       id: 'abcdef01-2345',
       engine: 'claude',
@@ -43,6 +46,7 @@ describe('toAgentJob', () => {
       endedAt: null,
       diffStat: '2 files changed',
       currentActivity: 'Edit · client/agents.ts',
+      threadRoot: 'root-1',
     })
 
     expect(mapped).toEqual({
@@ -55,7 +59,13 @@ describe('toAgentJob', () => {
       endedAt: null,
       diffStat: '2 files changed',
       activity: 'Edit · client/agents.ts',
+      threadRoot: 'root-1',
     })
+  })
+
+  test('defaults threadRoot to its own id for an original dispatch', () => {
+    const mapped = toAgentJob({ id: 'solo-job' })
+    expect(mapped.threadRoot).toBe('solo-job')
   })
 
   test('falls back to a short id label and safe defaults on a sparse row', () => {
@@ -128,11 +138,11 @@ describe('splitAgents', () => {
     job({ id: 'f1', status: 'failed', startedAt: NOW - 1 }),
   ]
 
-  test('splits running from finished and orders both newest first', () => {
+  test('splits running from finished and orders both newest first, one thread per row', () => {
     const groups = splitAgents(rows)
 
-    expect(groups.running.map((entry) => entry.id)).toEqual(['r2', 'r1'])
-    expect(groups.recent.map((entry) => entry.id)).toEqual(['f1', 'd1'])
+    expect(groups.running.map((entry) => entry.threadRoot)).toEqual(['r2', 'r1'])
+    expect(groups.recent.map((entry) => entry.threadRoot)).toEqual(['f1', 'd1'])
   })
 
   test('does not mutate the input order', () => {
@@ -141,24 +151,102 @@ describe('splitAgents', () => {
     expect(input.map((entry) => entry.id)).toEqual(['r1', 'd1', 'r2', 'f1'])
   })
 
-  test(`keeps at most ${RECENT_LIMIT} recent rows, dropping the oldest`, () => {
+  test(`keeps at most ${RECENT_LIMIT} recent threads, dropping the oldest`, () => {
     const many = Array.from({ length: 12 }, (_unused, index) =>
       job({ id: `done-${index}`, status: 'done', startedAt: NOW + index }),
     )
     const groups = splitAgents(many)
 
     expect(groups.recent.length).toBe(RECENT_LIMIT)
-    expect(groups.recent[0]?.id).toBe('done-11')
-    expect(groups.recent.at(-1)?.id).toBe('done-4')
+    expect(groups.recent[0]?.threadRoot).toBe('done-11')
+    expect(groups.recent.at(-1)?.threadRoot).toBe('done-4')
   })
 
   test('treats a missing startedAt as oldest', () => {
     const groups = splitAgents([job({ id: 'none', startedAt: null }), job({ id: 'has' })])
-    expect(groups.running.map((entry) => entry.id)).toEqual(['has', 'none'])
+    expect(groups.running.map((entry) => entry.threadRoot)).toEqual(['has', 'none'])
   })
 
   test('returns empty groups for no jobs', () => {
     expect(splitAgents([])).toEqual({ running: [], recent: [] })
+  })
+
+  describe('one card per thread', () => {
+    test('a reply job collapses into its parent thread, keyed by threadRoot', () => {
+      const opening = job({ id: 'root-1', threadRoot: 'root-1', status: 'done', startedAt: NOW - 100 })
+      const reply = job({ id: 'reply-1', threadRoot: 'root-1', status: 'running', startedAt: NOW })
+
+      const groups = splitAgents([opening, reply])
+
+      expect(groups.running).toHaveLength(1)
+      expect(groups.recent).toHaveLength(0)
+      const thread = groups.running[0] as AgentThread
+      expect(thread.threadRoot).toBe('root-1')
+      expect(thread.jobCount).toBe(2)
+    })
+
+    test('status/elapsed/engine on the card come from the newest job in the thread', () => {
+      const opening = job({
+        id: 'root-2',
+        threadRoot: 'root-2',
+        status: 'done',
+        engine: 'claude',
+        startedAt: NOW - 100,
+        endedAt: NOW - 90,
+      })
+      const reply = job({
+        id: 'reply-2',
+        threadRoot: 'root-2',
+        status: 'running',
+        engine: 'glm',
+        startedAt: NOW,
+      })
+
+      const [thread] = splitAgents([opening, reply]).running as AgentThread[]
+
+      expect(thread?.newestJob.id).toBe('reply-2')
+      expect(thread?.newestJob.status).toBe('running')
+      expect(thread?.newestJob.engine).toBe('glm')
+    })
+
+    test('a mixed running/done thread still exposes the running job as the KILL target', () => {
+      const doneReply = job({ id: 'reply-3', threadRoot: 'root-3', status: 'done', startedAt: NOW })
+      const stillRunning = job({
+        id: 'root-3',
+        threadRoot: 'root-3',
+        status: 'running',
+        startedAt: NOW - 100,
+      })
+
+      const [thread] = splitAgents([doneReply, stillRunning]).recent as AgentThread[]
+
+      expect(thread?.newestJob.id).toBe('reply-3')
+      expect(thread?.runningJob?.id).toBe('root-3')
+    })
+
+    test('a thread with nothing running has a null runningJob', () => {
+      const opening = job({ id: 'root-4', threadRoot: 'root-4', status: 'done', startedAt: NOW - 10 })
+      const reply = job({ id: 'reply-4', threadRoot: 'root-4', status: 'failed', startedAt: NOW })
+
+      const [thread] = splitAgents([opening, reply]).recent as AgentThread[]
+
+      expect(thread?.runningJob).toBeNull()
+    })
+
+    test('RECENT_LIMIT bounds distinct threads, not the jobs inside them', () => {
+      const many = Array.from({ length: RECENT_LIMIT + 2 }, (_unused, index) => {
+        const root = `root-${index}`
+        return [
+          job({ id: root, threadRoot: root, status: 'done', startedAt: NOW + index * 10 }),
+          job({ id: `${root}-reply`, threadRoot: root, status: 'done', startedAt: NOW + index * 10 + 1 }),
+        ]
+      }).flat()
+
+      const groups = splitAgents(many)
+
+      expect(groups.recent).toHaveLength(RECENT_LIMIT)
+      expect(new Set(groups.recent.map((thread) => thread.threadRoot)).size).toBe(RECENT_LIMIT)
+    })
   })
 })
 

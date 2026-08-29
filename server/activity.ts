@@ -300,7 +300,7 @@ export function currentActivity(events: readonly ActivityEvent[]): string | null
   return null
 }
 
-export type ActivityThrottle = { ready(): boolean }
+export type ActivityThrottle = { ready(): boolean; remainingMs(): number }
 
 export function createActivityThrottle(
   intervalMs: number = ACTIVITY_THROTTLE_MS,
@@ -313,6 +313,12 @@ export function createActivityThrottle(
       if (last !== null && at - last < intervalMs) return false
       last = at
       return true
+    },
+    // How long until a throttled call would pass — the window a dropped chunk needs to be
+    // revisited so a long tool pause never leaves currentActivity stuck on a stale line.
+    remainingMs(): number {
+      if (last === null) return 0
+      return Math.max(0, intervalMs - (now() - last))
     },
   }
 }

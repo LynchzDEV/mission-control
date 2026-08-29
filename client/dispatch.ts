@@ -2,7 +2,10 @@ import {
   CARD_POLL_MS,
   DRAWER_POLL_MS,
   createMiniFeed,
+  groupByThread,
+  sortThreadsByActivity,
   type MiniFeed,
+  type ThreadGroup,
 } from './thread-view'
 import { installDrawer, isDrawerOpen, openDrawer } from './thread-drawer'
 import { errorText, getJson, markFixture, postJson, readArray, readNumber, streamJobLog } from './shared'
@@ -17,7 +20,10 @@ type Job = {
   endedAt: number | null
   diffStat: string
   reviewedAt: number | null
+  threadRoot: string
 }
+
+type JobThread = ThreadGroup<Job>
 
 const LIVE_POLL_MS = 5_000
 const ABSENT_POLL_MS = 60_000
@@ -32,8 +38,9 @@ function str(value: unknown, fallback = ''): string {
 }
 
 function toJob(raw: Record<string, unknown>): Job {
+  const id = str(raw.id, '?')
   return {
-    id: str(raw.id, '?'),
+    id,
     engine: str(raw.engine, '?'),
     label: str(raw.label, str(raw.id, 'job')),
     cwd: str(raw.cwd),
@@ -42,6 +49,7 @@ function toJob(raw: Record<string, unknown>): Job {
     endedAt: readNumber(raw.endedAt),
     diffStat: str(raw.diffStat),
     reviewedAt: readNumber(raw.reviewedAt),
+    threadRoot: str(raw.threadRoot, id),
   }
 }
 
@@ -60,33 +68,38 @@ function cellText(row: HTMLTableRowElement, value: string, className = ''): void
 
 // The feed element outlives the table row it sits in, so a poll that rebuilds the table keeps
 // every already-rendered transcript line instead of refetching the thread.
-function miniFeed(job: Job): MiniFeed {
-  const existing = feeds.get(job.id)
+function miniFeed(thread: JobThread): MiniFeed {
+  const existing = feeds.get(thread.threadRoot)
   if (existing !== undefined) return existing
-  const feed = createMiniFeed(job.id, {
-    onOpen: () => openDrawer({ id: job.id, label: job.label, engine: job.engine, elapsed: elapsed(job) }),
-    pollMs: () => (isDrawerOpen(job.id) ? DRAWER_POLL_MS : CARD_POLL_MS),
+  const job = thread.newestJob
+  const feed = createMiniFeed(thread.threadRoot, {
+    onOpen: () =>
+      openDrawer({ id: thread.threadRoot, label: job.label, engine: job.engine, elapsed: elapsed(job) }),
+    pollMs: () => (isDrawerOpen(thread.threadRoot) ? DRAWER_POLL_MS : CARD_POLL_MS),
   })
-  feeds.set(job.id, feed)
+  feeds.set(thread.threadRoot, feed)
   feed.start()
   return feed
 }
 
-function dropFeeds(jobs: Job[]): void {
-  const live = new Set(jobs.map((job) => job.id))
-  for (const [id, feed] of feeds) {
-    if (live.has(id)) continue
+function dropFeeds(threads: JobThread[]): void {
+  const live = new Set(threads.map((thread) => thread.threadRoot))
+  for (const [threadRoot, feed] of feeds) {
+    if (live.has(threadRoot)) continue
     feed.stop()
-    feeds.delete(id)
+    feeds.delete(threadRoot)
   }
 }
 
+// Jobs sharing a threadRoot are one conversation and render as one row: replies collapse into
+// the thread they belong to instead of piling up as separate history entries.
 function renderJobs(jobs: Job[]): void {
   const body = document.querySelector<HTMLTableSectionElement>('#jobs-body')
   if (body === null) return
-  dropFeeds(jobs)
+  const threads = sortThreadsByActivity(groupByThread(jobs))
+  dropFeeds(threads)
   body.textContent = ''
-  if (jobs.length === 0) {
+  if (threads.length === 0) {
     const row = body.insertRow()
     row.className = 'empty'
     const cell = row.insertCell()
@@ -94,7 +107,8 @@ function renderJobs(jobs: Job[]): void {
     cell.textContent = 'NO JOBS YET'
     return
   }
-  for (const job of jobs) {
+  for (const thread of threads) {
+    const job = thread.newestJob
     const row = body.insertRow()
     const status = row.insertCell()
     const dot = document.createElement('span')
@@ -111,18 +125,19 @@ function renderJobs(jobs: Job[]): void {
     talk.className = 'btn'
     talk.textContent = 'TALK ▾'
     talk.onclick = () =>
-      openDrawer({ id: job.id, label: job.label, engine: job.engine, elapsed: elapsed(job) })
+      openDrawer({ id: thread.threadRoot, label: job.label, engine: job.engine, elapsed: elapsed(job) })
     actions.appendChild(talk)
     const tail = document.createElement('button')
     tail.className = 'btn'
     tail.textContent = 'LOG'
     tail.onclick = () => openLog(job)
     actions.appendChild(tail)
-    if (job.status === 'running') {
+    if (thread.runningJob !== null) {
+      const runningJob = thread.runningJob
       const kill = document.createElement('button')
       kill.className = 'btn'
       kill.textContent = 'KILL'
-      kill.onclick = () => void killJob(job)
+      kill.onclick = () => void killJob(runningJob)
       actions.appendChild(kill)
     }
 
@@ -130,7 +145,7 @@ function renderJobs(jobs: Job[]): void {
     feedRow.className = 'minirow'
     const feedCell = feedRow.insertCell()
     feedCell.colSpan = 6
-    feedCell.appendChild(miniFeed(job).root)
+    feedCell.appendChild(miniFeed(thread).root)
   }
 }
 

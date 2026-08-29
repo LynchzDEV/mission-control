@@ -234,6 +234,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   const activities = new Map<string, string>()
   const tails = new Map<string, string>()
   const sessionScans = new Map<string, string>()
+  const pendingActivityTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   function logPath(id: string): string {
     return join(logsDir, `${id}.log`)
@@ -262,12 +263,35 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     void persist({ ...record, sessionId: found }).catch(() => {})
   }
 
+  function clearPendingActivityTimer(id: string): void {
+    const pending = pendingActivityTimers.get(id)
+    if (pending === undefined) return
+    clearTimeout(pending)
+    pendingActivityTimers.delete(id)
+  }
+
+  // A throttled chunk still holds the newest activity line — it just can't be shown yet — so a
+  // single coalesced timer revisits it once the throttle window passes, even if no further chunk
+  // ever arrives (a long tool call with no interim output would otherwise leave the ticker stale).
+  function scheduleTrailingRefresh(id: string, throttle: ReturnType<typeof createActivityThrottle>): void {
+    if (pendingActivityTimers.has(id)) return
+    const timer = setTimeout(() => {
+      pendingActivityTimers.delete(id)
+      refreshActivity(id)
+    }, throttle.remainingMs())
+    pendingActivityTimers.set(id, timer)
+  }
+
   function collectActivity(id: string, throttle: ReturnType<typeof createActivityThrottle>) {
     return (text: string): void => {
       scanSessionId(id, text)
       const combined = (tails.get(id) ?? '') + text
       tails.set(id, combined.slice(Math.max(0, combined.length - ACTIVITY_TAIL_CHARS)))
-      if (throttle.ready()) refreshActivity(id)
+      if (throttle.ready()) {
+        refreshActivity(id)
+        return
+      }
+      scheduleTrailingRefresh(id, throttle)
     }
   }
 
@@ -278,6 +302,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
 
   async function settleFailed(id: string, record: JobRecord): Promise<void> {
     processes.delete(id)
+    clearPendingActivityTimer(id)
     await persist({
       ...(jobs.get(id) ?? record),
       status: 'failed',
@@ -304,6 +329,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
         pump(proc.stderr, logStream, createLogRedactor(redactToken), collect),
       ])
       refreshActivity(id)
+      clearPendingActivityTimer(id)
       tails.delete(id)
       const exitCode = await proc.exited
       await new Promise<void>((resolveClose) => logStream.end(resolveClose))

@@ -514,6 +514,46 @@ describe('session id capture', () => {
   })
 })
 
+describe('activity throttle trailing recompute', () => {
+  // `exec` at the end replaces the shell with `sleep` in place (same pid, same stdout/stderr
+  // fds), so killing the spawned process closes the pipe immediately instead of leaving a
+  // forked `sleep` child holding it open for its full duration.
+  const throttledActivityResolver: EngineResolver = () => ({
+    cmd: 'sh',
+    args: [
+      '-c',
+      [
+        'printf \'%s\\n\' \'{"type":"assistant","message":{"content":[{"type":"text","text":"first"}]}}\'',
+        'printf \'%s\\n\' \'{"type":"assistant","message":{"content":[{"type":"text","text":"second"}]}}\'',
+        'exec sleep 2',
+      ].join('; '),
+    ],
+    env: {},
+  })
+
+  test('a chunk dropped by the throttle is still parsed once its window elapses, with no further chunk arriving', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const manager = createJobManager({ home, activityIntervalMs: 100 })
+
+    const created = await manager.createJob(
+      { engine: 'claude', cwd: repo, prompt: 'irrelevant', label: 'throttle-trailing' },
+      throttledActivityResolver,
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+
+    // The two lines print back to back, so the second is throttled and dropped without the
+    // trailing-timer fix. Check well after the 100ms window but well before the 2s sleep ends.
+    await new Promise((resolveWait) => setTimeout(resolveWait, 400))
+    expect(manager.currentActivity(created.job.id)).toBe('second')
+    expect(manager.getJob(created.job.id)?.status).toBe('running')
+
+    await manager.killJob(created.job.id)
+    await waitForStatus(manager, created.job.id)
+  })
+})
+
 describe('log tail/offset reader', () => {
   test('readLogTail returns only the last N bytes and the total size as offset', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'mc-jobs-log-'))
