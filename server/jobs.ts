@@ -3,7 +3,13 @@ import { appendFile, chmod, mkdir, readFile, stat } from 'node:fs/promises'
 import { chmodSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { ACTIVITY_THROTTLE_MS, createActivityThrottle, currentActivity, parseActivity } from './activity'
+import {
+  ACTIVITY_THROTTLE_MS,
+  createActivityThrottle,
+  currentActivity,
+  parseActivity,
+  parseSessionId,
+} from './activity'
 import { DIR_MODE, FILE_MODE, configDir, readSecrets } from './secrets'
 import { validateWorkspaceCwd } from './workspace'
 import type { EngineResolver, EngineSpawn } from './jobs-engine-iface'
@@ -13,6 +19,7 @@ export const LOGS_DIR = 'logs'
 export const KILL_ESCALATION_MS = 5_000
 export const MIN_REDACTED_SECRET_LENGTH = 8
 export const ACTIVITY_TAIL_CHARS = 16_384
+export const SESSION_SCAN_MAX_CHARS = 65_536
 
 const REDACTED_PLACEHOLDER = '[REDACTED]'
 
@@ -23,6 +30,7 @@ export type JobRecord = {
   engine: string
   cwd: string
   label: string
+  prompt: string
   pid: number
   status: JobStatus
   startedAt: number
@@ -30,6 +38,9 @@ export type JobRecord = {
   exitCode: number | null
   diffStat: string | null
   reviewedAt: number | null
+  sessionId: string | null
+  parentJobId: string | null
+  threadRoot: string
 }
 
 export type CreateJobParams = {
@@ -37,6 +48,9 @@ export type CreateJobParams = {
   cwd: string
   prompt: string
   label: string
+  parentJobId?: string
+  threadRoot?: string
+  resumeSessionId?: string
 }
 
 export type CreateJobResult =
@@ -59,8 +73,20 @@ export type JobManager = {
   logPath(id: string): string
 }
 
+function readString(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback
+}
+
 export function normalizeJobRecord(raw: Record<string, unknown>): JobRecord {
-  return { ...(raw as unknown as JobRecord), reviewedAt: typeof raw.reviewedAt === 'number' ? raw.reviewedAt : null }
+  const id = readString(raw.id, '')
+  return {
+    ...(raw as unknown as JobRecord),
+    reviewedAt: typeof raw.reviewedAt === 'number' ? raw.reviewedAt : null,
+    prompt: readString(raw.prompt, ''),
+    sessionId: typeof raw.sessionId === 'string' && raw.sessionId !== '' ? raw.sessionId : null,
+    parentJobId: typeof raw.parentJobId === 'string' && raw.parentJobId !== '' ? raw.parentJobId : null,
+    threadRoot: readString(raw.threadRoot, '') === '' ? id : readString(raw.threadRoot, id),
+  }
 }
 
 function loadJobs(path: string): Map<string, JobRecord> {
@@ -207,6 +233,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   const processes = new Map<string, Bun.Subprocess<'ignore', 'pipe', 'pipe'>>()
   const activities = new Map<string, string>()
   const tails = new Map<string, string>()
+  const sessionScans = new Map<string, string>()
 
   function logPath(id: string): string {
     return join(logsDir, `${id}.log`)
@@ -217,8 +244,27 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     if (line !== null) activities.set(id, line)
   }
 
+  // The activity tail drops the head of a long log, but the session id is in the first line —
+  // so it gets its own bounded head buffer, dropped as soon as an id is found.
+  function scanSessionId(id: string, text: string): void {
+    const pending = sessionScans.get(id)
+    if (pending === undefined) return
+    const combined = pending + text
+    const found = parseSessionId(combined)
+    if (found === null) {
+      if (combined.length > SESSION_SCAN_MAX_CHARS) sessionScans.delete(id)
+      else sessionScans.set(id, combined)
+      return
+    }
+    sessionScans.delete(id)
+    const record = jobs.get(id)
+    if (record === undefined || record.sessionId === found) return
+    void persist({ ...record, sessionId: found }).catch(() => {})
+  }
+
   function collectActivity(id: string, throttle: ReturnType<typeof createActivityThrottle>) {
     return (text: string): void => {
+      scanSessionId(id, text)
       const combined = (tails.get(id) ?? '') + text
       tails.set(id, combined.slice(Math.max(0, combined.length - ACTIVITY_TAIL_CHARS)))
       if (throttle.ready()) refreshActivity(id)
@@ -232,7 +278,13 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
 
   async function settleFailed(id: string, record: JobRecord): Promise<void> {
     processes.delete(id)
-    await persist({ ...record, status: 'failed', endedAt: Date.now(), exitCode: null, diffStat: null })
+    await persist({
+      ...(jobs.get(id) ?? record),
+      status: 'failed',
+      endedAt: Date.now(),
+      exitCode: null,
+      diffStat: null,
+    })
   }
 
   async function finalizeJob(
@@ -261,9 +313,11 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       const diffStat = status === 'done' ? await captureDiffStat(cwd) : null
 
       processes.delete(id)
-      await persist({ ...record, status, endedAt: Date.now(), exitCode, diffStat })
+      sessionScans.delete(id)
+      await persist({ ...(jobs.get(id) ?? record), status, endedAt: Date.now(), exitCode, diffStat })
     } catch {
       tails.delete(id)
+      sessionScans.delete(id)
       await settleFailed(id, record)
     }
   }
@@ -275,7 +329,11 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     ensureDirsSync(dir, logsDir)
     let spawnSpec: EngineSpawn
     try {
-      spawnSpec = await resolver({ engine: params.engine, prompt: params.prompt })
+      spawnSpec = await resolver({
+        engine: params.engine,
+        prompt: params.prompt,
+        ...(params.resumeSessionId === undefined ? {} : { resumeSessionId: params.resumeSessionId }),
+      })
     } catch {
       return { ok: false, status: 400, error: 'engine resolver failed' }
     }
@@ -310,6 +368,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       engine: params.engine,
       cwd: cwdCheck.path,
       label: params.label,
+      prompt: params.prompt,
       pid: proc.pid,
       status: 'running',
       startedAt: Date.now(),
@@ -317,7 +376,11 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       exitCode: null,
       diffStat: null,
       reviewedAt: null,
+      sessionId: null,
+      parentJobId: params.parentJobId ?? null,
+      threadRoot: params.threadRoot ?? id,
     }
+    sessionScans.set(id, '')
     await persist(record)
 
     void finalizeJob(
