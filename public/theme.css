@@ -1678,3 +1678,6 @@ body.mcd-open .mcd {
 }
 
 .termbar[hidden]{display:none}
+
+.arecent-toggle{background:none;border:0;padding:0;cursor:pointer;color:var(--mc-fg-dim);font:inherit;font-size:9px;letter-spacing:.25em;text-align:left;width:100%}
+.arecent-toggle:hover{color:var(--mc-fg)}

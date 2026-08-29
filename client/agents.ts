@@ -279,6 +279,24 @@ async function killJob(id: string): Promise<void> {
   await refresh()
 }
 
+let recentOpen = false
+
+function syncRecentToggle(count: number): void {
+  const toggle = host('agents-recent-toggle')
+  const list = host('agents-recent')
+  if (toggle === null || list === null) return
+  toggle.hidden = count === 0
+  toggle.textContent = `RECENT ${count} ${recentOpen ? '▾' : '▸'}`
+  list.hidden = !recentOpen || count === 0
+  if (toggle.dataset.wired !== '1') {
+    toggle.dataset.wired = '1'
+    toggle.addEventListener('click', () => {
+      recentOpen = !recentOpen
+      syncRecentToggle(count)
+    })
+  }
+}
+
 function markEmpty(empty: boolean): void {
   const box = host('agents-empty')
   if (box !== null) box.hidden = !empty
@@ -295,7 +313,8 @@ async function refresh(): Promise<void> {
   }
   renderGroup('agents-running', groups.running, now)
   renderGroup('agents-recent', groups.recent, now)
-  markEmpty(groups.running.length === 0 && groups.recent.length === 0)
+  syncRecentToggle(groups.recent.length)
+  markEmpty(groups.running.length === 0)
   schedule(result.ok ? POLL_MS : ABSENT_POLL_MS)
 }
 

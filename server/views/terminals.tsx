@@ -39,8 +39,8 @@ function AgentsPanel(): JSX.Element {
       <div class="ascroll" id="agents-scroll">
         <div class="alab">RUNNING</div>
         <div id="agents-running"></div>
-        <div class="alab">RECENT</div>
-        <div id="agents-recent"></div>
+        <button type="button" class="alab arecent-toggle" id="agents-recent-toggle" hidden>RECENT 0 ▸</button>
+        <div id="agents-recent" hidden></div>
         <div class="aempty" id="agents-empty">
           NO AGENTS RUNNING · dispatch from /dispatch or via mc-dispatch
         </div>

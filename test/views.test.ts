@@ -108,7 +108,7 @@ const PAGES: [string, string[]][] = [
       'id="mc-dim"',
       'id="mc-drawer"',
       'RUNNING',
-      'RECENT',
+      'agents-recent-toggle',
       'NO AGENTS RUNNING · dispatch from /dispatch or via mc-dispatch',
       'shows cockpit-dispatched jobs · in-terminal subagents are not observable',
     ],
