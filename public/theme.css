@@ -1371,3 +1371,5 @@ table.grid tr.empty td {
 .aevent.text .glyph {
   color: var(--mc-fg-dim);
 }
+
+.termbar[hidden]{display:none}
