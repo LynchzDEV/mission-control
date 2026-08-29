@@ -220,7 +220,7 @@ export async function createApp(): Promise<Elysia> {
     .use(secretsRoutes)
 
   if (await publicDirExists()) {
-    app.use(staticPlugin({ assets: PUBLIC_DIR, prefix: '' }))
+    app.use(staticPlugin({ assets: PUBLIC_DIR, prefix: '', headers: { 'cache-control': 'no-cache' } }))
   }
 
   return app

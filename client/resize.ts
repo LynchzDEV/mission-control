@@ -290,6 +290,32 @@ export function installResize(): void {
 
   for (const kind of DIVIDER_KINDS) wireDivider(kind)
   addEventListener('resize', () => positionDividers())
+  observeLayoutChanges()
+}
+
+let repositionQueued = false
+
+function queueReposition(): void {
+  if (repositionQueued) return
+  repositionQueued = true
+  requestAnimationFrame(() => {
+    repositionQueued = false
+    positionDividers()
+  })
+}
+
+function observeLayoutChanges(): void {
+  const watched = [flowEl(), panelEl(), racksEl(), planColEl(), activityColEl()].filter(
+    (el): el is HTMLElement => el !== null,
+  )
+  if (typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(() => queueReposition())
+    for (const el of watched) ro.observe(el)
+  }
+  if (typeof MutationObserver !== 'undefined') {
+    const mo = new MutationObserver(() => queueReposition())
+    for (const el of watched) mo.observe(el, { attributes: true, attributeFilter: ['class', 'hidden', 'style'] })
+  }
 }
 
 installResize()
