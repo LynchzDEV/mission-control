@@ -179,7 +179,10 @@ export function miniRows(model: ThreadModel, limit: number = MINI_ROW_LIMIT): Mi
   if (model.running && !answered) {
     rows.push({ key: 'wait', cls: 'resp wait', glyph: '…', title: '', text: WAITING_TEXT })
   }
-  return limit < 0 ? rows : rows.slice(-limit)
+  if (limit < 0 || rows.length <= limit) return rows
+  // The opening request is pinned: a card that starts mid-thought stops reading as an exchange.
+  const opening = rows[0] as MiniRow
+  return opening.cls === 'req' ? [opening, ...rows.slice(-(limit - 1))] : rows.slice(-limit)
 }
 
 export function miniFooter(model: ThreadModel, limit: number = MINI_ROW_LIMIT): string {

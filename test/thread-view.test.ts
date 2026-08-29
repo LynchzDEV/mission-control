@@ -259,7 +259,7 @@ describe('miniRows', () => {
     ])
   })
 
-  test('keeps the newest rows when the card limit trims the list', () => {
+  test('keeps the newest rows, and the opening request, when the limit trims the list', () => {
     const rows = miniRows(
       model([
         ...EXCHANGE,
@@ -268,8 +268,14 @@ describe('miniRows', () => {
       ]),
     )
     expect(rows).toHaveLength(MINI_ROW_LIMIT)
+    expect(rows[0]).toMatchObject({ cls: 'req', text: 'read notes.txt and append world' })
     expect(rows[rows.length - 1]).toMatchObject({ cls: 'resp', text: 'world' })
     expect(rows.some((entry) => entry.cls === 'think')).toBe(false)
+  })
+
+  test('trims plainly to the newest rows when the thread does not open on a request', () => {
+    const rows = miniRows(model(EXCHANGE.slice(1)), 3)
+    expect(rows.map((entry) => entry.cls)).toEqual(['', 'err', 'resp'])
   })
 
   test('keys are unique and stable as a later poll appends rows', () => {

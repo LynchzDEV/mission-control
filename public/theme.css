@@ -1411,8 +1411,11 @@ table.grid tr.empty td {
 
 .mini .more {
   margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 9px;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.1em;
   color: var(--mc-fg-dim);
   cursor: pointer;
 }
