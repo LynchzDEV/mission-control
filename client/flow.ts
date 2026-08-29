@@ -1,5 +1,4 @@
 import {
-  ACTIVITY_GLYPH,
   STAGES,
   assigneeClass,
   nextLabelSpec,
@@ -11,6 +10,7 @@ import {
   type SessionFlow,
   type StageState,
 } from './plan-view'
+import { createThreadPanel, type ThreadPanel } from './thread-panel'
 import {
   type Anime,
   type Animation,
@@ -19,7 +19,6 @@ import {
   getJson,
   markFixture,
   postJson,
-  readArray,
   readNumber,
   readRecord,
   token,
@@ -35,8 +34,6 @@ type Session = {
 }
 
 const FLOW_REFRESH_MS = 3_000
-const ACTIVITY_REFRESH_MS = 3_000
-const ACTIVITY_ROWS = 12
 
 const PULSE = {
   boxShadow: [
@@ -57,7 +54,7 @@ let ARCHIVE_OPEN = false
 let ARCHIVED_COUNT = 0
 
 let pulse: Animation | null = null
-let ticker: ReturnType<typeof setInterval> | null = null
+let processView: ThreadPanel | null = null
 
 function pulseActive(A: Anime): void {
   pulse?.revert?.()
@@ -177,29 +174,6 @@ function renderPlanColumn(plan: Plan | null): void {
   if (plan.next !== '') next.textContent = `NEXT → ${plan.next}`
 }
 
-function renderActivity(events: JsonRecord[], fallback: string): void {
-  const host = document.getElementById('activity-feed')
-  const column = document.getElementById('activity-col')
-  if (host === null || column === null) return
-  host.textContent = ''
-
-  const rows = events.slice(-ACTIVITY_ROWS).reverse()
-  if (rows.length === 0 && fallback !== '') {
-    host.appendChild(element('div', 'aevent', fallback))
-  }
-  for (const event of rows) {
-    const kind = str(event.kind)
-    const row = element('div', `aevent ${kind}`)
-    row.append(
-      element('i', 'glyph', ACTIVITY_GLYPH[kind] ?? '·'),
-      element('b', 'title', str(event.title)),
-      element('span', 'detail', str(event.detail)),
-    )
-    host.appendChild(row)
-  }
-  column.classList.toggle('off', host.childElementCount === 0)
-}
-
 function syncPanel(): void {
   const panel = document.getElementById('flowpanel')
   if (panel === null) return
@@ -208,32 +182,32 @@ function syncPanel(): void {
   panel.classList.toggle('off', !planned && !active)
 }
 
-function stopTicker(): void {
-  if (ticker === null) return
-  clearInterval(ticker)
-  ticker = null
+function stopProcess(): void {
+  processView?.stop()
+  processView = null
 }
 
-async function pullActivity(jobId: string, fallback: string): Promise<void> {
-  const result = await getJson(`/api/jobs/${jobId}/activity`)
-  if (!result.ok) {
-    stopTicker()
-    return
-  }
-  renderActivity(readArray(result.data.events), fallback)
-  syncPanel()
-  if (result.data.status !== 'running') stopTicker()
-}
+// Lanes shows the same transcript the AGENTS cards do, minus the reply box — the decision of
+// what to say next belongs on /terminals and /dispatch, not on the board.
+function startProcess(session: Session): void {
+  stopProcess()
+  const host = document.getElementById('activity-feed')
+  const column = document.getElementById('activity-col')
+  if (host === null || column === null) return
+  host.textContent = ''
 
-function startTicker(session: Session): void {
-  stopTicker()
   if (session.jobId === '') {
-    renderActivity([], session.activity)
+    if (session.activity !== '') host.appendChild(element('div', 'aevent', session.activity))
+    column.classList.toggle('off', host.childElementCount === 0)
     syncPanel()
     return
   }
-  void pullActivity(session.jobId, session.activity)
-  ticker = setInterval(() => void pullActivity(session.jobId, session.activity), ACTIVITY_REFRESH_MS)
+
+  processView = createThreadPanel(session.jobId, { reply: false })
+  host.appendChild(processView.root)
+  processView.start()
+  column.classList.remove('off')
+  syncPanel()
 }
 
 export function setSession(k: string): void {
@@ -243,7 +217,7 @@ export function setSession(k: string): void {
   renderPlanNodes(session.plan)
   if (session.plan === null) renderTemplateNodes(session.stages)
   renderPlanColumn(session.plan)
-  startTicker(session)
+  startProcess(session)
 
   document
     .querySelectorAll<HTMLElement>('#chips .chip')
@@ -467,7 +441,7 @@ async function hydrate(): Promise<void> {
 
   const flowEl = document.querySelector('.flow')
   if (keys.length === 0) {
-    stopTicker()
+    stopProcess()
     flowEl?.classList.add('empty')
     document.getElementById('flowpanel')?.classList.add('off')
     SHAPE = shape
