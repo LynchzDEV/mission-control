@@ -55,6 +55,29 @@ resumable, so the reply box is enabled for all of them today. The disabled "sing
 is still implemented and reachable: `resumeArgs()` returns `null` for an engine it has no verified
 resume invocation for, and the reply route answers 400 rather than guessing a flag.
 
+## Thinking blocks are emitted but empty
+
+Extended thinking is on for this account, and `--verbose` does put `thinking` blocks on the wire:
+
+```
+{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"","signature":"CAQS0wQKEAgRGAI4AUIIdGhpbmtpbmcS…"}]}}
+```
+
+The block's `thinking` field measured **0 characters**; the 804-character `signature` carries the
+encrypted payload. So the reasoning text itself is not available to a headless run — only the fact
+that thinking happened, which is not worth a row.
+
+A second observation: thinking blocks are not emitted on every turn. The prompt that produced the
+block above explicitly asked the model to think step by step; the live acceptance run
+("run echo, then read README.md") produced **zero** thinking blocks across its whole log.
+
+The parser therefore implements `thinking` fully — it becomes a `thinking` row, dim italic, collapsed
+to its first line with an expander — but drops a block whose text is empty, exactly as it already
+drops an empty `text` block. On the installed claude that means no thinking rows render. Nothing is
+faked to fill the gap; if a future version (or a different provider behind the same CLI, e.g. glm)
+sends real thinking text, the rows appear with no code change. `test/threads.test.ts` covers both:
+a block with text renders in stream position, a signature-only block renders nothing.
+
 ## Codex stream shapes
 
 `server/activity.ts` previously only understood a legacy codex envelope (`{"msg":{"type":"agent_message"…}}`).
@@ -104,6 +127,19 @@ log. Ordering by `threadRoot` + `startedAt` rather than walking `parentJobId` li
 is total (a reply whose parent is missing still renders), and if two replies are ever sent against the
 same parent they interleave chronologically, which is what a chat panel wants — a link walk would have
 to pick a branch.
+
+## Live rendering
+
+The panel polls `/thread` every 2 s while any job in the chain is running, and stops polling once the
+thread settles. Rows are reconciled by a key of `<jobId>#<nth message of that job>` — stable because a
+log only grows at the end — so a poll appends rather than rebuilding, keeping scroll position and open
+expanders. A tool row with no result yet, in a running thread, gets `pending` (pulsing glyph); a
+`…working` cursor sits at the bottom until the thread settles.
+
+One wrinkle the AGENTS panel forces: when a job finishes it moves from the RUNNING list to the RECENT
+list, and its card — with any open thread — is destroyed and rebuilt as a different element. An open
+thread is therefore remembered by job id and reopened on the row that replaces it, so a conversation
+being read does not vanish at the moment the job ends.
 
 `parseThread` is `parseActivity` with the text caps lifted: assistant text and the final result render
 in full, with newlines preserved rather than collapsed. Tool detail stays capped at one 60-char line,

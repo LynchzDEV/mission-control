@@ -143,6 +143,7 @@ type RecentRefs = {
 
 const cards = new Map<string, CardRefs>()
 const recents = new Map<string, RecentRefs>()
+const talkOpen = new Set<string>()
 let timer: ReturnType<typeof setTimeout> | undefined
 let ticking: ReturnType<typeof setInterval> | undefined
 
@@ -188,9 +189,11 @@ function toggleTalk(slot: ThreadSlot, jobId: string): void {
   slot.host.hidden = !open
   slot.button.textContent = open ? 'TALK ▴' : 'TALK ▾'
   if (!open) {
+    talkOpen.delete(jobId)
     slot.panel?.stop()
     return
   }
+  talkOpen.add(jobId)
   if (slot.panel === null) {
     slot.panel = createThreadPanel(jobId, { reply: true })
     slot.host.appendChild(slot.panel.root)
@@ -325,6 +328,7 @@ function buildRecent(job: AgentJob, now: number): RecentRefs {
     event.stopPropagation()
     toggleTalk(talk, refs.job.id)
   }
+  if (talkOpen.has(job.id)) toggleTalk(talk, job.id)
   return refs
 }
 
