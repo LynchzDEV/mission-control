@@ -28,32 +28,57 @@ function NewTerminalForm(): JSX.Element {
   )
 }
 
+function AgentsPanel(): JSX.Element {
+  return (
+    <aside class="agents" id="agents-panel">
+      <div class="phead ahead">
+        <button type="button" class="atoggle" id="agents-toggle" title="collapse the agents panel">
+          AGENTS ◂
+        </button>
+      </div>
+      <div class="ascroll" id="agents-scroll">
+        <div class="alab">RUNNING</div>
+        <div id="agents-running"></div>
+        <div class="alab">RECENT</div>
+        <div id="agents-recent"></div>
+        <div class="aempty" id="agents-empty">
+          NO AGENTS RUNNING · dispatch from /dispatch or via mc-dispatch
+        </div>
+      </div>
+      <div class="afoot">shows cockpit-dispatched jobs · in-terminal subagents are not observable</div>
+    </aside>
+  )
+}
+
 export function TerminalsPage(): string {
   return Layout({
     title: 'Mission Control — Terminals',
     page: 'app',
     tab: 'terminals',
-    islands: ['nav', 'terminal'],
+    islands: ['nav', 'terminal', 'agents'],
     vendor: ['xterm.js', 'addon-fit.js'],
     styles: ['/vendor/xterm.css'],
     meta: 'TERMINALS · live pty sessions · persist while the server runs',
     children: (
-      <>
-        <div class="strip" id="term-strip">
-          <span class="termnone" id="term-none">
-            NO SESSIONS
-          </span>
-          <button type="button" id="term-new">
-            + NEW TERMINAL
-          </button>
+      <div class="termgrid" id="termgrid">
+        <div class="termmain">
+          <div class="strip" id="term-strip">
+            <span class="termnone" id="term-none">
+              NO SESSIONS
+            </span>
+            <button type="button" id="term-new">
+              + NEW TERMINAL
+            </button>
+          </div>
+          {NewTerminalForm()}
+          <div class="empty-pane" id="term-pane">
+            NO SESSION ATTACHED
+            <br />
+            bun-pty bridge · ws /ws/terminal/:id
+          </div>
         </div>
-        {NewTerminalForm()}
-        <div class="empty-pane" id="term-pane">
-          NO SESSION ATTACHED
-          <br />
-          bun-pty bridge · ws /ws/terminal/:id
-        </div>
-      </>
+        {AgentsPanel()}
+      </div>
     ),
   })
 }
