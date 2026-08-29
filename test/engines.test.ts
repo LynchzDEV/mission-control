@@ -52,9 +52,9 @@ describe('glm engine', () => {
 
     expect(env.ANTHROPIC_BASE_URL).toBe('https://api.z.ai/api/anthropic')
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe(TOKEN)
-    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('glm-5.3-flash')
-    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('glm-5.3-flash')
-    expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('glm-5.3-flash')
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('glm-5.3-flash[1m]')
+    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe('glm-5.3-flash[1m]')
+    expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe('glm-5.3-flash[1m]')
     expect(env.PATH).toBe(process.env.PATH)
   })
 

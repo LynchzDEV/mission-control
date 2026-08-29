@@ -57,9 +57,10 @@ const ENGINES = {
   glm:    { cmd: 'claude', env: {
               ANTHROPIC_BASE_URL: secrets.zaiBaseUrl,
               ANTHROPIC_AUTH_TOKEN: secrets.zaiAuthToken,
-              ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3-flash',
-              ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5.3-flash',
-              ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-5.3-flash' } },
+              ANTHROPIC_DEFAULT_OPUS_MODEL: 'glm-5.3-flash[1m]',   // [1m] = Claude Code 1M-context flag, stripped before API
+              ANTHROPIC_DEFAULT_SONNET_MODEL: 'glm-5.3-flash[1m]',
+              ANTHROPIC_DEFAULT_HAIKU_MODEL: 'glm-5.3-flash[1m]',
+              CLAUDE_CODE_AUTO_COMPACT_WINDOW: '1000000', CLAUDE_CODE_MAX_CONTEXT_TOKENS: '1000000' } },
   codex:  { cmd: 'codex', env: {} },                        // ChatGPT OAuth already on machine
 }
 ```

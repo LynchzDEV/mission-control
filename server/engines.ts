@@ -9,7 +9,8 @@ export type EngineDefinition = {
   envFor(secrets: Secrets): Record<string, string>
 }
 
-const GLM_MODEL = 'glm-5.3-flash'
+const GLM_MODEL = 'glm-5.3-flash[1m]'
+const GLM_CONTEXT_TOKENS = '1000000'
 
 function glmEnvFor(secrets: Secrets): Record<string, string> {
   if (secrets.zaiAuthToken === null || secrets.zaiAuthToken === '') {
@@ -21,6 +22,8 @@ function glmEnvFor(secrets: Secrets): Record<string, string> {
     ANTHROPIC_DEFAULT_OPUS_MODEL: GLM_MODEL,
     ANTHROPIC_DEFAULT_SONNET_MODEL: GLM_MODEL,
     ANTHROPIC_DEFAULT_HAIKU_MODEL: GLM_MODEL,
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW: GLM_CONTEXT_TOKENS,
+    CLAUDE_CODE_MAX_CONTEXT_TOKENS: GLM_CONTEXT_TOKENS,
   }
 }
 
