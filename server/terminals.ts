@@ -2,7 +2,7 @@ import { basename } from 'node:path'
 
 import { spawn, type IPty } from 'bun-pty'
 
-import { ENGINE_NAMES, buildEnv, fakeEnginesEnabled, resolveEngine, type EngineName } from './engines'
+import { ENGINE_NAMES, buildEnv, fakeEnginesEnabled, resolveBinary, resolveEngine, type EngineName } from './engines'
 import { validateWorkspaceCwd } from './workspace'
 
 export const RING_BUFFER_BYTES = 64 * 1024
@@ -95,7 +95,7 @@ export function replayRingBuffer(buffer: RingBuffer): string {
 }
 
 function terminalCommand(engine: EngineName): string {
-  return fakeEnginesEnabled() ? FAKE_TERMINAL_CMD : resolveEngine(engine).cmd
+  return fakeEnginesEnabled() ? FAKE_TERMINAL_CMD : resolveBinary(resolveEngine(engine).cmd)
 }
 
 export type TerminalRegistryOptions = {

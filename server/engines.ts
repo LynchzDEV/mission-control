@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { readSecrets, type Secrets } from './secrets'
 
 export type EngineName = 'claude' | 'glm' | 'codex'
@@ -48,6 +51,36 @@ export function resolveEngine(name: EngineName): EngineDefinition {
   return (fakeEnginesEnabled() ? FAKE_ENGINES : ENGINES)[name]
 }
 
+// The server may be launched without the user's shell PATH (launchd, cron); mise/homebrew
+// installed CLIs then vanish. Resolve to an absolute path via known install dirs.
+const BIN_FALLBACK_DIRS = [
+  join(process.env.HOME ?? '', '.local/share/mise/shims'),
+  '/opt/homebrew/bin',
+  '/usr/local/bin',
+  join(process.env.HOME ?? '', '.bun/bin'),
+  join(process.env.HOME ?? '', '.local/bin'),
+]
+
+const binaryCache = new Map<string, string>()
+
+export function resolveBinary(cmd: string): string {
+  if (cmd.includes('/')) return cmd
+  const cached = binaryCache.get(cmd)
+  if (cached !== undefined) return cached
+  const found =
+    Bun.which(cmd) ?? BIN_FALLBACK_DIRS.map((dir) => join(dir, cmd)).find((path) => existsSync(path)) ?? cmd
+  binaryCache.set(cmd, found)
+  return found
+}
+
+export function pathWithFallbackDirs(current: string | undefined): string {
+  const parts = (current ?? '').split(':').filter((entry) => entry !== '')
+  for (const dir of BIN_FALLBACK_DIRS) {
+    if (!parts.includes(dir) && existsSync(dir)) parts.push(dir)
+  }
+  return parts.join(':')
+}
+
 function processEnvRecord(): Record<string, string> {
   const result: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
@@ -59,5 +92,7 @@ function processEnvRecord(): Record<string, string> {
 export async function buildEnv(engine: EngineName): Promise<Record<string, string>> {
   const secrets = await readSecrets()
   const overlay = resolveEngine(engine).envFor(secrets)
-  return { ...processEnvRecord(), ...overlay }
+  const env = { ...processEnvRecord(), ...overlay }
+  env.PATH = pathWithFallbackDirs(env.PATH)
+  return env
 }

@@ -19,7 +19,7 @@ export const fakeEchoResolver: EngineResolver = ({ engine, prompt }) => ({
   env: {},
 })
 
-import { buildEnv, resolveEngine, type EngineName, ENGINE_NAMES } from './engines'
+import { buildEnv, resolveBinary, resolveEngine, type EngineName, ENGINE_NAMES } from './engines'
 
 // codex's `resume` subcommand parses flags before its positional id and prompt, and rejects the
 // flags the plain `exec` form accepts.
@@ -41,7 +41,7 @@ export const realEngineResolver: EngineResolver = async ({ engine, prompt, resum
   if (!ENGINE_NAMES.includes(engine as EngineName)) throw new Error(`unknown engine: ${engine}`)
   const name = engine as EngineName
   return {
-    cmd: resolveEngine(name).cmd,
+    cmd: resolveBinary(resolveEngine(name).cmd),
     args: engineArgs(name, prompt, resumeSessionId),
     env: await buildEnv(name),
   }

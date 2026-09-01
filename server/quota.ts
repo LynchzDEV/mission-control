@@ -1,3 +1,4 @@
+import { resolveBinary } from './engines'
 import type { Secrets } from './secrets'
 
 export type ClaudeQuota =
@@ -219,7 +220,7 @@ export async function fetchGlmQuota(
 
 export async function fetchCodexQuota(run: CommandRunner = runCommand): Promise<CodexQuota> {
   try {
-    const result = await run(['codex', 'login', 'status'], { timeoutMs: 5_000 })
+    const result = await run([resolveBinary('codex'), 'login', 'status'], { timeoutMs: 5_000 })
     return { available: true, authed: result.exitCode === 0 }
   } catch (error) {
     return { available: false, reason: error instanceof Error ? error.message : 'codex unavailable' }
