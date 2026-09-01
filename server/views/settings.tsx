@@ -1,4 +1,5 @@
 /** @jsxImportSource @kitajs/html */
+import { GLM_MODEL } from '../engines'
 import { Layout } from './layout'
 
 export type SettingsProps = {
@@ -124,7 +125,7 @@ function GlmColumn(props: SettingsProps): JSX.Element {
       })}
       {Row({
         label: 'MODEL MAP',
-        value: 'opus/sonnet/haiku → glm-5.3-flash',
+        value: `opus/sonnet/haiku → ${GLM_MODEL}`,
         action: (
           <button type="button" data-todo="model map is fixed in engines.ts (P2)" data-status="s-msg">
             EDIT

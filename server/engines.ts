@@ -9,7 +9,7 @@ export type EngineDefinition = {
   envFor(secrets: Secrets): Record<string, string>
 }
 
-const GLM_MODEL = 'glm-5.3-flash[1m]'
+export const GLM_MODEL = 'glm-5.3-flash[1m]'
 const GLM_CONTEXT_TOKENS = '1000000'
 
 function glmEnvFor(secrets: Secrets): Record<string, string> {
