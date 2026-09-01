@@ -1,6 +1,5 @@
-import { createWriteStream } from 'node:fs'
 import { appendFile, chmod, mkdir, readFile, stat } from 'node:fs/promises'
-import { chmodSync, mkdirSync, readFileSync } from 'node:fs'
+import { chmodSync, closeSync, mkdirSync, openSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import {
@@ -10,13 +9,15 @@ import {
   parseActivity,
   parseSessionId,
 } from './activity'
-import { DIR_MODE, FILE_MODE, configDir, readSecrets } from './secrets'
+import { DIR_MODE, FILE_MODE, configDir } from './secrets'
 import { validateWorkspaceCwd } from './workspace'
 import type { EngineResolver, EngineSpawn } from './jobs-engine-iface'
 
 export const JOBS_FILE = 'jobs.jsonl'
 export const LOGS_DIR = 'logs'
 export const KILL_ESCALATION_MS = 5_000
+export const LOG_TAIL_POLL_MS = 150
+export const ADOPT_POLL_MS = 2_000
 export const MIN_REDACTED_SECRET_LENGTH = 8
 export const ACTIVITY_TAIL_CHARS = 16_384
 export const SESSION_SCAN_MAX_CHARS = 65_536
@@ -192,31 +193,9 @@ export function createLogRedactor(secret: string | null): LogRedactor {
   }
 }
 
-async function pump(
-  stream: ReadableStream<Uint8Array> | undefined,
-  sink: NodeJS.WritableStream,
-  redactor: LogRedactor,
-  onText: (text: string) => void = () => {},
-): Promise<void> {
-  if (stream === undefined) return
-  const write = (text: string): void => {
-    if (text === '') return
-    sink.write(text)
-    onText(text)
-  }
-  const decoder = new TextDecoder()
-  const reader = stream.getReader()
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    if (value !== undefined) {
-      const text = decoder.decode(value, { stream: true })
-      if (text !== '') write(redactor.redact(text))
-    }
-  }
-  const tailText = decoder.decode()
-  if (tailText !== '') write(redactor.redact(tailText))
-  write(redactor.flush())
+export function redactSecrets(content: string, secret: string | null): string {
+  const redactor = createLogRedactor(secret)
+  return redactor.redact(content) + redactor.flush()
 }
 
 export type JobManagerOptions = {
@@ -234,7 +213,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   const home = options.home
   const activityIntervalMs = options.activityIntervalMs ?? ACTIVITY_THROTTLE_MS
   const clock = options.now ?? Date.now
-  const processes = new Map<string, Bun.Subprocess<'ignore', 'pipe', 'pipe'>>()
+  const processes = new Map<string, Bun.Subprocess>()
   const activities = new Map<string, string>()
   const tails = new Map<string, string>()
   const sessionScans = new Map<string, string>()
@@ -316,42 +295,96 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     })
   }
 
-  async function finalizeJob(
-    id: string,
-    proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>,
-    logStream: ReturnType<typeof createWriteStream>,
-    streamState: { failed: boolean },
-    cwd: string,
-    record: JobRecord,
-    redactToken: string | null,
-  ): Promise<void> {
+  // Children write straight to the log file (no pipes), so they survive a server restart;
+  // activity comes from tailing that file instead of pumping stdio.
+  function startLogTail(id: string, collect: (text: string) => void, startOffset = 0): () => Promise<void> {
+    const path = logPath(id)
+    let offset = startOffset
+    let busy = false
+    const tick = async (): Promise<void> => {
+      if (busy) return
+      busy = true
+      try {
+        const chunk = await readLogSince(path, offset)
+        if (chunk.content !== '') {
+          offset = chunk.offset
+          collect(chunk.content)
+        }
+      } catch {
+        // log file may not exist yet; the next tick retries
+      } finally {
+        busy = false
+      }
+    }
+    const timer = setInterval(() => void tick(), LOG_TAIL_POLL_MS)
+    return async () => {
+      clearInterval(timer)
+      await tick()
+    }
+  }
+
+  async function settleJob(id: string, record: JobRecord, exitCode: number | null, status: JobStatus): Promise<void> {
+    const current = jobs.get(id) ?? record
+    if (current.status !== 'running') return
+    processes.delete(id)
+    sessionScans.delete(id)
+    clearPendingActivityTimer(id)
+    tails.delete(id)
+    const diffStat = status === 'done' ? await captureDiffStat(current.cwd) : null
+    const settled = { ...current, status, endedAt: Date.now(), exitCode, diffStat }
+    await persist(settled)
+    options.onJobSettled?.(settled)
+  }
+
+  async function finalizeJob(id: string, proc: Bun.Subprocess, record: JobRecord): Promise<void> {
     const throttle = createActivityThrottle(activityIntervalMs, clock)
-    const collect = collectActivity(id, throttle)
+    const stopTail = startLogTail(id, collectActivity(id, throttle))
     try {
-      await Promise.all([
-        pump(proc.stdout, logStream, createLogRedactor(redactToken), collect),
-        pump(proc.stderr, logStream, createLogRedactor(redactToken), collect),
-      ])
-      refreshActivity(id)
-      clearPendingActivityTimer(id)
-      tails.delete(id)
       const exitCode = await proc.exited
-      await new Promise<void>((resolveClose) => logStream.end(resolveClose))
-      if (!streamState.failed) await chmod(logPath(id), FILE_MODE).catch(() => {})
-
-      const status: JobStatus = !streamState.failed && exitCode === 0 ? 'done' : 'failed'
-      const diffStat = status === 'done' ? await captureDiffStat(cwd) : null
-
-      processes.delete(id)
-      sessionScans.delete(id)
-      const settled = { ...(jobs.get(id) ?? record), status, endedAt: Date.now(), exitCode, diffStat }
-      await persist(settled)
-      options.onJobSettled?.(settled)
+      await stopTail()
+      refreshActivity(id)
+      await settleJob(id, record, exitCode, exitCode === 0 ? 'done' : 'failed')
     } catch {
-      tails.delete(id)
-      sessionScans.delete(id)
+      await stopTail().catch(() => {})
       await settleFailed(id, record)
     }
+  }
+
+  function pidAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === 'EPERM'
+    }
+  }
+
+  // ponytail: an orphan's exit code is unknowable — a result marker in the log is the best done-signal.
+  async function settleAdopted(record: JobRecord): Promise<void> {
+    const log = await readLogFile(logPath(record.id)).catch(() => '')
+    const done = log.includes('"type":"result"')
+    await settleJob(record.id, record, null, done ? 'done' : 'failed')
+  }
+
+  function adoptOrphan(record: JobRecord): void {
+    if (!pidAlive(record.pid)) {
+      void settleAdopted(record).catch(() => {})
+      return
+    }
+    const throttle = createActivityThrottle(activityIntervalMs, clock)
+    const stopTail = startLogTail(record.id, collectActivity(record.id, throttle))
+    const watcher = setInterval(() => {
+      if (pidAlive(record.pid)) return
+      clearInterval(watcher)
+      void stopTail()
+        .catch(() => {})
+        .then(() => settleAdopted(jobs.get(record.id) ?? record))
+        .catch(() => {})
+    }, ADOPT_POLL_MS)
+  }
+
+  for (const record of jobs.values()) {
+    if (record.status === 'running') adoptOrphan(record)
   }
 
   async function createJob(params: CreateJobParams, resolver: EngineResolver): Promise<CreateJobResult> {
@@ -372,25 +405,22 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
 
     const id = crypto.randomUUID()
     const path = logPath(id)
-    const logStream = createWriteStream(path, { mode: FILE_MODE, flags: 'a' })
-    const streamState = { failed: false }
-    logStream.on('error', () => {
-      streamState.failed = true
-    })
 
-    const secrets = await readSecrets()
-
-    let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>
+    let proc: Bun.Subprocess
     try {
-      proc = Bun.spawn([spawnSpec.cmd, ...spawnSpec.args], {
-        cwd: cwdCheck.path,
-        env: { ...process.env, ...spawnSpec.env },
-        stdin: 'ignore',
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
+      const logFd = openSync(path, 'a', FILE_MODE)
+      try {
+        proc = Bun.spawn([spawnSpec.cmd, ...spawnSpec.args], {
+          cwd: cwdCheck.path,
+          env: { ...process.env, ...spawnSpec.env },
+          stdin: 'ignore',
+          stdout: logFd,
+          stderr: logFd,
+        })
+      } finally {
+        closeSync(logFd)
+      }
     } catch {
-      logStream.end()
       return { ok: false, status: 500, error: 'failed to spawn engine process' }
     }
     processes.set(id, proc)
@@ -416,26 +446,38 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     sessionScans.set(id, '')
     await persist(record)
 
-    void finalizeJob(
-      id,
-      proc,
-      logStream,
-      streamState,
-      cwdCheck.path,
-      record,
-      secrets.zaiAuthToken,
-    ).catch(() => settleFailed(id, record).catch(() => {}))
+    void finalizeJob(id, proc, record).catch(() => settleFailed(id, record).catch(() => {}))
 
     return { ok: true, job: record }
   }
 
   async function killJob(id: string): Promise<KillJobResult> {
     const proc = processes.get(id)
-    if (proc === undefined) return { ok: false, status: 404, error: 'job is not running' }
-    proc.kill('SIGTERM')
-    setTimeout(() => {
-      if (proc.exitCode === null) proc.kill('SIGKILL')
-    }, KILL_ESCALATION_MS)
+    if (proc !== undefined) {
+      proc.kill('SIGTERM')
+      setTimeout(() => {
+        if (proc.exitCode === null) proc.kill('SIGKILL')
+      }, KILL_ESCALATION_MS)
+      return { ok: true }
+    }
+    const record = jobs.get(id)
+    if (record === undefined || record.status !== 'running' || !pidAlive(record.pid)) {
+      return { ok: false, status: 404, error: 'job is not running' }
+    }
+    try {
+      process.kill(record.pid, 'SIGTERM')
+      setTimeout(() => {
+        if (pidAlive(record.pid)) {
+          try {
+            process.kill(record.pid, 'SIGKILL')
+          } catch {
+            // already gone
+          }
+        }
+      }, KILL_ESCALATION_MS)
+    } catch {
+      return { ok: false, status: 404, error: 'job is not running' }
+    }
     return { ok: true }
   }
 

@@ -5,7 +5,8 @@ import { Elysia } from 'elysia'
 import { requireSession } from '../auth'
 import { parseActivity } from '../activity'
 import type { CreateJobParams, JobManager } from '../jobs'
-import { readLogFile, readLogSince, readLogTail } from '../jobs'
+import { readLogFile, readLogSince, readLogTail, redactSecrets, createLogRedactor } from '../jobs'
+import { readSecrets } from '../secrets'
 import type { EngineResolver } from '../jobs-engine-iface'
 import { engineSupportsResume } from '../jobs-engine-iface'
 import { assembleThread, replySessionId, threadChain, threadIsRunning, threadRootOf } from '../threads'
@@ -34,6 +35,12 @@ export function safeEnqueue<T>(
   }
 }
 
+// Job logs are written raw by the child process, so every serving path redacts on read.
+async function readRedactedLog(path: string): Promise<string> {
+  const secrets = await readSecrets()
+  return redactSecrets(await readLogFile(path), secrets.zaiAuthToken)
+}
+
 function sseHeaders(): HeadersInit {
   return {
     'content-type': 'text/event-stream; charset=utf-8',
@@ -42,8 +49,9 @@ function sseHeaders(): HeadersInit {
   }
 }
 
-export function createLogStreamResponse(path: string, signal: AbortSignal): Response {
+export function createLogStreamResponse(path: string, signal: AbortSignal, secret: string | null = null): Response {
   const encoder = new TextEncoder()
+  const redactor = createLogRedactor(secret)
   let watcher: ReturnType<typeof watch> | null = null
   let heartbeat: ReturnType<typeof setInterval> | null = null
   let offset = 0
@@ -60,14 +68,17 @@ export function createLogStreamResponse(path: string, signal: AbortSignal): Resp
     async start(controller) {
       const initial = await readLogTail(path, SSE_TAIL_BYTES)
       offset = initial.offset
-      if (initial.content !== '') controller.enqueue(encoder.encode(formatSSEData(initial.content)))
+      const initialText = redactor.redact(initial.content)
+      if (initialText !== '') controller.enqueue(encoder.encode(formatSSEData(initialText)))
 
       const pushUpdates = async (): Promise<void> => {
         if (closed) return
         const chunk = await readLogSince(path, offset)
         if (closed || chunk.content === '') return
         offset = chunk.offset
-        safeEnqueue(controller, () => closed, encoder.encode(formatSSEData(chunk.content)))
+        const text = redactor.redact(chunk.content)
+        if (text === '') return
+        safeEnqueue(controller, () => closed, encoder.encode(formatSSEData(text)))
       }
 
       try {
@@ -138,7 +149,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
         set.status = 404
         return { error: 'job not found' }
       }
-      const events = parseActivity(await readLogFile(manager.logPath(params.id)), ACTIVITY_FEED_MAX)
+      const events = parseActivity(await readRedactedLog(manager.logPath(params.id)), ACTIVITY_FEED_MAX)
       return { status: job.status, currentActivity: manager.currentActivity(params.id), events }
     })
     .get('/api/jobs/:id/log', async ({ params, set }) => {
@@ -147,16 +158,17 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
         set.status = 404
         return { error: 'job not found' }
       }
-      const content = await readLogFile(manager.logPath(params.id))
+      const content = await readRedactedLog(manager.logPath(params.id))
       return new Response(content, { headers: { 'content-type': 'text/plain; charset=utf-8' } })
     })
-    .get('/api/jobs/:id/stream', ({ params, set, request }) => {
+    .get('/api/jobs/:id/stream', async ({ params, set, request }) => {
       const job = manager.getJob(params.id)
       if (job === undefined) {
         set.status = 404
         return { error: 'job not found' }
       }
-      return createLogStreamResponse(manager.logPath(params.id), request.signal)
+      const secrets = await readSecrets()
+      return createLogStreamResponse(manager.logPath(params.id), request.signal, secrets.zaiAuthToken)
     })
     .get('/api/jobs/:id/thread', async ({ params, set }) => {
       const job = manager.getJob(params.id)
@@ -166,7 +178,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
       }
       const rootId = threadRootOf(job)
       const chain = threadChain(manager.listJobs(), rootId)
-      const messages = await assembleThread(chain, (jobId) => readLogFile(manager.logPath(jobId)))
+      const messages = await assembleThread(chain, (jobId) => readRedactedLog(manager.logPath(jobId)))
       return {
         rootId,
         engine: job.engine,

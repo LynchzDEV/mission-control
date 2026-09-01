@@ -10,6 +10,7 @@ import {
   createLogRedactor,
   readLogSince,
   readLogTail,
+  redactSecrets,
   validateJobCwd,
 } from '../server/jobs'
 import type { JobManager, JobRecord } from '../server/jobs'
@@ -196,7 +197,9 @@ describe('job lifecycle', () => {
     expect(finished?.diffStat).toContain('README.md')
   })
 
-  test('a job whose engine echoes the configured zai token never writes it to the log file', async () => {
+  // The child writes its log raw (direct fd, so it survives a server restart); the guarantee
+  // moved to serving time — redactSecrets is what every log-serving route applies.
+  test('a token echoed into the raw log is stripped by the serving-time redaction', async () => {
     const TOKEN = 'super-secret-zai-token-abcdef123456'
     await writeSecrets({ zaiAuthToken: TOKEN })
 
@@ -219,9 +222,11 @@ describe('job lifecycle', () => {
     const finished = await waitForStatus(manager, result.job.id)
     expect(finished?.status).toBe('done')
 
-    const log = await readFile(manager.logPath(result.job.id), 'utf8')
-    expect(log).toContain('[REDACTED]')
-    expect(log).not.toContain(TOKEN)
+    const raw = await readFile(manager.logPath(result.job.id), 'utf8')
+    expect(raw).toContain(TOKEN)
+    const served = redactSecrets(raw, TOKEN)
+    expect(served).toContain('[REDACTED]')
+    expect(served).not.toContain(TOKEN)
   })
 
   test('listJobs returns newest first', async () => {
@@ -292,7 +297,7 @@ describe('createLogRedactor', () => {
 })
 
 describe('log stream failures', () => {
-  test('a job whose log stream errors settles as failed instead of crashing the process', async () => {
+  test('an unopenable log path refuses the job upfront instead of crashing the process', async () => {
     const repo = join(home, 'repo')
     await initGitRepo(repo)
     const manager = createJobManager({ home })
@@ -307,13 +312,9 @@ describe('log stream failures', () => {
         { engine: 'claude', cwd: repo, prompt: 'irrelevant', label: 'log-error' },
         echoResolver,
       )
-      expect(result.ok).toBe(true)
-      if (!result.ok) return
-      expect(result.job.id).toBe(fixedId)
-
-      const finished = await waitForStatus(manager, fixedId)
-      expect(finished.status).toBe('failed')
-      expect(finished.diffStat).toBeNull()
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.status).toBe(500)
     } finally {
       crypto.randomUUID = originalRandomUUID
     }
@@ -339,6 +340,75 @@ describe('jsonl reload', () => {
     expect(reloaded?.status).toBe('done')
     expect(reloaded?.reviewedAt).toBeNull()
     expect(second.listJobs().some((job) => job.id === result.job.id)).toBe(true)
+  })
+
+  test('a running record whose pid is gone is adopted on boot and settled from its log', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+
+    const gone = Bun.spawn(['/usr/bin/true'])
+    await gone.exited
+
+    const running = {
+      id: 'adopted-1',
+      engine: 'glm',
+      cwd: repo,
+      label: 'orphan',
+      prompt: 'work',
+      pid: gone.pid,
+      status: 'running',
+      startedAt: Date.now() - 60_000,
+      endedAt: null,
+      exitCode: null,
+      diffStat: null,
+      reviewedAt: null,
+      sessionId: null,
+      parentJobId: null,
+      threadRoot: 'adopted-1',
+      terminalId: null,
+    }
+    await mkdir(join(configDir, LOGS_DIR), { recursive: true })
+    await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(running)}\n`)
+    await writeFile(join(configDir, LOGS_DIR, 'adopted-1.log'), '{"type":"result","subtype":"success"}\n')
+
+    const manager = createJobManager({ home })
+    const settled = await waitForStatus(manager, 'adopted-1')
+    expect(settled.status).toBe('done')
+    expect(settled.exitCode).toBeNull()
+  })
+
+  test('a running record with no result marker in its log settles as failed on adoption', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+
+    const gone = Bun.spawn(['/usr/bin/true'])
+    await gone.exited
+
+    const running = {
+      id: 'adopted-2',
+      engine: 'glm',
+      cwd: repo,
+      label: 'orphan-crashed',
+      prompt: 'work',
+      pid: gone.pid,
+      status: 'running',
+      startedAt: Date.now() - 60_000,
+      endedAt: null,
+      exitCode: null,
+      diffStat: null,
+      reviewedAt: null,
+      sessionId: null,
+      parentJobId: null,
+      threadRoot: 'adopted-2',
+      terminalId: null,
+    }
+    await mkdir(join(configDir, LOGS_DIR), { recursive: true })
+    await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(running)}\n`)
+    await writeFile(join(configDir, LOGS_DIR, 'adopted-2.log'), 'partial output, then nothing\n')
+
+    const manager = createJobManager({ home })
+    const settled = await waitForStatus(manager, 'adopted-2')
+    expect(settled.status).toBe('failed')
   })
 
   test('a reviewedAt stamp survives a manager reload', async () => {
