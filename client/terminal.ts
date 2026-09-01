@@ -132,6 +132,17 @@ function sendResize(): void {
   socket.send(JSON.stringify({ type: 'resize', cols: view?.cols, rows: view?.rows }))
 }
 
+const REPAINT_JIGGLE_DELAY_MS = 60
+
+function forceRepaint(): void {
+  if (fit === null || socket === null || socket.readyState !== WebSocket.OPEN) return
+  fit.fit()
+  const view = term as unknown as { cols?: number; rows?: number } | null
+  const rows = view?.rows ?? 24
+  socket.send(JSON.stringify({ type: 'resize', cols: view?.cols, rows: Math.max(1, rows - 1) }))
+  setTimeout(sendResize, REPAINT_JIGGLE_DELAY_MS)
+}
+
 function macShortcutHandler(instance: XtermInstance, connection: WebSocket): (event: KeyboardEvent) => boolean {
   const send = (data: string): void => {
     if (connection.readyState === WebSocket.OPEN) connection.send(new TextEncoder().encode(data))
@@ -217,7 +228,7 @@ function attach(id: string): void {
   instance.attachCustomKeyEventHandler(macShortcutHandler(instance, connection))
 
   connection.onopen = () => {
-    sendResize()
+    forceRepaint()
     say(`ATTACHED · ${id.slice(0, 8)}`, true)
   }
   connection.onmessage = (event) => {
@@ -304,6 +315,8 @@ export function installTerminals(): void {
   el('#term-cancel')?.addEventListener('click', () => toggleForm(false))
   el<HTMLFormElement>('#term-form')?.addEventListener('submit', (event) => void openTerminal(event))
   addEventListener('resize', sendResize)
+  const pane = el('#term-pane')
+  if (pane !== null) new ResizeObserver(() => sendResize()).observe(pane)
   void refresh()
 }
 
