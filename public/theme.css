@@ -125,9 +125,32 @@ body {
   position: absolute;
   left: 28px;
   top: 14px;
+  right: 150px;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
   font-size: 9px;
   letter-spacing: 0.25em;
   color: var(--mc-fg-dim);
+}
+
+#chips {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+
+#chips::-webkit-scrollbar {
+  display: none;
+}
+
+#chips .chip,
+#chips .archived-toggle {
+  flex: none;
 }
 
 .flow .cap b {
@@ -1001,6 +1024,23 @@ table.grid tr.empty td {
 }
 
 /* ---------- terminals: agents side panel ---------- */
+
+.ascope {
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--mc-hairline);
+  padding: 6px 20px;
+  text-align: left;
+  font-family: var(--mc-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  color: var(--mc-fg-dim);
+  cursor: pointer;
+}
+
+.ascope:hover {
+  color: var(--mc-fg);
+}
 
 .termgrid {
   display: grid;

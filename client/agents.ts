@@ -302,10 +302,27 @@ function markEmpty(empty: boolean): void {
   if (box !== null) box.hidden = !empty
 }
 
+let scopeCwd: string | null = null
+let scopeAll = false
+
+export function jobInScope(job: AgentJob, cwd: string | null): boolean {
+  if (cwd === null) return true
+  return job.cwd === cwd || job.cwd.startsWith(`${cwd}/`)
+}
+
+function syncScopeLabel(): void {
+  const label = host('agents-scope')
+  if (label === null) return
+  label.hidden = scopeCwd === null
+  if (scopeCwd === null) return
+  label.textContent = scopeAll ? 'ALL AGENTS · show attached only' : `${baseName(scopeCwd).toUpperCase()} ONLY · show all`
+}
+
 async function refresh(): Promise<void> {
   const now = Date.now()
   const result = await getJson('/api/jobs')
-  const jobs = result.ok ? readArray(result.data.jobs).map(toAgentJob) : []
+  const all = result.ok ? readArray(result.data.jobs).map(toAgentJob) : []
+  const jobs = scopeAll ? all : all.filter((job) => jobInScope(job, scopeCwd))
   const groups = splitAgents(jobs)
   const seen = new Set([...groups.running, ...groups.recent].map((thread) => thread.threadRoot))
   for (const [threadRoot, card] of cards) {
@@ -315,6 +332,7 @@ async function refresh(): Promise<void> {
   renderGroup('agents-recent', groups.recent, now)
   syncRecentToggle(groups.recent.length)
   markEmpty(groups.running.length === 0)
+  syncScopeLabel()
   schedule(result.ok ? POLL_MS : ABSENT_POLL_MS)
 }
 
@@ -363,6 +381,14 @@ export function installAgents(): void {
   if (host('agents-panel') === null) return
   installDrawer()
   applyPanelOpen(readPanelOpen())
+  addEventListener('mc:terminal-scope', (event) => {
+    scopeCwd = (event as CustomEvent<{ cwd: string | null }>).detail.cwd
+    void refresh()
+  })
+  host('agents-scope')?.addEventListener('click', () => {
+    scopeAll = !scopeAll
+    void refresh()
+  })
   host('agents-toggle')?.addEventListener('click', () => {
     const open = !readPanelOpen()
     writePanelOpen(open)

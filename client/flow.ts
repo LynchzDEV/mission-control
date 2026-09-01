@@ -282,14 +282,13 @@ function chipElement(key: string, archived: boolean, finished: boolean): HTMLEle
   }
 
   chip.onclick = () => setSession(key)
-  if (finished) {
-    const close = element('i', 'x', '×')
-    close.onclick = (event) => {
-      event.stopPropagation()
-      void archiveSession(key)
-    }
-    chip.appendChild(close)
+  const close = element('i', 'x', '×')
+  close.title = finished ? 'archive' : 'archive (session not finished)'
+  close.onclick = (event) => {
+    event.stopPropagation()
+    void archiveSession(key)
   }
+  chip.appendChild(close)
   return chip
 }
 

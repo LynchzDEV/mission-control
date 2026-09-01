@@ -109,6 +109,10 @@ function renderStrip(): void {
   }
 }
 
+function announceScope(cwd: string | null): void {
+  dispatchEvent(new CustomEvent('mc:terminal-scope', { detail: { cwd } }))
+}
+
 function detach(): void {
   socket?.close()
   socket = null
@@ -116,6 +120,7 @@ function detach(): void {
   term = null
   fit = null
   attachedId = null
+  announceScope(null)
 }
 
 function resetPane(): void {
@@ -202,6 +207,7 @@ function attach(id: string): void {
 
   detach()
   attachedId = id
+  announceScope(sessions.find((session) => session.id === id)?.cwd ?? null)
   pane.textContent = ''
   pane.classList.add('live')
 

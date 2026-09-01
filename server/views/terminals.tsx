@@ -36,6 +36,7 @@ function AgentsPanel(): JSX.Element {
           AGENTS ◂
         </button>
       </div>
+      <button type="button" class="ascope" id="agents-scope" hidden></button>
       <div class="ascroll" id="agents-scroll">
         <div class="alab">RUNNING</div>
         <div id="agents-running"></div>
