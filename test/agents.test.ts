@@ -6,6 +6,7 @@ import {
   baseName,
   formatElapsed,
   jobElapsed,
+  jobInScope,
   shortId,
   secondLine,
   splitAgents,
@@ -30,6 +31,7 @@ function job(overrides: Partial<AgentJob> = {}): AgentJob {
     diffStat: '',
     activity: '',
     threadRoot: id,
+    terminalId: '',
     ...overrides,
   }
 }
@@ -60,6 +62,7 @@ describe('toAgentJob', () => {
       diffStat: '2 files changed',
       activity: 'Edit · client/agents.ts',
       threadRoot: 'root-1',
+      terminalId: '',
     })
   })
 
@@ -287,5 +290,23 @@ describe('presentation helpers', () => {
     expect(statusGlyph('done')).toBe('✓')
     expect(statusGlyph('failed')).toBe('✕')
     expect(statusGlyph('weird')).toBe('·')
+  })
+})
+
+describe('jobInScope', () => {
+  test('no scope shows everything', () => {
+    expect(jobInScope(job(), null, null)).toBe(true)
+  })
+
+  test('job with terminalId matches only its own terminal', () => {
+    const tagged = job({ terminalId: 'term-a' })
+    expect(jobInScope(tagged, 'term-a', '/Users/x/code/repo')).toBe(true)
+    expect(jobInScope(tagged, 'term-b', '/Users/x/code/repo')).toBe(false)
+  })
+
+  test('legacy job without terminalId falls back to cwd prefix match', () => {
+    expect(jobInScope(job(), 'term-a', '/Users/x/code/repo')).toBe(true)
+    expect(jobInScope(job({ cwd: '/Users/x/code/repo/.worktree/x' }), 'term-a', '/Users/x/code/repo')).toBe(true)
+    expect(jobInScope(job({ cwd: '/Users/x/code/other' }), 'term-a', '/Users/x/code/repo')).toBe(false)
   })
 })

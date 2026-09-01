@@ -37,7 +37,7 @@ const CLIENT_DIR = join(ROOT, 'client')
 const PUBLIC_DIR = join(ROOT, 'public')
 
 const HTML_HEADERS = { 'content-type': 'text/html; charset=utf-8' }
-const JS_HEADERS = { 'content-type': 'text/javascript; charset=utf-8' }
+const JS_HEADERS = { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' }
 
 const MODULE_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/
 

@@ -114,7 +114,13 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
       }
 
       const result = await manager.createJob(
-        { engine: payload.engine, cwd: payload.cwd, prompt: payload.prompt, label: payload.label },
+        {
+          engine: payload.engine,
+          cwd: payload.cwd,
+          prompt: payload.prompt,
+          label: payload.label,
+          ...(typeof payload.terminalId === 'string' ? { terminalId: payload.terminalId } : {}),
+        },
         resolver,
       )
       if (!result.ok) {
@@ -205,6 +211,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
           parentJobId: parent.id,
           threadRoot: rootId,
           resumeSessionId: sessionId,
+          ...(parent.terminalId === null ? {} : { terminalId: parent.terminalId }),
         },
         resolver,
       )

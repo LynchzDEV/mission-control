@@ -133,6 +133,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     const cols = clampDimension(params.cols, DEFAULT_COLS)
     const rows = clampDimension(params.rows, DEFAULT_ROWS)
 
+    const id = crypto.randomUUID()
     let pty: IPty
     try {
       pty = spawn(terminalCommand(engine), [], {
@@ -140,13 +141,11 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
         cols,
         rows,
         cwd: cwdCheck.path,
-        env: { ...env, TERM: 'xterm-256color' },
+        env: { ...env, TERM: 'xterm-256color', MC_TERMINAL_ID: id },
       })
     } catch {
       return { ok: false, status: 500, error: 'failed to spawn terminal process' }
     }
-
-    const id = crypto.randomUUID()
     const record: TerminalRecord = {
       id,
       engine,

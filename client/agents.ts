@@ -22,6 +22,7 @@ export type AgentJob = {
   diffStat: string
   activity: string
   threadRoot: string
+  terminalId: string
 }
 
 export type AgentThread = ThreadGroup<AgentJob>
@@ -65,6 +66,7 @@ export function toAgentJob(raw: JsonRecord): AgentJob {
     diffStat: str(raw.diffStat),
     activity: str(raw.currentActivity),
     threadRoot: str(raw.threadRoot, id),
+    terminalId: str(raw.terminalId),
   }
 }
 
@@ -302,27 +304,32 @@ function markEmpty(empty: boolean): void {
   if (box !== null) box.hidden = !empty
 }
 
+let scopeId: string | null = null
 let scopeCwd: string | null = null
 let scopeAll = false
 
-export function jobInScope(job: AgentJob, cwd: string | null): boolean {
-  if (cwd === null) return true
+export function jobInScope(job: AgentJob, id: string | null, cwd: string | null): boolean {
+  if (id === null && cwd === null) return true
+  if (job.terminalId !== '') return job.terminalId === id
+  if (cwd === null) return false
   return job.cwd === cwd || job.cwd.startsWith(`${cwd}/`)
 }
 
 function syncScopeLabel(): void {
   const label = host('agents-scope')
   if (label === null) return
-  label.hidden = scopeCwd === null
-  if (scopeCwd === null) return
-  label.textContent = scopeAll ? 'ALL AGENTS · show attached only' : `${baseName(scopeCwd).toUpperCase()} ONLY · show all`
+  const scoped = scopeId !== null || scopeCwd !== null
+  label.hidden = !scoped
+  if (!scoped) return
+  const name = scopeCwd === null ? 'THIS TERMINAL' : baseName(scopeCwd).toUpperCase()
+  label.textContent = scopeAll ? 'ALL AGENTS · show attached only' : `${name} ONLY · show all`
 }
 
 async function refresh(): Promise<void> {
   const now = Date.now()
   const result = await getJson('/api/jobs')
   const all = result.ok ? readArray(result.data.jobs).map(toAgentJob) : []
-  const jobs = scopeAll ? all : all.filter((job) => jobInScope(job, scopeCwd))
+  const jobs = scopeAll ? all : all.filter((job) => jobInScope(job, scopeId, scopeCwd))
   const groups = splitAgents(jobs)
   const seen = new Set([...groups.running, ...groups.recent].map((thread) => thread.threadRoot))
   for (const [threadRoot, card] of cards) {
@@ -382,7 +389,9 @@ export function installAgents(): void {
   installDrawer()
   applyPanelOpen(readPanelOpen())
   addEventListener('mc:terminal-scope', (event) => {
-    scopeCwd = (event as CustomEvent<{ cwd: string | null }>).detail.cwd
+    const detail = (event as CustomEvent<{ id: string | null; cwd: string | null }>).detail
+    scopeId = detail.id
+    scopeCwd = detail.cwd
     void refresh()
   })
   host('agents-scope')?.addEventListener('click', () => {
