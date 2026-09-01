@@ -19,9 +19,17 @@ type XtermInstance = {
 
 type FitAddonInstance = { fit(): void }
 
+type SearchAddonInstance = {
+  findNext(term: string): boolean
+  findPrevious(term: string): boolean
+  clearDecorations(): void
+}
+
 type XtermGlobals = {
   Terminal?: new (options: Record<string, unknown>) => XtermInstance
   FitAddon?: { FitAddon: new () => FitAddonInstance }
+  WebLinksAddon?: { WebLinksAddon: new () => unknown }
+  SearchAddon?: { SearchAddon: new () => SearchAddonInstance }
 }
 
 const CLOSE_TERMINAL_NOT_FOUND = 4404
@@ -44,6 +52,7 @@ let sessions: TerminalSession[] = []
 let attachedId: string | null = null
 let term: XtermInstance | null = null
 let fit: FitAddonInstance | null = null
+let search: SearchAddonInstance | null = null
 let socket: WebSocket | null = null
 
 function el<T extends HTMLElement>(selector: string): T | null {
@@ -114,13 +123,50 @@ function announceScope(id: string | null, cwd: string | null): void {
 }
 
 function detach(): void {
+  closeSearchBox()
   socket?.close()
   socket = null
   term?.dispose()
   term = null
   fit = null
+  search = null
   attachedId = null
   announceScope(null, null)
+}
+
+function searchBox(): HTMLInputElement | null {
+  return el<HTMLInputElement>('#term-search')
+}
+
+function closeSearchBox(): void {
+  const box = searchBox()
+  if (box === null) return
+  box.hidden = true
+  box.value = ''
+  search?.clearDecorations()
+}
+
+function openSearchBox(): void {
+  let box = searchBox()
+  if (box === null) {
+    box = document.createElement('input')
+    box.id = 'term-search'
+    box.placeholder = 'find… (enter next · shift+enter prev · esc close)'
+    box.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        closeSearchBox()
+        return
+      }
+      if (event.key !== 'Enter' || search === null || box === null) return
+      event.preventDefault()
+      if (event.shiftKey) search.findPrevious(box.value)
+      else search.findNext(box.value)
+    })
+    el('#term-pane')?.parentElement?.appendChild(box)
+  }
+  box.hidden = false
+  box.focus()
+  box.select()
 }
 
 function resetPane(): void {
@@ -171,6 +217,9 @@ function macShortcutHandler(instance: XtermInstance, connection: WebSocket): (ev
       case 'k':
         instance.clear()
         return handled()
+      case 'f':
+        openSearchBox()
+        return handled()
       case 'c': {
         const selected = instance.getSelection()
         if (selected === '') return true
@@ -220,8 +269,14 @@ function attach(id: string): void {
     scrollback: 10000,
     theme: THEME,
   })
+  const loader = instance as unknown as { loadAddon(addon: unknown): void }
   const addon = new globals.FitAddon.FitAddon()
-  ;(instance as unknown as { loadAddon(addon: unknown): void }).loadAddon(addon)
+  loader.loadAddon(addon)
+  if (globals.WebLinksAddon !== undefined) loader.loadAddon(new globals.WebLinksAddon.WebLinksAddon())
+  if (globals.SearchAddon !== undefined) {
+    search = new globals.SearchAddon.SearchAddon()
+    loader.loadAddon(search)
+  }
   instance.open(pane)
   addon.fit()
   term = instance

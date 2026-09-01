@@ -57,7 +57,7 @@ export function TerminalsPage(): string {
     page: 'app',
     tab: 'terminals',
     islands: ['nav', 'terminal', 'agents'],
-    vendor: ['xterm.js', 'addon-fit.js'],
+    vendor: ['xterm.js', 'addon-fit.js', 'addon-web-links.js', 'addon-search.js'],
     styles: ['/vendor/xterm.css'],
     meta: 'TERMINALS · live pty sessions · persist while the server runs',
     children: (

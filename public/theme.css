@@ -1025,6 +1025,25 @@ table.grid tr.empty td {
   margin-top: 0;
 }
 
+#term-search {
+  position: absolute;
+  top: calc(var(--mc-rowh) + 8px);
+  right: 16px;
+  z-index: 5;
+  width: 320px;
+  background: var(--mc-bg-raised);
+  border: 1px solid var(--mc-green);
+  color: var(--mc-fg);
+  padding: 8px 10px;
+  font-family: var(--mc-font-mono);
+  font-size: 12px;
+  outline: none;
+}
+
+#term-search[hidden] {
+  display: none;
+}
+
 #term-pane.live {
   display: block;
   flex: 1;
@@ -1065,6 +1084,7 @@ table.grid tr.empty td {
 }
 
 .termmain {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;

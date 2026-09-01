@@ -31,6 +31,16 @@ const ASSETS: VendorAsset[] = [
     dest: 'addon-fit.js',
   },
   {
+    label: 'xterm web-links addon',
+    sources: ['node_modules/@xterm/addon-web-links/lib/addon-web-links.js'],
+    dest: 'addon-web-links.js',
+  },
+  {
+    label: 'xterm search addon',
+    sources: ['node_modules/@xterm/addon-search/lib/addon-search.js'],
+    dest: 'addon-search.js',
+  },
+  {
     label: 'textmode.js',
     sources: ['design/vendor/textmode.umd.js', 'node_modules/textmode.js/dist/textmode.umd.js'],
     dest: 'textmode.umd.js',
