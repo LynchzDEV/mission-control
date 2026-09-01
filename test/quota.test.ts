@@ -106,7 +106,7 @@ describe('ccusage daily fallback parsing', () => {
 
 function runner(script: Record<string, CommandResult | (() => CommandResult) | Error>) {
   return async (cmd: string[]): Promise<CommandResult> => {
-    const key = cmd.join(' ')
+    const key = [cmd[0]?.split('/').pop(), ...cmd.slice(1)].join(' ')
     const entry = script[key]
     if (entry === undefined) throw new Error(`unscripted command: ${key}`)
     if (entry instanceof Error) throw entry
