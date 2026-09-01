@@ -12,6 +12,9 @@ type XtermInstance = {
   write(data: string): void
   onData(listener: (data: string) => void): void
   dispose(): void
+  clear(): void
+  getSelection(): string
+  attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void
 }
 
 type FitAddonInstance = { fit(): void }
@@ -129,6 +132,53 @@ function sendResize(): void {
   socket.send(JSON.stringify({ type: 'resize', cols: view?.cols, rows: view?.rows }))
 }
 
+function macShortcutHandler(instance: XtermInstance, connection: WebSocket): (event: KeyboardEvent) => boolean {
+  const send = (data: string): void => {
+    if (connection.readyState === WebSocket.OPEN) connection.send(new TextEncoder().encode(data))
+  }
+  const CTRL_A_LINE_START = '\x01'
+  const CTRL_E_LINE_END = '\x05'
+  const CTRL_U_KILL_LINE = '\x15'
+  const ESC_CR_NEWLINE = '\x1b\r'
+  return (event) => {
+    if (event.type !== 'keydown') return true
+    const handled = (): false => {
+      event.preventDefault()
+      return false
+    }
+    if (event.key === 'Enter' && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      send(ESC_CR_NEWLINE)
+      return handled()
+    }
+    if (!event.metaKey) return true
+    switch (event.key) {
+      case 'k':
+        instance.clear()
+        return handled()
+      case 'c': {
+        const selected = instance.getSelection()
+        if (selected === '') return true
+        void navigator.clipboard.writeText(selected)
+        return handled()
+      }
+      case 'v':
+        void navigator.clipboard.readText().then(send)
+        return handled()
+      case 'Backspace':
+        send(CTRL_U_KILL_LINE)
+        return handled()
+      case 'ArrowLeft':
+        send(CTRL_A_LINE_START)
+        return handled()
+      case 'ArrowRight':
+        send(CTRL_E_LINE_END)
+        return handled()
+      default:
+        return true
+    }
+  }
+}
+
 function attach(id: string): void {
   const globals = xterm()
   const pane = el('#term-pane')
@@ -149,6 +199,8 @@ function attach(id: string): void {
     cursorBlink: true,
     fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
     fontSize: 13,
+    macOptionIsMeta: true,
+    scrollback: 10000,
     theme: THEME,
   })
   const addon = new globals.FitAddon.FitAddon()
@@ -162,6 +214,7 @@ function attach(id: string): void {
   const connection = new WebSocket(`${scheme}//${location.host}/ws/terminal/${id}`)
   connection.binaryType = 'arraybuffer'
   socket = connection
+  instance.attachCustomKeyEventHandler(macShortcutHandler(instance, connection))
 
   connection.onopen = () => {
     sendResize()
