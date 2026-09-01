@@ -68,6 +68,7 @@ export async function flowSnapshot(
         return {
           label,
           finished: isSessionFinished(plan, labelJobs),
+          running: labelJobs.some((job) => job.status === 'running'),
           lastActivity: sessionLastActivity(labelJobs, plan),
         }
       }),

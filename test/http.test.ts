@@ -47,15 +47,15 @@ function sessionCookie(response: Response): string {
 }
 
 describe('unauthenticated access', () => {
-  test('GET /api/health is 401', async () => {
+  test('GET /api/health is public and returns ok', async () => {
     const response = await app.handle(get('/api/health'))
-    expect(response.status).toBe(401)
-    expect(await response.json()).toEqual({ error: 'unauthorized' })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true })
   })
 
-  test('GET /api/health with a forged cookie is 401', async () => {
+  test('GET /api/health ignores a forged cookie and still answers', async () => {
     const response = await app.handle(get('/api/health', `${SESSION_COOKIE}=1.2.3`))
-    expect(response.status).toBe(401)
+    expect(response.status).toBe(200)
   })
 
   test('GET / serves the setup page before any password exists', async () => {
@@ -142,7 +142,7 @@ describe('real socket', () => {
     const base = `http://127.0.0.1:${server.server?.port}`
 
     try {
-      expect((await fetch(`${base}/api/health`)).status).toBe(401)
+      expect((await fetch(`${base}/api/health`)).status).toBe(200)
 
       const setup = await fetch(`${base}/api/setup`, {
         method: 'POST',

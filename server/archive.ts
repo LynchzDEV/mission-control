@@ -93,12 +93,24 @@ export function sessionLastActivity(jobs: readonly JobRecord[], plan: Plan | nul
   return Math.max(jobsMax, plan?.updatedAt ?? 0)
 }
 
-export type ArchivableSession = { label: string; finished: boolean; lastActivity: number }
+export type ArchivableSession = {
+  label: string
+  finished: boolean
+  running: boolean
+  lastActivity: number
+}
 
-// Finished sessions roll off at the Bangkok day boundary, not on a rolling window.
+export const STALE_UNFINISHED_MS = 3 * DAY_MS
+
+// Finished sessions roll off at the Bangkok day boundary; unfinished ones only after
+// going idle for STALE_UNFINISHED_MS with nothing running (abandoned test/plan-only labels).
 export function sessionsDueForAutoArchive(sessions: readonly ArchivableSession[], now: number): string[] {
   const boundary = bangkokMidnightBoundary(now)
   return sessions
-    .filter((session) => session.finished && session.lastActivity < boundary)
+    .filter((session) => {
+      if (session.running) return false
+      if (session.finished) return session.lastActivity < boundary
+      return session.lastActivity < now - STALE_UNFINISHED_MS
+    })
     .map((session) => session.label)
 }

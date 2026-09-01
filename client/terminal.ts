@@ -282,11 +282,46 @@ async function refresh(): Promise<void> {
   renderStrip()
 }
 
+const RECENT_CWD_KEY = 'mc.term.recentCwd'
+const RECENT_CWD_LIMIT = 12
+
+function readRecentCwds(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(RECENT_CWD_KEY) ?? '[]')
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function rememberCwd(cwd: string): void {
+  const next = [cwd, ...readRecentCwds().filter((entry) => entry !== cwd)].slice(0, RECENT_CWD_LIMIT)
+  try {
+    localStorage.setItem(RECENT_CWD_KEY, JSON.stringify(next))
+  } catch {
+    // storage blocked — recents are a convenience only
+  }
+}
+
+function fillRecentCwds(): void {
+  const list = el<HTMLDataListElement>('#term-recent-cwd')
+  if (list === null) return
+  list.textContent = ''
+  for (const cwd of readRecentCwds()) {
+    const option = document.createElement('option')
+    option.value = cwd
+    list.appendChild(option)
+  }
+}
+
 function toggleForm(open: boolean): void {
   const form = el<HTMLFormElement>('#term-form')
   if (form === null) return
   form.hidden = !open
-  if (open) el<HTMLInputElement>('#term-cwd')?.focus()
+  if (open) {
+    fillRecentCwds()
+    el<HTMLInputElement>('#term-cwd')?.focus()
+  }
 }
 
 async function openTerminal(event: Event): Promise<void> {
@@ -309,6 +344,7 @@ async function openTerminal(event: Event): Promise<void> {
     return
   }
   say('SESSION OPEN', true)
+  rememberCwd(cwd)
   toggleForm(false)
   await refresh()
   const id = result.data.id

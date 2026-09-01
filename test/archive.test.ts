@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import {
   ARCHIVE_FILE,
+  STALE_UNFINISHED_MS,
   bangkokMidnightBoundary,
   createArchiveStore,
   sessionLastActivity,
@@ -122,21 +123,51 @@ describe('sessionsDueForAutoArchive', () => {
   test('a session finished at 23:59 Bangkok yesterday is due at 00:01 today', () => {
     const now = Date.parse('2026-08-29T17:01:00.000Z') // 2026-08-30 00:01 Bangkok
     const lastActivity = Date.parse('2026-08-29T16:59:00.000Z') // 2026-08-29 23:59 Bangkok
-    const due = sessionsDueForAutoArchive([{ label: 'yesterday', finished: true, lastActivity }], now)
+    const due = sessionsDueForAutoArchive(
+      [{ label: 'yesterday', finished: true, running: false, lastActivity }],
+      now,
+    )
     expect(due).toEqual(['yesterday'])
   })
 
   test('a session finished 5 minutes ago (same Bangkok day) is not due', () => {
     const now = Date.parse('2026-08-29T10:00:00.000Z') // 2026-08-29 17:00 Bangkok — far from midnight
     const lastActivity = now - 5 * 60_000
-    const due = sessionsDueForAutoArchive([{ label: 'recent', finished: true, lastActivity }], now)
+    const due = sessionsDueForAutoArchive(
+      [{ label: 'recent', finished: true, running: false, lastActivity }],
+      now,
+    )
     expect(due).toEqual([])
   })
 
-  test('an unfinished session is never due, regardless of activity age', () => {
+  test('an unfinished session idle past the stale window is due', () => {
     const now = Date.parse('2026-08-29T17:01:00.000Z')
-    const lastActivity = Date.parse('2026-08-01T00:00:00.000Z')
-    const due = sessionsDueForAutoArchive([{ label: 'stale-but-open', finished: false, lastActivity }], now)
+    const lastActivity = now - STALE_UNFINISHED_MS - 1
+    const due = sessionsDueForAutoArchive(
+      [{ label: 'stale-but-open', finished: false, running: false, lastActivity }],
+      now,
+    )
+    expect(due).toEqual(['stale-but-open'])
+  })
+
+  test('an unfinished session inside the stale window stays', () => {
+    const now = Date.parse('2026-08-29T17:01:00.000Z')
+    const due = sessionsDueForAutoArchive(
+      [{ label: 'open-recent', finished: false, running: false, lastActivity: now - 60_000 }],
+      now,
+    )
+    expect(due).toEqual([])
+  })
+
+  test('a session with a running job is never due, however old its lastActivity', () => {
+    const now = Date.parse('2026-08-29T17:01:00.000Z')
+    const due = sessionsDueForAutoArchive(
+      [
+        { label: 'live-old', finished: false, running: true, lastActivity: 0 },
+        { label: 'live-finished-flag', finished: true, running: true, lastActivity: 0 },
+      ],
+      now,
+    )
     expect(due).toEqual([])
   })
 })

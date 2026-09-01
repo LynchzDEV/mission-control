@@ -12,7 +12,6 @@ import {
   attemptLogin,
   completeSetup,
   isSetupComplete,
-  requireSession,
   verifyCookieHeader,
 } from './auth'
 import { quotaRoutes } from './routes/quota'
@@ -159,8 +158,9 @@ async function publicDirExists(): Promise<boolean> {
   }
 }
 
-function guardedApi() {
-  return new Elysia().onBeforeHandle(requireSession).get('/api/health', () => ({ ok: true }))
+// Health is deliberately public: probes (mc-dispatch skill, double-bind check) read liveness only.
+function healthApi() {
+  return new Elysia().get('/api/health', () => ({ ok: true }))
 }
 
 export async function createApp(): Promise<Elysia> {
@@ -211,7 +211,7 @@ export async function createApp(): Promise<Elysia> {
       return { ok: true }
     })
     .use(tabPages())
-    .use(guardedApi())
+    .use(healthApi())
     .use(quotaRoutes)
     .use(metaRoutes(jobManager))
     .use(jobsRoutes(jobManager, realEngineResolver))
