@@ -14,6 +14,7 @@
   --mc-hairline: #1a1a20;
   --mc-edge: #4a4a52;
   --mc-edge-dim: #3a3a42;
+  --mc-rowh: 45px;
 }
 
 /* ---------- base ---------- */
@@ -687,7 +688,10 @@ body {
 }
 
 .phead {
-  padding: 16px 24px;
+  height: var(--mc-rowh);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
   border-bottom: 1px solid var(--mc-border);
   font-size: 9px;
   letter-spacing: 0.25em;
@@ -850,7 +854,10 @@ table.grid tr.empty td {
 
 .strip a,
 .strip button {
-  padding: 12px 20px;
+  height: var(--mc-rowh);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
   background: none;
   border: 0;
   border-right: 1px solid var(--mc-border);
@@ -959,7 +966,10 @@ table.grid tr.empty td {
 /* ---------- terminals ---------- */
 
 .termnone {
-  padding: 12px 20px;
+  height: var(--mc-rowh);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
   border-right: 1px solid var(--mc-border);
   font-family: var(--mc-font-mono);
   font-size: 11px;
@@ -986,7 +996,8 @@ table.grid tr.empty td {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 20px;
+  min-height: var(--mc-rowh);
+  padding: 4px 20px;
   border-bottom: 1px solid var(--mc-hairline);
 }
 
@@ -1074,8 +1085,10 @@ table.grid tr.empty td {
 
 .atoggle {
   flex: 1;
+  display: flex;
+  align-items: center;
   text-align: left;
-  padding: 16px 20px;
+  padding: 0 20px;
   background: none;
   border: 0;
   font-family: var(--mc-font-mono);
