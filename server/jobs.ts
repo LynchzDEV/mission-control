@@ -223,6 +223,7 @@ export type JobManagerOptions = {
   home?: string
   activityIntervalMs?: number
   now?: () => number
+  onJobSettled?: (record: JobRecord) => void
 }
 
 export function createJobManager(options: JobManagerOptions = {}): JobManager {
@@ -343,7 +344,9 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
 
       processes.delete(id)
       sessionScans.delete(id)
-      await persist({ ...(jobs.get(id) ?? record), status, endedAt: Date.now(), exitCode, diffStat })
+      const settled = { ...(jobs.get(id) ?? record), status, endedAt: Date.now(), exitCode, diffStat }
+      await persist(settled)
+      options.onJobSettled?.(settled)
     } catch {
       tails.delete(id)
       sessionScans.delete(id)

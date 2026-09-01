@@ -14,6 +14,7 @@ import {
   isSetupComplete,
   verifyCookieHeader,
 } from './auth'
+import { maybeAutoReview } from './auto-review'
 import { quotaRoutes } from './routes/quota'
 import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
 import { createJobManager } from './jobs'
@@ -164,7 +165,11 @@ function healthApi() {
 }
 
 export async function createApp(): Promise<Elysia> {
-  const jobManager = createJobManager()
+  const jobManager = createJobManager({
+    onJobSettled: (record) => {
+      void maybeAutoReview(record, jobManager, { resolver: realEngineResolver }).catch(() => {})
+    },
+  })
   const terminalRegistry = createTerminalRegistry()
 
   const app = new Elysia()
