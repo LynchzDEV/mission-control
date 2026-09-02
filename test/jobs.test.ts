@@ -366,6 +366,7 @@ describe('jsonl reload', () => {
       parentJobId: null,
       threadRoot: 'adopted-1',
       terminalId: null,
+      reviewOf: null,
     }
     await mkdir(join(configDir, LOGS_DIR), { recursive: true })
     await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(running)}\n`)
@@ -401,6 +402,7 @@ describe('jsonl reload', () => {
       parentJobId: null,
       threadRoot: 'adopted-2',
       terminalId: null,
+      reviewOf: null,
     }
     await mkdir(join(configDir, LOGS_DIR), { recursive: true })
     await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(running)}\n`)

@@ -43,6 +43,7 @@ export type JobRecord = {
   parentJobId: string | null
   threadRoot: string
   terminalId: string | null
+  reviewOf: string | null
 }
 
 export type CreateJobParams = {
@@ -54,6 +55,7 @@ export type CreateJobParams = {
   threadRoot?: string
   resumeSessionId?: string
   terminalId?: string
+  reviewOf?: string
 }
 
 export type CreateJobResult =
@@ -90,6 +92,7 @@ export function normalizeJobRecord(raw: Record<string, unknown>): JobRecord {
     parentJobId: typeof raw.parentJobId === 'string' && raw.parentJobId !== '' ? raw.parentJobId : null,
     threadRoot: readString(raw.threadRoot, '') === '' ? id : readString(raw.threadRoot, id),
     terminalId: typeof raw.terminalId === 'string' && raw.terminalId !== '' ? raw.terminalId : null,
+    reviewOf: typeof raw.reviewOf === 'string' && raw.reviewOf !== '' ? raw.reviewOf : null,
   }
 }
 
@@ -442,6 +445,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       parentJobId: params.parentJobId ?? null,
       threadRoot: params.threadRoot ?? id,
       terminalId: typeof params.terminalId === 'string' && params.terminalId !== '' ? params.terminalId : null,
+      reviewOf: typeof params.reviewOf === 'string' && params.reviewOf !== '' ? params.reviewOf : null,
     }
     sessionScans.set(id, '')
     await persist(record)

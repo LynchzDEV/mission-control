@@ -1,10 +1,13 @@
 import type { JobManager, JobRecord } from './jobs'
 import type { EngineResolver } from './jobs-engine-iface'
-import { fetchCodexQuota, type CodexQuota } from './quota'
+import type { QuotaComposite } from './quota'
+import { quotaCache } from './routes/quota'
+import { readRoles } from './routes/roles'
+import type { EngineRoles } from './secrets'
 
 export function buildReviewPrompt(source: JobRecord): string {
   return [
-    `Cross-family review of a finished glm implementation job (label: ${source.label}).`,
+    `Cross-family review of a finished ${source.engine} implementation job (label: ${source.label}).`,
     `You are in the job's working tree. Review ONLY that job's changes:`,
     `1. Run \`git status --porcelain\` — if the tree is dirty, review \`git diff HEAD\` (plus untracked files).`,
     `2. If the tree is clean, review the most recent commit: \`git log --oneline -3\` then \`git diff HEAD~1\`.`,
@@ -15,15 +18,28 @@ export function buildReviewPrompt(source: JobRecord): string {
   ].join('\n')
 }
 
-export function shouldAutoReview(record: JobRecord, allJobs: readonly JobRecord[]): boolean {
-  if (record.status !== 'done' || record.engine !== 'glm') return false
+export function shouldAutoReview(record: JobRecord, allJobs: readonly JobRecord[], roles: EngineRoles): boolean {
+  if (record.status !== 'done' || record.engine !== roles.execute || record.reviewOf !== null) return false
   if (record.diffStat === null || record.diffStat.trim() === '') return false
-  return !allJobs.some((job) => job.engine === 'codex' && job.threadRoot === record.threadRoot)
+  return !allJobs.some((job) => job.reviewOf !== null && job.threadRoot === record.threadRoot)
+}
+
+export type ReviewerReadiness = { ok: true } | { ok: false; reason: string }
+
+export function reviewerReadiness(engine: string, quota: QuotaComposite): ReviewerReadiness {
+  if (engine === 'codex') {
+    if (!quota.codex.available) return { ok: false, reason: 'codex unavailable' }
+    return quota.codex.authed ? { ok: true } : { ok: false, reason: 'codex not authed' }
+  }
+  if (engine === 'glm') return quota.glm.available ? { ok: true } : { ok: false, reason: quota.glm.reason }
+  if (engine === 'claude') return quota.claude.available ? { ok: true } : { ok: false, reason: quota.claude.reason }
+  return { ok: false, reason: `unknown reviewer engine ${engine}` }
 }
 
 export type AutoReviewDeps = {
   resolver: EngineResolver
-  probeCodex?: () => Promise<CodexQuota>
+  roles?: () => Promise<EngineRoles>
+  probeQuota?: () => Promise<QuotaComposite>
   log?: (line: string) => void
 }
 
@@ -33,26 +49,24 @@ export async function maybeAutoReview(
   deps: AutoReviewDeps,
 ): Promise<void> {
   const log = deps.log ?? console.error
-  if (!shouldAutoReview(record, manager.listJobs())) return
+  const roles = await (deps.roles ?? readRoles)()
+  if (!shouldAutoReview(record, manager.listJobs(), roles)) return
 
-  const codex = await (deps.probeCodex ?? fetchCodexQuota)()
-  if (!codex.available) {
-    log(`auto-review: skipped for ${record.label} — codex unavailable`)
-    return
-  }
-  if (!codex.authed) {
-    log(`auto-review: skipped for ${record.label} — codex not authed`)
+  const readiness = reviewerReadiness(roles.review, await (deps.probeQuota ?? (() => quotaCache.get()))())
+  if (!readiness.ok) {
+    log(`auto-review: skipped for ${record.label} — ${readiness.reason}`)
     return
   }
 
   const result = await manager.createJob(
     {
-      engine: 'codex',
+      engine: roles.review,
       cwd: record.cwd,
       label: record.label,
       prompt: buildReviewPrompt(record),
       parentJobId: record.id,
       threadRoot: record.threadRoot,
+      reviewOf: record.id,
       ...(record.terminalId === null ? {} : { terminalId: record.terminalId }),
     },
     deps.resolver,
