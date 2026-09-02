@@ -581,6 +581,27 @@ body {
   border-color: var(--mc-green);
 }
 
+.frow .v select {
+  background: var(--mc-bg-raised);
+  border: 1px solid var(--mc-border);
+  color: var(--mc-fg);
+  padding: 8px 10px;
+  font-family: var(--mc-font-mono);
+  font-size: 12px;
+}
+
+.frow .v select:focus {
+  outline: none;
+  border-color: var(--mc-green);
+}
+
+.frow .v .hint {
+  margin-left: 12px;
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  color: var(--mc-fg-dim);
+}
+
 .frow .a {
   text-align: right;
 }

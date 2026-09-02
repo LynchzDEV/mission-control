@@ -7,7 +7,9 @@ import {
   API_TOKEN_PREFIX,
   AUTH_FILE,
   CONFIG_FILE,
+  CONFIG_FILE,
   DEFAULT_BIND,
+  DEFAULT_ROLES,
   DEFAULT_ZAI_BASE_URL,
   SECRETS_FILE,
   configPath,
@@ -46,7 +48,7 @@ describe('defaults', () => {
   test('missing files fall back to documented defaults', async () => {
     expect(await readSecrets()).toEqual({ zaiAuthToken: null, zaiBaseUrl: DEFAULT_ZAI_BASE_URL, apiToken: null })
     expect(await readAuthRecord()).toEqual({ passwordHash: null, cookieSecret: null })
-    expect(await readConfig()).toEqual({ bind: DEFAULT_BIND })
+    expect(await readConfig()).toEqual({ bind: DEFAULT_BIND, roles: DEFAULT_ROLES })
   })
 
   test('corrupt json falls back instead of throwing', async () => {
@@ -81,7 +83,16 @@ describe('round trip', () => {
       passwordHash: '$argon2id$fake',
       cookieSecret: 'deadbeef',
     })
-    expect(await readConfig()).toEqual({ bind: '0.0.0.0:8080' })
+    expect(await readConfig()).toEqual({ bind: '0.0.0.0:8080', roles: DEFAULT_ROLES })
+  })
+
+  test('roles persist and missing fields fall back per role', async () => {
+    await writeConfig({ roles: { plan: 'codex', execute: 'glm', review: 'claude' } })
+    expect((await readConfig()).roles).toEqual({ plan: 'codex', execute: 'glm', review: 'claude' })
+
+    await ensureConfigDir()
+    await Bun.write(configPath(CONFIG_FILE), JSON.stringify({ roles: { execute: 'codex' } }))
+    expect((await readConfig()).roles).toEqual({ ...DEFAULT_ROLES, execute: 'codex' })
   })
 })
 

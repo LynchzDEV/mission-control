@@ -194,6 +194,27 @@ describe('tab views', () => {
     expect(html).not.toContain('fonts.googleapis.com')
   })
 
+  test('settings renders the role selects with stored engines preselected', async () => {
+    await app.handle(
+      new Request('http://localhost/api/roles', {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ plan: 'codex', execute: 'claude', review: 'glm' }),
+      }),
+    )
+    const { html } = await render('/settings')
+    expect(html).toContain('id="roles-band"')
+    expect(html).toContain('data-post="/api/roles"')
+    expect(html).toMatch(/<select id="plan"[^>]*>(?:(?!<\/select>).)*<option value="codex" selected/s)
+    expect(html).toMatch(/<select id="execute"[^>]*>(?:(?!<\/select>).)*<option value="claude" selected/s)
+    expect(html).toMatch(/<select id="review"[^>]*>(?:(?!<\/select>).)*<option value="glm" selected/s)
+
+    const terminals = await render('/terminals')
+    expect(terminals.html).toMatch(/<option value="codex" selected/)
+    const dispatch = await render('/dispatch')
+    expect(dispatch.html).toMatch(/<option value="claude" selected/)
+  })
+
   test('terminals serves the vendored xterm assets and its island', async () => {
     const { html } = await render('/terminals')
     expect(html).toContain('/vendor/xterm.js')

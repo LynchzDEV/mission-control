@@ -2,7 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 import { readApiToken, readAuthRecord, writeAuthRecord } from './secrets'
 
-const TOKEN_SCOPED_GET_ONLY_PATHS = new Set(['/api/flow', '/api/quota', '/api/meta'])
+const TOKEN_SCOPED_GET_ONLY_PATHS = new Set(['/api/flow', '/api/quota', '/api/meta', '/api/roles'])
 const TOKEN_SCOPED_PREFIX = '/api/jobs'
 
 // The one shared gate for what a Bearer API token may touch — extend this, not requireSession's callers.

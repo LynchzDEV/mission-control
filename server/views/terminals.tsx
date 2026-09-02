@@ -1,18 +1,24 @@
 /** @jsxImportSource @kitajs/html */
 import { Layout } from './layout'
 
+export type EnginePageProps = {
+  defaultEngine: string
+}
+
 const ENGINES = [
   { value: 'claude', label: 'CLAUDE · tech lead' },
   { value: 'glm', label: 'GLM · junior fleet' },
   { value: 'codex', label: 'CODEX · outside critic' },
 ]
 
-function NewTerminalForm(): JSX.Element {
+function NewTerminalForm(props: EnginePageProps): JSX.Element {
   return (
     <form class="termbar" id="term-form" hidden>
       <select id="term-engine" name="engine">
         {ENGINES.map((engine) => (
-          <option value={engine.value}>{engine.label}</option>
+          <option value={engine.value} selected={engine.value === props.defaultEngine}>
+            {engine.label}
+          </option>
         ))}
       </select>
       <input id="term-cwd" name="cwd" placeholder="~/code/some-repo" list="term-recent-cwd" />
@@ -51,7 +57,7 @@ function AgentsPanel(): JSX.Element {
   )
 }
 
-export function TerminalsPage(): string {
+export function TerminalsPage(props: EnginePageProps): string {
   return Layout({
     title: 'Mission Control — Terminals',
     page: 'app',
@@ -71,7 +77,7 @@ export function TerminalsPage(): string {
               + NEW TERMINAL
             </button>
           </div>
-          {NewTerminalForm()}
+          {NewTerminalForm(props)}
           <div class="empty-pane" id="term-pane">
             NO SESSION ATTACHED
             <br />

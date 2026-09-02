@@ -1,13 +1,17 @@
 /** @jsxImportSource @kitajs/html */
 import { Layout } from './layout'
 
+export type EnginePageProps = {
+  defaultEngine: string
+}
+
 const ENGINES = [
   { value: 'claude', label: 'CLAUDE · tech lead' },
   { value: 'glm', label: 'GLM · junior fleet' },
   { value: 'codex', label: 'CODEX · outside critic' },
 ]
 
-function LauncherPane(): JSX.Element {
+function LauncherPane(props: EnginePageProps): JSX.Element {
   return (
     <div class="pane">
       <div class="phead">LAUNCH HEADLESS JOB</div>
@@ -16,7 +20,9 @@ function LauncherPane(): JSX.Element {
           <label for="engine">ENGINE</label>
           <select id="engine" name="engine">
             {ENGINES.map((engine) => (
-              <option value={engine.value}>{engine.label}</option>
+              <option value={engine.value} selected={engine.value === props.defaultEngine}>
+                {engine.label}
+              </option>
             ))}
           </select>
         </div>
@@ -80,7 +86,7 @@ function JobsPane(): JSX.Element {
   )
 }
 
-export function DispatchPage(): string {
+export function DispatchPage(props: EnginePageProps): string {
   return Layout({
     title: 'Mission Control — Dispatch',
     page: 'app',
@@ -89,7 +95,7 @@ export function DispatchPage(): string {
     meta: 'DISPATCH · headless jobs · stdout streams over SSE',
     children: (
       <div class="panes">
-        {LauncherPane()}
+        {LauncherPane(props)}
         {JobsPane()}
       </div>
     ),

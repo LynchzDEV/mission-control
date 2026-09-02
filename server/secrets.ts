@@ -26,8 +26,17 @@ export type AuthRecord = {
   cookieSecret: string | null
 }
 
+export type EngineRoles = {
+  plan: string
+  execute: string
+  review: string
+}
+
+export const DEFAULT_ROLES: EngineRoles = { plan: 'claude', execute: 'glm', review: 'codex' }
+
 export type AppConfig = {
   bind: string
+  roles: EngineRoles
 }
 
 export type PublicSecretsView = {
@@ -127,9 +136,18 @@ export async function writeAuthRecord(patch: Partial<AuthRecord>): Promise<AuthR
   return merged
 }
 
+function readRoles(raw: unknown): EngineRoles {
+  const record = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
+  return {
+    plan: asString(record.plan) ?? DEFAULT_ROLES.plan,
+    execute: asString(record.execute) ?? DEFAULT_ROLES.execute,
+    review: asString(record.review) ?? DEFAULT_ROLES.review,
+  }
+}
+
 export async function readConfig(): Promise<AppConfig> {
   const raw = await readJsonFile(CONFIG_FILE)
-  return { bind: asString(raw.bind) ?? DEFAULT_BIND }
+  return { bind: asString(raw.bind) ?? DEFAULT_BIND, roles: readRoles(raw.roles) }
 }
 
 export async function writeConfig(patch: Partial<AppConfig>): Promise<AppConfig> {

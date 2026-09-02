@@ -25,6 +25,7 @@ import { metaRoutes } from './routes/meta'
 import { terminalsRoutes } from './routes/terminals'
 import { flowRoutes } from './routes/flow'
 import { currentView, secretsRoutes } from './routes/secrets'
+import { readRoles, rolesRoutes } from './routes/roles'
 import { DispatchPage } from './views/dispatch'
 import { LanesPage } from './views/lanes'
 import { LoginPage, SetupPage } from './views/login'
@@ -90,14 +91,22 @@ function appShellPage(): Response {
 }
 
 async function settingsPage(): Promise<string> {
-  const view = await currentView()
-  return SettingsPage({ ...view, minPasswordLength: MIN_PASSWORD_LENGTH })
+  const [view, roles] = await Promise.all([currentView(), readRoles()])
+  return SettingsPage({ ...view, roles, minPasswordLength: MIN_PASSWORD_LENGTH })
+}
+
+async function dispatchPage(): Promise<string> {
+  return DispatchPage({ defaultEngine: (await readRoles()).execute })
+}
+
+async function terminalsPage(): Promise<string> {
+  return TerminalsPage({ defaultEngine: (await readRoles()).plan })
 }
 
 const TAB_PAGES: Record<string, () => string | Promise<string>> = {
   '/lanes': LanesPage,
-  '/dispatch': DispatchPage,
-  '/terminals': TerminalsPage,
+  '/dispatch': dispatchPage,
+  '/terminals': terminalsPage,
   '/review': ReviewPage,
   '/settings': settingsPage,
 }
@@ -223,6 +232,7 @@ export async function createApp(): Promise<Elysia> {
     .use(terminalsRoutes(terminalRegistry))
     .use(flowRoutes(jobManager, terminalRegistry))
     .use(secretsRoutes)
+    .use(rolesRoutes)
 
   if (await publicDirExists()) {
     app.use(staticPlugin({ assets: PUBLIC_DIR, prefix: '', headers: { 'cache-control': 'no-cache' } }))

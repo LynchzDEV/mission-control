@@ -1,5 +1,6 @@
 /** @jsxImportSource @kitajs/html */
-import { GLM_MODEL } from '../engines'
+import { ENGINE_NAMES, GLM_MODEL } from '../engines'
+import type { EngineRoles } from '../secrets'
 import { Layout } from './layout'
 
 export type SettingsProps = {
@@ -7,6 +8,7 @@ export type SettingsProps = {
   zaiAuthTokenConfigured: boolean
   apiTokenConfigured: boolean
   bind: string
+  roles: EngineRoles
   minPasswordLength: number
 }
 
@@ -196,6 +198,50 @@ function CodexColumn(): JSX.Element {
   )
 }
 
+const ROLE_ROWS: Array<{ key: keyof EngineRoles; label: string; hint: string }> = [
+  { key: 'plan', label: 'PLAN', hint: 'default engine for NEW TERMINAL' },
+  { key: 'execute', label: 'EXECUTE', hint: 'default job engine · auto-review source' },
+  { key: 'review', label: 'REVIEW', hint: 'auto cross-review engine' },
+]
+
+function EngineSelect(id: string, current: string): JSX.Element {
+  return (
+    <select id={id} name={id}>
+      {ENGINE_NAMES.map((engine) => (
+        <option value={engine} selected={engine === current}>
+          {engine.toUpperCase()}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+function RolesBand(props: SettingsProps): JSX.Element {
+  return (
+    <div class="app" id="roles-band">
+      {ROLE_ROWS.map((row, index) =>
+        Row({
+          label: row.label,
+          value: (
+            <>
+              {EngineSelect(row.key, props.roles[row.key])}
+              <span class="hint">{row.hint}</span>
+            </>
+          ),
+          action:
+            index === ROLE_ROWS.length - 1 ? (
+              <button type="button" data-post="/api/roles" data-fields="plan,execute,review" data-status="s-msg">
+                SAVE
+              </button>
+            ) : (
+              ''
+            ),
+        }),
+      )}
+    </div>
+  )
+}
+
 function AppBand(props: SettingsProps): JSX.Element {
   return (
     <div class="app">
@@ -267,6 +313,8 @@ export function SettingsPage(props: SettingsProps): string {
             {GlmColumn(props)}
             {CodexColumn()}
           </div>
+          <div class="applab">ROLES · plan | execute | review</div>
+          {RolesBand(props)}
           <div class="applab">APP</div>
           {AppBand(props)}
         </div>
