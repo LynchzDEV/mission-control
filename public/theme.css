@@ -965,6 +965,10 @@ table.grid tr.empty td {
 
 /* ---------- terminals ---------- */
 
+.termnone[hidden] {
+  display: none;
+}
+
 .termnone {
   height: var(--mc-rowh);
   display: flex;
