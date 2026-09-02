@@ -31,6 +31,33 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
+describe('parent Claude session markers', () => {
+  test('are scrubbed for every engine and session persistence is forced on', async () => {
+    process.env.CLAUDECODE = '1'
+    process.env.CLAUDE_CODE_CHILD_SESSION = '1'
+    process.env.CLAUDE_CODE_SESSION_ID = 'parent-session'
+    process.env.CLAUDE_PID = '123'
+    process.env.CLAUDE_EFFORT = 'high'
+    process.env.CLAUDE_CODE_USE_BEDROCK = '1'
+    try {
+      for (const engine of ['claude', 'codex'] as const) {
+        const env = await buildEnv(engine)
+        expect(env).not.toHaveProperty('CLAUDECODE')
+        expect(env).not.toHaveProperty('CLAUDE_CODE_CHILD_SESSION')
+        expect(env).not.toHaveProperty('CLAUDE_CODE_SESSION_ID')
+        expect(env).not.toHaveProperty('CLAUDE_PID')
+        expect(env).not.toHaveProperty('CLAUDE_EFFORT')
+        expect(env.CLAUDE_CODE_USE_BEDROCK).toBe('1')
+        expect(env.CLAUDE_CODE_FORCE_SESSION_PERSISTENCE).toBe('1')
+      }
+    } finally {
+      for (const key of ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_PID', 'CLAUDE_EFFORT', 'CLAUDE_CODE_USE_BEDROCK']) {
+        delete process.env[key]
+      }
+    }
+  })
+})
+
 describe('claude engine', () => {
   test('inherits process.env with no z.ai overlay at all', async () => {
     const env = await buildEnv('claude')

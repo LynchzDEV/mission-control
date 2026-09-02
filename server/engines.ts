@@ -81,12 +81,27 @@ export function pathWithFallbackDirs(current: string | undefined): string {
   return parts.join(':')
 }
 
+// A cockpit started from inside a Claude session must not hand that session's identity to the engines it spawns.
+export const PARENT_CLAUDE_SESSION_VARS = [
+  'CLAUDECODE',
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_BRIDGE_SESSION_ID',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CLAUDE_CODE_EXECPATH',
+  'CLAUDE_CODE_DISABLE_TERMINAL_TITLE',
+  'CLAUDE_PID',
+  'CLAUDE_EFFORT',
+] as const
+
 function processEnvRecord(): Record<string, string> {
   const result: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) result[key] = value
+    if (value !== undefined && !(PARENT_CLAUDE_SESSION_VARS as readonly string[]).includes(key)) result[key] = value
   }
-  return result
+  return { ...result, CLAUDE_CODE_FORCE_SESSION_PERSISTENCE: '1' }
 }
 
 export async function buildEnv(engine: EngineName): Promise<Record<string, string>> {
