@@ -602,6 +602,11 @@ body {
   color: var(--mc-fg-dim);
 }
 
+.frow .v input[list] {
+  width: 14ch;
+  min-width: 0;
+}
+
 .frow .a {
   text-align: right;
 }
@@ -1048,6 +1053,10 @@ table.grid tr.empty td {
 
 .termbar input {
   flex: 1;
+}
+
+.termbar #term-model {
+  flex: 0 0 14ch;
 }
 
 .termbar select:focus,

@@ -15,6 +15,19 @@ export type EngineDefinition = {
 export const GLM_MODEL = 'glm-5.3-flash[1m]'
 const GLM_CONTEXT_TOKENS = '1000000'
 
+export const MODEL_SUGGESTIONS: Record<EngineName, readonly string[]> = {
+  claude: ['fable', 'opus', 'sonnet', 'haiku'],
+  glm: ['glm-5.3-flash[1m]', 'glm-5.3-flash'],
+  codex: [],
+}
+
+export const MAX_MODEL_LENGTH = 100
+
+export function modelArgs(engine: EngineName, model: string | null | undefined): string[] {
+  if (model === undefined || model === null || model === '') return []
+  return engine === 'codex' ? ['-m', model] : ['--model', model]
+}
+
 function glmEnvFor(secrets: Secrets): Record<string, string> {
   if (secrets.zaiAuthToken === null || secrets.zaiAuthToken === '') {
     throw new Error('glm engine requested but zaiAuthToken is not configured')

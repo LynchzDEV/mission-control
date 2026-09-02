@@ -256,11 +256,13 @@ function installForm(): void {
   form.addEventListener('submit', async (event) => {
     event.preventDefault()
     const data = new FormData(form)
+    const model = String(data.get('model') ?? '').trim()
     const payload = {
       engine: String(data.get('engine') ?? ''),
       cwd: String(data.get('cwd') ?? ''),
       prompt: String(data.get('prompt') ?? ''),
       label: String(data.get('label') ?? ''),
+      ...(model !== '' ? { model } : {}),
     }
     if (payload.cwd === '' || payload.prompt === '') {
       if (message !== null) {

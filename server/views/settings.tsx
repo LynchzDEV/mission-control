@@ -2,6 +2,7 @@
 import { ENGINE_NAMES, GLM_MODEL } from '../engines'
 import type { EngineRoles } from '../secrets'
 import { Layout } from './layout'
+import { ModelDatalist } from './model-datalist'
 
 export type SettingsProps = {
   zaiBaseUrl: string
@@ -201,7 +202,7 @@ function CodexColumn(): JSX.Element {
 const ROLE_ROWS: Array<{ key: keyof EngineRoles; label: string; hint: string }> = [
   { key: 'plan', label: 'PLAN', hint: 'new terminal default' },
   { key: 'execute', label: 'EXECUTE', hint: 'job default · review source' },
-  { key: 'review', label: 'REVIEW', hint: 'auto cross-review' },
+  { key: 'review', label: 'REVIEW', hint: 'auto cross-review · blank model = engine default' },
 ]
 
 function EngineSelect(id: string, current: string): JSX.Element {
@@ -224,13 +225,27 @@ function RolesBand(props: SettingsProps): JSX.Element {
           label: row.label,
           value: (
             <>
-              {EngineSelect(row.key, props.roles[row.key])}
+              {EngineSelect(row.key, props.roles[row.key].engine)}
+              <input
+                id={`${row.key}_model`}
+                name={`${row.key}_model`}
+                list="model-suggestions"
+                placeholder="engine default"
+                value={props.roles[row.key].model ?? ''}
+                maxlength="100"
+                autocomplete="off"
+              />
               <span class="hint">{row.hint}</span>
             </>
           ),
           action:
             index === ROLE_ROWS.length - 1 ? (
-              <button type="button" data-post="/api/roles" data-fields="plan,execute,review" data-status="s-msg">
+              <button
+                type="button"
+                data-post="/api/roles"
+                data-fields="plan,execute,review,plan_model,execute_model,review_model"
+                data-status="s-msg"
+              >
                 SAVE
               </button>
             ) : (
@@ -238,6 +253,7 @@ function RolesBand(props: SettingsProps): JSX.Element {
             ),
         }),
       )}
+      <ModelDatalist />
     </div>
   )
 }

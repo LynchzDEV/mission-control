@@ -87,12 +87,36 @@ describe('round trip', () => {
   })
 
   test('roles persist and missing fields fall back per role', async () => {
-    await writeConfig({ roles: { plan: 'codex', execute: 'glm', review: 'claude' } })
-    expect((await readConfig()).roles).toEqual({ plan: 'codex', execute: 'glm', review: 'claude' })
+    const roles = {
+      plan: { engine: 'codex', model: 'gpt-5.1' },
+      execute: { engine: 'glm', model: null },
+      review: { engine: 'claude', model: null },
+    }
+    await writeConfig({ roles })
+    expect((await readConfig()).roles).toEqual(roles)
 
     await ensureConfigDir()
     await Bun.write(configPath(CONFIG_FILE), JSON.stringify({ roles: { execute: 'codex' } }))
-    expect((await readConfig()).roles).toEqual({ ...DEFAULT_ROLES, execute: 'codex' })
+    expect((await readConfig()).roles).toEqual({ ...DEFAULT_ROLES, execute: { engine: 'codex', model: null } })
+  })
+
+  test('legacy string roles on disk load with a null model', async () => {
+    await ensureConfigDir()
+    await Bun.write(
+      configPath(CONFIG_FILE),
+      JSON.stringify({ roles: { plan: 'codex', execute: 'glm', review: 'claude' } }),
+    )
+    expect((await readConfig()).roles).toEqual({
+      plan: { engine: 'codex', model: null },
+      execute: { engine: 'glm', model: null },
+      review: { engine: 'claude', model: null },
+    })
+  })
+
+  test('an invalid model type is dropped to null', async () => {
+    await ensureConfigDir()
+    await Bun.write(configPath(CONFIG_FILE), JSON.stringify({ roles: { plan: { engine: 'claude', model: 42 } } }))
+    expect((await readConfig()).roles.plan).toEqual({ engine: 'claude', model: null })
   })
 })
 

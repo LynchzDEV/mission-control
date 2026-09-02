@@ -77,9 +77,9 @@ Env for spawned processes = `process.env` + engine env overlay. Secrets must nev
 
 ## Jobs (jobs.ts) — headless dispatch
 
-- POST `/api/jobs` `{engine, cwd, prompt, label}` → validate `cwd` exists and is a git repo; spawn:
-  - claude/glm: `claude -p <prompt> --output-format stream-json --verbose` in `cwd` with engine env
-  - codex: `codex exec --json <prompt>` in `cwd`
+- POST `/api/jobs` `{engine, cwd, prompt, label, model?}` → validate `cwd` exists and is a git repo; spawn:
+  - claude/glm: `claude [--model <model>] -p <prompt> --output-format stream-json --verbose` in `cwd` with engine env
+  - codex: `codex exec --json [-m <model>] <prompt>` in `cwd`
 - Job record `{id, engine, cwd, label, pid, status: running|done|failed, startedAt, endedAt, exitCode}` in memory + appended to `~/.config/mission-control/jobs.jsonl`; stdout/stderr → `~/.config/mission-control/logs/<id>.log`.
 - GET `/api/jobs` list; GET `/api/jobs/:id/log` full log; GET `/api/jobs/:id/stream` SSE tail (fs.watch + offset).
 - POST `/api/jobs/:id/kill` → SIGTERM.
@@ -87,7 +87,7 @@ Env for spawned processes = `process.env` + engine env overlay. Secrets must nev
 
 ## Terminals (terminals.ts) — live sessions
 
-- POST `/api/terminals` `{engine, cwd}` → node-pty spawn interactive (`claude` / `claude` w/ glm env / `codex`), cols/rows from client.
+- POST `/api/terminals` `{engine, cwd, model?}` → node-pty spawn interactive (`claude` / `claude` w/ glm env / `codex`), cols/rows from client; blank model → engine default.
 - WS `/ws/terminal/:id` bridges pty <-> xterm.js (binary/utf8 passthrough, resize message `{type:'resize',cols,rows}`).
 - Terminals persist while server runs (detach/reattach on reconnect); DELETE kills pty.
 - Session guard on the WS upgrade (verify the signed cookie before accepting).

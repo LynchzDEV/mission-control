@@ -9,6 +9,7 @@ import { readLogFile, readLogSince, readLogTail, redactSecrets, createLogRedacto
 import { readSecrets } from '../secrets'
 import type { EngineResolver } from '../jobs-engine-iface'
 import { engineSupportsResume } from '../jobs-engine-iface'
+import { MAX_MODEL_LENGTH } from '../engines'
 import { assembleThread, replySessionId, threadChain, threadIsRunning, threadRootOf } from '../threads'
 
 export const SSE_TAIL_BYTES = 4096
@@ -124,6 +125,12 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
         return { error: 'engine, cwd, prompt, and label are required' }
       }
 
+      const model = typeof payload?.model === 'string' && payload.model !== '' ? payload.model : undefined
+      if (model !== undefined && model.length > MAX_MODEL_LENGTH) {
+        set.status = 400
+        return { error: 'model too long' }
+      }
+
       const result = await manager.createJob(
         {
           engine: payload.engine,
@@ -131,6 +138,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
           prompt: payload.prompt,
           label: payload.label,
           ...(typeof payload.terminalId === 'string' ? { terminalId: payload.terminalId } : {}),
+          ...(model === undefined ? {} : { model }),
         },
         resolver,
       )
@@ -224,6 +232,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
           threadRoot: rootId,
           resumeSessionId: sessionId,
           ...(parent.terminalId === null ? {} : { terminalId: parent.terminalId }),
+          ...(parent.model === null ? {} : { model: parent.model }),
         },
         resolver,
       )

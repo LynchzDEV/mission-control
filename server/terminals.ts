@@ -2,7 +2,15 @@ import { basename } from 'node:path'
 
 import { spawn, type IPty } from 'bun-pty'
 
-import { ENGINE_NAMES, buildEnv, fakeEnginesEnabled, resolveBinary, resolveEngine, type EngineName } from './engines'
+import {
+  ENGINE_NAMES,
+  buildEnv,
+  fakeEnginesEnabled,
+  modelArgs,
+  resolveBinary,
+  resolveEngine,
+  type EngineName,
+} from './engines'
 import { validateWorkspaceCwd } from './workspace'
 
 export const RING_BUFFER_BYTES = 64 * 1024
@@ -29,6 +37,7 @@ export type CreateTerminalParams = {
   cwd: string
   cols?: unknown
   rows?: unknown
+  model?: string
 }
 
 export type CreateTerminalResult =
@@ -145,7 +154,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     const id = crypto.randomUUID()
     let pty: IPty
     try {
-      pty = spawn(terminalCommand(engine), [], {
+      pty = spawn(terminalCommand(engine), fakeEnginesEnabled() ? [] : modelArgs(engine, params.model), {
         name: 'xterm-256color',
         cols,
         rows,

@@ -120,6 +120,46 @@ describe('POST /api/jobs', () => {
     expect(log.status).toBe(200)
     expect(await log.text()).toContain('hello-from-route')
   })
+
+  test('passes an optional model to the resolver and stores it on the record', async () => {
+    const cookie = await authCookie()
+    const calls: EngineResolverParams[] = []
+    const app = buildApp(createJobManager(), capturingResolver(calls))
+
+    const created = await app.handle(
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'with-model', model: 'opus' }, cookie),
+    )
+    expect(created.status).toBe(200)
+    expect(calls[0]?.model).toBe('opus')
+    expect(((await created.json()) as { model: string | null }).model).toBe('opus')
+
+    const { jobs } = (await (await app.handle(get('/api/jobs', cookie))).json()) as {
+      jobs: Array<{ label: string; model: string | null }>
+    }
+    expect(jobs.find((row) => row.label === 'with-model')?.model).toBe('opus')
+  })
+
+  test('defaults the record model to null when none is sent', async () => {
+    const cookie = await authCookie()
+    const calls: EngineResolverParams[] = []
+    const app = buildApp(createJobManager(), capturingResolver(calls))
+
+    const created = await app.handle(
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'no-model' }, cookie),
+    )
+    expect(((await created.json()) as { model: string | null }).model).toBeNull()
+    expect(calls[0]?.model).toBeUndefined()
+  })
+
+  test('rejects a model longer than 100 characters', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), echoResolver)
+    const response = await app.handle(
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'l', model: 'x'.repeat(101) }, cookie),
+    )
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'model too long' })
+  })
 })
 
 describe('GET /api/jobs', () => {
@@ -428,6 +468,28 @@ describe('POST /api/jobs/:id/reply', () => {
       '--verbose',
     ])
     expect(calls[0]?.resumeSessionId).toBeUndefined()
+  })
+
+  test('a reply inherits the parent model', async () => {
+    const cookie = await authCookie()
+    const calls: EngineResolverParams[] = []
+    const app = buildApp(createJobManager(), capturingResolver(calls))
+
+    const parent = await dispatch(app, cookie, {
+      engine: 'claude',
+      cwd: repo,
+      prompt: 'reply with the word alpha',
+      label: 'thread-work',
+      model: 'opus',
+    })
+    await pollUntilDone(app, cookie, parent.id)
+
+    const child = (await (
+      await app.handle(post(`/api/jobs/${parent.id}/reply`, { message: 'again' }, cookie))
+    ).json()) as { id: string; model: string | null }
+    expect(child.model).toBe('opus')
+    expect(calls[1]?.model).toBe('opus')
+    await pollUntilDone(app, cookie, child.id)
   })
 
   test('a reply to the reply stays on the same thread root', async () => {

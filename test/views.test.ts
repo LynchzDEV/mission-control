@@ -215,6 +215,43 @@ describe('tab views', () => {
     expect(dispatch.html).toMatch(/<option value="claude" selected/)
   })
 
+  test('settings renders per-role model inputs with stored values, the datalist, and the extended save fields', async () => {
+    await app.handle(
+      new Request('http://localhost/api/roles', {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ plan: { engine: 'claude', model: 'opus' }, execute: 'glm', review: 'codex' }),
+      }),
+    )
+    const { html } = await render('/settings')
+    expect(html).toMatch(/<input id="plan_model" name="plan_model" [^>]*value="opus"/)
+    expect(html).toMatch(/<input id="execute_model" name="execute_model" [^>]*value=""/)
+    expect(html).toContain('id="model-suggestions"')
+    expect(html).toContain('data-fields="plan,execute,review,plan_model,execute_model,review_model"')
+    expect(html).toContain('blank model = engine default')
+  })
+
+  test('dispatch and terminals render the model input preloaded with the role default', async () => {
+    await app.handle(
+      new Request('http://localhost/api/roles', {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plan: { engine: 'claude', model: 'haiku' },
+          execute: { engine: 'glm', model: 'glm-5.3-flash' },
+          review: 'codex',
+        }),
+      }),
+    )
+    const dispatch = await render('/dispatch')
+    expect(dispatch.html).toMatch(/<input id="model" name="model" [^>]*value="glm-5.3-flash"/)
+    expect(dispatch.html).toContain('id="model-suggestions"')
+
+    const terminals = await render('/terminals')
+    expect(terminals.html).toMatch(/<input id="term-model" name="model" [^>]*value="haiku"/)
+    expect(terminals.html).toContain('id="model-suggestions"')
+  })
+
   test('terminals serves the vendored xterm assets and its island', async () => {
     const { html } = await render('/terminals')
     expect(html).toContain('/vendor/xterm.js')

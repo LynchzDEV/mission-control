@@ -96,11 +96,13 @@ async function settingsPage(): Promise<string> {
 }
 
 async function dispatchPage(): Promise<string> {
-  return DispatchPage({ defaultEngine: (await readRoles()).execute })
+  const { execute } = await readRoles()
+  return DispatchPage({ defaultEngine: execute.engine, defaultModel: execute.model })
 }
 
 async function terminalsPage(): Promise<string> {
-  return TerminalsPage({ defaultEngine: (await readRoles()).plan })
+  const { plan } = await readRoles()
+  return TerminalsPage({ defaultEngine: plan.engine, defaultModel: plan.model })
 }
 
 const TAB_PAGES: Record<string, () => string | Promise<string>> = {

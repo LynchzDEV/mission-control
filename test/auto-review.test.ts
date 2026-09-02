@@ -25,6 +25,7 @@ function job(overrides: Partial<JobRecord> = {}): JobRecord {
     threadRoot: id,
     terminalId: null,
     reviewOf: null,
+    model: null,
     ...overrides,
   }
 }
@@ -58,6 +59,12 @@ function deps(roles: EngineRoles = DEFAULT_ROLES, composite: QuotaComposite = qu
   }
 }
 
+const ROLES = (plan: string, execute: string, review: string): EngineRoles => ({
+  plan: { engine: plan, model: null },
+  execute: { engine: execute, model: null },
+  review: { engine: review, model: null },
+})
+
 describe('shouldAutoReview', () => {
   test('a done executor job with a diff and no review sibling is due', () => {
     expect(shouldAutoReview(job(), [job()], DEFAULT_ROLES)).toBe(true)
@@ -73,7 +80,7 @@ describe('shouldAutoReview', () => {
   })
 
   test('the executor role decides which engine is reviewable', () => {
-    const roles = { plan: 'claude', execute: 'codex', review: 'claude' }
+    const roles = ROLES('claude', 'codex', 'claude')
     expect(shouldAutoReview(job({ engine: 'codex' }), [], roles)).toBe(true)
     expect(shouldAutoReview(job({ engine: 'glm' }), [], roles)).toBe(false)
   })
@@ -81,7 +88,7 @@ describe('shouldAutoReview', () => {
   test('a thread that already has a review job is not re-reviewed, even on the same engine', () => {
     const done = job()
     const review = job({ id: 'glm-2', engine: 'glm', threadRoot: done.threadRoot, reviewOf: done.id })
-    const roles = { plan: 'glm', execute: 'glm', review: 'glm' }
+    const roles = ROLES('glm', 'glm', 'glm')
     expect(shouldAutoReview(done, [done, review], roles)).toBe(false)
     expect(shouldAutoReview(review, [done, review], roles)).toBe(false)
   })
@@ -124,12 +131,20 @@ describe('maybeAutoReview', () => {
   test('follows a custom mapping: codex executor reviewed by claude', async () => {
     const source = job({ engine: 'codex' })
     const created: CreateJobParams[] = []
-    await maybeAutoReview(source, fakeManager([source], created), deps({ plan: 'claude', execute: 'codex', review: 'claude' }))
+    await maybeAutoReview(source, fakeManager([source], created), deps(ROLES('claude', 'codex', 'claude')))
     expect(created.map((params) => params.engine)).toEqual(['claude'])
   })
 
+  test('passes the review-role model to the created job', async () => {
+    const source = job()
+    const created: CreateJobParams[] = []
+    const roles: EngineRoles = { ...DEFAULT_ROLES, review: { engine: 'codex', model: 'gpt-5.1' } }
+    await maybeAutoReview(source, fakeManager([source], created), deps(roles))
+    expect(created[0]?.model).toBe('gpt-5.1')
+  })
+
   test('same-engine mapping reviews once and never loops', async () => {
-    const roles = { plan: 'glm', execute: 'glm', review: 'glm' }
+    const roles = ROLES('glm', 'glm', 'glm')
     const source = job()
     const all = [source]
     const created: CreateJobParams[] = []
@@ -159,7 +174,7 @@ describe('maybeAutoReview', () => {
     await maybeAutoReview(
       source,
       manager,
-      deps({ plan: 'claude', execute: 'glm', review: 'claude' }, quota({ claude: { available: false, reason: 'ccusage' } })),
+      deps(ROLES('claude', 'glm', 'claude'), quota({ claude: { available: false, reason: 'ccusage' } })),
     )
 
     expect(created).toHaveLength(0)

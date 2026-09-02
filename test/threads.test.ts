@@ -48,6 +48,7 @@ function job(overrides: Partial<JobRecord> = {}): JobRecord {
     sessionId: SESSION,
     parentJobId: null,
     threadRoot: 'job-root',
+    model: null,
     ...overrides,
   }
 }
@@ -318,6 +319,40 @@ describe('engineArgs', () => {
       'thread-1',
       'hello',
     ])
+  })
+
+  test('an optional model lands as --model on claude/glm and -m right after --json on codex', () => {
+    expect(engineArgs('claude', 'hello', undefined, 'opus')).toEqual([
+      '-p',
+      'hello',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--model',
+      'opus',
+    ])
+    expect(engineArgs('glm', 'hello', 'sess-1', 'glm-5.3-flash')).toEqual([
+      '--resume',
+      'sess-1',
+      '-p',
+      'hello',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--model',
+      'glm-5.3-flash',
+    ])
+    expect(engineArgs('codex', 'hello', undefined, 'X')).toEqual(['exec', '--json', '-m', 'X', 'hello'])
+    expect(engineArgs('codex', 'hello', 'thread-1', 'X')).toEqual([
+      'exec',
+      'resume',
+      '--json',
+      '-m',
+      'X',
+      'thread-1',
+      'hello',
+    ])
+    expect(engineArgs('claude', 'hello', undefined, '')).toEqual(engineArgs('claude', 'hello'))
   })
 
   test('every known engine resumes; an unknown one does not', () => {

@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 
 import { requireSession, verifyCookieHeader } from '../auth'
+import { MAX_MODEL_LENGTH } from '../engines'
 import { MAX_TITLE_LENGTH, normalizeTitle, type TerminalRegistry } from '../terminals'
 
 export const CLOSE_TERMINAL_NOT_FOUND = 4404
@@ -45,11 +46,17 @@ function terminalApi(registry: TerminalRegistry): Elysia {
         set.status = 400
         return { error: 'engine and cwd are required' }
       }
+      const model = typeof payload.model === 'string' && payload.model !== '' ? payload.model : undefined
+      if (model !== undefined && model.length > MAX_MODEL_LENGTH) {
+        set.status = 400
+        return { error: 'model too long' }
+      }
       const result = await registry.createTerminal({
         engine: payload.engine,
         cwd: payload.cwd,
         cols: payload.cols,
         rows: payload.rows,
+        ...(model === undefined ? {} : { model }),
       })
       if (!result.ok) {
         set.status = result.status

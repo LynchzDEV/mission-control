@@ -26,13 +26,19 @@ export type AuthRecord = {
   cookieSecret: string | null
 }
 
+export type RoleAssignment = { engine: string; model: string | null }
+
 export type EngineRoles = {
-  plan: string
-  execute: string
-  review: string
+  plan: RoleAssignment
+  execute: RoleAssignment
+  review: RoleAssignment
 }
 
-export const DEFAULT_ROLES: EngineRoles = { plan: 'claude', execute: 'glm', review: 'codex' }
+export const DEFAULT_ROLES: EngineRoles = {
+  plan: { engine: 'claude', model: null },
+  execute: { engine: 'glm', model: null },
+  review: { engine: 'codex', model: null },
+}
 
 export type AppConfig = {
   bind: string
@@ -136,12 +142,21 @@ export async function writeAuthRecord(patch: Partial<AuthRecord>): Promise<AuthR
   return merged
 }
 
+function readRoleAssignment(value: unknown, fallback: RoleAssignment): RoleAssignment {
+  if (typeof value === 'string') return value === '' ? fallback : { engine: value, model: null }
+  if (typeof value !== 'object' || value === null) return fallback
+  const record = value as Record<string, unknown>
+  const engine = asString(record.engine)
+  if (engine === null) return fallback
+  return { engine, model: asString(record.model) }
+}
+
 function readRoles(raw: unknown): EngineRoles {
   const record = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
   return {
-    plan: asString(record.plan) ?? DEFAULT_ROLES.plan,
-    execute: asString(record.execute) ?? DEFAULT_ROLES.execute,
-    review: asString(record.review) ?? DEFAULT_ROLES.review,
+    plan: readRoleAssignment(record.plan, DEFAULT_ROLES.plan),
+    execute: readRoleAssignment(record.execute, DEFAULT_ROLES.execute),
+    review: readRoleAssignment(record.review, DEFAULT_ROLES.review),
   }
 }
 

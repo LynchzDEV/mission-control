@@ -1,8 +1,10 @@
 /** @jsxImportSource @kitajs/html */
 import { Layout } from './layout'
+import { ModelDatalist } from './model-datalist'
 
 export type EnginePageProps = {
   defaultEngine: string
+  defaultModel: string | null
 }
 
 const ENGINES = [
@@ -25,6 +27,18 @@ function LauncherPane(props: EnginePageProps): JSX.Element {
               </option>
             ))}
           </select>
+        </div>
+        <div class="field">
+          <label for="model">MODEL · blank = engine default</label>
+          <input
+            id="model"
+            name="model"
+            list="model-suggestions"
+            value={props.defaultModel ?? ''}
+            maxlength="100"
+            autocomplete="off"
+          />
+          <ModelDatalist />
         </div>
         <div class="field">
           <label for="cwd">CWD · must be a git repo under $HOME</label>

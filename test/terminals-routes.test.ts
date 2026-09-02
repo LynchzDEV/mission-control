@@ -206,6 +206,30 @@ describe('POST /api/terminals', () => {
     const { sessions } = (await listed.json()) as { sessions: Array<{ id: string }> }
     expect(sessions.map((entry) => entry.id)).toEqual([terminal.id])
   })
+
+  test('accepts an optional model and rejects one longer than 100 characters', async () => {
+    const cookie = await authCookie()
+    const app = buildApp()
+
+    const created = await app.handle(
+      request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo, model: 'opus' }),
+    )
+    expect(created.status).toBe(200)
+    const terminal = (await created.json()) as { id: string }
+
+    expect(
+      (await app.handle(request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo, model: '' })))
+        .status,
+    ).toBe(200)
+
+    const tooLong = await app.handle(
+      request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo, model: 'x'.repeat(101) }),
+    )
+    expect(tooLong.status).toBe(400)
+    expect(await tooLong.json()).toEqual({ error: 'model too long' })
+
+    registry.kill(terminal.id)
+  })
 })
 
 describe('GET /api/terminals', () => {

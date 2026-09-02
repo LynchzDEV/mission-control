@@ -438,10 +438,12 @@ async function openTerminal(event: Event): Promise<void> {
     say('CWD IS REQUIRED')
     return
   }
+  const model = el<HTMLInputElement>('#term-model')?.value.trim() ?? ''
   const dimensions = term as unknown as { cols?: number; rows?: number } | null
   const result = await postJson('/api/terminals', {
     engine,
     cwd,
+    ...(model !== '' ? { model } : {}),
     cols: dimensions?.cols ?? 80,
     rows: dimensions?.rows ?? 24,
   })

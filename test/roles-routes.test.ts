@@ -54,11 +54,60 @@ describe('parseRoles', () => {
   test('accepts any engine per role and rejects unknown or missing engines', () => {
     expect(parseRoles({ plan: 'glm', execute: 'glm', review: 'glm' })).toEqual({
       ok: true,
-      roles: { plan: 'glm', execute: 'glm', review: 'glm' },
+      roles: {
+        plan: { engine: 'glm', model: null },
+        execute: { engine: 'glm', model: null },
+        review: { engine: 'glm', model: null },
+      },
     })
     expect(parseRoles({ plan: 'claude', execute: 'gpt', review: 'codex' }).ok).toBe(false)
     expect(parseRoles({ plan: 'claude', review: 'codex' }).ok).toBe(false)
     expect(parseRoles(null).ok).toBe(false)
+  })
+
+  test('accepts the nested form with an optional model, trimmed, empty to null', () => {
+    expect(
+      parseRoles({
+        plan: { engine: 'claude', model: ' opus ' },
+        execute: { engine: 'glm', model: '   ' },
+        review: { engine: 'codex', model: 'gpt-5.1' },
+      }),
+    ).toEqual({
+      ok: true,
+      roles: {
+        plan: { engine: 'claude', model: 'opus' },
+        execute: { engine: 'glm', model: null },
+        review: { engine: 'codex', model: 'gpt-5.1' },
+      },
+    })
+    expect(parseRoles({ plan: { engine: 'claude' }, execute: 'glm', review: 'codex' })).toEqual({
+      ok: true,
+      roles: {
+        plan: { engine: 'claude', model: null },
+        execute: { engine: 'glm', model: null },
+        review: { engine: 'codex', model: null },
+      },
+    })
+  })
+
+  test('accepts the flat settings-form shape with role_model keys', () => {
+    expect(
+      parseRoles({ plan: 'claude', plan_model: 'fable', execute: 'glm', execute_model: '', review: 'codex' }),
+    ).toEqual({
+      ok: true,
+      roles: {
+        plan: { engine: 'claude', model: 'fable' },
+        execute: { engine: 'glm', model: null },
+        review: { engine: 'codex', model: null },
+      },
+    })
+  })
+
+  test('rejects a model longer than 100 characters', () => {
+    expect(parseRoles({ plan: 'claude', plan_model: 'x'.repeat(101), execute: 'glm', review: 'codex' })).toEqual({
+      ok: false,
+      error: 'plan model too long',
+    })
   })
 })
 
@@ -70,13 +119,31 @@ describe('/api/roles', () => {
     expect(await response.json()).toEqual(DEFAULT_ROLES)
   })
 
-  test('POST persists the full mapping and GET reflects it', async () => {
-    const next = { plan: 'claude', execute: 'codex', review: 'claude' }
+  test('POST persists the full nested mapping and GET reflects it', async () => {
+    const next = {
+      plan: { engine: 'claude', model: null },
+      execute: { engine: 'codex', model: 'gpt-5.1' },
+      review: { engine: 'claude', model: null },
+    }
     const saved = await app.handle(request('POST', next))
     expect(saved.status).toBe(200)
     expect(await saved.json()).toEqual(next)
     expect((await readConfig()).roles).toEqual(next)
     expect(await (await app.handle(request('GET'))).json()).toEqual(next)
+  })
+
+  test('POST accepts the flat settings form and returns the nested shape', async () => {
+    const saved = await app.handle(
+      request('POST', { plan: 'claude', plan_model: 'opus', execute: 'glm', review: 'codex' }),
+    )
+    expect(saved.status).toBe(200)
+    const nested = {
+      plan: { engine: 'claude', model: 'opus' },
+      execute: { engine: 'glm', model: null },
+      review: { engine: 'codex', model: null },
+    }
+    expect(await saved.json()).toEqual(nested)
+    expect((await readConfig()).roles).toEqual(nested)
   })
 
   test('POST rejects a partial or invalid mapping without touching storage', async () => {
