@@ -199,9 +199,9 @@ function CodexColumn(): JSX.Element {
 }
 
 const ROLE_ROWS: Array<{ key: keyof EngineRoles; label: string; hint: string }> = [
-  { key: 'plan', label: 'PLAN', hint: 'default engine for NEW TERMINAL' },
-  { key: 'execute', label: 'EXECUTE', hint: 'default job engine · auto-review source' },
-  { key: 'review', label: 'REVIEW', hint: 'auto cross-review engine' },
+  { key: 'plan', label: 'PLAN', hint: 'new terminal default' },
+  { key: 'execute', label: 'EXECUTE', hint: 'job default · review source' },
+  { key: 'review', label: 'REVIEW', hint: 'auto cross-review' },
 ]
 
 function EngineSelect(id: string, current: string): JSX.Element {
