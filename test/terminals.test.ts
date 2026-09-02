@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import {
   DEFAULT_COLS,
+  MAX_TITLE_LENGTH,
   MAX_DIMENSION,
   clampDimension,
   createRingBuffer,
@@ -188,6 +189,20 @@ describe('registry lifecycle over a real pty', () => {
     )
     registry.kill(killed.terminal.id)
     expect(killClosed).toBe(1)
+  })
+
+  test('rename replaces the title and rejects blank, oversized, or unknown targets', async () => {
+    const created = await registry.createTerminal({ engine: 'claude', cwd: repo })
+    if (!created.ok) throw new Error('spawn failed')
+    const id = created.terminal.id
+
+    expect(registry.rename(id, '  api worktree  ')).toBe(true)
+    expect(registry.get(id)?.title).toBe('api worktree')
+    expect(registry.rename(id, '   ')).toBe(false)
+    expect(registry.rename(id, 'x'.repeat(MAX_TITLE_LENGTH + 1))).toBe(false)
+    expect(registry.get(id)?.title).toBe('api worktree')
+    expect(registry.rename('missing', 'anything')).toBe(false)
+    registry.kill(id)
   })
 
   test('write, resize, kill, replay and subscribe are no-ops for unknown ids', () => {

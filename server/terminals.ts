@@ -10,6 +10,7 @@ export const DEFAULT_COLS = 80
 export const DEFAULT_ROWS = 24
 export const MIN_DIMENSION = 1
 export const MAX_DIMENSION = 1000
+export const MAX_TITLE_LENGTH = 60
 
 // MC_FAKE_ENGINES swaps in an interactive shell; the shared FAKE_ENGINES map is /bin/echo, which exits instantly.
 const FAKE_TERMINAL_CMD = '/bin/sh'
@@ -44,6 +45,7 @@ export type TerminalRegistry = {
   write(id: string, data: string): boolean
   resize(id: string, cols: unknown, rows: unknown): boolean
   kill(id: string): boolean
+  rename(id: string, title: string): boolean
   replay(id: string): string
   subscribe(id: string, listener: OutputListener, onClose?: CloseListener): () => void
   shutdown(): void
@@ -68,6 +70,13 @@ export function clampDimension(value: unknown, fallback: number): number {
   if (rounded < MIN_DIMENSION) return MIN_DIMENSION
   if (rounded > MAX_DIMENSION) return MAX_DIMENSION
   return rounded
+}
+
+export function normalizeTitle(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (trimmed === '' || trimmed.length > MAX_TITLE_LENGTH) return null
+  return trimmed
 }
 
 export type RingBuffer = { chunks: Buffer[]; bytes: number }
@@ -181,6 +190,13 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
   return {
     createTerminal,
     kill,
+    rename(id, title) {
+      const session = sessions.get(id)
+      const clean = normalizeTitle(title)
+      if (session === undefined || clean === null) return false
+      session.record = { ...session.record, title: clean }
+      return true
+    },
     list() {
       return [...sessions.values()]
         .map((session) => session.record)

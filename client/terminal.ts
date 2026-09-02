@@ -97,7 +97,16 @@ function renderStrip(): void {
     tag.className = `tag ${ACCENT[session.engine] ?? 'c-white'}`
     tag.textContent = session.engine.toUpperCase()
     tab.appendChild(tag)
-    tab.append(session.title.replace(/^[A-Z]+ · /, ''))
+    const name = document.createElement('span')
+    name.className = 'name'
+    name.textContent = displayName(session)
+    name.title = 'double-click to rename'
+    name.ondblclick = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      editName(session, name)
+    }
+    tab.appendChild(name)
 
     const close = document.createElement('span')
     close.className = 'x'
@@ -116,6 +125,48 @@ function renderStrip(): void {
     }
     strip.insertBefore(tab, newButton)
   }
+}
+
+function displayName(session: TerminalSession): string {
+  return session.title.replace(/^[A-Z]+ · /, '')
+}
+
+function editName(session: TerminalSession, name: HTMLElement): void {
+  const input = document.createElement('input')
+  input.className = 'rename'
+  input.value = displayName(session)
+  input.maxLength = 60
+  let settled = false
+  const finish = (save: boolean): void => {
+    if (settled) return
+    settled = true
+    const next = input.value.trim()
+    if (!save || next === '' || next === displayName(session)) {
+      renderStrip()
+      return
+    }
+    void renameSession(session.id, next)
+  }
+  input.onkeydown = (event) => {
+    if (event.key === 'Enter') finish(true)
+    else if (event.key === 'Escape') finish(false)
+    event.stopPropagation()
+  }
+  input.onblur = () => finish(true)
+  input.onclick = (event) => event.stopPropagation()
+  name.replaceWith(input)
+  input.focus()
+  input.select()
+}
+
+async function renameSession(id: string, title: string): Promise<void> {
+  const response = await fetch(`/api/terminals/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+  say(response.ok ? 'RENAMED' : 'COULD NOT RENAME', response.ok)
+  await refresh()
 }
 
 function announceScope(id: string | null, cwd: string | null): void {

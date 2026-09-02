@@ -131,6 +131,32 @@ function openSocket(url: string, cookie?: string): SocketProbe {
   }
 }
 
+describe('PATCH /api/terminals/:id', () => {
+  test('renames a session and echoes the record', async () => {
+    const cookie = await authCookie()
+    const app = buildApp()
+    const created = await app.handle(request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo }))
+    const { id } = (await created.json()) as { id: string }
+
+    const renamed = await app.handle(request(`/api/terminals/${id}`, 'PATCH', cookie, { title: ' deploy box ' }))
+    expect(renamed.status).toBe(200)
+    expect(((await renamed.json()) as { title: string }).title).toBe('deploy box')
+    expect(registry.get(id)?.title).toBe('deploy box')
+  })
+
+  test('rejects unauthenticated, blank-title, and unknown-id requests', async () => {
+    const cookie = await authCookie()
+    const app = buildApp()
+    const created = await app.handle(request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo }))
+    const { id } = (await created.json()) as { id: string }
+
+    expect((await app.handle(request(`/api/terminals/${id}`, 'PATCH', undefined, { title: 'x' }))).status).toBe(401)
+    expect((await app.handle(request(`/api/terminals/${id}`, 'PATCH', cookie, { title: '  ' }))).status).toBe(400)
+    expect((await app.handle(request(`/api/terminals/${id}`, 'PATCH', cookie, {}))).status).toBe(400)
+    expect((await app.handle(request('/api/terminals/nope', 'PATCH', cookie, { title: 'x' }))).status).toBe(404)
+  })
+})
+
 describe('POST /api/terminals', () => {
   test('rejects an unauthenticated request', async () => {
     const response = await buildApp().handle(

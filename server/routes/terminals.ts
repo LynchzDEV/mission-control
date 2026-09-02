@@ -1,7 +1,7 @@
 import { Elysia } from 'elysia'
 
 import { requireSession, verifyCookieHeader } from '../auth'
-import type { TerminalRegistry } from '../terminals'
+import { MAX_TITLE_LENGTH, normalizeTitle, type TerminalRegistry } from '../terminals'
 
 export const CLOSE_TERMINAL_NOT_FOUND = 4404
 export const CLOSE_TERMINAL_ENDED = 4410
@@ -58,6 +58,18 @@ function terminalApi(registry: TerminalRegistry): Elysia {
       return result.terminal
     })
     .get('/api/terminals', () => ({ sessions: registry.list() }))
+    .patch('/api/terminals/:id', ({ params, body, set }) => {
+      const title = normalizeTitle((body as Record<string, unknown> | null)?.title)
+      if (title === null) {
+        set.status = 400
+        return { error: `title must be 1-${MAX_TITLE_LENGTH} characters` }
+      }
+      if (!registry.rename(params.id, title)) {
+        set.status = 404
+        return { error: 'terminal not found' }
+      }
+      return registry.get(params.id)
+    })
     .delete('/api/terminals/:id', ({ params, set }) => {
       if (!registry.kill(params.id)) {
         set.status = 404
