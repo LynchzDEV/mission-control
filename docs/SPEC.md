@@ -80,6 +80,7 @@ Env for spawned processes = `process.env` + engine env overlay. Secrets must nev
 - POST `/api/jobs` `{engine, cwd, prompt, label, model?}` → validate `cwd` exists and is a git repo; spawn:
   - claude/glm: `claude [--model <model>] -p <prompt> --output-format stream-json --verbose` in `cwd` with engine env
   - codex: `codex exec --json [-m <model>] <prompt>` in `cwd`
+- Every job process gets `MC_JOB_ID=<job id>` in env (mirrors `MC_TERMINAL_ID` on terminals).
 - Job record `{id, engine, cwd, label, pid, status: running|done|failed, startedAt, endedAt, exitCode}` in memory + appended to `~/.config/mission-control/jobs.jsonl`; stdout/stderr → `~/.config/mission-control/logs/<id>.log`.
 - GET `/api/jobs` list; GET `/api/jobs/:id/log` full log; GET `/api/jobs/:id/stream` SSE tail (fs.watch + offset).
 - POST `/api/jobs/:id/kill` → SIGTERM.
@@ -91,6 +92,7 @@ Env for spawned processes = `process.env` + engine env overlay. Secrets must nev
 - WS `/ws/terminal/:id` bridges pty <-> xterm.js (binary/utf8 passthrough, resize message `{type:'resize',cols,rows}`).
 - Terminals persist while server runs (detach/reattach on reconnect); DELETE kills pty.
 - Session guard on the WS upgrade (verify the signed cookie before accepting).
+- Drop a file onto the pane → POST `/api/terminals/drops` → original path via Spotlight match or a copy under `~/.config/mission-control/drops/`, typed shell-quoted into the pty.
 
 ## Frontend (server-rendered tabs)
 

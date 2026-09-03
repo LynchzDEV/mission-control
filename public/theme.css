@@ -1097,6 +1097,11 @@ table.grid tr.empty td {
   text-align: left;
 }
 
+#term-pane.drop {
+  outline: 2px dashed var(--mc-green);
+  outline-offset: -4px;
+}
+
 /* ---------- terminals: agents side panel ---------- */
 
 .ascope {

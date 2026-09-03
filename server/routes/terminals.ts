@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 
 import { requireSession, verifyCookieHeader } from '../auth'
+import { checkDropSize, findOriginalFile, saveDroppedCopy } from '../drops'
 import { MAX_MODEL_LENGTH } from '../engines'
 import { MAX_TITLE_LENGTH, normalizeTitle, type TerminalRegistry } from '../terminals'
 
@@ -37,7 +38,14 @@ export function readSocketMessage(message: unknown): ControlMessage {
   return { kind: 'ignore' }
 }
 
-function terminalApi(registry: TerminalRegistry): Elysia {
+type DropHelpers = {
+  find?: typeof findOriginalFile
+  save?: typeof saveDroppedCopy
+}
+
+function terminalApi(registry: TerminalRegistry, drops: DropHelpers): Elysia {
+  const find = drops.find ?? findOriginalFile
+  const save = drops.save ?? saveDroppedCopy
   return new Elysia()
     .onBeforeHandle(requireSession)
     .post('/api/terminals', async ({ body, set }) => {
@@ -63,6 +71,23 @@ function terminalApi(registry: TerminalRegistry): Elysia {
         return { error: result.error }
       }
       return result.terminal
+    })
+    .post('/api/terminals/drops', async ({ body, set }) => {
+      const payload = body as Record<string, unknown> | null
+      const file = payload?.file instanceof File ? payload.file : null
+      if (file === null) {
+        set.status = 400
+        return { error: 'file is required' }
+      }
+      if (!checkDropSize(file.size)) {
+        set.status = 413
+        return { error: 'file too large' }
+      }
+      const rawModified = typeof payload?.lastModified === 'string' ? Number(payload.lastModified) : Number.NaN
+      const lastModified = Number.isFinite(rawModified) ? rawModified : Date.now()
+      const found = await find({ name: file.name, size: file.size, lastModified })
+      if (found !== null) return { path: found, original: true }
+      return { path: await save(file.name, await file.arrayBuffer()), original: false }
     })
     .get('/api/terminals', () => ({ sessions: registry.list() }))
     .patch('/api/terminals/:id', ({ params, body, set }) => {
@@ -134,6 +159,6 @@ function terminalSocket(registry: TerminalRegistry): Elysia {
   })
 }
 
-export function terminalsRoutes(registry: TerminalRegistry): Elysia {
-  return new Elysia().use(terminalApi(registry)).use(terminalSocket(registry))
+export function terminalsRoutes(registry: TerminalRegistry, drops: DropHelpers = {}): Elysia {
+  return new Elysia().use(terminalApi(registry, drops)).use(terminalSocket(registry))
 }

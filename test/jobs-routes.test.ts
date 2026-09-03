@@ -121,6 +121,24 @@ describe('POST /api/jobs', () => {
     expect(await log.text()).toContain('hello-from-route')
   })
 
+  test('passes MC_JOB_ID in the spawned process env', async () => {
+    const cookie = await authCookie()
+    const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "job=$MC_JOB_ID"'], env: {} })
+    const app = buildApp(createJobManager(), envResolver)
+
+    const created = await app.handle(
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'mc-job-id' }, cookie),
+    )
+    expect(created.status).toBe(200)
+    const job = (await created.json()) as { id: string }
+
+    const finished = await pollUntilDone(app, cookie, job.id)
+    expect(finished.status).toBe('done')
+
+    const log = await app.handle(get(`/api/jobs/${job.id}/log`, cookie))
+    expect(await log.text()).toContain(`job=${job.id}`)
+  })
+
   test('passes an optional model to the resolver and stores it on the record', async () => {
     const cookie = await authCookie()
     const calls: EngineResolverParams[] = []

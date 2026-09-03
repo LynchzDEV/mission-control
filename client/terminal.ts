@@ -1,4 +1,4 @@
-import { errorText, getJson, postJson, readArray } from './shared'
+import { errorText, getJson, pathsFromUriList, postJson, readArray, shellQuote } from './shared'
 
 type TerminalSession = {
   id: string
@@ -459,6 +459,81 @@ async function openTerminal(event: Event): Promise<void> {
   if (typeof id === 'string') attach(id)
 }
 
+function readData(transfer: DataTransfer | null, type: string): string {
+  try {
+    return transfer?.getData(type) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+async function uploadDrop(file: File): Promise<string> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('lastModified', String(file.lastModified))
+  const response = await fetch('/api/terminals/drops', { method: 'POST', body: form })
+  const payload = (await response.json().catch(() => ({}))) as { error?: string; path?: string }
+  if (!response.ok || typeof payload.path !== 'string') {
+    const message = payload.error ?? `request failed (${response.status})`
+    throw new Error(message.toUpperCase())
+  }
+  return payload.path
+}
+
+async function handleDrop(transfer: DataTransfer | null): Promise<void> {
+  if (socket === null || socket.readyState !== WebSocket.OPEN) {
+    say('ATTACH A SESSION FIRST')
+    return
+  }
+  const wire = socket
+  const typeIn = (paths: string[]): void => {
+    wire.send(new TextEncoder().encode(`${paths.map(shellQuote).join(' ')} `))
+    say(`DROPPED · ${paths.length} PATH${paths.length === 1 ? '' : 'S'}`, true)
+  }
+  const uriPaths = pathsFromUriList(readData(transfer, 'text/uri-list'))
+  if (uriPaths.length > 0) {
+    typeIn(uriPaths)
+    return
+  }
+  if (transfer !== null && transfer.files.length > 0) {
+    const paths: string[] = []
+    for (const file of Array.from(transfer.files)) {
+      try {
+        paths.push(await uploadDrop(file))
+      } catch (error) {
+        say(error instanceof Error ? error.message : 'UPLOAD FAILED')
+        return
+      }
+    }
+    typeIn(paths)
+    return
+  }
+  const plain = readData(transfer, 'text/plain').trim()
+  if (plain !== '') {
+    wire.send(new TextEncoder().encode(`${plain} `))
+    say('DROPPED · 1 PATH', true)
+    return
+  }
+  say('NOTHING DROPPABLE')
+}
+
+function installDrop(pane: HTMLElement): void {
+  pane.addEventListener('dragenter', (event) => {
+    event.preventDefault()
+    pane.classList.add('drop')
+  })
+  pane.addEventListener('dragover', (event) => {
+    event.preventDefault()
+    pane.classList.add('drop')
+  })
+  pane.addEventListener('dragleave', () => pane.classList.remove('drop'))
+  pane.addEventListener('drop', (event) => {
+    event.preventDefault()
+    pane.classList.remove('drop')
+    void handleDrop((event as DragEvent).dataTransfer)
+  })
+}
+
 export function installTerminals(): void {
   if (el('#term-strip') === null) return
   el('#term-new')?.addEventListener('click', () => toggleForm(true))
@@ -466,7 +541,10 @@ export function installTerminals(): void {
   el<HTMLFormElement>('#term-form')?.addEventListener('submit', (event) => void openTerminal(event))
   addEventListener('resize', sendResize)
   const pane = el('#term-pane')
-  if (pane !== null) new ResizeObserver(() => sendResize()).observe(pane)
+  if (pane !== null) {
+    new ResizeObserver(() => sendResize()).observe(pane)
+    installDrop(pane)
+  }
   void refresh()
 }
 

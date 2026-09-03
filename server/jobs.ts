@@ -419,7 +419,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       try {
         proc = Bun.spawn([spawnSpec.cmd, ...spawnSpec.args], {
           cwd: cwdCheck.path,
-          env: { ...process.env, ...spawnSpec.env },
+          env: { ...process.env, ...spawnSpec.env, MC_JOB_ID: id },
           stdin: 'ignore',
           stdout: logFd,
           stderr: logFd,

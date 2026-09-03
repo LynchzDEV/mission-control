@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { getJson, streamJobLog } from '../client/shared'
+import { getJson, pathsFromUriList, shellQuote, streamJobLog } from '../client/shared'
 
 const originalFetch = globalThis.fetch
 
@@ -80,5 +80,25 @@ describe('streamJobLog', () => {
     FakeEventSource.last?.onerror?.()
     expect(ended).toBe(1)
     expect((stream as unknown as FakeEventSource).closed).toBe(true)
+  })
+})
+
+describe('shellQuote / pathsFromUriList', () => {
+  test('leaves already-safe paths unquoted', () => {
+    expect(shellQuote('/a/b.txt')).toBe('/a/b.txt')
+    expect(shellQuote('~/dir/file-name_2.txt')).toBe('~/dir/file-name_2.txt')
+  })
+
+  test('single-quotes paths with spaces and embedded quotes', () => {
+    expect(shellQuote("/a/my file's.txt")).toBe("'/a/my file'\\''s.txt'")
+  })
+
+  test('extracts decoded file:// paths from a uri-list', () => {
+    expect(pathsFromUriList('file:///Users/x/a%20b.txt\r\n#c\r\nhttps://x')).toEqual(['/Users/x/a b.txt'])
+  })
+
+  test('ignores blank lines, comments, and non-file schemes', () => {
+    expect(pathsFromUriList('')).toEqual([])
+    expect(pathsFromUriList('\r\n\r\n#comment\r\nhttp://x/y')).toEqual([])
   })
 })

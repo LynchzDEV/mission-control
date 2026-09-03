@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { exists, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -61,6 +61,12 @@ function request(path: string, method: string, cookie?: string, body?: unknown):
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   })
+}
+
+function formRequest(path: string, cookie: string | undefined, form: FormData): Request {
+  const headers: Record<string, string> = {}
+  if (cookie !== undefined) headers.cookie = cookie
+  return new Request(`http://localhost${path}`, { method: 'POST', headers, body: form })
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
@@ -392,5 +398,50 @@ describe('mounted in the real app', () => {
     const listed = await app.handle(request('/api/terminals', 'GET', cookie))
     expect(listed.status).toBe(200)
     expect(await listed.json()).toEqual({ sessions: [] })
+  })
+})
+
+describe('POST /api/terminals/drops', () => {
+  test('rejects an unauthenticated request', async () => {
+    const form = new FormData()
+    form.append('file', new File(['x'], 'a.txt'))
+    const response = await buildApp().handle(formRequest('/api/terminals/drops', undefined, form))
+    expect(response.status).toBe(401)
+  })
+
+  test('rejects a request without a file', async () => {
+    const cookie = await authCookie()
+    const form = new FormData()
+    form.append('lastModified', '1')
+    const response = await buildApp().handle(formRequest('/api/terminals/drops', cookie, form))
+    expect(response.status).toBe(400)
+    expect(((await response.json()) as { error: string }).error).toBe('file is required')
+  })
+
+  test('saves an unknown file under the config dir and returns the copy', async () => {
+    const cookie = await authCookie()
+    const app = new Elysia().use(terminalsRoutes(registry, { find: async () => null }))
+    const payload = 'drop me'
+    const form = new FormData()
+    form.append('file', new File([payload], 'note.txt'))
+    form.append('lastModified', '1700000000000')
+    const response = await app.handle(formRequest('/api/terminals/drops', cookie, form))
+    expect(response.status).toBe(200)
+    const data = (await response.json()) as { path: string; original: boolean }
+    expect(data.original).toBe(false)
+    expect(data.path.startsWith(join(configDir, 'drops') + '/')).toBe(true)
+    expect(data.path.endsWith('/note.txt')).toBe(true)
+    expect(await readFile(data.path, 'utf8')).toBe(payload)
+  })
+
+  test('returns the original path from the finder without saving', async () => {
+    const cookie = await authCookie()
+    const app = new Elysia().use(terminalsRoutes(registry, { find: async () => '/tmp/x.png' }))
+    const form = new FormData()
+    form.append('file', new File(['x'], 'x.png'))
+    const response = await app.handle(formRequest('/api/terminals/drops', cookie, form))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ path: '/tmp/x.png', original: true })
+    expect(await exists(join(configDir, 'drops', 'x.png'))).toBe(false)
   })
 })

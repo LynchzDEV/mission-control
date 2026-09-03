@@ -100,3 +100,22 @@ export function text(selector: string, value: string): void {
   const element = document.querySelector<HTMLElement>(selector)
   if (element !== null) element.textContent = value
 }
+
+export function shellQuote(path: string): string {
+  if (/^[A-Za-z0-9_.\/~+=:@%,-]+$/.test(path)) return path
+  return `'${path.replace(/'/g, "'\\''")}'`
+}
+
+export function pathsFromUriList(text: string): string[] {
+  const paths: string[] = []
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (trimmed === '' || trimmed.startsWith('#') || !trimmed.startsWith('file://')) continue
+    try {
+      paths.push(decodeURIComponent(new URL(trimmed).pathname))
+    } catch {
+      continue
+    }
+  }
+  return paths
+}
