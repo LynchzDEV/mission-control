@@ -18,7 +18,7 @@ const GLM_CONTEXT_TOKENS = '1000000'
 export const MODEL_SUGGESTIONS: Record<EngineName, readonly string[]> = {
   claude: ['fable', 'opus', 'sonnet', 'haiku'],
   glm: ['glm-5.3-flash[1m]', 'glm-5.3-flash'],
-  codex: [],
+  codex: ['gpt-5.6-sol', 'gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'],
 }
 
 export const MAX_MODEL_LENGTH = 100
