@@ -263,6 +263,12 @@ describe('tab views', () => {
     expect(html).not.toContain('cdn.jsdelivr.net')
   })
 
+  test('the terminals page ships the resume button and sessions panel', async () => {
+    const { html } = await render('/terminals')
+    expect(html).toContain('id="term-resume"')
+    expect(html).toContain('id="term-sessions"')
+  })
+
   test('the agents panel ships empty and only on the terminals tab', async () => {
     const { html } = await render('/terminals')
     expect(html).not.toContain('class="agent"')

@@ -88,8 +88,21 @@ export function TerminalsPage(props: EnginePageProps): string {
             <button type="button" id="term-new">
               + NEW TERMINAL
             </button>
+            <button type="button" class="btn" id="term-resume" title="re-open an old session">
+              RESUME
+            </button>
           </div>
           {NewTerminalForm(props)}
+          <div class="termbar sessions" id="term-sessions" hidden>
+            <input id="term-sessions-cwd" name="cwd" placeholder="~/code/some-repo" list="term-recent-cwd" />
+            <button class="btn go" type="button" id="term-sessions-load">
+              LOAD
+            </button>
+            <button class="btn" type="button" id="term-sessions-close">
+              CLOSE
+            </button>
+            <div class="slist" id="term-sessions-list"></div>
+          </div>
           <div class="empty-pane" id="term-pane">
             NO SESSION ATTACHED
             <br />

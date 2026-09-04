@@ -4,9 +4,12 @@ import { requireSession, verifyCookieHeader } from '../auth'
 import { checkDropSize, findOriginalFile, saveDroppedCopy } from '../drops'
 import { MAX_MODEL_LENGTH } from '../engines'
 import { MAX_TITLE_LENGTH, normalizeTitle, type TerminalRegistry } from '../terminals'
+import { listSessions } from '../transcripts'
+import { validateWorkspaceCwd } from '../workspace'
 
 export const CLOSE_TERMINAL_NOT_FOUND = 4404
 export const CLOSE_TERMINAL_ENDED = 4410
+const RESUME_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 type ControlMessage =
   | { kind: 'resize'; cols: unknown; rows: unknown }
@@ -38,14 +41,16 @@ export function readSocketMessage(message: unknown): ControlMessage {
   return { kind: 'ignore' }
 }
 
-type DropHelpers = {
+type TerminalHelpers = {
   find?: typeof findOriginalFile
   save?: typeof saveDroppedCopy
+  listSessions?: typeof listSessions
 }
 
-function terminalApi(registry: TerminalRegistry, drops: DropHelpers): Elysia {
-  const find = drops.find ?? findOriginalFile
-  const save = drops.save ?? saveDroppedCopy
+function terminalApi(registry: TerminalRegistry, helpers: TerminalHelpers): Elysia {
+  const find = helpers.find ?? findOriginalFile
+  const save = helpers.save ?? saveDroppedCopy
+  const sessionsFor = helpers.listSessions ?? listSessions
   return new Elysia()
     .onBeforeHandle(requireSession)
     .post('/api/terminals', async ({ body, set }) => {
@@ -59,12 +64,21 @@ function terminalApi(registry: TerminalRegistry, drops: DropHelpers): Elysia {
         set.status = 400
         return { error: 'model too long' }
       }
+      const resumeSessionId =
+        typeof payload.resumeSessionId === 'string' ? payload.resumeSessionId : undefined
+      if (resumeSessionId !== undefined && !RESUME_ID_PATTERN.test(resumeSessionId)) {
+        set.status = 400
+        return { error: 'invalid session id' }
+      }
+      const title = typeof payload.title === 'string' ? payload.title : undefined
       const result = await registry.createTerminal({
         engine: payload.engine,
         cwd: payload.cwd,
         cols: payload.cols,
         rows: payload.rows,
         ...(model === undefined ? {} : { model }),
+        ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
+        ...(title === undefined ? {} : { title }),
       })
       if (!result.ok) {
         set.status = result.status
@@ -88,6 +102,19 @@ function terminalApi(registry: TerminalRegistry, drops: DropHelpers): Elysia {
       const found = await find({ name: file.name, size: file.size, lastModified })
       if (found !== null) return { path: found, original: true }
       return { path: await save(file.name, await file.arrayBuffer()), original: false }
+    })
+    .get('/api/terminals/sessions', async ({ query, set }) => {
+      const cwd = typeof query.cwd === 'string' ? query.cwd : ''
+      if (cwd === '') {
+        set.status = 400
+        return { error: 'cwd is required' }
+      }
+      const check = await validateWorkspaceCwd(cwd, undefined, { requireGit: false })
+      if (!check.ok) {
+        set.status = 400
+        return { error: check.error }
+      }
+      return { sessions: await sessionsFor(check.path) }
     })
     .get('/api/terminals', () => ({ sessions: registry.list() }))
     .patch('/api/terminals/:id', ({ params, body, set }) => {
@@ -159,6 +186,6 @@ function terminalSocket(registry: TerminalRegistry): Elysia {
   })
 }
 
-export function terminalsRoutes(registry: TerminalRegistry, drops: DropHelpers = {}): Elysia {
-  return new Elysia().use(terminalApi(registry, drops)).use(terminalSocket(registry))
+export function terminalsRoutes(registry: TerminalRegistry, helpers: TerminalHelpers = {}): Elysia {
+  return new Elysia().use(terminalApi(registry, helpers)).use(terminalSocket(registry))
 }

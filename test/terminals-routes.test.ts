@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { realpathSync } from 'node:fs'
 import { exists, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -443,5 +444,91 @@ describe('POST /api/terminals/drops', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ path: '/tmp/x.png', original: true })
     expect(await exists(join(configDir, 'drops', 'x.png'))).toBe(false)
+  })
+})
+
+describe('GET /api/terminals/sessions', () => {
+  test('rejects an unauthenticated request', async () => {
+    const response = await buildApp().handle(request('/api/terminals/sessions?cwd=/x', 'GET'))
+    expect(response.status).toBe(401)
+  })
+
+  test('requires a cwd', async () => {
+    const cookie = await authCookie()
+    const response = await buildApp().handle(request('/api/terminals/sessions', 'GET', cookie))
+    expect(response.status).toBe(400)
+    expect(((await response.json()) as { error: string }).error).toBe('cwd is required')
+  })
+
+  test('rejects a cwd outside HOME', async () => {
+    const cookie = await authCookie()
+    const response = await buildApp().handle(
+      request('/api/terminals/sessions?cwd=%2Ftmp', 'GET', cookie),
+    )
+    expect(response.status).toBe(400)
+    expect(((await response.json()) as { error: string }).error).toBe('cwd must be under $HOME')
+  })
+
+  test('lists sessions for the validated cwd via the injectable helper', async () => {
+    const cookie = await authCookie()
+    const seen: string[] = []
+    const fixed = [{ id: 's1', title: 'old chat', startedAt: null, updatedAt: 1, bytes: 2 }]
+    const app = new Elysia().use(
+      terminalsRoutes(registry, {
+        listSessions: async (cwd) => {
+          seen.push(cwd)
+          return fixed
+        },
+      }),
+    )
+    const response = await app.handle(
+      request(`/api/terminals/sessions?cwd=${encodeURIComponent(repo)}`, 'GET', cookie),
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ sessions: fixed })
+    expect(seen).toEqual([realpathSync(repo)])
+  })
+})
+
+describe('POST /api/terminals with resumeSessionId', () => {
+  test('rejects a malformed session id', async () => {
+    const cookie = await authCookie()
+    const response = await buildApp().handle(
+      request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo, resumeSessionId: 'nope' }),
+    )
+    expect(response.status).toBe(400)
+    expect(((await response.json()) as { error: string }).error).toBe('invalid session id')
+  })
+
+  test('rejects codex', async () => {
+    const cookie = await authCookie()
+    const response = await buildApp().handle(
+      request('/api/terminals', 'POST', cookie, {
+        engine: 'codex',
+        cwd: repo,
+        resumeSessionId: 'a1b2c3d4-e5f6-a1b2-c3d4-e5f6a1b2c3d4',
+      }),
+    )
+    expect(response.status).toBe(400)
+    expect(((await response.json()) as { error: string }).error).toBe(
+      'resume is only supported for claude and glm',
+    )
+  })
+
+  test('resumes a claude session with a custom title', async () => {
+    const cookie = await authCookie()
+    const created = await buildApp().handle(
+      request('/api/terminals', 'POST', cookie, {
+        engine: 'claude',
+        cwd: repo,
+        resumeSessionId: 'a1b2c3d4-e5f6-a1b2-c3d4-e5f6a1b2c3d4',
+        title: 'My Old Chat',
+      }),
+    )
+    expect(created.status).toBe(200)
+    const terminal = (await created.json()) as { id: string; title: string }
+    expect(terminal.title).toBe('My Old Chat')
+    expect(registry.get(terminal.id)?.title).toBe('My Old Chat')
+    registry.kill(terminal.id)
   })
 })

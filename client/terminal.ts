@@ -430,6 +430,103 @@ function toggleForm(open: boolean): void {
   }
 }
 
+function ago(ms: number): string {
+  const seconds = Math.max(0, Math.round((Date.now() - ms) / 1000))
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.round(hours / 24)}d ago`
+}
+
+function toggleSessions(open: boolean): void {
+  const panel = el<HTMLDivElement>('#term-sessions')
+  if (panel === null) return
+  panel.hidden = !open
+  if (!open) return
+  const form = el<HTMLFormElement>('#term-form')
+  if (form !== null) form.hidden = true
+  fillRecentCwds()
+  const input = el<HTMLInputElement>('#term-sessions-cwd')
+  if (input === null) return
+  input.value = readRecentCwds()[0] ?? ''
+  if (input.value === '') input.focus()
+  else void loadSessions()
+}
+
+async function loadSessions(): Promise<void> {
+  const list = el<HTMLDivElement>('#term-sessions-list')
+  const cwd = el<HTMLInputElement>('#term-sessions-cwd')?.value.trim() ?? ''
+  if (list === null) return
+  if (cwd === '') {
+    say('CWD IS REQUIRED')
+    return
+  }
+  const result = await getJson(`/api/terminals/sessions?cwd=${encodeURIComponent(cwd)}`)
+  if (!result.ok) {
+    list.textContent = ''
+    say(errorText(result).toUpperCase())
+    return
+  }
+  list.textContent = ''
+  const rows = readArray(result.data.sessions)
+  if (rows.length === 0) {
+    const none = document.createElement('div')
+    none.className = 'none'
+    none.textContent = 'NO SESSIONS FOR THIS CWD'
+    list.appendChild(none)
+    return
+  }
+  for (const raw of rows) {
+    const id = typeof raw.id === 'string' ? raw.id : ''
+    const title = typeof raw.title === 'string' ? raw.title : id
+    const updatedAt = typeof raw.updatedAt === 'number' ? raw.updatedAt : 0
+    const bytes = typeof raw.bytes === 'number' ? raw.bytes : 0
+    const row = document.createElement('a')
+    row.href = '#'
+    row.className = 'srow'
+    row.dataset.session = id
+    const name = document.createElement('span')
+    name.className = 'name'
+    name.textContent = title
+    const meta = document.createElement('span')
+    meta.className = 'meta'
+    meta.textContent = `${ago(updatedAt)} · ${Math.round(bytes / 1024)} KB`
+    row.append(name, meta)
+    row.onclick = (event) => {
+      event.preventDefault()
+      void resumeSession(id, title.slice(0, 40), cwd)
+    }
+    list.appendChild(row)
+  }
+}
+
+async function resumeSession(id: string, title: string, cwd: string): Promise<void> {
+  const engine = el<HTMLSelectElement>('#term-engine')?.value ?? 'claude'
+  const model = el<HTMLInputElement>('#term-model')?.value.trim() ?? ''
+  const dimensions = term as unknown as { cols?: number; rows?: number } | null
+  const result = await postJson('/api/terminals', {
+    engine,
+    cwd,
+    resumeSessionId: id,
+    title,
+    ...(model !== '' ? { model } : {}),
+    cols: dimensions?.cols ?? 80,
+    rows: dimensions?.rows ?? 24,
+  })
+  if (!result.ok) {
+    say(errorText(result).toUpperCase())
+    return
+  }
+  say('SESSION RESUMED', true)
+  rememberCwd(cwd)
+  toggleSessions(false)
+  await refresh()
+  const terminalId = result.data.id
+  if (typeof terminalId === 'string') attach(terminalId)
+}
+
 async function openTerminal(event: Event): Promise<void> {
   event.preventDefault()
   const engine = el<HTMLSelectElement>('#term-engine')?.value ?? 'claude'
@@ -538,6 +635,19 @@ export function installTerminals(): void {
   if (el('#term-strip') === null) return
   el('#term-new')?.addEventListener('click', () => toggleForm(true))
   el('#term-cancel')?.addEventListener('click', () => toggleForm(false))
+  el('#term-resume')?.addEventListener('click', () => {
+    const panel = el<HTMLDivElement>('#term-sessions')
+    if (panel === null) return
+    toggleSessions(panel.hidden)
+  })
+  el('#term-sessions-close')?.addEventListener('click', () => toggleSessions(false))
+  el('#term-sessions-load')?.addEventListener('click', () => void loadSessions())
+  el<HTMLInputElement>('#term-sessions-cwd')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      void loadSessions()
+    }
+  })
   el<HTMLFormElement>('#term-form')?.addEventListener('submit', (event) => void openTerminal(event))
   addEventListener('resize', sendResize)
   const pane = el('#term-pane')

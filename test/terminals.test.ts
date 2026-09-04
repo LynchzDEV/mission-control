@@ -12,6 +12,7 @@ import {
   createTerminalRegistry,
   pushToRingBuffer,
   replayRingBuffer,
+  terminalArgs,
   type TerminalRegistry,
 } from '../server/terminals'
 import { initScratchGitRepo } from './support/scratch-git-repo'
@@ -66,6 +67,20 @@ describe('clampDimension', () => {
     expect(clampDimension(0, DEFAULT_COLS)).toBe(1)
     expect(clampDimension(99999, DEFAULT_COLS)).toBe(MAX_DIMENSION)
     expect(clampDimension(120.4, DEFAULT_COLS)).toBe(120)
+  })
+})
+
+describe('terminalArgs', () => {
+  test('no flags without a model or resume target', () => {
+    expect(terminalArgs('claude', undefined, undefined)).toEqual([])
+  })
+
+  test('resume flag comes before the model flag', () => {
+    expect(terminalArgs('claude', 'opus', 'abc')).toEqual(['--resume', 'abc', '--model', 'opus'])
+  })
+
+  test('codex keeps its -m form', () => {
+    expect(terminalArgs('codex', 'x', undefined)).toEqual(['-m', 'x'])
   })
 })
 

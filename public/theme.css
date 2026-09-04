@@ -1069,6 +1069,46 @@ table.grid tr.empty td {
   margin-top: 0;
 }
 
+.termbar.sessions {
+  flex-wrap: wrap;
+}
+
+.termbar .slist {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.slist .srow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--mc-border);
+  color: var(--mc-fg);
+  text-decoration: none;
+  font-family: var(--mc-font-mono);
+  font-size: 12px;
+}
+
+.slist .srow:hover {
+  background: var(--mc-bg-raised);
+}
+
+.slist .srow .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slist .srow .meta,
+.slist .none {
+  color: var(--mc-fg-dim);
+  white-space: nowrap;
+}
+
 #term-search {
   position: absolute;
   top: calc(var(--mc-rowh) + 8px);

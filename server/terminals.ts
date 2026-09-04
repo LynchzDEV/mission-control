@@ -38,6 +38,8 @@ export type CreateTerminalParams = {
   cols?: unknown
   rows?: unknown
   model?: string
+  resumeSessionId?: string
+  title?: string
 }
 
 export type CreateTerminalResult =
@@ -86,6 +88,17 @@ export function normalizeTitle(value: unknown): string | null {
   const trimmed = value.trim()
   if (trimmed === '' || trimmed.length > MAX_TITLE_LENGTH) return null
   return trimmed
+}
+
+export function terminalArgs(
+  engine: EngineName,
+  model: string | undefined,
+  resumeSessionId: string | undefined,
+): string[] {
+  return [
+    ...(resumeSessionId === undefined ? [] : ['--resume', resumeSessionId]),
+    ...modelArgs(engine, model),
+  ]
 }
 
 export type RingBuffer = { chunks: Buffer[]; bytes: number }
@@ -138,6 +151,9 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       return { ok: false, status: 400, error: 'unknown engine' }
     }
     const engine = params.engine
+    if (params.resumeSessionId !== undefined && engine === 'codex') {
+      return { ok: false, status: 400, error: 'resume is only supported for claude and glm' }
+    }
     const cwdCheck = await validateWorkspaceCwd(params.cwd, home, { requireGit: false })
     if (!cwdCheck.ok) return { ok: false, status: 400, error: cwdCheck.error }
 
@@ -154,7 +170,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     const id = crypto.randomUUID()
     let pty: IPty
     try {
-      pty = spawn(terminalCommand(engine), fakeEnginesEnabled() ? [] : modelArgs(engine, params.model), {
+      pty = spawn(terminalCommand(engine), fakeEnginesEnabled() ? [] : terminalArgs(engine, params.model, params.resumeSessionId), {
         name: 'xterm-256color',
         cols,
         rows,
@@ -170,7 +186,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       cwd: cwdCheck.path,
       pid: pty.pid,
       createdAt: Date.now(),
-      title: `${engine.toUpperCase()} · ${basename(cwdCheck.path)}`,
+      title: normalizeTitle(params.title) ?? `${engine.toUpperCase()} · ${basename(cwdCheck.path)}`,
     }
     const session: Session = { record, pty, buffer: createRingBuffer(), listeners: new Set() }
     sessions.set(id, session)

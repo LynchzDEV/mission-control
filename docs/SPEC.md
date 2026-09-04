@@ -93,6 +93,8 @@ Env for spawned processes = `process.env` + engine env overlay. Secrets must nev
 - Terminals persist while server runs (detach/reattach on reconnect); DELETE kills pty.
 - Session guard on the WS upgrade (verify the signed cookie before accepting).
 - Drop a file onto the pane → POST `/api/terminals/drops` → original path via Spotlight match or a copy under `~/.config/mission-control/drops/`, typed shell-quoted into the pty.
+- GET `/api/terminals/sessions?cwd=` lists resumable Claude sessions from `~/.claude/projects/<slug>/` (title = first prompt, stubs skipped).
+- POST `/api/terminals` also accepts `resumeSessionId` + `title` → spawns `claude --resume <id>` (claude/glm only).
 
 ## Frontend (server-rendered tabs)
 
