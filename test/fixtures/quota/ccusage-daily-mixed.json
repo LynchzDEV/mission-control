@@ -1,0 +1,42 @@
+{
+  "daily": [
+    {
+      "totalTokens": 1000,
+      "modelBreakdowns": [
+        {
+          "modelName": "claude-sonnet-4-6",
+          "inputTokens": 100,
+          "outputTokens": 20,
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 50,
+          "cost": 2
+        },
+        {
+          "modelName": "claude-opus-5",
+          "inputTokens": 40,
+          "outputTokens": 10,
+          "cacheCreationTokens": 20,
+          "cacheReadTokens": 30,
+          "cost": 4
+        },
+        {
+          "modelName": "glm-5.3-flash",
+          "inputTokens": 200,
+          "outputTokens": 50,
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 150,
+          "cost": 3
+        },
+        {
+          "modelName": "gpt-5.6-sol",
+          "inputTokens": 100,
+          "outputTokens": 20,
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 50,
+          "cost": 1
+        }
+      ],
+      "totalCost": 10
+    }
+  ]
+}

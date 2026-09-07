@@ -37,6 +37,7 @@ describe('ccusage blocks parsing', () => {
       available: true,
       active: true,
       tokens: 95718961,
+      otherTokens: 0,
       nonCacheTokens: 89214,
       costUSD: 101.02,
       resetsAt: '2026-08-28T11:00:00.000Z',
@@ -68,6 +69,7 @@ describe('ccusage blocks parsing', () => {
       available: true,
       active: false,
       tokens: 0,
+      otherTokens: 0,
       nonCacheTokens: null,
       costUSD: null,
       resetsAt: null,
@@ -92,6 +94,7 @@ describe('ccusage daily fallback parsing', () => {
       available: true,
       active: false,
       tokens: 196433023,
+      otherTokens: 0,
       costUSD: 235.0491458000002,
       resetsAt: null,
       blockPercent: null,
@@ -115,10 +118,12 @@ function runner(script: Record<string, CommandResult | (() => CommandResult) | E
 }
 
 describe('fetchClaudeQuota', () => {
+  const now = new Date(2026, 8, 7)
+
   test('uses the blocks command when it succeeds', async () => {
     const stdout = await fixture('ccusage-blocks-active.json')
     const result = await fetchClaudeQuota(
-      runner({ 'npx ccusage@latest blocks --json': { stdout, exitCode: 0 } }),
+      runner({ 'npx ccusage@latest blocks --json --breakdown': { stdout, exitCode: 0 } }),
     )
     expect(result).toMatchObject({ available: true, active: true, tokens: 95718961 })
   })
@@ -127,9 +132,10 @@ describe('fetchClaudeQuota', () => {
     const dailyStdout = await fixture('ccusage-daily.json')
     const result = await fetchClaudeQuota(
       runner({
-        'npx ccusage@latest blocks --json': new Error('spawn ENOENT'),
-        'npx ccusage daily --json': { stdout: dailyStdout, exitCode: 0 },
+        'npx ccusage@latest blocks --json --breakdown': new Error('spawn ENOENT'),
+        'npx ccusage@latest daily --json --breakdown --since 20260907': { stdout: dailyStdout, exitCode: 0 },
       }),
+      now,
     )
     expect(result).toMatchObject({ available: true, tokens: 196433023 })
   })
@@ -137,9 +143,10 @@ describe('fetchClaudeQuota', () => {
   test('available:false when both commands fail', async () => {
     const result = await fetchClaudeQuota(
       runner({
-        'npx ccusage@latest blocks --json': new Error('not found'),
-        'npx ccusage daily --json': new Error('not found'),
+        'npx ccusage@latest blocks --json --breakdown': new Error('not found'),
+        'npx ccusage@latest daily --json --breakdown --since 20260907': new Error('not found'),
       }),
+      now,
     )
     expect(result).toEqual({ available: false, reason: 'ccusage unavailable' })
   })
@@ -402,3 +409,63 @@ describe('glm CREDIT_LIMIT schema (2026-08)', () => {
   })
 })
 
+
+describe('Claude model attribution', () => {
+  test('sums only claude- rows in blocks, including cache tokens', async () => {
+    expect(parseCcusageBlocksJson(await fixture('ccusage-blocks-mixed.json'))).toMatchObject({
+      available: true, tokens: 300, otherTokens: 700, costUSD: 6, nonCacheTokens: 170,
+    })
+  })
+
+  test('sums only claude- rows in the daily fallback', async () => {
+    expect(parseCcusageDailyJson(await fixture('ccusage-daily-mixed.json'))).toMatchObject({
+      available: true, tokens: 300, otherTokens: 700, costUSD: 6,
+    })
+  })
+
+  test('empty and proxy-only breakdowns never use aggregate Claude totals', () => {
+    for (const modelBreakdowns of [[], [{ modelName: 'proxy-claude-sonnet', inputTokens: 50, cost: 2 }]]) {
+      const expected = { tokens: 0, costUSD: 0, otherTokens: modelBreakdowns.length ? 50 : 0 }
+      expect(parseCcusageBlocksJson(JSON.stringify({ blocks: [{ isActive: true, totalTokens: 50, costUSD: 2, modelBreakdowns }] }))).toMatchObject(expected)
+      expect(parseCcusageDailyJson(JSON.stringify({ daily: [{ totalTokens: 50, totalCost: 2, modelBreakdowns }] }))).toMatchObject(expected)
+    }
+  })
+
+  test('prefers exact block breakdown without fetching daily', async () => {
+    const calls: string[][] = []
+    const result = await fetchClaudeQuota(async (cmd) => {
+      calls.push(cmd)
+      return { stdout: await fixture('ccusage-blocks-mixed.json'), exitCode: 0 }
+    })
+    expect(calls).toEqual([['npx', 'ccusage@latest', 'blocks', '--json', '--breakdown']])
+    expect(result).toMatchObject({ tokens: 300, otherTokens: 700, costUSD: 6 })
+  })
+
+  test('scales an active block using today’s token and cost shares', async () => {
+    const calls: string[][] = []
+    const result = await fetchClaudeQuota(async (cmd) => {
+      calls.push(cmd)
+      return { exitCode: 0, stdout: cmd[2] === 'blocks'
+        ? JSON.stringify({ blocks: [{ isActive: true, totalTokens: 200, costUSD: 5, endTime: 'reset', tokenLimitStatus: { percentUsed: 80 } }] })
+        : await fixture('ccusage-daily-mixed.json') }
+    }, new Date(2026, 8, 7))
+    expect(calls[1]).toEqual(['npx', 'ccusage@latest', 'daily', '--json', '--breakdown', '--since', '20260907'])
+    expect(result).toMatchObject({ active: true, tokens: 60, otherTokens: 140, costUSD: 3, resetsAt: 'reset', blockPercent: 24 })
+  })
+
+  test('preserves the block when daily has no usable breakdown', async () => {
+    for (const daily of [{ totalTokens: 100 }, { modelBreakdowns: [] }]) {
+      const result = await fetchClaudeQuota(async (cmd) => ({ exitCode: 0, stdout: JSON.stringify(cmd[2] === 'blocks'
+        ? { blocks: [{ isActive: true, totalTokens: 200, costUSD: 5 }] }
+        : { daily: [daily] }) }))
+      expect(result).toMatchObject({ tokens: 200, otherTokens: 0, costUSD: 5 })
+    }
+  })
+
+  test('daily breakdown remains usable when blocks fails', async () => {
+    const result = await fetchClaudeQuota(async (cmd) => cmd[2] === 'blocks'
+      ? { exitCode: 1, stdout: '' }
+      : { exitCode: 0, stdout: await fixture('ccusage-daily-mixed.json') })
+    expect(result).toMatchObject({ active: false, tokens: 300, otherTokens: 700, costUSD: 6 })
+  })
+})

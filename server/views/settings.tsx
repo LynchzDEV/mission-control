@@ -74,11 +74,20 @@ function ClaudeColumn(): JSX.Element {
       })}
       {Row({
         label: 'QUOTA SRC',
-        value: 'ccusage blocks --json',
+        value: 'ccusage blocks --json --breakdown',
         action: (
           <button type="button" data-probe="claude" data-status="s-msg">
             RUN
           </button>
+        ),
+      })}
+      {Row({
+        label: 'USAGE',
+        value: (
+          <>
+            <span id="s-claude-usage">—</span>
+            <div id="s-claude-other" style="color:var(--mc-fg-dim);font-size:11px" hidden></div>
+          </>
         ),
       })}
       {Row({ label: 'ROLE', value: 'spec · review · verify · merge' })}

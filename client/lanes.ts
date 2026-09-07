@@ -1,3 +1,4 @@
+import { paintOtherTokens } from './quota'
 import {
   anime,
   getJson,
@@ -86,6 +87,7 @@ function paintFixture(): void {
 }
 
 function paintClaude(claude: JsonRecord): void {
+  paintOtherTokens(document.getElementById('n1other'), claude)
   const tokens = readNumber(claude.tokens)
   const percent = readNumber(claude.blockPercent)
   rollTo('n1', tokens === null ? FIXTURE.claudeMTok : tokens / 1_000_000, 2)

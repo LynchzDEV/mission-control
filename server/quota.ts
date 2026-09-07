@@ -6,6 +6,8 @@ export type ClaudeQuota =
       available: true
       active: boolean
       tokens: number
+      otherTokens: number
+      nonCacheTokens?: number | null
       costUSD: number | null
       resetsAt: string | null
       blockPercent: number | null
@@ -67,6 +69,29 @@ function readBlockPercent(block: Record<string, unknown>): number | null {
   return status.percentUsed
 }
 
+function readModelBreakdown(entry: Record<string, unknown>) {
+  if (!Array.isArray(entry.modelBreakdowns)) return null
+  let tokens = 0
+  let otherTokens = 0
+  let costUSD = 0
+  let otherCostUSD = 0
+  let nonCacheTokens = 0
+  for (const row of entry.modelBreakdowns) {
+    if (!isRecord(row)) continue
+    const count = (key: string) => typeof row[key] === 'number' ? row[key] : 0
+    const total = count('inputTokens') + count('outputTokens') + count('cacheCreationTokens') + count('cacheReadTokens')
+    if (typeof row.modelName === 'string' && row.modelName.startsWith('claude-')) {
+      tokens += total
+      costUSD += count('cost')
+      nonCacheTokens += count('inputTokens') + count('outputTokens')
+    } else {
+      otherTokens += total
+      otherCostUSD += count('cost')
+    }
+  }
+  return { tokens, otherTokens, costUSD, otherCostUSD, nonCacheTokens }
+}
+
 export function parseCcusageBlocksJson(raw: string): ClaudeQuota {
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -75,12 +100,25 @@ export function parseCcusageBlocksJson(raw: string): ClaudeQuota {
     }
     const active = parsed.blocks.find((block) => isRecord(block) && block.isActive === true)
     if (active === undefined) {
-      return { available: true, active: false, tokens: 0, costUSD: null, resetsAt: null, blockPercent: null, nonCacheTokens: null }
+      return {
+        available: true, active: false, tokens: 0, otherTokens: 0,
+        costUSD: null, resetsAt: null, blockPercent: null, nonCacheTokens: null,
+      }
     }
+    const breakdown = readModelBreakdown(active)
     const tokens = typeof active.totalTokens === 'number' ? active.totalTokens : 0
     const costUSD = typeof active.costUSD === 'number' ? active.costUSD : null
     const resetsAt = typeof active.endTime === 'string' ? active.endTime : null
-    return { available: true, active: true, tokens, costUSD, resetsAt, blockPercent: readBlockPercent(active), nonCacheTokens: readNonCacheTokens(active) }
+    return {
+      available: true,
+      active: true,
+      tokens: breakdown?.tokens ?? tokens,
+      otherTokens: breakdown?.otherTokens ?? 0,
+      costUSD: breakdown?.costUSD ?? costUSD,
+      resetsAt,
+      blockPercent: readBlockPercent(active),
+      nonCacheTokens: breakdown?.nonCacheTokens ?? readNonCacheTokens(active),
+    }
   } catch {
     return { available: false, reason: 'malformed ccusage blocks json' }
   }
@@ -94,33 +132,71 @@ export function parseCcusageDailyJson(raw: string): ClaudeQuota {
     }
     const latest = parsed.daily[parsed.daily.length - 1]
     if (!isRecord(latest)) return { available: false, reason: 'unexpected ccusage daily entry shape' }
+    const breakdown = readModelBreakdown(latest)
     const tokens = typeof latest.totalTokens === 'number' ? latest.totalTokens : 0
     const costUSD = typeof latest.totalCost === 'number' ? latest.totalCost : null
-    return { available: true, active: false, tokens, costUSD, resetsAt: null, blockPercent: null }
+    return {
+      available: true,
+      active: false,
+      tokens: breakdown?.tokens ?? tokens,
+      otherTokens: breakdown?.otherTokens ?? 0,
+      costUSD: breakdown?.costUSD ?? costUSD,
+      resetsAt: null,
+      blockPercent: null,
+    }
   } catch {
     return { available: false, reason: 'malformed ccusage daily json' }
   }
 }
 
-export async function fetchClaudeQuota(run: CommandRunner = runCommand): Promise<ClaudeQuota> {
+export async function fetchClaudeQuota(run: CommandRunner = runCommand, now: Date = new Date()): Promise<ClaudeQuota> {
+  let blockQuota: ClaudeQuota | null = null
   try {
-    const blocks = await run(['npx', 'ccusage@latest', 'blocks', '--json'], { timeoutMs: 10_000 })
+    const blocks = await run(['npx', 'ccusage@latest', 'blocks', '--json', '--breakdown'], { timeoutMs: 10_000 })
     if (blocks.exitCode === 0) {
       const parsed = parseCcusageBlocksJson(blocks.stdout)
-      if (parsed.available) return parsed
+      if (parsed.available) {
+        const active = JSON.parse(blocks.stdout).blocks.find(
+          (block: unknown) => isRecord(block) && block.isActive === true,
+        )
+        if (!parsed.active || (isRecord(active) && readModelBreakdown(active) !== null)) return parsed
+        blockQuota = parsed
+      }
     }
-  } catch {
-    // fall through to the daily fallback below
-  }
+  } catch {}
 
   try {
-    const daily = await run(['npx', 'ccusage', 'daily', '--json'], { timeoutMs: 10_000 })
-    if (daily.exitCode === 0) return parseCcusageDailyJson(daily.stdout)
-  } catch {
-    // handled by the final fallback return
-  }
+    const since = `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}`
+    const daily = await run(
+      ['npx', 'ccusage@latest', 'daily', '--json', '--breakdown', '--since', since],
+      { timeoutMs: 10_000 },
+    )
+    if (daily.exitCode === 0) {
+      const parsed = parseCcusageDailyJson(daily.stdout)
+      if (blockQuota?.available && parsed.available) {
+        const latest = JSON.parse(daily.stdout).daily.at(-1)
+        const breakdown = isRecord(latest) ? readModelBreakdown(latest) : null
+        if (breakdown === null) return blockQuota
+        const totalTokens = breakdown.tokens + breakdown.otherTokens
+        if (totalTokens === 0) return blockQuota
+        const share = breakdown.tokens / totalTokens
+        const tokens = Math.round(blockQuota.tokens * share)
+        const totalCost = breakdown.costUSD + breakdown.otherCostUSD
+        const costShare = totalCost > 0 ? breakdown.costUSD / totalCost : share
+        return {
+          ...blockQuota,
+          tokens,
+          otherTokens: blockQuota.tokens - tokens,
+          costUSD: blockQuota.costUSD === null ? null : blockQuota.costUSD * costShare,
+          nonCacheTokens: blockQuota.nonCacheTokens == null ? null : Math.round(blockQuota.nonCacheTokens * share),
+          blockPercent: blockQuota.blockPercent === null ? null : blockQuota.blockPercent * share,
+        }
+      }
+      if (parsed.available) return parsed
+    }
+  } catch {}
 
-  return { available: false, reason: 'ccusage unavailable' }
+  return blockQuota ?? { available: false, reason: 'ccusage unavailable' }
 }
 
 export function zaiOrigin(baseUrl: string): string {

@@ -390,3 +390,11 @@ describe('flow route', () => {
     expect(body.mergedToday).toBe(0)
   })
 })
+
+test('Claude proxy usage placeholders start hidden on Settings and Lanes', async () => {
+  for (const [path, id] of [['/settings', 's-claude-other'], ['/lanes', 'n1other']]) {
+    const { html } = await render(path)
+    expect(html).toMatch(new RegExp(`<div id="${id}"[^>]*color:var\\(--mc-fg-dim\\)[^>]*hidden[^>]*></div>`))
+    expect(html).not.toContain('via claude binary (glm/proxy)')
+  }
+})

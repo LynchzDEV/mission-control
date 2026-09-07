@@ -1,5 +1,6 @@
 import { installModelPickers } from './model-picker'
-import { anime, errorText, getJson, markFixture, postJson, readRecord } from './shared'
+import { paintOtherTokens } from './quota'
+import { anime, errorText, getJson, markFixture, postJson, readNumber, readRecord, text } from './shared'
 
 function say(element: HTMLElement | null, message: string, ok: boolean): void {
   if (element === null) return
@@ -148,6 +149,13 @@ async function refreshEngineStatus(): Promise<void> {
   }
   markFixture('quota', false)
   const claude = readRecord(quota.data.claude)
+  paintOtherTokens(document.getElementById('s-claude-other'), claude)
+  const tokens = readNumber(claude.tokens)
+  const cost = readNumber(claude.costUSD)
+  const usage = claude.available === false || tokens === null
+    ? '—'
+    : `${tokens.toLocaleString('en-US')} TOK${cost === null ? '' : ` · $${cost.toFixed(2)}`}`
+  text('#s-claude-usage', usage)
   const glm = readRecord(quota.data.glm)
   const codex = readRecord(quota.data.codex)
 

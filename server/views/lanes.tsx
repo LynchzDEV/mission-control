@@ -121,6 +121,7 @@ function Racks(): JSX.Element {
               FIXTURE
             </span>
           </div>
+          <div id="n1other" style="color:var(--mc-fg-dim);font-size:11px" hidden></div>
           <div class="track">
             <div class="fill" id="b1" style="background:var(--mc-coral)"></div>
           </div>
