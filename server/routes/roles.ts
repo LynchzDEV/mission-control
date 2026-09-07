@@ -8,7 +8,13 @@ export const ROLE_NAMES = ['plan', 'execute', 'review'] as const
 
 export type RoleName = (typeof ROLE_NAMES)[number]
 
-export function parseRoles(body: unknown): { ok: true; roles: EngineRoles } | { ok: false; error: string } {
+const AUTO_REVIEW_FLAGS: Record<string, boolean> = { on: true, true: true, off: false, false: false }
+
+export function parseRoles(body: unknown): {
+  ok: true
+  roles: EngineRoles
+  autoReview?: boolean
+} | { ok: false; error: string } {
   const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
   const roles: Record<RoleName, RoleAssignment> = {
     plan: { engine: '', model: null },
@@ -30,21 +36,36 @@ export function parseRoles(body: unknown): { ok: true; roles: EngineRoles } | { 
     }
     roles[role] = { engine, model: model === '' ? null : model }
   }
-  return { ok: true, roles }
+  const rawAutoReview = record.autoReview
+  if (rawAutoReview === undefined) return { ok: true, roles }
+  if (typeof rawAutoReview === 'boolean') return { ok: true, roles, autoReview: rawAutoReview }
+  const flag = AUTO_REVIEW_FLAGS[rawAutoReview as string]
+  if (flag === undefined) return { ok: false, error: 'autoReview must be on/off/true/false' }
+  return { ok: true, roles, autoReview: flag }
 }
 
 export async function readRoles(): Promise<EngineRoles> {
   return (await readConfig()).roles
 }
 
+export async function rolesView(): Promise<EngineRoles & { autoReview: boolean }> {
+  const config = await readConfig()
+  return { ...config.roles, autoReview: config.autoReview }
+}
+
 export const rolesRoutes = new Elysia()
   .onBeforeHandle(requireSession)
-  .get('/api/roles', () => readRoles())
+  .get('/api/roles', () => rolesView())
   .post('/api/roles', async ({ body, set }) => {
     const parsed = parseRoles(body)
     if (!parsed.ok) {
       set.status = 400
       return { error: parsed.error }
     }
-    return (await writeConfig({ roles: parsed.roles })).roles
+    const current = await readConfig()
+    const config = await writeConfig({
+      roles: parsed.roles,
+      autoReview: parsed.autoReview ?? current.autoReview,
+    })
+    return { ...config.roles, autoReview: config.autoReview }
   })

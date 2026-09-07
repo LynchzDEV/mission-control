@@ -109,6 +109,20 @@ describe('parseRoles', () => {
       error: 'plan model too long',
     })
   })
+
+  test('parses autoReview from booleans or on/off strings, and rejects junk', () => {
+    expect(parseRoles({ plan: 'claude', execute: 'glm', review: 'codex', autoReview: true })).toEqual({
+      ok: true,
+      roles: { plan: { engine: 'claude', model: null }, execute: { engine: 'glm', model: null }, review: { engine: 'codex', model: null } },
+      autoReview: true,
+    })
+    expect(parseRoles({ plan: 'claude', execute: 'glm', review: 'codex', autoReview: 'off' })).toEqual({
+      ok: true,
+      roles: { plan: { engine: 'claude', model: null }, execute: { engine: 'glm', model: null }, review: { engine: 'codex', model: null } },
+      autoReview: false,
+    })
+    expect(parseRoles({ plan: 'claude', execute: 'glm', review: 'codex', autoReview: 'nope' }).ok).toBe(false)
+  })
 })
 
 describe('/api/roles', () => {
@@ -116,7 +130,7 @@ describe('/api/roles', () => {
     expect((await app.handle(request('GET', undefined, false))).status).toBe(401)
     const response = await app.handle(request('GET'))
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual(DEFAULT_ROLES)
+    expect(await response.json()).toEqual({ ...DEFAULT_ROLES, autoReview: false })
   })
 
   test('POST persists the full nested mapping and GET reflects it', async () => {
@@ -127,9 +141,9 @@ describe('/api/roles', () => {
     }
     const saved = await app.handle(request('POST', next))
     expect(saved.status).toBe(200)
-    expect(await saved.json()).toEqual(next)
+    expect(await saved.json()).toEqual({ ...next, autoReview: false })
     expect((await readConfig()).roles).toEqual(next)
-    expect(await (await app.handle(request('GET'))).json()).toEqual(next)
+    expect(await (await app.handle(request('GET'))).json()).toEqual({ ...next, autoReview: false })
   })
 
   test('POST accepts the flat settings form and returns the nested shape', async () => {
@@ -142,8 +156,30 @@ describe('/api/roles', () => {
       execute: { engine: 'glm', model: null },
       review: { engine: 'codex', model: null },
     }
-    expect(await saved.json()).toEqual(nested)
+    expect(await saved.json()).toEqual({ ...nested, autoReview: false })
     expect((await readConfig()).roles).toEqual(nested)
+  })
+
+  test('POST autoReview on persists and a later POST without the field leaves it unchanged', async () => {
+    const saved = await app.handle(
+      request('POST', { plan: 'claude', execute: 'glm', review: 'codex', autoReview: 'on' }),
+    )
+    expect(saved.status).toBe(200)
+    expect(await saved.json()).toEqual({
+      plan: { engine: 'claude', model: null },
+      execute: { engine: 'glm', model: null },
+      review: { engine: 'codex', model: null },
+      autoReview: true,
+    })
+    expect((await readConfig()).autoReview).toBe(true)
+
+    const after = await app.handle(request('POST', { plan: 'codex', execute: 'glm', review: 'claude' }))
+    expect(await after.json()).toEqual({
+      plan: { engine: 'codex', model: null },
+      execute: { engine: 'glm', model: null },
+      review: { engine: 'claude', model: null },
+      autoReview: true,
+    })
   })
 
   test('POST rejects a partial or invalid mapping without touching storage', async () => {

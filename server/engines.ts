@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { readSecrets, type Secrets } from './secrets'
+import { workerEnv, workerProfileDirs } from './worker-profile'
 
 export type EngineName = 'claude' | 'glm' | 'codex'
 
@@ -111,10 +112,14 @@ function processEnvRecord(): Record<string, string> {
   return { ...result, CLAUDE_CODE_FORCE_SESSION_PERSISTENCE: '1' }
 }
 
-export async function buildEnv(engine: EngineName): Promise<Record<string, string>> {
+export async function buildEnv(
+  engine: EngineName,
+  opts?: { worker?: boolean; profiles?: { claude: string; codex: string } },
+): Promise<Record<string, string>> {
   const secrets = await readSecrets()
   const overlay = resolveEngine(engine).envFor(secrets)
   const env = { ...processEnvRecord(), ...overlay }
+  if (opts?.worker === true) Object.assign(env, workerEnv(engine, opts.profiles ?? workerProfileDirs()))
   env.PATH = pathWithFallbackDirs(env.PATH)
   return env
 }

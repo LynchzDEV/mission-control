@@ -235,8 +235,30 @@ describe('tab views', () => {
     expect(html).toMatch(/<input id="plan_model" name="plan_model"[^>]*value="opus"[^>]*hidden\/>/)
     expect(html).toMatch(/<input id="review_model" name="review_model"[^>]*value="gpt-z-custom"/)
     expect(html).not.toMatch(/<input id="review_model" name="review_model"[^>]*hidden/)
-    expect(html).toContain('data-fields="plan,execute,review,plan_model,execute_model,review_model"')
+    expect(html).toContain('data-fields="plan,execute,review,plan_model,execute_model,review_model,autoReview"')
     expect(html).toContain('blank model = engine default')
+  })
+
+  test('settings renders the auto-review opt-in with config-selected state', async () => {
+    const before = await render('/settings')
+    expect(before.html).toContain('AUTO-REVIEW')
+    expect(before.html).toContain('id="autoReview"')
+    expect(before.html).toContain('off = review on demand')
+    expect(before.html).toMatch(/<option value="off" selected/)
+    expect(before.html).not.toMatch(/<option value="on" selected/)
+
+    const post = await app.handle(
+      new Request('http://localhost/api/roles', {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ plan: 'claude', execute: 'glm', review: 'codex', autoReview: 'on' }),
+      }),
+    )
+    expect(post.status).toBe(200)
+
+    const after = await render('/settings')
+    expect(after.html).toMatch(/<option value="on" selected/)
+    expect(after.html).not.toMatch(/<option value="off" selected/)
   })
 
   test('dispatch and terminals render the model input preloaded with the role default', async () => {

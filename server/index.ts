@@ -17,6 +17,7 @@ import {
 import { maybeAutoReview } from './auto-review'
 import { quotaRoutes } from './routes/quota'
 import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
+import { ensureWorkerProfiles } from './worker-profile'
 import { createJobManager } from './jobs'
 import { createTerminalRegistry } from './terminals'
 import { realEngineResolver } from './jobs-engine-iface'
@@ -92,8 +93,8 @@ function appShellPage(): Response {
 }
 
 async function settingsPage(): Promise<string> {
-  const [view, roles, models] = await Promise.all([currentView(), readRoles(), modelsCache.get()])
-  return SettingsPage({ ...view, roles, models, minPasswordLength: MIN_PASSWORD_LENGTH })
+  const [view, config, models] = await Promise.all([currentView(), readConfig(), modelsCache.get()])
+  return SettingsPage({ ...view, roles: config.roles, autoReview: config.autoReview, models, minPasswordLength: MIN_PASSWORD_LENGTH })
 }
 
 async function dispatchPage(): Promise<string> {
@@ -177,6 +178,7 @@ function healthApi() {
 }
 
 export async function createApp(): Promise<Elysia> {
+  await ensureWorkerProfiles()
   const jobManager = createJobManager({
     onJobSettled: (record) => {
       void maybeAutoReview(record, jobManager, { resolver: realEngineResolver }).catch(() => {})

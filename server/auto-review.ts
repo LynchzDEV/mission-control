@@ -3,18 +3,16 @@ import type { EngineResolver } from './jobs-engine-iface'
 import type { QuotaComposite } from './quota'
 import { quotaCache } from './routes/quota'
 import { readRoles } from './routes/roles'
-import type { EngineRoles } from './secrets'
+import { readConfig, type EngineRoles } from './secrets'
 
 export function buildReviewPrompt(source: JobRecord): string {
   return [
-    `Cross-family review of a finished ${source.engine} implementation job (label: ${source.label}).`,
-    `You are in the job's working tree. Review ONLY that job's changes:`,
-    `1. Run \`git status --porcelain\` — if the tree is dirty, review \`git diff HEAD\` (plus untracked files).`,
-    `2. If the tree is clean, review the most recent commit: \`git log --oneline -3\` then \`git diff HEAD~1\`.`,
-    `Do NOT edit, create, or delete any file. Read surrounding code as needed for context.`,
-    `Output format — first line exactly \`SHIP\` or \`NO-SHIP\`, then findings ranked most severe first,`,
-    `each as: file:line — what is wrong — why it matters. If SHIP with no findings, say so in one line.`,
-    `Reported diff stat of the job under review: ${source.diffStat ?? 'unknown'}.`,
+    `Cross-family review of a finished ${source.engine} implementation job (${source.label}). You are in the job's working tree.`,
+    `Scope: ONLY the diff — \`git status --porcelain\`; dirty tree → \`git diff HEAD\` plus untracked files; clean tree → \`git diff HEAD~1\`.`,
+    `Read at most the files that appear in that diff, and only around the changed hunks. Do NOT scan the repository, do NOT run the test suite, do NOT edit anything.`,
+    `Ignore worktree-local setup noise: database names, ports, .env values, generated files.`,
+    `Output: first line exactly SHIP or NO-SHIP, then findings ranked most severe first as file:line — what is wrong — why it matters. Only report bugs, data loss, security, or broken behavior; style is not a finding. SHIP with no findings → one line.`,
+    `Reported diff stat: ${source.diffStat ?? 'unknown'}.`,
   ].join('\n')
 }
 
@@ -40,6 +38,7 @@ export function reviewerReadiness(engine: string, quota: QuotaComposite): Review
 export type AutoReviewDeps = {
   resolver: EngineResolver
   roles?: () => Promise<EngineRoles>
+  autoReview?: () => Promise<boolean>
   probeQuota?: () => Promise<QuotaComposite>
   log?: (line: string) => void
 }
@@ -50,6 +49,8 @@ export async function maybeAutoReview(
   deps: AutoReviewDeps,
 ): Promise<void> {
   const log = deps.log ?? console.error
+  const enabled = await (deps.autoReview ?? (async () => (await readConfig()).autoReview))()
+  if (!enabled) return
   const roles = await (deps.roles ?? readRoles)()
   if (!shouldAutoReview(record, manager.listJobs(), roles)) return
   const { review } = roles

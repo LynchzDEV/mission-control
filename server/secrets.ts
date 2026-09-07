@@ -43,6 +43,7 @@ export const DEFAULT_ROLES: EngineRoles = {
 export type AppConfig = {
   bind: string
   roles: EngineRoles
+  autoReview: boolean
 }
 
 export type PublicSecretsView = {
@@ -162,7 +163,11 @@ function readRoles(raw: unknown): EngineRoles {
 
 export async function readConfig(): Promise<AppConfig> {
   const raw = await readJsonFile(CONFIG_FILE)
-  return { bind: asString(raw.bind) ?? DEFAULT_BIND, roles: readRoles(raw.roles) }
+  return {
+    bind: asString(raw.bind) ?? DEFAULT_BIND,
+    roles: readRoles(raw.roles),
+    autoReview: raw.autoReview === true,
+  }
 }
 
 export async function writeConfig(patch: Partial<AppConfig>): Promise<AppConfig> {

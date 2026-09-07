@@ -66,6 +66,20 @@ const ENGINES = {
 ```
 Env for spawned processes = `process.env` + engine env overlay. Secrets must never be passed as CLI args (ps leakage) — env only.
 
+### Worker profiles (worker-profile.ts)
+
+Jobs spawn `claude`/`codex` with the user's full personal config: ~91k tokens of context per turn and 16 hooks per tool call, versus 19k/2–3s with an isolated config dir. Jobs therefore get a slim profile pair under the config dir (`worker-claude/`, `worker-codex/`, mode 0700, rewritten from constants on every server start so constant edits propagate):
+
+- `worker-claude/` — `CLAUDE.md` (the worker contract: implement in-tree, no dispatch/cockpit calls, no commit unless asked, run only touched tests while iterating, no file re-reads, terse final report) and `settings.json` (`bypassPermissions`). Used by `glm` jobs via `CLAUDE_CONFIG_DIR`.
+- `worker-codex/` — `config.toml` (`approval_policy = "never"`, `sandbox_mode = "workspace-write"`), with `auth.json` symlinked to `~/.codex/auth.json` when present so OAuth refresh is shared. Used by `codex` jobs via `CODEX_HOME`.
+- `claude` jobs keep the full user profile (no env change): OAuth lives in the user's own config/keychain and claude-engine jobs are rare.
+
+`buildEnv(name, { worker: true })` applies the profile env (only `realEngineResolver`, i.e. headless jobs); terminals call `buildEnv(name)` unchanged and keep the full profile. Profile setup failures are logged, never thrown — a missing profile must not stop the server.
+
+### Auto-review (opt-in)
+
+Every finished execute job can spawn a cross-family review job (`roles.review`) — now opt-in via `autoReview` in config (default **off**; Settings → ROLES → AUTO-REVIEW). The review prompt scopes the reviewer to ONLY the diff (`git status --porcelain` → `git diff HEAD` + untracked, else `git diff HEAD~1`), forbids repo scans and test runs, and demands a first-line `SHIP`/`NO-SHIP` verdict.
+
 ## Quota (quota.ts) — GET /api/quota
 
 - `claude`: run `npx ccusage@latest blocks --json` (fallback `ccusage daily --json`); parse today's tokens + active block. If ccusage missing/errors → `{available:false}`.

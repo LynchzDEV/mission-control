@@ -11,7 +11,9 @@ import {
   fakeEnginesEnabled,
   resolveEngine,
 } from '../server/engines'
+import { realEngineResolver } from '../server/jobs-engine-iface'
 import { writeSecrets } from '../server/secrets'
+import { workerProfileDirs } from '../server/worker-profile'
 
 const TOKEN = 'zai-secret-token-must-never-appear-in-argv'
 
@@ -96,6 +98,40 @@ describe('codex engine', () => {
     const env = await buildEnv('codex')
     expect(env).not.toHaveProperty('ANTHROPIC_BASE_URL')
     expect(env).not.toHaveProperty('ANTHROPIC_AUTH_TOKEN')
+  })
+})
+
+describe('worker profile env', () => {
+  test('glm worker gets CLAUDE_CONFIG_DIR, codex worker gets CODEX_HOME', async () => {
+    await writeSecrets({ zaiAuthToken: TOKEN })
+    const profiles = { claude: join(dir, 'worker-claude'), codex: join(dir, 'worker-codex') }
+    const glm = await buildEnv('glm', { worker: true, profiles })
+    expect(glm.CLAUDE_CONFIG_DIR).toBe(profiles.claude)
+    expect(glm).not.toHaveProperty('CODEX_HOME')
+    const codex = await buildEnv('codex', { worker: true, profiles })
+    expect(codex.CODEX_HOME).toBe(profiles.codex)
+    expect(codex).not.toHaveProperty('CLAUDE_CONFIG_DIR')
+  })
+
+  test('claude workers and non-worker builds keep the user profile', async () => {
+    await writeSecrets({ zaiAuthToken: TOKEN })
+    const claude = await buildEnv('claude', { worker: true, profiles: workerProfileDirs() })
+    expect(claude).not.toHaveProperty('CLAUDE_CONFIG_DIR')
+    expect(claude).not.toHaveProperty('CODEX_HOME')
+    const plain = await buildEnv('glm')
+    expect(plain).not.toHaveProperty('CLAUDE_CONFIG_DIR')
+    expect(plain).not.toHaveProperty('CODEX_HOME')
+  })
+
+  test('the job resolver hands glm jobs the isolated worker profile', async () => {
+    process.env.MC_FAKE_ENGINES = '1'
+    await writeSecrets({ zaiAuthToken: TOKEN })
+    try {
+      const spawn = await realEngineResolver({ engine: 'glm', prompt: 'p' })
+      expect(spawn.env.CLAUDE_CONFIG_DIR).toBe(workerProfileDirs().claude)
+    } finally {
+      delete process.env.MC_FAKE_ENGINES
+    }
   })
 })
 

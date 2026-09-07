@@ -44,6 +44,6 @@ export const realEngineResolver: EngineResolver = async ({ engine, prompt, resum
   return {
     cmd: resolveBinary(resolveEngine(name).cmd),
     args: engineArgs(name, prompt, resumeSessionId, model),
-    env: await buildEnv(name),
+    env: await buildEnv(name, { worker: true }),
   }
 }

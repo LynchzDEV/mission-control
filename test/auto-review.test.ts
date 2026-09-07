@@ -1,9 +1,24 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { buildReviewPrompt, maybeAutoReview, reviewerReadiness, shouldAutoReview } from '../server/auto-review'
 import type { CreateJobParams, JobManager, JobRecord } from '../server/jobs'
 import type { QuotaComposite } from '../server/quota'
-import { DEFAULT_ROLES, type EngineRoles } from '../server/secrets'
+import { DEFAULT_ROLES, type EngineRoles, readConfig, writeConfig } from '../server/secrets'
+
+let dir: string
+
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'mc-auto-review-'))
+  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+})
+
+afterEach(async () => {
+  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  await rm(dir, { recursive: true, force: true })
+})
 
 function job(overrides: Partial<JobRecord> = {}): JobRecord {
   const id = overrides.id ?? 'glm-1'
@@ -50,10 +65,11 @@ function fakeManager(all: JobRecord[], created: CreateJobParams[]): JobManager {
   } as unknown as JobManager
 }
 
-function deps(roles: EngineRoles = DEFAULT_ROLES, composite: QuotaComposite = quota()) {
+function deps(roles: EngineRoles = DEFAULT_ROLES, composite: QuotaComposite = quota(), autoReview: boolean | undefined = true) {
   return {
     resolver: () => ({ cmd: 'echo', args: [], env: {} }),
     roles: async () => roles,
+    ...(autoReview === undefined ? {} : { autoReview: async () => autoReview }),
     probeQuota: async () => composite,
     log: () => {},
   }
@@ -179,14 +195,39 @@ describe('maybeAutoReview', () => {
 
     expect(created).toHaveLength(0)
   })
+
+  test('is opt-in: off dispatches nothing even when a review is due', async () => {
+    const source = job()
+    const created: CreateJobParams[] = []
+    await maybeAutoReview(source, fakeManager([source], created), deps(DEFAULT_ROLES, quota(), false))
+    expect(created).toHaveLength(0)
+  })
+
+  test('reads the config flag when no dep overrides it', async () => {
+    const source = job()
+    const created: CreateJobParams[] = []
+    const manager = fakeManager([source], created)
+    const configDeps = () => ({ ...deps(DEFAULT_ROLES, quota()), autoReview: undefined })
+
+    await maybeAutoReview(source, manager, configDeps())
+    expect(created).toHaveLength(0)
+
+    await writeConfig({ autoReview: true })
+    await maybeAutoReview(source, manager, configDeps())
+    expect(created).toHaveLength(1)
+    expect((await readConfig()).autoReview).toBe(true)
+  })
 })
 
 describe('buildReviewPrompt', () => {
-  test('is self-contained: names the label and executor, forbids edits, demands a verdict line', () => {
+  test('scopes the reviewer to the diff only: no repo scan, no test suite, no edits', () => {
     const prompt = buildReviewPrompt(job({ engine: 'codex' }))
     expect(prompt).toContain('ticket-a')
     expect(prompt).toContain('finished codex implementation job')
+    expect(prompt).toContain('ONLY the diff')
+    expect(prompt).toContain('do NOT run the test suite')
+    expect(prompt).toContain('do NOT edit anything')
+    expect(prompt).toContain('SHIP')
     expect(prompt).toContain('NO-SHIP')
-    expect(prompt).toContain('Do NOT edit')
   })
 })

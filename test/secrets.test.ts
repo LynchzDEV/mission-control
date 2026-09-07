@@ -48,7 +48,7 @@ describe('defaults', () => {
   test('missing files fall back to documented defaults', async () => {
     expect(await readSecrets()).toEqual({ zaiAuthToken: null, zaiBaseUrl: DEFAULT_ZAI_BASE_URL, apiToken: null })
     expect(await readAuthRecord()).toEqual({ passwordHash: null, cookieSecret: null })
-    expect(await readConfig()).toEqual({ bind: DEFAULT_BIND, roles: DEFAULT_ROLES })
+    expect(await readConfig()).toEqual({ bind: DEFAULT_BIND, roles: DEFAULT_ROLES, autoReview: false })
   })
 
   test('corrupt json falls back instead of throwing', async () => {
@@ -83,7 +83,7 @@ describe('round trip', () => {
       passwordHash: '$argon2id$fake',
       cookieSecret: 'deadbeef',
     })
-    expect(await readConfig()).toEqual({ bind: '0.0.0.0:8080', roles: DEFAULT_ROLES })
+    expect(await readConfig()).toEqual({ bind: '0.0.0.0:8080', roles: DEFAULT_ROLES, autoReview: false })
   })
 
   test('roles persist and missing fields fall back per role', async () => {
@@ -98,6 +98,14 @@ describe('round trip', () => {
     await ensureConfigDir()
     await Bun.write(configPath(CONFIG_FILE), JSON.stringify({ roles: { execute: 'codex' } }))
     expect((await readConfig()).roles).toEqual({ ...DEFAULT_ROLES, execute: { engine: 'codex', model: null } })
+  })
+
+  test('autoReview defaults to false and survives the round trip', async () => {
+    expect((await readConfig()).autoReview).toBe(false)
+    await writeConfig({ autoReview: true })
+    expect((await readConfig()).autoReview).toBe(true)
+    await writeConfig({ bind: '0.0.0.0:8081' })
+    expect((await readConfig()).autoReview).toBe(true)
   })
 
   test('legacy string roles on disk load with a null model', async () => {

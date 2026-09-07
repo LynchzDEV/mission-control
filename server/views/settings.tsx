@@ -11,6 +11,7 @@ export type SettingsProps = {
   apiTokenConfigured: boolean
   bind: string
   roles: EngineRoles
+  autoReview: boolean
   models: ModelLists
   minPasswordLength: number
 }
@@ -243,7 +244,7 @@ function RolesBand(props: SettingsProps): JSX.Element {
               <button
                 type="button"
                 data-post="/api/roles"
-                data-fields="plan,execute,review,plan_model,execute_model,review_model"
+                data-fields="plan,execute,review,plan_model,execute_model,review_model,autoReview"
                 data-status="s-msg"
               >
                 SAVE
@@ -253,6 +254,22 @@ function RolesBand(props: SettingsProps): JSX.Element {
             ),
         }),
       )}
+      {Row({
+        label: 'AUTO-REVIEW',
+        value: (
+          <>
+            <select id="autoReview" name="autoReview">
+              <option value="off" selected={!props.autoReview}>
+                off
+              </option>
+              <option value="on" selected={props.autoReview}>
+                on
+              </option>
+            </select>
+            <span class="hint">codex reviews every finished execute job · off = review on demand</span>
+          </>
+        ),
+      })}
       {ModelListsScript(props.models)}
     </div>
   )
