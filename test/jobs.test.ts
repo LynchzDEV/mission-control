@@ -8,6 +8,7 @@ import {
   LOGS_DIR,
   createJobManager,
   createLogRedactor,
+  normalizeJobRecord,
   readLogSince,
   readLogTail,
   redactSecrets,
@@ -802,9 +803,10 @@ describe('job loop progress', () => {
     await writeFile(join(configDir, LOGS_DIR, id + '.log'), line.repeat(2))
     await writeFile(join(configDir, JOBS_FILE), JSON.stringify({
       id, engine: 'glm', cwd: repo, pid: proc.pid, status: 'running',
-      startedAt: Date.now(), turns: 2, lastTool: 'Read',
+      startedAt: 1000, turns: 2, lastTool: 'Read', slowAt: 901001,
     }) + '\n')
-    const manager = createJobManager({ home })
+    const notifications: JobRecord[] = []
+    const manager = createJobManager({ home, onJobSlow: (record) => { notifications.push(record) } })
     try {
       await Bun.sleep(350)
       expect(manager.getJob(id)?.turns).toBe(2)
@@ -817,5 +819,66 @@ describe('job loop progress', () => {
       await waitForStatus(manager, id)
     }
     expect(manager.getJob(id)?.turns).toBe(3)
+    expect(manager.getJob(id)?.slowAt).toBe(901001)
+    expect(notifications).toHaveLength(0)
   })
+})
+
+
+describe('slow jobs', () => {
+  test('normalizes missing and invalid slow timestamps', () => {
+    for (const slowAt of [undefined, null, '123', NaN, Infinity]) {
+      expect(normalizeJobRecord({ slowAt }).slowAt).toBeNull()
+    }
+    expect(normalizeJobRecord({ slowAt: 0 }).slowAt).toBe(0)
+  })
+
+  for (const trigger of ['turns', 'elapsed']) {
+    test(`notifies once when ${trigger} crosses its threshold and persists slowAt`, async () => {
+      const repo = join(home, 'slow')
+      await initGitRepo(repo)
+      const startedAt = 1_700_000_000_000
+      let now = startedAt
+      const notifications: JobRecord[] = []
+      const manager = createJobManager({ home, now: () => now, onJobSlow: (record) => { notifications.push(record) } })
+      const created = await manager.createJob(
+        { engine: 'claude', cwd: repo, prompt: '', label: 'slow' }, sleepResolver,
+      )
+      expect(created.ok).toBe(true)
+      if (!created.ok) return
+      const id = created.job.id
+      const line = '{"type":"assistant","message":{"content":[{"type":"text","text":"checking"}]}}\n'
+      let slowAt = 0
+      try {
+        expect(created.job.startedAt).toBe(startedAt)
+        expect(created.job.slowAt).toBeNull()
+        await appendFile(manager.logPath(id), line.repeat(80))
+        now = startedAt + 15 * 60_000
+        await Bun.sleep(350)
+        expect(manager.getJob(id)?.turns).toBe(80)
+        expect(notifications).toHaveLength(0)
+        if (trigger === 'turns') await appendFile(manager.logPath(id), line)
+        else now += 1
+        slowAt = now
+        await Bun.sleep(350)
+        expect(notifications).toHaveLength(1)
+        expect(notifications[0]?.slowAt).toBe(slowAt)
+        expect(notifications[0]?.turns).toBe(trigger === 'turns' ? 81 : 80)
+        const saved = (await readFile(configPath(JOBS_FILE), 'utf8')).trim().split('\n').map((line) => JSON.parse(line)).at(-1)
+        expect(saved.slowAt).toBe(slowAt)
+        now += 60_000
+        await appendFile(manager.logPath(id), line)
+        await Bun.sleep(350)
+        expect(notifications).toHaveLength(1)
+        expect(manager.getJob(id)?.slowAt).toBe(slowAt)
+      } finally {
+        await manager.killJob(id)
+        await waitForStatus(manager, id)
+      }
+      const reloaded = createJobManager({ home, now: () => now, onJobSlow: (record) => { notifications.push(record) } })
+      expect(reloaded.getJob(id)?.slowAt).toBe(slowAt)
+      await Bun.sleep(350)
+      expect(notifications).toHaveLength(1)
+    })
+  }
 })

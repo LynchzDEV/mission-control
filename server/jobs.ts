@@ -37,6 +37,7 @@ export type JobRecord = {
   status: JobStatus
   startedAt: number
   turns: number
+  slowAt: number | null
   lastTool: string | null
   endedAt: number | null
   exitCode: number | null
@@ -92,6 +93,7 @@ export function normalizeJobRecord(raw: Record<string, unknown>): JobRecord {
   return {
     ...(raw as unknown as JobRecord),
     turns: typeof raw.turns === 'number' && Number.isSafeInteger(raw.turns) && raw.turns >= 0 ? raw.turns : 0,
+    slowAt: typeof raw.slowAt === 'number' && Number.isFinite(raw.slowAt) ? raw.slowAt : null,
     lastTool: typeof raw.lastTool === 'string' && raw.lastTool !== '' ? raw.lastTool : null,
     reviewedAt: typeof raw.reviewedAt === 'number' ? raw.reviewedAt : null,
     prompt: readString(raw.prompt, ''),
@@ -225,6 +227,7 @@ export type JobManagerOptions = {
   home?: string
   activityIntervalMs?: number
   now?: () => number
+  onJobSlow?: (record: JobRecord) => void
   onJobSettled?: (record: JobRecord) => void
 }
 
@@ -333,6 +336,16 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     await write
   }
 
+  async function checkSlowJob(id: string): Promise<void> {
+    const record = jobs.get(id)
+    if (record === undefined || record.status !== 'running' || record.slowAt !== null) return
+    const now = clock()
+    if (record.turns <= 80 && now - record.startedAt <= 15 * 60_000) return
+    const slow = { ...record, slowAt: now }
+    await persist(slow)
+    options.onJobSlow?.(slow)
+  }
+
   async function settleFailed(id: string, record: JobRecord): Promise<void> {
     processes.delete(id)
     clearPendingActivityTimer(id)
@@ -358,6 +371,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
           offset = chunk.offset
           collect(chunk.content)
         }
+        await checkSlowJob(id)
       } catch {
         // log file may not exist yet; the next tick retries
       }
@@ -490,8 +504,9 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       prompt: params.prompt,
       pid: proc.pid,
       status: 'running',
-      startedAt: Date.now(),
+      startedAt: clock(),
       turns: 0,
+      slowAt: null,
       lastTool: null,
       endedAt: null,
       exitCode: null,

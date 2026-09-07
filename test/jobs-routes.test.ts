@@ -198,7 +198,7 @@ describe('GET /api/jobs', () => {
     const response = await app.handle(get('/api/jobs', cookie))
     const { jobs } = (await response.json()) as { jobs: Array<{ label: string; turns: number; lastTool: string | null }> }
     expect(jobs.some((entry) => entry.label === 'listed')).toBe(true)
-    expect(jobs.find((entry) => entry.label === 'listed')).toMatchObject({ turns: 0, lastTool: null })
+    expect(jobs.find((entry) => entry.label === 'listed')).toMatchObject({ turns: 0, lastTool: null, slowAt: null })
 
     await pollUntilDone(app, cookie, job.id)
   })

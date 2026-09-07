@@ -19,6 +19,7 @@ import { quotaRoutes } from './routes/quota'
 import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
 import { ensureWorkerProfiles } from './worker-profile'
 import { createJobManager } from './jobs'
+import { notifySlowJob } from './notify'
 import { createTerminalRegistry } from './terminals'
 import { realEngineResolver } from './jobs-engine-iface'
 import { jobsRoutes } from './routes/jobs'
@@ -185,6 +186,7 @@ export async function createApp(): Promise<Elysia> {
     console.error(`skills: ${describeSkillInstall(skills)} -> ${claudeSkillsDir()}`)
   }
   const jobManager = createJobManager({
+    onJobSlow: notifySlowJob,
     onJobSettled: (record) => {
       void maybeAutoReview(record, jobManager, { resolver: realEngineResolver }).catch(() => {})
     },

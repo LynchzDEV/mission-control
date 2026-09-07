@@ -22,6 +22,7 @@ export type AgentJob = {
   diffStat: string
   activity: string
   turns: number
+  slowAt: number | null
   lastTool: string | null
   threadRoot: string
   terminalId: string
@@ -65,6 +66,7 @@ export function toAgentJob(raw: JsonRecord): AgentJob {
     status: str(raw.status, 'unknown'),
     startedAt: num(raw.startedAt),
     endedAt: num(raw.endedAt),
+    slowAt: num(raw.slowAt),
     diffStat: str(raw.diffStat),
     activity: str(raw.currentActivity),
     turns: Math.max(0, Math.floor(num(raw.turns) ?? 0)),
@@ -111,7 +113,7 @@ export function jobMeta(job: AgentJob, now: number): string {
 
 export function isSlow(job: AgentJob, now: number): boolean {
   return job.status === 'running' &&
-    (job.turns > 80 || (job.startedAt !== null && now - job.startedAt > 15 * 60_000))
+    (job.slowAt !== null || job.turns > 80 || (job.startedAt !== null && now - job.startedAt > 15 * 60_000))
 }
 
 export function armKill(

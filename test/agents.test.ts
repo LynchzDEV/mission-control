@@ -34,6 +34,7 @@ function job(overrides: Partial<AgentJob> = {}): AgentJob {
     diffStat: '',
     activity: '',
     turns: 0,
+    slowAt: null,
     lastTool: null,
     threadRoot: id,
     terminalId: '',
@@ -68,6 +69,7 @@ describe('toAgentJob', () => {
       endedAt: null,
       diffStat: '2 files changed',
       activity: 'Edit · client/agents.ts',
+      slowAt: null,
       turns: 12,
       lastTool: 'Edit',
       threadRoot: 'root-1',
@@ -335,6 +337,10 @@ describe('loop guard', () => {
     expect(isSlow(job({ turns: 81 }), NOW)).toBe(true)
     expect(isSlow(job({ status: 'done', turns: 90 }), NOW + 999_999)).toBe(false)
     expect(isSlow(job({ startedAt: null }), NOW)).toBe(false)
+    expect(toAgentJob({ slowAt: NOW }).slowAt).toBe(NOW)
+    expect(toAgentJob({}).slowAt).toBeNull()
+    expect(isSlow(job({ slowAt: NOW }), NOW - 60_000)).toBe(true)
+    expect(isSlow(job({ status: 'done', slowAt: NOW }), NOW)).toBe(false)
   })
 
   test('arms, expires, targets the same job and prevents duplicate in-flight kills', async () => {
