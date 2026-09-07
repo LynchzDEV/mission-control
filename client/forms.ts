@@ -1,3 +1,4 @@
+import { installModelPickers } from './model-picker'
 import { anime, errorText, getJson, markFixture, postJson, readRecord } from './shared'
 
 function say(element: HTMLElement | null, message: string, ok: boolean): void {
@@ -192,4 +193,5 @@ installSecretRows()
 installApiTokenRow()
 installTodoRows()
 installStatusProbes()
+installModelPickers()
 installColumnEntrance()

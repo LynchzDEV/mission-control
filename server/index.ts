@@ -22,6 +22,7 @@ import { createTerminalRegistry } from './terminals'
 import { realEngineResolver } from './jobs-engine-iface'
 import { jobsRoutes } from './routes/jobs'
 import { metaRoutes } from './routes/meta'
+import { modelsCache, modelsRoutes } from './routes/models'
 import { terminalsRoutes } from './routes/terminals'
 import { flowRoutes } from './routes/flow'
 import { currentView, secretsRoutes } from './routes/secrets'
@@ -91,18 +92,18 @@ function appShellPage(): Response {
 }
 
 async function settingsPage(): Promise<string> {
-  const [view, roles] = await Promise.all([currentView(), readRoles()])
-  return SettingsPage({ ...view, roles, minPasswordLength: MIN_PASSWORD_LENGTH })
+  const [view, roles, models] = await Promise.all([currentView(), readRoles(), modelsCache.get()])
+  return SettingsPage({ ...view, roles, models, minPasswordLength: MIN_PASSWORD_LENGTH })
 }
 
 async function dispatchPage(): Promise<string> {
-  const { execute } = await readRoles()
-  return DispatchPage({ defaultEngine: execute.engine, defaultModel: execute.model })
+  const [roles, models] = await Promise.all([readRoles(), modelsCache.get()])
+  return DispatchPage({ defaultEngine: roles.execute.engine, defaultModel: roles.execute.model, models })
 }
 
 async function terminalsPage(): Promise<string> {
-  const { plan } = await readRoles()
-  return TerminalsPage({ defaultEngine: plan.engine, defaultModel: plan.model })
+  const [roles, models] = await Promise.all([readRoles(), modelsCache.get()])
+  return TerminalsPage({ defaultEngine: roles.plan.engine, defaultModel: roles.plan.model, models })
 }
 
 const TAB_PAGES: Record<string, () => string | Promise<string>> = {
@@ -235,6 +236,7 @@ export async function createApp(): Promise<Elysia> {
     .use(flowRoutes(jobManager, terminalRegistry))
     .use(secretsRoutes)
     .use(rolesRoutes)
+    .use(modelsRoutes)
 
   if (await publicDirExists()) {
     app.use(staticPlugin({ assets: PUBLIC_DIR, prefix: '', headers: { 'cache-control': 'no-cache' } }))

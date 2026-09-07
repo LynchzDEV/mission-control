@@ -1,8 +1,9 @@
 /** @jsxImportSource @kitajs/html */
 import { ENGINE_NAMES, GLM_MODEL } from '../engines'
+import type { ModelLists } from '../models'
 import type { EngineRoles } from '../secrets'
 import { Layout } from './layout'
-import { ModelDatalist } from './model-datalist'
+import { ModelListsScript, ModelPicker } from './model-picker'
 
 export type SettingsProps = {
   zaiBaseUrl: string
@@ -10,6 +11,7 @@ export type SettingsProps = {
   apiTokenConfigured: boolean
   bind: string
   roles: EngineRoles
+  models: ModelLists
   minPasswordLength: number
 }
 
@@ -226,14 +228,12 @@ function RolesBand(props: SettingsProps): JSX.Element {
           value: (
             <>
               {EngineSelect(row.key, props.roles[row.key].engine)}
-              <input
+              <ModelPicker
                 id={`${row.key}_model`}
-                name={`${row.key}_model`}
-                list="model-suggestions"
-                placeholder="engine default"
-                value={props.roles[row.key].model ?? ''}
-                maxlength="100"
-                autocomplete="off"
+                engineSelectId={row.key}
+                value={props.roles[row.key].model}
+                models={props.models}
+                engine={props.roles[row.key].engine}
               />
               <span class="hint">{row.hint}</span>
             </>
@@ -253,7 +253,7 @@ function RolesBand(props: SettingsProps): JSX.Element {
             ),
         }),
       )}
-      <ModelDatalist />
+      {ModelListsScript(props.models)}
     </div>
   )
 }

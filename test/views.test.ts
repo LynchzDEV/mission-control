@@ -215,19 +215,26 @@ describe('tab views', () => {
     expect(dispatch.html).toMatch(/<option value="claude" selected/)
   })
 
-  test('settings renders per-role model inputs with stored values, the datalist, and the extended save fields', async () => {
+  test('settings renders per-role model pickers with stored values, the lists script, and the extended save fields', async () => {
     await app.handle(
       new Request('http://localhost/api/roles', {
         method: 'POST',
         headers: { cookie, 'content-type': 'application/json' },
-        body: JSON.stringify({ plan: { engine: 'claude', model: 'opus' }, execute: 'glm', review: 'codex' }),
+        body: JSON.stringify({
+          plan: { engine: 'claude', model: 'opus' },
+          execute: 'glm',
+          review: { engine: 'codex', model: 'gpt-z-custom' },
+        }),
       }),
     )
     const { html } = await render('/settings')
-    expect(html).toMatch(/<input id="plan_model" name="plan_model" [^>]*value="opus"/)
-    expect(html).toMatch(/<input id="execute_model" name="execute_model" [^>]*value=""/)
-    expect(html).toContain('<datalist id="model-suggestions">')
-    expect(html).toContain('<option value="gpt-5.6-sol"')
+    expect(html).toContain('<select class="model-pick" id="plan_model_pick"')
+    expect(html).toContain('<option value="opus" selected')
+    expect(html).toContain('>custom…</option>')
+    expect(html).toContain('<script type="application/json" id="model-lists">')
+    expect(html).toMatch(/<input id="plan_model" name="plan_model"[^>]*value="opus"[^>]*hidden\/>/)
+    expect(html).toMatch(/<input id="review_model" name="review_model"[^>]*value="gpt-z-custom"/)
+    expect(html).not.toMatch(/<input id="review_model" name="review_model"[^>]*hidden/)
     expect(html).toContain('data-fields="plan,execute,review,plan_model,execute_model,review_model"')
     expect(html).toContain('blank model = engine default')
   })
@@ -246,11 +253,12 @@ describe('tab views', () => {
     )
     const dispatch = await render('/dispatch')
     expect(dispatch.html).toMatch(/<input id="model" name="model" [^>]*value="glm-5.3-flash"/)
-    expect(dispatch.html).toContain('id="model-suggestions"')
+    expect(dispatch.html).toContain('<select class="model-pick" id="model_pick"')
+    expect(dispatch.html).toContain('id="model-lists"')
 
     const terminals = await render('/terminals')
-    expect(terminals.html).toMatch(/<input id="term-model" name="model" [^>]*value="haiku"/)
-    expect(terminals.html).toContain('id="model-suggestions"')
+    expect(terminals.html).toMatch(/<input id="term-model" name="term-model"[^>]*value="haiku"/)
+    expect(terminals.html).toContain('id="model-lists"')
   })
 
   test('terminals serves the vendored xterm assets and its island', async () => {

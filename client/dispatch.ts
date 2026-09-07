@@ -8,6 +8,7 @@ import {
   type ThreadGroup,
 } from './thread-view'
 import { installDrawer, isDrawerOpen, openDrawer } from './thread-drawer'
+import { installModelPickers } from './model-picker'
 import { errorText, getJson, markFixture, postJson, readArray, readNumber, streamJobLog } from './shared'
 
 type Job = {
@@ -286,6 +287,7 @@ export function installDispatch(): void {
   }
   installDrawer()
   installForm()
+  installModelPickers()
   void refresh()
 }
 

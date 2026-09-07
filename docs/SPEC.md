@@ -75,6 +75,11 @@ Env for spawned processes = `process.env` + engine env overlay. Secrets must nev
 - `external`: GET /api/sessions/external — `ps -axo pid,etime,command` scan for running `claude`/`codex` processes NOT owned by this server (exclude own job/terminal pids); return `[{pid, engine, etime, cwdHint}]` (cwd via `lsof -p <pid> -a -d cwd -Fn`, best-effort). Lanes cards show these as "external sessions" so terminal-started work is visible too.
 - Cache quota responses 60s server-side.
 
+## Models (models.ts) — GET /api/models
+
+- Per-engine model lists for the settings/dispatch/terminals pickers: `claude` = tier aliases (`fable|opus|sonnet|haiku`, resolve to newest of each tier); `codex` = `~/.codex/models_cache.json` slugs (`visibility:'list'`, sorted by `priority`; fallback to a static list on any failure — the Codex CLI refreshes the file itself); `glm` = `GET {zaiBase domain}/api/anthropic/v1/models` with `Authorization` header, 5s timeout, GLM_MODEL pinned first (cockpit tuned default), deduped; fallback to `[GLM_MODEL, 'glm-5.3-flash']` without a token or on failure.
+- Cached 5 min server-side (same cache primitive as quota). Token-readable (Bearer API token).
+
 ## Jobs (jobs.ts) — headless dispatch
 
 - POST `/api/jobs` `{engine, cwd, prompt, label, model?}` → validate `cwd` exists and is a git repo; spawn:

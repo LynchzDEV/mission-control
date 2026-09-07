@@ -1,3 +1,4 @@
+import { installModelPickers } from './model-picker'
 import { errorText, getJson, pathsFromUriList, postJson, readArray, shellQuote } from './shared'
 
 type TerminalSession = {
@@ -649,6 +650,7 @@ export function installTerminals(): void {
     }
   })
   el<HTMLFormElement>('#term-form')?.addEventListener('submit', (event) => void openTerminal(event))
+  installModelPickers()
   addEventListener('resize', sendResize)
   const pane = el('#term-pane')
   if (pane !== null) {

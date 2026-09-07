@@ -1,10 +1,12 @@
 /** @jsxImportSource @kitajs/html */
+import type { ModelLists } from '../models'
 import { Layout } from './layout'
-import { ModelDatalist } from './model-datalist'
+import { ModelListsScript, ModelPicker } from './model-picker'
 
 export type EnginePageProps = {
   defaultEngine: string
   defaultModel: string | null
+  models: ModelLists
 }
 
 const ENGINES = [
@@ -23,16 +25,14 @@ function NewTerminalForm(props: EnginePageProps): JSX.Element {
           </option>
         ))}
       </select>
-      <input
+      <ModelPicker
         id="term-model"
-        name="model"
-        list="model-suggestions"
-        placeholder="engine default"
-        value={props.defaultModel ?? ''}
-        maxlength="100"
-        autocomplete="off"
+        engineSelectId="term-engine"
+        value={props.defaultModel}
+        models={props.models}
+        engine={props.defaultEngine}
       />
-      <ModelDatalist />
+      {ModelListsScript(props.models)}
       <input id="term-cwd" name="cwd" placeholder="~/code/some-repo" list="term-recent-cwd" />
       <datalist id="term-recent-cwd"></datalist>
       <button class="btn go" type="submit">

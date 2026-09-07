@@ -602,9 +602,26 @@ body {
   color: var(--mc-fg-dim);
 }
 
-.frow .v input[list] {
-  width: 14ch;
-  min-width: 0;
+.mpick {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.mpick select {
+  min-width: 14ch;
+}
+
+.mpick input {
+  width: 18ch;
+}
+
+.frow .mpick input {
+  width: 18ch;
+}
+
+.termbar .mpick input {
+  flex: 0 0 18ch;
 }
 
 .frow .a {
@@ -1053,10 +1070,6 @@ table.grid tr.empty td {
 
 .termbar input {
   flex: 1;
-}
-
-.termbar #term-model {
-  flex: 0 0 14ch;
 }
 
 .termbar select:focus,
