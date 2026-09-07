@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import { appendFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  normalizeJobRecord,
   JOBS_FILE,
   LOGS_DIR,
   createJobManager,
@@ -882,3 +883,67 @@ describe('slow jobs', () => {
     })
   }
 })
+
+describe('job worktrees', () => {
+  test('creates a sanitized branch, runs there, persists metadata, and reuses it', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const manager = createJobManager({ home })
+    const params = { engine: 'claude', cwd: repo, prompt: '', label: 'ticket / one', worktree: true }
+    const resolver: EngineResolver = () => ({ cmd: 'pwd', args: [], env: {} })
+    const created = await manager.createJob(params, resolver)
+    if (!created.ok) throw new Error(created.error)
+    const job = await waitForStatus(manager, created.job.id)
+    expect(job.worktree).toBe(join(job.baseRepo!, '.worktree', 'ticket---one'))
+    expect(job.cwd).toBe(job.worktree!)
+    expect(job.baseRepo).toBe(await realpath(repo))
+    expect(job.baseBranch).toBe(await gitOutput(repo, 'rev-parse', '--abbrev-ref', 'HEAD'))
+    expect((await readFile(manager.logPath(job.id), 'utf8')).trim()).toBe(job.cwd)
+    await writeFile(join(job.cwd, 'retained.txt'), 'keep this')
+    const again = await manager.createJob(params, resolver)
+    if (!again.ok) throw new Error(again.error)
+    await waitForStatus(manager, again.job.id)
+    expect(again.job.cwd).toBe(job.cwd)
+    expect(await readFile(join(again.job.cwd, 'retained.txt'), 'utf8')).toBe('keep this')
+    const reloaded = createJobManager({ home }).getJob(job.id)
+    expect(reloaded?.worktree).toBe(job.worktree)
+    expect(reloaded?.baseRepo).toBe(job.baseRepo)
+    expect(reloaded?.baseBranch).toBe(job.baseBranch)
+  })
+
+  test('reuses an existing branch without an attached worktree', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    await gitOutput(repo, 'branch', 'existing')
+    const manager = createJobManager({ home })
+    const created = await manager.createJob({ engine: 'claude', cwd: repo, prompt: '', label: 'existing', worktree: true }, echoResolver)
+    if (!created.ok) throw new Error(created.error)
+    await waitForStatus(manager, created.job.id)
+    expect(await gitOutput(created.job.cwd, 'branch', '--show-current')).toBe('existing')
+  })
+
+  test('normalizes legacy worktree fields to null', () => {
+    const job = normalizeJobRecord({ id: 'old' })
+    expect(job.worktree).toBeNull()
+    expect(job.baseRepo).toBeNull()
+    expect(job.baseBranch).toBeNull()
+  })
+
+  test('rejects invalid branch labels without creating a job', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const manager = createJobManager({ home })
+    for (const label of ['..', '-bad', '', 'bad..name']) {
+      const result = await manager.createJob({ engine: 'claude', cwd: repo, prompt: '', label, worktree: true }, echoResolver)
+      expect(result.ok).toBe(false)
+    }
+    expect(manager.listJobs()).toHaveLength(0)
+  })
+})
+
+async function gitOutput(cwd: string, ...args: string[]): Promise<string> {
+  const proc = Bun.spawn(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'pipe' })
+  const [output, error, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited])
+  if (code !== 0) throw new Error(error)
+  return output.trim()
+}

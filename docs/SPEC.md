@@ -99,7 +99,7 @@ Every finished execute job can spawn a cross-family review job (`roles.review`) 
 
 ## Jobs (jobs.ts) — headless dispatch
 
-- POST `/api/jobs` `{engine, cwd, prompt, label, model?}` → validate `cwd` exists and is a git repo; spawn:
+- POST `/api/jobs` `{engine, cwd, prompt, label, model?, worktree?}` → validate `cwd` exists and is a git repo; spawn:
   - claude/glm: `claude [--model <model>] -p <prompt> --output-format stream-json --verbose` in `cwd` with engine env
   - codex: `codex exec --json [-m <model>] <prompt>` in `cwd`
 - Every job process gets `MC_JOB_ID=<job id>` in env (mirrors `MC_TERMINAL_ID` on terminals).
@@ -107,6 +107,9 @@ Every finished execute job can spawn a cross-family review job (`roles.review`) 
 - GET `/api/jobs` list; GET `/api/jobs/:id/log` full log; GET `/api/jobs/:id/stream` SSE tail (fs.watch + offset).
 - POST `/api/jobs/:id/kill` → SIGTERM.
 - After job completes on a git cwd: run `git -C cwd diff --stat HEAD` capture into job record (`diffStat`) for the review queue.
+
+- `POST /api/jobs` accepts `worktree?: boolean`; the dispatch checkbox defaults on. With `true`, create or reuse `<cwd>/.worktree/<sanitized-label>` on a branch from the repo's current HEAD, run there, and persist `worktree`, `baseRepo`, and the original `baseBranch` (null for ordinary jobs).
+- `POST /api/jobs/:id/land` (review queue LAND button) commits dirty worktree changes, cherry-picks branch-only commits oldest first onto the original checked-out base branch, removes the worktree and branch, and marks reviewed. Returns `{ landed: [commit shas], base: baseBranch }`; conflicts abort the cherry-pick and return 409 with `{ error: 'cherry-pick conflict', files: [...] }`, preserving the worktree. Jobs without a worktree return 400. Never merge.
 
 ## Terminals (terminals.ts) — live sessions
 
@@ -126,7 +129,7 @@ Each tab = an Elysia route rendering a JSX view inside layout.tsx; tab nav = pla
 - LANES: 3 engine cards — name, live textmode.js mascot sketch (idle anim; "working" anim when engine has running jobs/terminals; "error" glitch on failed check), quota bar, peak badge on GLM card with countdown, test-connection result.
 - DISPATCH: form (engine select, cwd picker = text input with recent list, prompt textarea, label) + jobs table (status dot, engine, label, elapsed, tail-log drawer via SSE, kill button, diffStat when done).
 - TERMINALS: tab strip of live terminals + "new terminal" (engine + cwd), xterm.js fills pane, fit addon on resize.
-- REVIEW: jobs with non-empty diffStat and status done, newest first; each row: cwd, label, diffStat, button "Copy review cmd" → copies `cd <cwd> && claude --continue` to clipboard.
+- REVIEW: unreviewed done jobs with non-empty diffStat or a worktree, newest first; each row: cwd, label, diffStat, button "Copy review cmd" → copies `cd <cwd> && claude --continue` to clipboard.
 - SETTINGS: password change, z.ai token input, bind address, engine test buttons.
 
 ## Theme — geek minimalist retro 8-bit (DO NOT hand-craft art)

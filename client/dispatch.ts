@@ -15,6 +15,7 @@ type Job = {
   id: string
   engine: string
   label: string
+  worktree: string | null
   cwd: string
   status: string
   startedAt: number | null
@@ -33,6 +34,8 @@ let stream: EventSource | null = null
 let timer: ReturnType<typeof setTimeout> | undefined
 
 const feeds = new Map<string, MiniFeed>()
+const landMessages = new Map<string, string>()
+const landing = new Set<string>()
 
 function str(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value !== '' ? value : fallback
@@ -45,6 +48,7 @@ function toJob(raw: Record<string, unknown>): Job {
     engine: str(raw.engine, '?'),
     label: str(raw.label, str(raw.id, 'job')),
     cwd: str(raw.cwd),
+    worktree: str(raw.worktree) || null,
     status: str(raw.status, 'unknown'),
     startedAt: readNumber(raw.startedAt),
     endedAt: readNumber(raw.endedAt),
@@ -154,7 +158,7 @@ function renderReview(jobs: Job[]): void {
   const body = document.querySelector<HTMLTableSectionElement>('#review-body')
   if (body === null) return
   const queue = jobs.filter(
-    (job) => job.status === 'done' && job.diffStat !== '' && job.reviewedAt === null,
+    (job) => job.status === 'done' && (job.diffStat !== '' || job.worktree !== null) && job.reviewedAt === null,
   )
   body.textContent = ''
   if (queue.length === 0) {
@@ -182,7 +186,40 @@ function renderReview(jobs: Job[]): void {
     reviewed.textContent = 'MARK REVIEWED'
     reviewed.onclick = () => void markReviewed(job)
     actions.appendChild(reviewed)
+    if (job.worktree !== null) {
+      const land = document.createElement('button')
+      land.className = 'btn'
+      land.textContent = 'LAND'
+      land.disabled = landing.has(job.id)
+      land.onclick = () => void landJob(job, land)
+      actions.appendChild(land)
+      const message = document.createElement('div')
+      message.className = 'msg'
+      message.textContent = landMessages.get(job.id) ?? ''
+      actions.appendChild(message)
+    }
   }
+}
+
+async function landJob(job: Job, button: HTMLButtonElement): Promise<void> {
+  landing.add(job.id)
+  button.disabled = true
+  const result = await postJson(`/api/jobs/${job.id}/land`, {})
+  landing.delete(job.id)
+  const files = Array.isArray(result.data.files) ? result.data.files.filter((file) => typeof file === 'string') : []
+  const commits = Array.isArray(result.data.landed) ? result.data.landed.join(', ') : ''
+  const text = result.ok
+    ? `LANDED ON ${str(result.data.base)}: ${commits || 'no new commits'}`
+    : [errorText(result), ...files].join(' · ')
+  landMessages.set(job.id, text)
+  const cardMessage = button.parentElement?.querySelector<HTMLElement>('.msg')
+  if (cardMessage) cardMessage.textContent = text
+  const message = document.querySelector<HTMLElement>('#review-msg')
+  if (message !== null) {
+    message.textContent = text
+    message.classList.toggle('ok', result.ok)
+  }
+  await refresh()
 }
 
 async function markReviewed(job: Job): Promise<void> {
@@ -263,6 +300,7 @@ function installForm(): void {
       cwd: String(data.get('cwd') ?? ''),
       prompt: String(data.get('prompt') ?? ''),
       label: String(data.get('label') ?? ''),
+      worktree: data.get('worktree') === 'on',
       ...(model !== '' ? { model } : {}),
     }
     if (payload.cwd === '' || payload.prompt === '') {

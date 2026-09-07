@@ -12,6 +12,7 @@ import {
 } from './activity'
 import { DIR_MODE, FILE_MODE, configDir } from './secrets'
 import { validateWorkspaceCwd } from './workspace'
+import { git, prepareWorktree, worktreeBranch } from './job-worktrees'
 import type { EngineResolver, EngineSpawn } from './jobs-engine-iface'
 
 export const JOBS_FILE = 'jobs.jsonl'
@@ -31,6 +32,9 @@ export type JobRecord = {
   id: string
   engine: string
   cwd: string
+  worktree: string | null
+  baseRepo: string | null
+  baseBranch: string | null
   label: string
   prompt: string
   pid: number
@@ -52,6 +56,7 @@ export type JobRecord = {
 }
 
 export type CreateJobParams = {
+  worktree?: boolean
   engine: string
   cwd: string
   prompt: string
@@ -74,7 +79,12 @@ export type MarkReviewedResult =
   | { ok: true; job: JobRecord }
   | { ok: false; status: number; error: string }
 
+export type LandJobResult =
+  | { ok: true; landed: string[]; base: string }
+  | { ok: false; status: number; error: string; files?: string[] }
+
 export type JobManager = {
+  landJob(id: string): Promise<LandJobResult>
   createJob(params: CreateJobParams, resolver: EngineResolver): Promise<CreateJobResult>
   killJob(id: string): Promise<KillJobResult>
   markReviewed(id: string, at?: number): Promise<MarkReviewedResult>
@@ -97,6 +107,9 @@ export function normalizeJobRecord(raw: Record<string, unknown>): JobRecord {
     lastTool: typeof raw.lastTool === 'string' && raw.lastTool !== '' ? raw.lastTool : null,
     reviewedAt: typeof raw.reviewedAt === 'number' ? raw.reviewedAt : null,
     prompt: readString(raw.prompt, ''),
+    worktree: readString(raw.worktree, '') || null,
+    baseRepo: readString(raw.baseRepo, '') || null,
+    baseBranch: readString(raw.baseBranch, '') || null,
     sessionId: typeof raw.sessionId === 'string' && raw.sessionId !== '' ? raw.sessionId : null,
     parentJobId: typeof raw.parentJobId === 'string' && raw.parentJobId !== '' ? raw.parentJobId : null,
     threadRoot: readString(raw.threadRoot, '') === '' ? id : readString(raw.threadRoot, id),
@@ -474,6 +487,15 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       return { ok: false, status: 400, error: 'engine resolver failed' }
     }
 
+    let workspace: Pick<JobRecord, 'worktree' | 'baseRepo' | 'baseBranch'> = { worktree: null, baseRepo: null, baseBranch: null }
+    if (params.worktree) {
+      try {
+        workspace = await prepareWorktree(cwdCheck.path, params.label)
+      } catch (error) {
+        return { ok: false, status: 400, error: String(error instanceof Error ? error.message : error) }
+      }
+    }
+    const cwd = workspace.worktree ?? cwdCheck.path
     const id = crypto.randomUUID()
     const path = logPath(id)
 
@@ -482,7 +504,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       const logFd = openSync(path, 'a', FILE_MODE)
       try {
         proc = Bun.spawn([spawnSpec.cmd, ...spawnSpec.args], {
-          cwd: cwdCheck.path,
+          cwd,
           env: { ...process.env, ...spawnSpec.env, MC_JOB_ID: id },
           stdin: 'ignore',
           stdout: logFd,
@@ -499,7 +521,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const record: JobRecord = {
       id,
       engine: params.engine,
-      cwd: cwdCheck.path,
+      cwd,
+      ...workspace,
       label: params.label,
       prompt: params.prompt,
       pid: proc.pid,
@@ -566,6 +589,54 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     return { ok: true, job: reviewed }
   }
 
+  const landingRepos = new Set<string>()
+
+  async function landJob(id: string): Promise<LandJobResult> {
+    const record = jobs.get(id)
+    if (record === undefined) return { ok: false, status: 404, error: 'job not found' }
+    const { worktree, baseRepo, baseBranch } = record
+    if (worktree === null || baseRepo === null || baseBranch === null) {
+      return { ok: false, status: 400, error: 'job has no worktree' }
+    }
+    if (landingRepos.has(baseRepo) || [...jobs.values()].some((job) => job.cwd === worktree && job.status === 'running')) {
+      return { ok: false, status: 409, error: 'worktree or base repository is busy' }
+    }
+    landingRepos.add(baseRepo)
+    try {
+      const branch = worktreeBranch(record.label)
+      if (await git(baseRepo, 'rev-parse', '--abbrev-ref', 'HEAD') !== baseBranch) {
+        return { ok: false, status: 409, error: `base repository must have ${baseBranch} checked out` }
+      }
+      if (await git(worktree, 'rev-parse', '--abbrev-ref', 'HEAD') !== branch) {
+        return { ok: false, status: 409, error: 'worktree branch has changed' }
+      }
+      if (await git(worktree, 'status', '--porcelain') !== '') {
+        await git(worktree, 'add', '-A')
+        await git(worktree, 'commit', '-m', `${record.label}: landed from cockpit`)
+      }
+      const revisions = await git(baseRepo, 'rev-list', '--reverse', `refs/heads/${baseBranch}..refs/heads/${branch}`)
+      const landed = revisions === '' ? [] : revisions.split('\n')
+      if (landed.length > 0) {
+        try {
+          await git(baseRepo, 'cherry-pick', ...landed)
+        } catch (error) {
+          const conflicts = await git(baseRepo, 'diff', '--name-only', '--diff-filter=U')
+          if (conflicts === '') throw error
+          await git(baseRepo, 'cherry-pick', '--abort')
+          return { ok: false, status: 409, error: 'cherry-pick conflict', files: conflicts.split('\n') }
+        }
+      }
+      await git(baseRepo, 'worktree', 'remove', worktree, '--force')
+      await git(baseRepo, 'branch', '-D', branch)
+      await markReviewed(id)
+      return { ok: true, landed, base: baseBranch }
+    } catch (error) {
+      return { ok: false, status: 400, error: String(error instanceof Error ? error.message : error) }
+    } finally {
+      landingRepos.delete(baseRepo)
+    }
+  }
+
   function listJobs(): JobRecord[] {
     return [...jobs.values()].sort((a, b) => b.startedAt - a.startedAt)
   }
@@ -578,7 +649,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     return activities.get(id) ?? null
   }
 
-  return { createJob, killJob, markReviewed, listJobs, getJob, currentActivity: jobActivity, logPath }
+  return { createJob, killJob, landJob, markReviewed, listJobs, getJob, currentActivity: jobActivity, logPath }
 }
 
 export async function readLogFile(path: string): Promise<string> {

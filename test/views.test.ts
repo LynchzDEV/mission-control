@@ -84,6 +84,8 @@ const PAGES: [string, string[]][] = [
     '/dispatch',
     [
       'id="dispatch-form"',
+      'type="checkbox" id="worktree" name="worktree" checked',
+      'run in its own worktree',
       'id="jobs-body"',
       'id="log-drawer"',
       'id="mc-drawer"',
@@ -122,7 +124,7 @@ const ISLAND_MARKERS: [string, string[]][] = [
     'agents.js',
     ['TALK \u25be', 'OPEN FULL TRANSCRIPT', 'mc-drawer', '/thread', '/reply', 'reply to this agent'],
   ],
-  ['dispatch.js', ['TALK \u25be', 'OPEN FULL TRANSCRIPT', 'mc-drawer', '/thread', '/reply']],
+  ['dispatch.js', ['TALK \u25be', 'OPEN FULL TRANSCRIPT', 'mc-drawer', '/thread', '/reply', 'LAND', '/land', 'worktree']],
   ['flow.js', ['/thread', 'activity-feed', 'mcd-tx']],
 ]
 

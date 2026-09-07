@@ -37,7 +37,7 @@ export function sessionKey(job: JobRecord): string {
 }
 
 export function awaitsReview(job: JobRecord): boolean {
-  return job.status === 'done' && job.diffStat !== null && job.diffStat !== '' && job.reviewedAt === null
+  return job.status === 'done' && ((job.diffStat !== null && job.diffStat !== '') || typeof job.worktree === 'string') && job.reviewedAt === null
 }
 
 export function jobsForSession(jobs: readonly JobRecord[], label: string): JobRecord[] {

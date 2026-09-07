@@ -142,10 +142,10 @@ curl -s -X POST http://127.0.0.1:7777/api/flow/<label>/plan \
 ```sh
 curl -s -X POST http://127.0.0.1:7777/api/jobs \
   -H "Authorization: Bearer $MC_TOKEN" -H 'content-type: application/json' \
-  -d '{"engine":"'"$EXEC_ENGINE"'","model":"'"$EXEC_MODEL"'","cwd":"<ABS_PATH_GIT_REPO>","label":"<kebab-ticket-name>","prompt":"<SELF-CONTAINED SPEC>","terminalId":"'"${MC_TERMINAL_ID:-}"'"}'
+  -d '{"engine":"'"$EXEC_ENGINE"'","model":"'"$EXEC_MODEL"'","cwd":"<ABS_PATH_GIT_REPO>","worktree":true,"label":"<kebab-ticket-name>","prompt":"<SELF-CONTAINED SPEC>","terminalId":"'"${MC_TERMINAL_ID:-}"'"}'
 ```
 
-- `cwd` must be a git repo under $HOME (use the task's worktree, not trunk checkout)
+- `cwd` is the repo root under $HOME; the cockpit makes `.worktree/<label>` itself; land with `POST /api/jobs/<id>/land` after review (cherry-pick, never merge).
 - `terminalId`: always pass `$MC_TERMINAL_ID` as shown — set automatically when the
   session runs inside a Mission Control terminal; empty elsewhere (harmless). It ties
   the job to the dispatching terminal so the cockpit's agents panel can scope per-terminal.

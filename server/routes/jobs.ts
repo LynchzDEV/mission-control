@@ -137,6 +137,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
           cwd: payload.cwd,
           prompt: payload.prompt,
           label: payload.label,
+          worktree: payload.worktree === true,
           ...(typeof payload.terminalId === 'string' ? { terminalId: payload.terminalId } : {}),
           ...(model === undefined ? {} : { model }),
         },
@@ -241,6 +242,14 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
         return { error: result.error }
       }
       return result.job
+    })
+    .post('/api/jobs/:id/land', async ({ params, set }) => {
+      const result = await manager.landJob(params.id)
+      if (!result.ok) {
+        set.status = result.status
+        return { error: result.error, ...(result.files === undefined ? {} : { files: result.files }) }
+      }
+      return { landed: result.landed, base: result.base }
     })
     .post('/api/jobs/:id/reviewed', async ({ params, set }) => {
       const result = await manager.markReviewed(params.id)

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -12,7 +12,7 @@ import type { JobManager } from '../server/jobs'
 import type { EngineResolver, EngineResolverParams } from '../server/jobs-engine-iface'
 import { engineArgs } from '../server/jobs-engine-iface'
 import { jobsRoutes, safeEnqueue } from '../server/routes/jobs'
-import { initScratchGitRepo } from './support/scratch-git-repo'
+import { initScratchGitRepo, runGit } from './support/scratch-git-repo'
 
 const PASSWORD = 'correct-horse-battery'
 
@@ -662,5 +662,89 @@ describe('mounted in the real app', () => {
     const listed = await app.handle(get('/api/jobs', cookie))
     expect(listed.status).toBe(200)
     expect(await listed.json()).toEqual({ jobs: [] })
+  })
+})
+
+describe('POST /api/jobs/:id/land', () => {
+  async function setup(worktree = true) {
+    const cookie = await authCookie()
+    const manager = createJobManager()
+    const app = buildApp(manager, echoResolver)
+    const response = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hello', label: 'land-me', worktree }, cookie))
+    expect(response.status).toBe(200)
+    const job = await response.json()
+    await pollUntilDone(app, cookie, job.id)
+    return { app, cookie, manager, job }
+  }
+
+  test('lands all commits oldest first, cleans up, and persists reviewed marking', async () => {
+    const { app, cookie, manager, job } = await setup()
+    await writeFile(join(job.cwd, 'result.txt'), 'first\n')
+    await runGit(['add', '-A'], job.cwd)
+    await runGit(['commit', '-m', 'first change'], job.cwd)
+    await writeFile(join(job.cwd, 'result.txt'), 'second\n')
+    await runGit(['add', '-A'], job.cwd)
+    await runGit(['commit', '-m', 'second change'], job.cwd)
+    const response = await app.handle(post(`/api/jobs/${job.id}/land`, {}, cookie))
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.base).toBe(job.baseBranch)
+    expect(body.landed).toHaveLength(2)
+    expect(await readFile(join(repo, 'result.txt'), 'utf8')).toBe('second\n')
+    expect(await stat(job.cwd).catch(() => null)).toBeNull()
+    const branch = Bun.spawn(['git', '-C', repo, 'show-ref', '--verify', 'refs/heads/land-me'], { stdout: 'ignore', stderr: 'ignore' })
+    expect(await branch.exited).not.toBe(0)
+    expect(manager.getJob(job.id)?.reviewedAt).toBeNumber()
+    expect(createJobManager().getJob(job.id)?.reviewedAt).toBeNumber()
+  })
+
+  test('auto-commits dirty changes before landing', async () => {
+    const { app, cookie, job } = await setup()
+    await writeFile(join(job.cwd, 'dirty.txt'), 'auto committed\n')
+    const response = await app.handle(post(`/api/jobs/${job.id}/land`, {}, cookie))
+    expect(response.status).toBe(200)
+    expect((await response.json()).landed).toHaveLength(1)
+    expect(await readFile(join(repo, 'dirty.txt'), 'utf8')).toBe('auto committed\n')
+    const log = Bun.spawn(['git', '-C', repo, 'log', '-1', '--format=%s'], { stdout: 'pipe' })
+    expect((await new Response(log.stdout).text()).trim()).toBe('land-me: landed from cockpit')
+    expect(await log.exited).toBe(0)
+  })
+
+  test('aborts the entire sequence on conflict and preserves the worktree', async () => {
+    const { app, cookie, manager, job } = await setup()
+    await writeFile(join(job.cwd, 'first.txt'), 'first commit\n')
+    await runGit(['add', '-A'], job.cwd)
+    await runGit(['commit', '-m', 'first'], job.cwd)
+    await writeFile(join(job.cwd, 'README.md'), 'worker\n')
+    await runGit(['add', '-A'], job.cwd)
+    await runGit(['commit', '-m', 'worker'], job.cwd)
+    await writeFile(join(repo, 'README.md'), 'base\n')
+    await runGit(['add', 'README.md'], repo)
+    await runGit(['commit', '-m', 'base'], repo)
+    const response = await app.handle(post(`/api/jobs/${job.id}/land`, {}, cookie))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ error: 'cherry-pick conflict', files: ['README.md'] })
+    expect(await readFile(join(repo, 'README.md'), 'utf8')).toBe('base\n')
+    expect(await stat(join(repo, 'first.txt')).catch(() => null)).toBeNull()
+    expect(await readFile(join(job.cwd, 'README.md'), 'utf8')).toBe('worker\n')
+    expect(manager.getJob(job.id)?.reviewedAt).toBeNull()
+    await runGit(['diff', '--exit-code'], repo)
+    const picking = Bun.spawn(['git', '-C', repo, 'rev-parse', '--verify', 'CHERRY_PICK_HEAD'], { stdout: 'ignore', stderr: 'ignore' })
+    expect(await picking.exited).not.toBe(0)
+  })
+
+  test('rejects jobs without a worktree and unknown jobs', async () => {
+    const { app, cookie, job } = await setup(false)
+    expect((await app.handle(post(`/api/jobs/${job.id}/land`, {}, cookie))).status).toBe(400)
+    expect((await app.handle(post('/api/jobs/missing/land', {}, cookie))).status).toBe(404)
+    expect((await app.handle(post(`/api/jobs/${job.id}/land`, {}))).status).toBe(401)
+  })
+
+  test('refuses to land onto a different checked-out branch', async () => {
+    const { app, cookie, job } = await setup()
+    await runGit(['checkout', '-b', 'other-base'], repo)
+    await writeFile(join(job.cwd, 'dirty.txt'), 'keep\n')
+    expect((await app.handle(post(`/api/jobs/${job.id}/land`, {}, cookie))).status).toBe(409)
+    expect(await readFile(join(job.cwd, 'dirty.txt'), 'utf8')).toBe('keep\n')
   })
 })

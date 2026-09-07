@@ -54,6 +54,9 @@ function LauncherPane(props: EnginePageProps): JSX.Element {
           <label for="prompt">PROMPT</label>
           <textarea id="prompt" name="prompt" placeholder="say hi and exit"></textarea>
         </div>
+        <div class="field">
+          <label for="worktree"><input type="checkbox" id="worktree" name="worktree" checked /> run in its own worktree</label>
+        </div>
         <button class="btn go" type="submit">
           DISPATCH
         </button>

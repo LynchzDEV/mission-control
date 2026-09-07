@@ -21,6 +21,9 @@ function job(overrides: Partial<JobRecord> = {}): JobRecord {
     endedAt: null,
     exitCode: null,
     diffStat: null,
+    worktree: null,
+    baseRepo: null,
+    baseBranch: null,
     reviewedAt: null,
     ...overrides,
   }
@@ -308,4 +311,9 @@ describe('review predicate', () => {
     expect(countPendingReviews(jobs)).toBe(2)
     expect(deriveFlow({ jobs, terminals: [], now: NOW }).reviewCount).toBe(2)
   })
+})
+
+test('completed worktrees with committed changes count as pending review', () => {
+  const snapshot = deriveFlow({ jobs: [job({ status: 'done', worktree: '/repo/.worktree/task', diffStat: null })], terminals: [], now: NOW })
+  expect(snapshot.reviewCount).toBe(1)
 })
