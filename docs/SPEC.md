@@ -68,6 +68,17 @@ const ENGINES = {
 ```
 Env for spawned processes = `process.env` + engine env overlay. Secrets must never be passed as CLI args (ps leakage) — env only.
 
+### Engine asset parity
+
+After repo skill installation, `bun install` and every cockpit start run a best-effort sync from `~/.claude` to `~/.codex`. Claude and GLM use the same binary and share `~/.claude` by construction.
+
+- `~/.codex/AGENTS.md` links to `~/.claude/CLAUDE.md` when present.
+- Each visible directory in `~/.claude/skills/`, including linked directories, is linked into `~/.codex/skills/`; `.system` is never touched.
+- Top-level Markdown agents with valid YAML front matter become `~/.codex/agents/<name>.toml`, containing name, description and body instructions. README, AGENTS, CLAUDE, CONTRIBUTING, GEMINI and ARCHITECTURE documents are ignored. Unchanged output keeps its mtime; removed sources and Codex-only agents are left alone.
+- Existing real instruction files and skill directories move to `~/.codex/backup/AGENTS.md.pre-mission-control-<timestamp>` and `~/.codex/backup/skills/<name>.pre-mission-control-<timestamp>` before linking. Backup directories are created with mode `0700`; existing links elsewhere are repointed.
+
+Failures are collected as skipped paths and do not prevent other assets or startup from proceeding. This sync targets the personal engine configurations; worker profiles stay slim on purpose and do not receive these assets.
+
 ### Worker profiles (worker-profile.ts)
 
 Jobs spawn `claude`/`codex` with the user's full personal config: ~91k tokens of context per turn and 16 hooks per tool call, versus 19k/2–3s with an isolated config dir. Jobs therefore get a slim profile pair under the config dir (`worker-claude/`, `worker-codex/`, mode 0700, rewritten from constants on every server start so constant edits propagate):

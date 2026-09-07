@@ -30,6 +30,7 @@ import { flowRoutes } from './routes/flow'
 import { currentView, secretsRoutes } from './routes/secrets'
 import { readRoles, rolesRoutes } from './routes/roles'
 import { claudeSkillsDir, describeSkillInstall, installSkills } from './skill-install'
+import { syncEngineAssets } from './engine-assets'
 import { DispatchPage } from './views/dispatch'
 import { LanesPage } from './views/lanes'
 import { LoginPage, SetupPage } from './views/login'
@@ -182,6 +183,10 @@ function healthApi() {
 export async function createApp(): Promise<Elysia> {
   await ensureWorkerProfiles()
   const skills = await installSkills()
+  const assets = await syncEngineAssets()
+  if (assets.linked.length > 0 || assets.written.length > 0 || assets.movedAside.length > 0) {
+    console.error(`codex assets — linked ${assets.linked.length}, written ${assets.written.length}, moved aside ${assets.movedAside.length}, skipped ${assets.skipped.length}`)
+  }
   if (skills.linked.length > 0 || skills.movedAside.length > 0) {
     console.error(`skills: ${describeSkillInstall(skills)} -> ${claudeSkillsDir()}`)
   }

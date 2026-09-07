@@ -2,6 +2,7 @@ import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 
 import { type SkillInstallResult, installSkills } from '../server/skill-install'
+import { syncEngineAssets } from '../server/engine-assets'
 
 const ROOT = resolve(import.meta.dir, '..')
 const PUBLIC_OUT = join(ROOT, 'public')
@@ -139,6 +140,8 @@ export async function runPostinstall(): Promise<PostinstallResult> {
   await copyGroup(ASSETS, VENDOR_OUT, result)
   await copyGroup(PUBLIC_ASSETS, PUBLIC_OUT, result)
   mergeSkillInstall(result, await installSkills())
+  const assets = await syncEngineAssets()
+  console.log(`postinstall: codex assets — linked ${assets.linked.length}, written ${assets.written.length}, moved aside ${assets.movedAside.length}, skipped ${assets.skipped.length}`)
   return result
 }
 
