@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { appendFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { appendFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -322,6 +322,57 @@ describe('log stream failures', () => {
 })
 
 describe('jsonl reload', () => {
+  test('compacts ten lines to the latest three jobs in first-seen order on startup', async () => {
+    const ids = ['b', 'a', 'c', 'a', 'b', 'c', 'b', 'a', 'c', 'a']
+    const records = ids.map((id, turns) => ({ id, status: 'done', turns, label: `turn ${turns}` }))
+    const path = join(configDir, JOBS_FILE)
+    await writeFile(path, records.map((record) => JSON.stringify(record) + '\n').join(''))
+    await writeFile(`${path}.tmp`, 'stale temporary file', { mode: 0o644 })
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const manager = createJobManager({ home })
+      const saved = (await readFile(path, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
+      expect(saved.map((record) => record.id)).toEqual(['b', 'a', 'c'])
+      expect(saved.map((record) => record.turns)).toEqual([6, 9, 8])
+      expect(saved).toEqual(['b', 'a', 'c'].map((id) => manager.getJob(id)))
+      expect((await stat(path)).mode & 0o777).toBe(0o600)
+      expect(await Bun.file(`${path}.tmp`).exists()).toBe(false)
+      expect(log).toHaveBeenCalledWith('jobs: compacted 10 lines → 3')
+      expect(log).toHaveBeenCalledTimes(1)
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  test('compacts queued runtime appends only after passing 5000 lines', async () => {
+    const records = Array.from({ length: 4999 }, (_, index) => ({ id: `job-${index}`, status: 'done' }))
+    const path = join(configDir, JOBS_FILE)
+    await writeFile(path, records.map((record) => JSON.stringify(record) + '\n').join(''))
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const manager = createJobManager({ home })
+      await manager.markReviewed('job-0', 10)
+      expect((await readFile(path, 'utf8')).trim().split('\n')).toHaveLength(5000)
+      expect(log).not.toHaveBeenCalled()
+      await Promise.all([manager.markReviewed('job-1', 11), manager.markReviewed('job-2', 12)])
+      const saved = (await readFile(path, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
+      expect(saved).toHaveLength(5000)
+      expect(saved.slice(0, 4999).map((record) => record.id)).toEqual(records.map((record) => record.id))
+      expect(saved[0].reviewedAt).toBe(10)
+      expect(saved[1].reviewedAt).toBe(11)
+      expect(saved.at(-1).id).toBe('job-2')
+      expect(saved.at(-1).reviewedAt).toBe(12)
+      expect((await stat(path)).mode & 0o777).toBe(0o600)
+      expect(log).toHaveBeenCalledWith('jobs: compacted 5001 lines → 4999')
+      expect(log).toHaveBeenCalledTimes(1)
+      await manager.markReviewed('job-3', 13)
+      expect((await readFile(path, 'utf8')).trim().split('\n')).toHaveLength(4999)
+      expect(log).toHaveBeenCalledTimes(2)
+    } finally {
+      log.mockRestore()
+    }
+  })
+
   test('a fresh manager instance loads jobs persisted by an earlier instance', async () => {
     const repo = join(home, 'repo')
     await initGitRepo(repo)

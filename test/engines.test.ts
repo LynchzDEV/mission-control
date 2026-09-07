@@ -107,20 +107,20 @@ describe('worker profile env', () => {
     const profiles = { claude: join(dir, 'worker-claude'), codex: join(dir, 'worker-codex') }
     const glm = await buildEnv('glm', { worker: true, profiles })
     expect(glm.CLAUDE_CONFIG_DIR).toBe(profiles.claude)
-    expect(glm).not.toHaveProperty('CODEX_HOME')
+    expect(glm.CODEX_HOME).toBe(process.env.CODEX_HOME)
     const codex = await buildEnv('codex', { worker: true, profiles })
     expect(codex.CODEX_HOME).toBe(profiles.codex)
-    expect(codex).not.toHaveProperty('CLAUDE_CONFIG_DIR')
+    expect(codex.CLAUDE_CONFIG_DIR).toBe(process.env.CLAUDE_CONFIG_DIR)
   })
 
   test('claude workers and non-worker builds keep the user profile', async () => {
     await writeSecrets({ zaiAuthToken: TOKEN })
     const claude = await buildEnv('claude', { worker: true, profiles: workerProfileDirs() })
-    expect(claude).not.toHaveProperty('CLAUDE_CONFIG_DIR')
-    expect(claude).not.toHaveProperty('CODEX_HOME')
+    expect(claude.CLAUDE_CONFIG_DIR).toBe(process.env.CLAUDE_CONFIG_DIR)
+    expect(claude.CODEX_HOME).toBe(process.env.CODEX_HOME)
     const plain = await buildEnv('glm')
-    expect(plain).not.toHaveProperty('CLAUDE_CONFIG_DIR')
-    expect(plain).not.toHaveProperty('CODEX_HOME')
+    expect(plain.CLAUDE_CONFIG_DIR).toBe(process.env.CLAUDE_CONFIG_DIR)
+    expect(plain.CODEX_HOME).toBe(process.env.CODEX_HOME)
   })
 
   test('the job resolver hands glm jobs the isolated worker profile', async () => {

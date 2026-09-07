@@ -1,5 +1,5 @@
 import { appendFile, chmod, mkdir, readFile, stat } from 'node:fs/promises'
-import { chmodSync, closeSync, mkdirSync, openSync, readFileSync } from 'node:fs'
+import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import {
@@ -104,17 +104,19 @@ export function normalizeJobRecord(raw: Record<string, unknown>): JobRecord {
   }
 }
 
-function loadJobs(path: string): Map<string, JobRecord> {
+function loadJobs(path: string): { jobs: Map<string, JobRecord>; lineCount: number } {
   const jobs = new Map<string, JobRecord>()
+  let lineCount = 0
   let raw: string
   try {
     raw = readFileSync(path, 'utf8')
   } catch {
-    return jobs
+    return { jobs, lineCount }
   }
   for (const line of raw.split('\n')) {
     const trimmed = line.trim()
     if (trimmed === '') continue
+    lineCount++
     try {
       const record = normalizeJobRecord(JSON.parse(trimmed) as Record<string, unknown>)
       jobs.set(record.id, record)
@@ -122,7 +124,17 @@ function loadJobs(path: string): Map<string, JobRecord> {
       continue
     }
   }
-  return jobs
+  return { jobs, lineCount }
+}
+
+function compactJobs(path: string, jobs: Map<string, JobRecord>, lineCount: number): number {
+  const temporaryPath = `${path}.tmp`
+  const content = [...jobs.values()].map((record) => `${JSON.stringify(record)}\n`).join('')
+  writeFileSync(temporaryPath, content, { mode: FILE_MODE })
+  chmodSync(temporaryPath, FILE_MODE)
+  renameSync(temporaryPath, path)
+  console.log(`jobs: compacted ${lineCount} lines → ${jobs.size}`)
+  return jobs.size
 }
 
 async function appendJsonl(path: string, record: JobRecord): Promise<void> {
@@ -220,7 +232,9 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   const dir = configDir()
   const jsonlPath = join(dir, JOBS_FILE)
   const logsDir = join(dir, LOGS_DIR)
-  const jobs = loadJobs(jsonlPath)
+  let { jobs, lineCount } = loadJobs(jsonlPath)
+  if (lineCount > jobs.size) lineCount = compactJobs(jsonlPath, jobs, lineCount)
+  const persistedJobs = new Map(jobs)
   const home = options.home
   const activityIntervalMs = options.activityIntervalMs ?? ACTIVITY_THROTTLE_MS
   const clock = options.now ?? Date.now
@@ -309,7 +323,12 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
 
   async function persist(record: JobRecord): Promise<void> {
     jobs.set(record.id, record)
-    const write = persistence.then(() => appendJsonl(jsonlPath, record))
+    const write = persistence.then(async () => {
+      await appendJsonl(jsonlPath, record)
+      persistedJobs.set(record.id, record)
+      lineCount++
+      if (lineCount > 5000) lineCount = compactJobs(jsonlPath, persistedJobs, lineCount)
+    })
     persistence = write.catch(() => {})
     await write
   }
