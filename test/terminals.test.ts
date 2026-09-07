@@ -79,8 +79,9 @@ describe('terminalArgs', () => {
     expect(terminalArgs('claude', 'opus', 'abc')).toEqual(['--resume', 'abc', '--model', 'opus'])
   })
 
-  test('codex keeps its -m form', () => {
-    expect(terminalArgs('codex', 'x', undefined)).toEqual(['-m', 'x'])
+  test('codex bypasses approvals and sandboxing and keeps its -m form', () => {
+    expect(terminalArgs('codex', undefined, undefined)).toEqual(['--dangerously-bypass-approvals-and-sandbox'])
+    expect(terminalArgs('codex', 'x', undefined)).toEqual(['--dangerously-bypass-approvals-and-sandbox', '-m', 'x'])
   })
 })
 

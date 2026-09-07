@@ -73,7 +73,8 @@ Env for spawned processes = `process.env` + engine env overlay. Secrets must nev
 Jobs spawn `claude`/`codex` with the user's full personal config: ~91k tokens of context per turn and 16 hooks per tool call, versus 19k/2–3s with an isolated config dir. Jobs therefore get a slim profile pair under the config dir (`worker-claude/`, `worker-codex/`, mode 0700, rewritten from constants on every server start so constant edits propagate):
 
 - `worker-claude/` — `CLAUDE.md` (the worker contract: implement in-tree, no dispatch/cockpit calls, no commit unless asked, run only touched tests while iterating, no file re-reads, terse final report) and `settings.json` (`bypassPermissions`). Used by `glm` jobs via `CLAUDE_CONFIG_DIR`.
-- `worker-codex/` — `config.toml` (`approval_policy = "never"`, `sandbox_mode = "workspace-write"`), with `auth.json` symlinked to `~/.codex/auth.json` when present so OAuth refresh is shared. Used by `codex` jobs via `CODEX_HOME`.
+- `worker-codex/` — `config.toml` (`approval_policy = "never"`, `sandbox_mode = "danger-full-access"`), with `auth.json` symlinked to `~/.codex/auth.json` when present so OAuth refresh is shared. Used by `codex` jobs via `CODEX_HOME`.
+- Codex jobs run with full access in the user's own worktrees; both `exec` and `exec resume` pass `--dangerously-bypass-approvals-and-sandbox` immediately after `exec`.
 - `claude` jobs keep the full user profile (no env change): OAuth lives in the user's own config/keychain and claude-engine jobs are rare.
 
 `buildEnv(name, { worker: true })` applies the profile env (only `realEngineResolver`, i.e. headless jobs); terminals call `buildEnv(name)` unchanged and keep the full profile. Profile setup failures are logged, never thrown — a missing profile must not stop the server.
@@ -110,6 +111,7 @@ Every finished execute job can spawn a cross-family review job (`roles.review`) 
 ## Terminals (terminals.ts) — live sessions
 
 - POST `/api/terminals` `{engine, cwd, model?}` → node-pty spawn interactive (`claude` / `claude` w/ glm env / `codex`), cols/rows from client; blank model → engine default.
+- Codex terminals keep the user's own `~/.codex` profile and prepend `--dangerously-bypass-approvals-and-sandbox` for full access.
 - WS `/ws/terminal/:id` bridges pty <-> xterm.js (binary/utf8 passthrough, resize message `{type:'resize',cols,rows}`).
 - Terminals persist while server runs (detach/reattach on reconnect); DELETE kills pty.
 - Session guard on the WS upgrade (verify the signed cookie before accepting).

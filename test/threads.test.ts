@@ -311,9 +311,10 @@ describe('engineArgs', () => {
   })
 
   test('codex uses its resume subcommand with the flag before the positionals', () => {
-    expect(engineArgs('codex', 'hello')).toEqual(['exec', '--json', 'hello'])
+    expect(engineArgs('codex', 'hello')).toEqual(['exec', '--dangerously-bypass-approvals-and-sandbox', '--json', 'hello'])
     expect(engineArgs('codex', 'hello', 'thread-1')).toEqual([
       'exec',
+      '--dangerously-bypass-approvals-and-sandbox',
       'resume',
       '--json',
       'thread-1',
@@ -342,9 +343,10 @@ describe('engineArgs', () => {
       '--model',
       'glm-5.3-flash',
     ])
-    expect(engineArgs('codex', 'hello', undefined, 'X')).toEqual(['exec', '--json', '-m', 'X', 'hello'])
+    expect(engineArgs('codex', 'hello', undefined, 'X')).toEqual(['exec', '--dangerously-bypass-approvals-and-sandbox', '--json', '-m', 'X', 'hello'])
     expect(engineArgs('codex', 'hello', 'thread-1', 'X')).toEqual([
       'exec',
+      '--dangerously-bypass-approvals-and-sandbox',
       'resume',
       '--json',
       '-m',

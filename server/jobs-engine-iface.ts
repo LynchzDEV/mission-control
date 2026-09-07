@@ -22,13 +22,11 @@ export const fakeEchoResolver: EngineResolver = ({ engine, prompt }) => ({
 
 import { buildEnv, modelArgs, resolveBinary, resolveEngine, type EngineName, ENGINE_NAMES } from './engines'
 
-// codex's `resume` subcommand parses flags before its positional id and prompt, and rejects the
-// flags the plain `exec` form accepts.
 export function engineArgs(engine: EngineName, prompt: string, resumeSessionId?: string, model?: string): string[] {
   if (engine === 'codex') {
     return resumeSessionId === undefined
-      ? ['exec', '--json', ...modelArgs('codex', model), prompt]
-      : ['exec', 'resume', '--json', ...modelArgs('codex', model), resumeSessionId, prompt]
+      ? ['exec', '--dangerously-bypass-approvals-and-sandbox', '--json', ...modelArgs('codex', model), prompt]
+      : ['exec', '--dangerously-bypass-approvals-and-sandbox', 'resume', '--json', ...modelArgs('codex', model), resumeSessionId, prompt]
   }
   const resume = resumeSessionId === undefined ? [] : ['--resume', resumeSessionId]
   return [...resume, '-p', prompt, '--output-format', 'stream-json', '--verbose', ...modelArgs(engine, model)]

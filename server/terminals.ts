@@ -96,6 +96,7 @@ export function terminalArgs(
   resumeSessionId: string | undefined,
 ): string[] {
   return [
+    ...(engine === 'codex' ? ['--dangerously-bypass-approvals-and-sandbox'] : []),
     ...(resumeSessionId === undefined ? [] : ['--resume', resumeSessionId]),
     ...modelArgs(engine, model),
   ]

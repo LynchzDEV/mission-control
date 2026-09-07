@@ -34,6 +34,7 @@ describe('ensureWorkerProfiles', () => {
     expect(await readFile(join(dirs.claude, 'CLAUDE.md'), 'utf8')).toBe(WORKER_CLAUDE_MD)
     expect(JSON.parse(await readFile(join(dirs.claude, 'settings.json'), 'utf8'))).toEqual(WORKER_CLAUDE_SETTINGS)
     expect(await readFile(join(dirs.codex, 'config.toml'), 'utf8')).toBe(WORKER_CODEX_CONFIG)
+    expect(WORKER_CODEX_CONFIG).toBe('approval_policy = "never"\nsandbox_mode = "danger-full-access"\n')
 
     const authLink = join(dirs.codex, 'auth.json')
     expect((await lstat(authLink)).isSymbolicLink()).toBe(true)

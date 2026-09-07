@@ -20,7 +20,7 @@ export const WORKER_CLAUDE_SETTINGS = {
   skipDangerousModePermissionPrompt: true,
 }
 
-export const WORKER_CODEX_CONFIG = 'approval_policy = "never"\nsandbox_mode = "workspace-write"\n'
+export const WORKER_CODEX_CONFIG = 'approval_policy = "never"\nsandbox_mode = "danger-full-access"\n'
 
 export function workerProfileDirs(configDirOverride?: string): { claude: string; codex: string } {
   const base = configDirOverride ?? configDir()
