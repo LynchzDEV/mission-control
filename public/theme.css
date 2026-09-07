@@ -1265,6 +1265,15 @@ table.grid tr.empty td {
   border-bottom: 1px solid var(--mc-hairline);
 }
 
+.arec.slow {
+  border-left: 3px solid var(--mc-amber);
+}
+
+#agents-message:not(:empty) {
+  padding: 8px 20px;
+  font-size: 10px;
+}
+
 .arec .r1 {
   display: flex;
   align-items: baseline;

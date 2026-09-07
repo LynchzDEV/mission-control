@@ -196,8 +196,9 @@ describe('GET /api/jobs', () => {
     const job = (await created.json()) as { id: string }
 
     const response = await app.handle(get('/api/jobs', cookie))
-    const { jobs } = (await response.json()) as { jobs: Array<{ label: string }> }
+    const { jobs } = (await response.json()) as { jobs: Array<{ label: string; turns: number; lastTool: string | null }> }
     expect(jobs.some((entry) => entry.label === 'listed')).toBe(true)
+    expect(jobs.find((entry) => entry.label === 'listed')).toMatchObject({ turns: 0, lastTool: null })
 
     await pollUntilDone(app, cookie, job.id)
   })
@@ -371,9 +372,11 @@ describe('GET /api/jobs/:id/activity', () => {
     expect(feed.currentActivity).toBe('Edit · server/flow.ts')
 
     const { jobs } = (await (await app.handle(get('/api/jobs', cookie))).json()) as {
-      jobs: Array<{ id: string; currentActivity: string | null }>
+      jobs: Array<{ id: string; currentActivity: string | null; turns: number; lastTool: string | null }>
     }
     expect(jobs.find((row) => row.id === job.id)?.currentActivity).toBe('Edit · server/flow.ts')
+    expect(jobs.find((row) => row.id === job.id)?.turns).toBe(1)
+    expect(jobs.find((row) => row.id === job.id)?.lastTool).toBe('Edit')
   })
 
   test('returns an empty feed for a job whose output is not stream-json', async () => {

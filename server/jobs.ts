@@ -7,6 +7,7 @@ import {
   createActivityThrottle,
   currentActivity,
   parseActivity,
+  parseJobProgress,
   parseSessionId,
 } from './activity'
 import { DIR_MODE, FILE_MODE, configDir } from './secrets'
@@ -35,6 +36,8 @@ export type JobRecord = {
   pid: number
   status: JobStatus
   startedAt: number
+  turns: number
+  lastTool: string | null
   endedAt: number | null
   exitCode: number | null
   diffStat: string | null
@@ -88,6 +91,8 @@ export function normalizeJobRecord(raw: Record<string, unknown>): JobRecord {
   const id = readString(raw.id, '')
   return {
     ...(raw as unknown as JobRecord),
+    turns: typeof raw.turns === 'number' && Number.isSafeInteger(raw.turns) && raw.turns >= 0 ? raw.turns : 0,
+    lastTool: typeof raw.lastTool === 'string' && raw.lastTool !== '' ? raw.lastTool : null,
     reviewedAt: typeof raw.reviewedAt === 'number' ? raw.reviewedAt : null,
     prompt: readString(raw.prompt, ''),
     sessionId: typeof raw.sessionId === 'string' && raw.sessionId !== '' ? raw.sessionId : null,
@@ -219,6 +224,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   const home = options.home
   const activityIntervalMs = options.activityIntervalMs ?? ACTIVITY_THROTTLE_MS
   const clock = options.now ?? Date.now
+  let persistence = Promise.resolve()
   const processes = new Map<string, Bun.Subprocess>()
   const activities = new Map<string, string>()
   const tails = new Map<string, string>()
@@ -272,7 +278,24 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   }
 
   function collectActivity(id: string, throttle: ReturnType<typeof createActivityThrottle>) {
+    let pending = ''
+    let turns = 0
     return (text: string): void => {
+      pending += text
+      const end = pending.lastIndexOf('\n')
+      if (end >= 0) {
+        const progress = parseJobProgress(pending.slice(0, end))
+        pending = pending.slice(end + 1)
+        turns += progress.turns
+        const record = jobs.get(id)
+        if (record !== undefined) {
+          const nextTurns = Math.max(record.turns, turns)
+          const lastTool = progress.lastTool ?? record.lastTool
+          if (nextTurns !== record.turns || lastTool !== record.lastTool) {
+            void persist({ ...record, turns: nextTurns, lastTool }).catch(() => {})
+          }
+        }
+      }
       scanSessionId(id, text)
       const combined = (tails.get(id) ?? '') + text
       tails.set(id, combined.slice(Math.max(0, combined.length - ACTIVITY_TAIL_CHARS)))
@@ -286,7 +309,9 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
 
   async function persist(record: JobRecord): Promise<void> {
     jobs.set(record.id, record)
-    await appendJsonl(jsonlPath, record)
+    const write = persistence.then(() => appendJsonl(jsonlPath, record))
+    persistence = write.catch(() => {})
+    await write
   }
 
   async function settleFailed(id: string, record: JobRecord): Promise<void> {
@@ -306,10 +331,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   function startLogTail(id: string, collect: (text: string) => void, startOffset = 0): () => Promise<void> {
     const path = logPath(id)
     let offset = startOffset
-    let busy = false
-    const tick = async (): Promise<void> => {
-      if (busy) return
-      busy = true
+    let active: Promise<void> | null = null
+    const read = async (): Promise<void> => {
       try {
         const chunk = await readLogSince(path, offset)
         if (chunk.content !== '') {
@@ -318,14 +341,19 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
         }
       } catch {
         // log file may not exist yet; the next tick retries
-      } finally {
-        busy = false
       }
+    }
+    const tick = (): Promise<void> => {
+      if (active !== null) return active
+      active = read().finally(() => { active = null })
+      return active
     }
     const timer = setInterval(() => void tick(), LOG_TAIL_POLL_MS)
     return async () => {
       clearInterval(timer)
+      await active
       await tick()
+      collect('\n')
     }
   }
 
@@ -368,6 +396,9 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   // ponytail: an orphan's exit code is unknowable — a result marker in the log is the best done-signal.
   async function settleAdopted(record: JobRecord): Promise<void> {
     const log = await readLogFile(logPath(record.id)).catch(() => '')
+    const progress = parseJobProgress(log)
+    const current = jobs.get(record.id) ?? record
+    await persist({ ...current, turns: Math.max(current.turns, progress.turns), lastTool: progress.lastTool ?? current.lastTool })
     const done = log.includes('"type":"result"')
     await settleJob(record.id, record, null, done ? 'done' : 'failed')
   }
@@ -441,6 +472,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       pid: proc.pid,
       status: 'running',
       startedAt: Date.now(),
+      turns: 0,
+      lastTool: null,
       endedAt: null,
       exitCode: null,
       diffStat: null,

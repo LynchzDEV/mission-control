@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -583,6 +583,8 @@ describe('session id capture', () => {
     expect(loaded?.sessionId).toBeNull()
     expect(loaded?.parentJobId).toBeNull()
     expect(loaded?.threadRoot).toBe('legacy-2')
+    expect(loaded?.turns).toBe(0)
+    expect(loaded?.lastTool).toBeNull()
   })
 })
 
@@ -684,5 +686,85 @@ describe('log tail/offset reader', () => {
     expect(since.offset).toBe(tail.offset)
 
     await rm(dir, { recursive: true, force: true })
+  })
+})
+
+describe('job loop progress', () => {
+  test('counts complete assistant messages once across appends and persists progress', async () => {
+    const repo = join(home, 'progress')
+    await initGitRepo(repo)
+    const manager = createJobManager({ home })
+    const created = await manager.createJob(
+      { engine: 'claude', cwd: repo, prompt: '', label: 'progress' }, sleepResolver,
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    const id = created.job.id
+    const line = JSON.stringify({ type: 'assistant', message: { content: [
+      { type: 'text', text: 'checking' },
+      { type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } },
+      { type: 'tool_use', name: 'Bash', input: { command: 'bun test' } },
+    ] } })
+    const pause = () => Bun.sleep(350)
+    try {
+      await appendFile(manager.logPath(id), line.slice(0, 45))
+      await pause()
+      expect(manager.getJob(id)?.turns).toBe(0)
+      await appendFile(manager.logPath(id), line.slice(45) + '\n')
+      await pause()
+      expect(manager.getJob(id)?.turns).toBe(1)
+      expect(manager.getJob(id)?.lastTool).toBe('Bash')
+      await appendFile(manager.logPath(id), [
+        'not json', '{"type":"user"}', '{"type":"result"}',
+        '{"type":"item.started","item":{"type":"agent_message","text":"start"}}',
+        '{"type":"item.completed","item":{"type":"error","message":"oops"}}',
+        '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}',
+        '{"type":"item.completed","item":{"type":"agent_message","text":""}}',
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'x'.repeat(20_000) }] } }),
+        '',
+      ].join('\n'))
+      await pause()
+      expect(manager.getJob(id)?.turns).toBe(4)
+      expect(manager.getJob(id)?.lastTool).toBe('Bash')
+      await pause()
+      expect(manager.getJob(id)?.turns).toBe(4)
+      const saved = JSON.parse((await readFile(join(configDir, JOBS_FILE), 'utf8')).trim().split('\n').at(-1)!)
+      expect(saved.turns).toBe(4)
+      await appendFile(manager.logPath(id), line)
+    } finally {
+      await manager.killJob(id)
+      await waitForStatus(manager, id)
+    }
+    expect(manager.getJob(id)?.turns).toBe(5)
+    const reloaded = createJobManager({ home }).getJob(id)
+    expect(reloaded?.turns).toBe(5)
+    expect(reloaded?.lastTool).toBe('Bash')
+  })
+
+  test('replays an adopted live log without counting persisted turns twice', async () => {
+    const repo = join(home, 'adopt-progress')
+    await initGitRepo(repo)
+    const proc = Bun.spawn(['sleep', '30'])
+    const id = 'replayed'
+    const line = '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"}]}}\n'
+    await mkdir(join(configDir, LOGS_DIR), { recursive: true })
+    await writeFile(join(configDir, LOGS_DIR, id + '.log'), line.repeat(2))
+    await writeFile(join(configDir, JOBS_FILE), JSON.stringify({
+      id, engine: 'glm', cwd: repo, pid: proc.pid, status: 'running',
+      startedAt: Date.now(), turns: 2, lastTool: 'Read',
+    }) + '\n')
+    const manager = createJobManager({ home })
+    try {
+      await Bun.sleep(350)
+      expect(manager.getJob(id)?.turns).toBe(2)
+      await appendFile(manager.logPath(id), line)
+      await Bun.sleep(350)
+      expect(manager.getJob(id)?.turns).toBe(3)
+    } finally {
+      proc.kill()
+      await proc.exited
+      await waitForStatus(manager, id)
+    }
+    expect(manager.getJob(id)?.turns).toBe(3)
   })
 })

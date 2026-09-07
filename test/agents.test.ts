@@ -2,6 +2,9 @@ import { describe, expect, test } from 'bun:test'
 
 import {
   RECENT_LIMIT,
+  armKill,
+  jobMeta,
+  isSlow,
   accentClass,
   baseName,
   formatElapsed,
@@ -30,6 +33,8 @@ function job(overrides: Partial<AgentJob> = {}): AgentJob {
     endedAt: null,
     diffStat: '',
     activity: '',
+    turns: 0,
+    lastTool: null,
     threadRoot: id,
     terminalId: '',
     ...overrides,
@@ -48,6 +53,8 @@ describe('toAgentJob', () => {
       endedAt: null,
       diffStat: '2 files changed',
       currentActivity: 'Edit · client/agents.ts',
+      turns: 12,
+      lastTool: 'Edit',
       threadRoot: 'root-1',
     })
 
@@ -61,6 +68,8 @@ describe('toAgentJob', () => {
       endedAt: null,
       diffStat: '2 files changed',
       activity: 'Edit · client/agents.ts',
+      turns: 12,
+      lastTool: 'Edit',
       threadRoot: 'root-1',
       terminalId: '',
     })
@@ -308,5 +317,58 @@ describe('jobInScope', () => {
     expect(jobInScope(job(), 'term-a', '/Users/x/code/repo')).toBe(true)
     expect(jobInScope(job({ cwd: '/Users/x/code/repo/.worktree/x' }), 'term-a', '/Users/x/code/repo')).toBe(true)
     expect(jobInScope(job({ cwd: '/Users/x/code/other' }), 'term-a', '/Users/x/code/repo')).toBe(false)
+  })
+})
+
+describe('loop guard', () => {
+  test('shows elapsed, turns and last tool with safe defaults', () => {
+    expect(jobMeta(job({ turns: 81, lastTool: 'Bash' }), NOW + 90_000)).toBe('1m30s · 81 turns · Bash')
+    expect(jobMeta(job(), NOW)).toBe('0s · 0 turns · —')
+    expect(jobMeta(job({ status: 'done', endedAt: NOW + 1000 }), NOW + 90_000)).toBe('1s')
+    expect(toAgentJob({}).turns).toBe(0)
+    expect(toAgentJob({}).lastTool).toBeNull()
+  })
+
+  test('highlights only running jobs strictly over either limit', () => {
+    expect(isSlow(job({ turns: 80 }), NOW + 900_000)).toBe(false)
+    expect(isSlow(job(), NOW + 900_001)).toBe(true)
+    expect(isSlow(job({ turns: 81 }), NOW)).toBe(true)
+    expect(isSlow(job({ status: 'done', turns: 90 }), NOW + 999_999)).toBe(false)
+    expect(isSlow(job({ startedAt: null }), NOW)).toBe(false)
+  })
+
+  test('arms, expires, targets the same job and prevents duplicate in-flight kills', async () => {
+    const button = { textContent: '✕', disabled: false, onclick: null } as unknown as HTMLButtonElement
+    let target = 'one'
+    const killed: string[] = []
+    let finish: (() => void) | undefined
+    const cleanup = armKill(button, () => target, async (id) => {
+      killed.push(id)
+      await new Promise<void>((resolve) => { finish = resolve })
+    })
+    const click = () => button.onclick?.call(button, {} as MouseEvent)
+    try {
+      await click()
+      expect(button.textContent).toBe('KILL?')
+      expect(killed).toEqual([])
+      await Bun.sleep(3050)
+      expect(button.textContent).toBe('✕')
+      await click()
+      expect(killed).toEqual([])
+      target = 'two'
+      await click()
+      expect(killed).toEqual([])
+      const pending = click()
+      expect(killed).toEqual(['two'])
+      expect(button.disabled).toBe(true)
+      await click()
+      expect(killed).toEqual(['two'])
+      finish?.()
+      await pending
+      expect(button.disabled).toBe(false)
+    } finally {
+      finish?.()
+      cleanup()
+    }
   })
 })

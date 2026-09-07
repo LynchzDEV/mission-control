@@ -173,10 +173,14 @@ function codexEvents(msg: Record<string, unknown>, ts: number | undefined, limit
   return []
 }
 
+function isCodexAssistantItem(item: unknown): boolean {
+  return isRecord(item) && item.type === 'agent_message'
+}
+
 function codexItemEvents(item: unknown, ts: number | undefined, limits: Limits): ActivityEvent[] {
   if (!isRecord(item)) return []
   const type = asString(item.type)
-  if (type === 'agent_message') {
+  if (isCodexAssistantItem(item)) {
     const detail = clip(asString(item.text), limits.text)
     return detail === '' ? [] : [withTs({ kind: 'text', title: 'TEXT', detail }, ts)]
   }
@@ -255,6 +259,30 @@ function parseStream(logText: string, max: number, limits: Limits): ActivityEven
   const resolved = limits.full ? events.map((event) => attachToolResult(event, results)) : events
   if (max < 0 || resolved.length <= max) return resolved
   return resolved.slice(resolved.length - max)
+}
+
+export function parseJobProgress(logText: string): { turns: number; lastTool: string | null } {
+  let turns = 0
+  let lastTool: string | null = null
+  for (const line of logText.split('\n')) {
+    let raw: unknown
+    try {
+      raw = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (!isRecord(raw)) continue
+    const events = eventsFrom(raw, TICKER_LIMITS)
+    if (raw.type === 'assistant' ||
+        (raw.type === 'item.completed' && isCodexAssistantItem(raw.item)) ||
+        (isRecord(raw.msg) && ['agent_message', 'agent_reasoning'].includes(asString(raw.msg.type)))) {
+      turns += 1
+    }
+    for (const event of events) {
+      if (event.kind === 'tool') lastTool = event.title
+    }
+  }
+  return { turns, lastTool }
 }
 
 export function parseActivity(logText: string, max: number = DEFAULT_ACTIVITY_MAX): ActivityEvent[] {

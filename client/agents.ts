@@ -9,7 +9,7 @@ import {
   type ThreadGroup,
 } from './thread-view'
 import { installDrawer, isDrawerOpen, openDrawer } from './thread-drawer'
-import { getJson, postJson, readArray, streamJobLog, type JsonRecord } from './shared'
+import { errorText, getJson, postJson, readArray, streamJobLog, type JsonRecord } from './shared'
 
 export type AgentJob = {
   id: string
@@ -21,6 +21,8 @@ export type AgentJob = {
   endedAt: number | null
   diffStat: string
   activity: string
+  turns: number
+  lastTool: string | null
   threadRoot: string
   terminalId: string
 }
@@ -65,6 +67,8 @@ export function toAgentJob(raw: JsonRecord): AgentJob {
     endedAt: num(raw.endedAt),
     diffStat: str(raw.diffStat),
     activity: str(raw.currentActivity),
+    turns: Math.max(0, Math.floor(num(raw.turns) ?? 0)),
+    lastTool: str(raw.lastTool) || null,
     threadRoot: str(raw.threadRoot, id),
     terminalId: str(raw.terminalId),
   }
@@ -100,6 +104,51 @@ export function jobElapsed(job: AgentJob, now: number): string {
   return formatElapsed((job.endedAt ?? now) - job.startedAt)
 }
 
+export function jobMeta(job: AgentJob, now: number): string {
+  const elapsed = jobElapsed(job, now)
+  return job.status === 'running' ? `${elapsed} · ${job.turns} turns · ${job.lastTool ?? '—'}` : elapsed
+}
+
+export function isSlow(job: AgentJob, now: number): boolean {
+  return job.status === 'running' &&
+    (job.turns > 80 || (job.startedAt !== null && now - job.startedAt > 15 * 60_000))
+}
+
+export function armKill(
+  button: HTMLButtonElement,
+  target: () => string | null,
+  kill: (id: string) => Promise<void>,
+): () => void {
+  let armedId: string | null = null
+  let expiresAt = 0
+  let resetTimer: ReturnType<typeof setTimeout> | undefined
+  const reset = (): void => {
+    clearTimeout(resetTimer)
+    armedId = null
+    button.textContent = '✕'
+  }
+  button.onclick = async () => {
+    const id = target()
+    if (id === null || button.disabled) return
+    if (armedId !== id || Date.now() >= expiresAt) {
+      reset()
+      armedId = id
+      expiresAt = Date.now() + 3_000
+      button.textContent = 'KILL?'
+      resetTimer = setTimeout(reset, 3_000)
+      return
+    }
+    reset()
+    button.disabled = true
+    try {
+      await kill(id)
+    } finally {
+      button.disabled = false
+    }
+  }
+  return reset
+}
+
 // Jobs sharing a threadRoot are one conversation and render as one card: RECENT_LIMIT below
 // bounds threads, not raw job rows.
 export function splitAgents(jobs: AgentJob[]): { running: AgentThread[]; recent: AgentThread[] } {
@@ -125,6 +174,7 @@ type Card = {
   logButton: HTMLButtonElement | null
   stream: EventSource | null
   live: boolean
+  resetKill: () => void
   thread: AgentThread
 }
 
@@ -188,13 +238,12 @@ function buildCard(thread: AgentThread, now: number): Card {
   root.dataset.thread = thread.threadRoot
 
   const glyph = el('i', `glyph ${job.status}`, statusGlyph(job.status))
-  const elapsed = el('span', 'ael', jobElapsed(job, now))
+  const elapsed = el('div', 'r2 ael', jobMeta(thread.runningJob ?? job, now))
   const line = el('div', 'r1')
   line.append(
     glyph,
     el('b', 'aname', job.label),
     el('span', `tag ${engineClass(job.engine)}`, job.engine.toUpperCase()),
-    elapsed,
   )
 
   const second = el('div', 'r2', secondLine(job))
@@ -204,11 +253,12 @@ function buildCard(thread: AgentThread, now: number): Card {
   actions.appendChild(talkButton)
 
   const logButton = live ? (el('button', 'btn xs', 'LOG ▾') as HTMLButtonElement) : null
-  const killButton = live ? (el('button', 'btn xs', 'KILL') as HTMLButtonElement) : null
+  const killButton = live ? (el('button', 'btn xs', '✕') as HTMLButtonElement) : null
   const log = live ? el('pre', 'alog') : null
   if (logButton !== null && killButton !== null && log !== null) {
     logButton.type = 'button'
     killButton.type = 'button'
+    killButton.setAttribute('aria-label', 'Kill running job')
     log.hidden = true
     actions.append(logButton, killButton)
   }
@@ -218,7 +268,7 @@ function buildCard(thread: AgentThread, now: number): Card {
     pollMs: () => (isDrawerOpen(thread.threadRoot) ? DRAWER_POLL_MS : CARD_POLL_MS),
   })
 
-  root.append(line, second, feed.root, actions)
+  root.append(line, elapsed, second, feed.root, actions)
   if (log !== null) root.appendChild(log)
 
   const card: Card = {
@@ -231,15 +281,13 @@ function buildCard(thread: AgentThread, now: number): Card {
     logButton,
     stream: null,
     live,
+    resetKill: () => {},
     thread,
   }
   talkButton.onclick = () => show(card)
   if (logButton !== null) logButton.onclick = () => toggleLog(card)
   if (killButton !== null) {
-    killButton.onclick = () => {
-      const target = card.thread.runningJob
-      if (target !== null) void killJob(target.id)
-    }
+    card.resetKill = armKill(killButton, () => card.thread.runningJob?.id ?? null, killJob)
   }
   feed.start()
   return card
@@ -247,14 +295,16 @@ function buildCard(thread: AgentThread, now: number): Card {
 
 function dropCard(threadRoot: string, card: Card): void {
   closeStream(card)
+  card.resetKill()
   card.feed.stop()
   card.root.remove()
   cards.delete(threadRoot)
 }
 
 function syncCard(card: Card, thread: AgentThread, now: number): void {
+  if (card.thread.runningJob?.id !== thread.runningJob?.id) card.resetKill()
   card.thread = thread
-  card.elapsed.textContent = jobElapsed(thread.newestJob, now)
+  syncProgress(card, now)
   card.second.textContent = secondLine(thread.newestJob)
 }
 
@@ -277,8 +327,10 @@ function renderGroup(targetId: string, threads: AgentThread[], now: number): voi
 }
 
 async function killJob(id: string): Promise<void> {
-  await postJson(`/api/jobs/${id}/kill`, {})
-  await refresh()
+  const result = await postJson(`/api/jobs/${encodeURIComponent(id)}/kill`, {})
+  const message = host('agents-message')
+  if (message !== null) message.textContent = result.ok ? `Kill requested for ${shortId(id)}.` : `Kill failed: ${errorText(result)}`
+  if (result.ok) await refresh()
 }
 
 let recentOpen = false
@@ -356,9 +408,18 @@ async function cycle(): Promise<void> {
   await refresh()
 }
 
+function syncProgress(card: Card, now: number): void {
+  const job = card.thread.runningJob ?? card.thread.newestJob
+  card.elapsed.textContent = jobMeta(job, now)
+  const slow = isSlow(job, now)
+  card.root.classList.toggle('slow', slow)
+  if (slow) card.root.title = 'possible loop — check activity'
+  else card.root.removeAttribute('title')
+}
+
 function updateElapsed(): void {
   const now = Date.now()
-  for (const card of cards.values()) card.elapsed.textContent = jobElapsed(card.thread.newestJob, now)
+  for (const card of cards.values()) syncProgress(card, now)
 }
 
 export function readPanelOpen(): boolean {

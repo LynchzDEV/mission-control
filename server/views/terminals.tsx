@@ -55,6 +55,7 @@ function AgentsPanel(): JSX.Element {
         </button>
       </div>
       <button type="button" class="ascope" id="agents-scope" hidden></button>
+      <div id="agents-message" role="status" aria-live="polite"></div>
       <div class="ascroll" id="agents-scroll">
         <div class="alab">RUNNING</div>
         <div id="agents-running"></div>

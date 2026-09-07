@@ -101,6 +101,7 @@ const PAGES: [string, string[]][] = [
       'id="termgrid"',
       'class="termmain"',
       'id="agents-panel"',
+      'id="agents-message" role="status" aria-live="polite"',
       'id="agents-toggle"',
       'id="agents-running"',
       'id="agents-recent"',
