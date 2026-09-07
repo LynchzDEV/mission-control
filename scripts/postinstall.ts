@@ -1,5 +1,7 @@
 import { copyFile, mkdir, stat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
+
+import { type SkillInstallResult, installSkills } from '../server/skill-install'
 
 const ROOT = resolve(import.meta.dir, '..')
 const PUBLIC_OUT = join(ROOT, 'public')
@@ -74,10 +76,18 @@ const PUBLIC_ASSETS: VendorAsset[] = [
 export type PostinstallResult = {
   copied: string[]
   skipped: string[]
+  linked: string[]
+  movedAside: string[]
 }
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function mergeSkillInstall(into: PostinstallResult, skills: SkillInstallResult): void {
+  into.linked.push(...skills.linked)
+  into.movedAside.push(...skills.movedAside)
+  into.skipped.push(...skills.skipped)
 }
 
 async function firstExistingFile(candidates: string[]): Promise<string | null> {
@@ -125,9 +135,10 @@ async function copyGroup(
 }
 
 export async function runPostinstall(): Promise<PostinstallResult> {
-  const result: PostinstallResult = { copied: [], skipped: [] }
+  const result: PostinstallResult = { copied: [], skipped: [], linked: [], movedAside: [] }
   await copyGroup(ASSETS, VENDOR_OUT, result)
   await copyGroup(PUBLIC_ASSETS, PUBLIC_OUT, result)
+  mergeSkillInstall(result, await installSkills())
   return result
 }
 
@@ -135,10 +146,17 @@ if (import.meta.main) {
   const result = await runPostinstall().catch((error) => ({
     copied: [],
     skipped: [`postinstall aborted (${describe(error)})`],
+    linked: [],
+    movedAside: [],
   }))
 
   for (const entry of result.copied) console.log(`postinstall: copied ${entry}`)
+  for (const entry of result.linked) console.log(`postinstall: linked skill ${basename(entry)} -> ${entry}`)
+  for (const entry of result.movedAside) console.log(`postinstall: moved aside ${entry}`)
   for (const entry of result.skipped) console.log(`postinstall: skipped ${entry}`)
-  console.log(`postinstall: ${result.copied.length} copied, ${result.skipped.length} skipped`)
+  console.log(
+    `postinstall: ${result.copied.length} copied, ${result.linked.length} linked, ` +
+      `${result.movedAside.length} moved aside, ${result.skipped.length} skipped`,
+  )
   process.exit(0)
 }

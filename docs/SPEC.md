@@ -30,6 +30,8 @@ mission-control/
   public/
     theme.css
     vendor/           # copied xterm + textmode assets (postinstall script)
+  skills/
+    mc-dispatch/      # orchestration skill shipped with the repo; symlinked into ~/.claude/skills at install/startup
   package.json
   README.md
   docs/SPEC.md

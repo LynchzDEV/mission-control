@@ -28,6 +28,7 @@ import { terminalsRoutes } from './routes/terminals'
 import { flowRoutes } from './routes/flow'
 import { currentView, secretsRoutes } from './routes/secrets'
 import { readRoles, rolesRoutes } from './routes/roles'
+import { claudeSkillsDir, describeSkillInstall, installSkills } from './skill-install'
 import { DispatchPage } from './views/dispatch'
 import { LanesPage } from './views/lanes'
 import { LoginPage, SetupPage } from './views/login'
@@ -179,6 +180,10 @@ function healthApi() {
 
 export async function createApp(): Promise<Elysia> {
   await ensureWorkerProfiles()
+  const skills = await installSkills()
+  if (skills.linked.length > 0 || skills.movedAside.length > 0) {
+    console.error(`skills: ${describeSkillInstall(skills)} -> ${claudeSkillsDir()}`)
+  }
   const jobManager = createJobManager({
     onJobSettled: (record) => {
       void maybeAutoReview(record, jobManager, { resolver: realEngineResolver }).catch(() => {})

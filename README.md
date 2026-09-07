@@ -51,6 +51,10 @@ First visit: create a password (argon2id, min 10 chars). Then:
 bun test             # full suite — runs offline, no engine CLIs needed
 ```
 
+## Claude Code skill
+
+Installing Mission Control also installs the `mc-dispatch` orchestration skill into Claude Code. `bun install` (or the first cockpit start) links `~/.claude/skills/mc-dispatch` to `skills/mc-dispatch` in this repo — so the skill is a symlink, and `git pull` updates it with no further action. An existing hand-written copy at that path is never overwritten: it is moved aside to `~/.claude/skills-backup/mc-dispatch.pre-mission-control-<timestamp>` before the link is created — deliberately outside `skills/`, so Claude Code never loads the backup as a second skill.
+
 ## Architecture
 
 ```
