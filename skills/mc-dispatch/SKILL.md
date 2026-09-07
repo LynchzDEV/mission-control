@@ -59,7 +59,7 @@ every dispatch as `"model":"$EXEC_MODEL"` / `"model":"$REVIEW_MODEL"` — an emp
 string is ignored server-side, so always include the field. The cockpit turns it
 into `claude --model X` or `codex -m X`.
 
-- implementation jobs → `"engine":"$EXEC_ENGINE"`
+- implementation jobs → `"engine":"$EXEC_ENGINE"` (codex jobs run with full access: no sandbox, no approvals — the user asked for it; keep prompts scoped to the worktree)
 - cross-family review jobs → `"engine":"$REVIEW_ENGINE"`
 - `plan` is the engine you are driving from (NEW TERMINAL default); nothing to dispatch
 - auto-review (Settings → AUTO-REVIEW) is OFF by default: reviews are on demand
