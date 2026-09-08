@@ -1,5 +1,12 @@
 import { beforeAll, expect, test } from 'bun:test'
 import { runInNewContext } from 'node:vm'
+import { connectorPath } from '../client/awareness'
+test('connectors stay straight on a level and round both corners symmetrically otherwise', () => {
+  expect(connectorPath(20, 50, 300, 50, 220)).toBe('M20 50H300')
+  expect(connectorPath(20, 50, 300, 20, 220)).toBe('M20 50H212Q220 50 220 42V28Q220 20 228 20H300')
+  expect(connectorPath(20, 50, 300, 80, 220)).toBe('M20 50H212Q220 50 220 58V72Q220 80 228 80H300')
+  expect(connectorPath(20, 50, 300, 56, 220)).toBe('M20 50H217Q220 50 220 53V53Q220 56 223 56H300')
+})
 let code = ''
 beforeAll(async () => { const built = await Bun.build({entrypoints:['client/awareness.ts'],target:'browser',format:'iife'}); expect(built.success).toBe(true); code = await built.outputs[0]!.text() })
 class Node {
@@ -167,10 +174,10 @@ test('manual branches render measured SVG, preserve nodes on polling, and releas
   const observer = h.observers.at(-1)!
   observer.callback()
   expect(svg.attributes.viewBox).toBe('0 0 800 100')
-  expect(svg.children[0]!.attributes.d).toBe('M20 50H195Q220 50 220 20H300')
+  expect(svg.children[0]!.attributes.d).toBe('M20 50H212Q220 50 220 42V28Q220 20 228 20H300')
   target.children[0]!.rect.left = 410
   observer.callback()
-  expect(svg.children[0]!.attributes.d).toBe('M20 50H295Q320 50 320 20H400')
+  expect(svg.children[0]!.attributes.d).toBe('M20 50H312Q320 50 320 42V28Q320 20 328 20H400')
   await h.poll()
   expect(flow.children[0]).toBe(graph)
   expect(h.observers.at(-1)).toBe(observer)

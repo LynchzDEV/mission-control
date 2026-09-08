@@ -54,6 +54,11 @@ export function flowSteps(item: WorkItem): FlowStep[] {
   if (item.stages) return templateNodeSpecs(item.stages).map((spec,index) => ({title:['Spec','Implementation','Code review','Verification','Merged'][index]!,status:item.stages![STAGES[index]!]![0],detail:spec.chipText}))
   return item.members?.map(job => ({title:job.label || job.id,status:job.status === 'running' ? 'active' : job.status,assignee:job.engine,detail:`${job.engine} · ${job.status}`})) ?? []
 }
+export function connectorPath(x1: number, y1: number, x2: number, y2: number, bend: number): string {
+  if (y1 === y2) return `M${x1} ${y1}H${x2}`
+  const radius = Math.min(8, Math.abs(y2 - y1) / 2), direction = y2 > y1 ? 1 : -1
+  return `M${x1} ${y1}H${bend - radius}Q${bend} ${y1} ${bend} ${y1 + radius * direction}V${y2 - radius * direction}Q${bend} ${y2} ${bend + radius} ${y2}H${x2}`
+}
 export function flowColumns(item: WorkItem | undefined): FlowStep[][] {
   const steps = item ? flowSteps(item) : []
   return steps.length < 3 ? steps.map(step => [step]) : [[steps[0]!], steps.slice(1,-1), [steps.at(-1)!]]
@@ -89,9 +94,7 @@ function renderFlow(flow: HTMLElement, columns: FlowStep[][]): {disconnect():voi
       const x1 = start.right - bounds.left, y1 = start.top + start.height / 2 - bounds.top
       const x2 = end.left - bounds.left, y2 = end.top + end.height / 2 - bounds.top
       const exit = Math.max(...nodes[i - 1]!.map(({node}) => node.getBoundingClientRect().right)) - bounds.left
-      const bend = Math.max(exit + 12,x2 - bounds.width * .1), radius = Math.min(25,Math.abs(y2-y1))
-      const rounded = i === 1 ? y2 < y1 : y2 > y1
-      const d = y1 === y2 ? `M${x1} ${y1}H${x2}` : rounded ? `M${x1} ${y1}H${bend-radius}Q${bend} ${y1} ${bend} ${y2}H${x2}` : `M${x1} ${y1}H${bend}V${y2}H${x2}`
+      const d = connectorPath(x1, y1, x2, y2, Math.max(exit + 12, x2 - bounds.width * .1))
       const path = document.createElementNS(svg.namespaceURI!, 'path')
       path.setAttribute('d', d); path.setAttribute('class', from.step.status === 'done' ? 'complete' : '')
       svg.append(path)
