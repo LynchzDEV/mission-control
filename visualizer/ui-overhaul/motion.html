@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Mission Control — Motion study</title>
+<style>
+:root{color-scheme:dark;--fg:#ededed;--muted:#a0a0a0;--rule:#2b2b2e;--panel:#101012;--accent:#f26a3d;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--fg);background:#000}
+*{box-sizing:border-box}body{margin:0;min-height:100svh}button,input,textarea,select{font:inherit}button{cursor:pointer;color:inherit;background:none;border:0}button,input,textarea,select,summary{outline-offset:5px} :focus-visible{outline:2px solid var(--accent)}button:hover{background:#ffffff09}button:disabled{cursor:default}h1,h2,p{margin:0}h1,h2{font-size:14px;font-weight:500}small,.meta{font-size:12px;color:var(--muted)}#atmosphere{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:-1}.stage{padding:clamp(32px,8vh,90px) 7vw 180px;max-width:1600px;margin:auto}.workspace{width:100%;max-width:1120px;border:1px solid var(--rule);background:var(--panel)}.topbar{min-height:58px;display:flex;align-items:center;gap:26px;padding:12px 22px;border-bottom:1px solid var(--rule)}.brand{font-weight:600;letter-spacing:-.25px;white-space:nowrap}.brand-mark{display:inline-block;width:7px;height:7px;background:var(--accent);margin-right:10px}.topbar h1{color:var(--muted);border-left:1px solid var(--rule);padding-left:26px}.disclosure{margin-left:auto;white-space:nowrap}.sessionbar{display:flex;min-width:0;border-bottom:1px solid var(--rule);min-height:49px}.tabs{display:flex;flex:1;min-width:0;overflow-x:auto;scrollbar-width:thin}.tab{position:relative;flex:none;padding:14px 22px;color:var(--muted);border-right:1px solid var(--rule);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color 180ms,background 180ms}.tab[aria-selected=true]{color:var(--fg);background:#19191c}.tab[aria-selected=true]:after{content:"";position:absolute;bottom:0;left:22px;right:22px;height:2px;background:var(--accent)}.new{padding:10px 18px;white-space:nowrap;border-left:1px solid var(--rule);font-size:12px}.panes{display:grid;grid-template-columns:minmax(0,1fr) 260px;min-height:465px}.terminal{display:flex;flex-direction:column;min-width:0}.terminal-head{display:flex;align-items:center;justify-content:space-between;padding:17px 24px;gap:12px;font-size:12px;color:var(--muted)}.terminal-head .path{font-family:Menlo,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.transcript{padding:13px 28px 32px;min-height:296px;max-height:48vh;overflow:auto;flex:1;font:14px/1.8 Menlo,Consolas,monospace;overflow-wrap:anywhere}.message{margin-bottom:24px;display:grid;grid-template-columns:18px minmax(0,1fr);gap:12px}.prompt{color:var(--accent)}.response-mark{color:var(--muted)}.speaker{display:block;color:var(--muted);font:12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin-bottom:6px}.tool{margin:0 0 24px 30px;color:var(--muted);font-size:12px}.tool summary{cursor:pointer;width:fit-content;padding:4px 0}.tool p{padding:10px 0;color:var(--fg)}.empty{padding-top:28px}.empty p{color:var(--muted);margin-top:8px;max-width:330px}.composer{margin:0 22px 18px;border-top:1px solid var(--rule);padding-top:15px}.compose-line{display:flex;align-items:center;gap:12px}.compose-line>span{color:var(--accent);font-family:Menlo,monospace}.compose-line textarea{resize:vertical;min-height:42px;max-height:130px;height:42px;width:100%;min-width:0;background:transparent;border:0;color:var(--fg);padding:10px 0;font:14px/1.5 Menlo,Consolas,monospace}.compose-line textarea::placeholder{color:var(--muted)}.send{border:1px solid #444448;padding:6px 12px;border-radius:4px}.compose-note{font-size:12px;color:var(--muted);margin:7px 0 0 22px;min-height:18px}.compose-note.error{color:var(--accent)}.agents{border-left:1px solid var(--rule);display:flex;flex-direction:column}.agents-heading{padding:18px 20px;display:flex;align-items:center;justify-content:space-between}.agent{display:block;width:100%;text-align:left;padding:16px 20px;border-left:2px solid transparent}.agent[aria-pressed=true]{background:#19191c;border-left-color:var(--accent)}.agent-title{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:5px}.agent-task{display:block;color:var(--muted);font-size:12px}.agent-status{font-size:12px;color:var(--muted)}.detail{margin-top:auto;padding:21px 20px 24px;border-top:1px solid var(--rule)}.detail p{margin-top:7px;color:var(--muted);font-size:12px}.detail dl{margin:18px 0 0;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:9px}.detail dt{color:var(--muted)}.detail dd{margin:0;text-align:right}.ambient-footer{max-width:1120px;display:flex;justify-content:space-between;align-items:center;padding:17px 0;gap:20px;color:var(--muted);font-size:12px}.motion-toggle{font-size:12px;padding:7px 10px;border:1px solid var(--rule);background:#090909;border-radius:4px;white-space:nowrap}.motion-symbol{display:inline-block;margin-right:8px;width:10px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}dialog{width:min(420px,calc(100% - 32px));padding:26px;background:#151517;color:var(--fg);border:1px solid #444448;border-radius:6px}dialog::backdrop{background:#000b}dialog h2{font-size:18px;margin-bottom:22px}dialog label{display:block;margin-top:16px;color:var(--muted);font-size:12px}dialog input,dialog select{display:block;width:100%;margin-top:7px;background:#0c0c0e;color:var(--fg);border:1px solid #444448;border-radius:3px;padding:10px;font-size:14px}.dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.dialog-actions button{padding:8px 13px;border:1px solid var(--rule);border-radius:4px}.dialog-actions .create{background:var(--fg);color:#101012}#dialog-note{margin-top:18px;font-size:12px;color:var(--muted)}
+@media(min-width:1400px){.stage{padding-top:11vh}.panes{min-height:500px}}
+@media(max-width:999px){.stage{padding:32px 24px 150px}.panes{grid-template-columns:minmax(0,1fr) 230px}.topbar{gap:18px}.topbar h1{padding-left:18px}.tab{padding-inline:16px}}
+@media(max-width:700px){.stage{padding:24px 14px 140px}.topbar{padding:14px;gap:12px;flex-wrap:wrap}.topbar h1{padding-left:12px}.disclosure{flex-basis:100%;margin-left:17px}.sessionbar{flex-wrap:wrap}.tabs{flex-basis:100%}.tab{flex:1;max-width:none;font-size:14px}.new{width:100%;text-align:left;border:0;border-top:1px solid var(--rule);padding:10px 16px}.panes{grid-template-columns:minmax(0,1fr)}.terminal-head{padding:16px}.transcript{padding:12px 16px 24px;min-height:270px;max-height:420px}.message{gap:8px}.composer{margin-inline:16px}.agents{border-left:0;border-top:1px solid var(--rule)}.agents-heading{padding:14px 16px}.agent{padding:12px 16px}.detail{padding:16px}.detail dl{max-width:300px}.ambient-footer{align-items:flex-start;gap:10px}.ambient-footer>span{max-width:150px}.tool{margin-left:26px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+
+.workspace{max-width:1200px}.stage{padding:32px 5vw 120px}.topbar{flex-wrap:wrap;gap:18px}.app-nav{display:flex;gap:18px;flex-wrap:wrap}.app-nav a{color:var(--muted);text-decoration:none}.app-nav a[aria-current]{color:var(--fg)}.sessionbar{flex-wrap:wrap}.tabs{flex-basis:100%;border-bottom:1px solid var(--rule)}.session-item{display:flex;flex:none;border-right:1px solid var(--rule)}.tab{border:0;padding:12px 14px}.tab small{margin-right:8px}.close-session{padding:8px 12px;color:var(--muted)}.session-actions{display:flex;gap:4px;padding:4px 10px}.session-actions button{padding:7px 10px;font-size:12px}.panes{grid-template-columns:minmax(0,1fr) 320px;min-height:440px;height:min(560px,calc(100svh - 240px))}.terminal{min-height:0}.terminal-head{padding:12px 18px;flex-wrap:wrap;justify-content:flex-start;border-bottom:1px solid var(--rule);gap:7px 14px}.terminal-head .path{flex-basis:100%}.findbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 18px;border-bottom:1px solid var(--rule);font-size:12px}.findbar input{width:150px;min-width:0;background:#19191c;border:1px solid var(--rule);padding:5px 8px;color:var(--fg)}.findbar button{padding:5px}.transcript{min-height:0;max-height:none;padding:18px;line-height:1.65;font-size:13px}.transcript pre,.tool pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:0 0 15px}.transcript .request{color:var(--fg);margin:12px 0}.transcript .output{color:var(--muted)}.transcript .diff{color:#ededed;border-left:1px solid #555;padding-left:12px}.tool{margin:6px 0;font-size:12px}.tool summary{color:var(--muted)}mark{background:#6b402c;color:#fff}.composer{flex:none;margin:0 18px 12px}.agents{min-height:0;overflow:auto}.agents-heading{padding:12px 14px;border-bottom:1px solid var(--rule);flex-wrap:wrap;gap:8px}.agents-heading button,.agents-heading select{font-size:12px}.agents-heading select{background:var(--panel);color:var(--fg);border:1px solid var(--rule);padding:4px}.agent{padding:12px 14px;border-bottom:1px solid var(--rule)}.agent-title{margin-bottom:4px}.agent-task{margin-top:3px}.group-label{padding:10px 14px 6px;font-size:12px;color:var(--muted);letter-spacing:.07em}.group-empty{padding:12px 14px;color:var(--muted);font-size:12px}.detail{margin-top:0;padding:14px}.detail-actions{display:flex;gap:12px;margin:12px 0}.detail-actions button{padding:4px 0;font-size:12px}.detail pre{font:12px/1.6 Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto;color:var(--muted)}.plan{font:12px/1.7 Menlo,monospace}.plan summary{cursor:pointer;color:var(--muted)}.plan ol{padding-left:22px}.plan li{padding:5px 0}.plan li span{color:var(--muted)}.panes.collapsed{grid-template-columns:minmax(0,1fr)}.panes.collapsed .agents{border-left:0;border-top:1px solid var(--rule);overflow:visible}.panes.collapsed{height:auto}.panes.collapsed .terminal{height:520px}.panes.collapsed #agents-content,.panes.collapsed #agents-scope-label{display:none}.feedback{font-size:12px;color:var(--muted);padding:0 18px 8px;min-height:18px}.ambient-footer{max-width:1200px}.previous{color:var(--muted);margin-left:14px}dialog{max-height:85svh;overflow:auto}dialog textarea{width:100%;background:#0c0c0e;color:var(--fg);padding:10px;border:1px solid var(--rule)}dialog .feedback{padding:10px 0 0}dialog .thread{max-height:230px;overflow:auto;margin-bottom:14px;font:13px/1.6 Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.resume-row{display:block;width:100%;text-align:left;padding:12px 0;border-bottom:1px solid var(--rule)}.resume-row small{display:block}[hidden]{display:none!important}:disabled{opacity:.45}
+@media(max-width:999px){.stage{padding:24px 20px 100px}.panes{grid-template-columns:minmax(0,1fr) 290px}}
+@media(max-width:700px){.stage{padding:14px 10px 100px}.topbar{padding:14px;gap:12px}.app-nav{order:3;width:100%;gap:14px;font-size:13px}.disclosure{flex-basis:auto;margin-left:auto}.panes{height:auto;grid-template-columns:minmax(0,1fr)}.terminal{height:520px}.agents{max-height:650px;border-left:0;border-top:1px solid var(--rule)}.tab{flex:none;max-width:235px}.session-actions{flex-wrap:wrap}.tabs{flex-basis:100%}.ambient-footer>span{max-width:none}.previous{display:block;margin:4px 0 0}.transcript{max-height:none;min-height:0}.new{width:auto;border:0}.topbar h1{display:none}}
+</style></head>
+<body>
+<canvas id="atmosphere" aria-hidden="true"></canvas>
+<div class="stage"><main class="workspace" aria-label="Sample terminal workspace">
+<header class="topbar"><span class="brand">Mission Control</span><nav class="app-nav" aria-label="App navigation"><a href="/current/lanes.html" title="Lanes — current UI reference">Lanes</a><a href="/current/dispatch.html" title="Dispatch — current UI reference">Dispatch</a><a href="/motion.html" aria-current="page">Terminals</a><a href="/current/review.html" title="Review — current UI reference">Review</a><a href="/current/settings.html" title="Settings — current UI reference">Settings</a></nav><span class="disclosure meta">Sample preview</span></header>
+<div class="sessionbar"><div id="tabs" class="tabs" role="tablist" aria-label="Terminal sessions"></div><div class="session-actions"><button id="new-terminal">+ New terminal</button><button id="resume-terminal">Resume</button><button id="rename-terminal">Rename</button></div></div>
+<div class="panes" id="panes"><section class="terminal" id="terminal-panel" role="tabpanel" tabindex="0"><div class="terminal-head"><span id="engine-label"></span><span id="model-label"></span><span id="repo-label" class="path"></span></div><form id="find-form" class="findbar"><label for="term-search">Find</label><input id="term-search" type="search" autocomplete="off"><button id="find-next">Next match ↓</button><span id="find-status" role="status"></span></form><div id="transcript" class="transcript"></div><form id="composer" class="composer" novalidate><div class="compose-line"><span aria-hidden="true">›</span><label class="sr-only" for="message">Terminal message</label><textarea id="message" placeholder="Send a message…" aria-describedby="compose-note"></textarea><button class="send">Send ↵</button></div><p id="compose-note" class="compose-note">Simulated session · nothing is executed</p></form></section>
+<aside class="agents"><div class="agents-heading"><button id="agents-toggle" aria-expanded="true" aria-controls="agents-content">Agents ▾</button><label id="agents-scope-label"> <span class="sr-only">Agent scope</span><select id="agents-scope"><option value="all">All repositories</option><option value="attached">Attached terminal</option></select></label></div><div id="agents-content"><div id="agent-list"></div><section id="agent-detail" class="detail" aria-label="Selected agent detail"></section></div></aside></div><p id="status" class="feedback" role="status" aria-live="polite"></p></main><footer class="ambient-footer"><span>Terminals <a class="previous" href="/motion-before.html">Previous study</a></span><button id="motion-toggle" class="motion-toggle">Pause motion</button></footer></div>
+<dialog id="new-dialog" aria-labelledby="new-title"><form id="new-form" novalidate><h2 id="new-title">New terminal</h2><label>Name<input id="session-name" maxlength="60" required autocomplete="off"></label><label>Engine<select id="session-engine"><option>Claude</option><option>GLM</option><option selected>Codex</option></select></label><label>Model<select id="session-model"></select></label><label id="custom-label" hidden>Custom model<input id="custom-model" autocomplete="off"></label><label>Repository path<input id="session-repo" value="~/mission-control" required autocomplete="off"></label><p id="new-feedback" class="feedback" role="status"></p><div class="dialog-actions"><button type="button" data-close="new-dialog">Cancel</button><button class="create" id="create-terminal">Create terminal</button></div></form></dialog>
+<dialog id="rename-dialog" aria-labelledby="rename-title"><form id="rename-form" novalidate><h2 id="rename-title">Rename terminal</h2><label>Name<input id="rename-name" maxlength="60" required></label><p id="rename-feedback" class="feedback" role="status"></p><div class="dialog-actions"><button type="button" data-close="rename-dialog">Cancel</button><button id="save-name">Save name</button></div></form></dialog>
+<dialog id="resume-dialog" aria-labelledby="resume-title"><h2 id="resume-title">Resume terminal</h2><label>Repository filter<input id="resume-repo" placeholder="All repositories"></label><div id="resume-list"></div><div class="dialog-actions"><button data-close="resume-dialog">Cancel</button></div></dialog>
+<dialog id="talk-dialog" aria-labelledby="talk-title"><h2 id="talk-title">Agent conversation</h2><div id="talk-thread" class="thread"></div><form id="talk-form" novalidate><label for="talk-message">Message</label><textarea id="talk-message" rows="2"></textarea><p id="talk-feedback" class="feedback" role="status"></p><div class="dialog-actions"><button type="button" data-close="talk-dialog">Close</button><button id="talk-send">Send</button></div></form></dialog>
+<dialog id="stop-dialog" aria-labelledby="stop-title"><h2 id="stop-title">Stop sample agent?</h2><p id="stop-description"></p><div class="dialog-actions"><button data-close="stop-dialog">Cancel</button><button id="confirm-stop">Stop agent</button></div></dialog>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+const models = {Claude:['opus','sonnet','haiku'],GLM:['glm-5.3-flash','glm-5.3'],Codex:['gpt-6-astra','gpt-5.6-terra']};
+const repo = '~/mission-control';
+const fixtures = [
+{name:'UI overhaul',engine:'Codex',model:'gpt-6-astra',repo,output:[['request','› Keep session tabs visible when the Agents panel opens.'],['tool','Read · server/views/terminals.tsx','Terminal strip and Agents panel share the workspace grid.'],['tool','Edit · terminal layout','Keep the session strip above both panes.'],['diff','  .termgrid {\n-   grid-template-columns: 1fr;\n+   grid-template-columns: minmax(0, 1fr) 320px;\n  }'],['tool','Check · layout constraints','375px: stacked panes\n1000px: terminal + Agents\n1512px: full workspace'],['output','✓ Sample check: session tabs remain visible\n  1 file changed · +1 −1\n\nReady for visual review.']]},
+{name:'Model lists',engine:'Claude',model:'sonnet',repo,output:[['request','› Keep the model picker current when the engine changes.'],['tool','Read · client/model-picker.ts','Inspected engine-change handler and custom-model field.'],['tool','Edit · reset model selection','Clear the previous engine’s model before populating options.'],['diff','  onEngineChange(engine) {\n+   model.value = "";\n+   populateModels(engine);\n  }'],['tool','Check · picker states','Default → custom → switch engine → default'],['output','✓ Sample check: model reset passes\n  3 engine lists · custom entry retained until engine changes\n\nReviewing keyboard navigation.']]}
+];
+let sessions = fixtures.map((s,i) => ({...s,id:i+1,draft:'',messages:[]}));
+let nextId = 3, selected = 1, selectedAgent = 1, talkingId = null, stoppingId = null;
+const agents = [
+{id:1,terminalId:1,repo,name:'UI overhaul',engine:'Codex',status:'Running',activity:'Updating terminal layout',meta:'4m 12s · 8 turns · Edit',feed:'Session strip stays above the pane split.',plan:[['✓','Define spacing','Claude'],['▸','Update terminal layout','Codex'],['·','Review change','Claude'],['·','Verify in Arc','user']]},
+{id:2,terminalId:2,repo,name:'Model lists',engine:'Claude',status:'Running',activity:'Checking engine-change behavior',meta:'2m 38s · 5 turns · Read',feed:'Custom model clears when engine changes.',plan:[['✓','Inspect model picker','Claude'],['▸','Check engine reset','Claude'],['·','Review keyboard navigation','user']]},
+{id:3,terminalId:1,repo,name:'Terminal file drop',engine:'GLM',status:'Finished',activity:'File paths escape correctly',meta:'6m 04s · 12 turns · Check',feed:'2 files changed · +38 −9',plan:[['✓','Handle dropped paths','GLM'],['✓','Verify escaping','Codex']]}
+].map(a => ({...a,thread:[`${a.engine}: ${a.feed}`],logOpen:false}));
+const active = () => sessions.find(s => s.id === selected);
+const agent = () => agents.find(a => a.id === selectedAgent);
+function node(tag,text='',className='') {const el=document.createElement(tag);el.textContent=text;el.className=className;return el;}
+function button(text,handler,id) {const el=node('button',text);el.type='button';if(id)el.id=id;el.onclick=handler;return el;}
+function announce(text) {$('status').textContent=text;}
+function saveDraft() {if(active())active().draft=$('message').value;}
+function openDialog(id) {const opener=document.activeElement;const dialog=$(id);dialog.addEventListener('close',()=>{if(opener?.isConnected)opener.focus();},{once:true});dialog.showModal();}
+document.querySelectorAll('[data-close]').forEach(el=>el.onclick=()=>$(el.dataset.close).close());
+function selectSession(id,focus=true) {saveDraft();selected=id;renderOutput();renderAgents();document.querySelectorAll('[role=tab]').forEach(tab=>{const chosen=tab.id===`tab-${id}`;tab.setAttribute('aria-selected',String(chosen));tab.tabIndex=chosen?0:-1;});if(focus)$(`tab-${id}`)?.focus();}
+function closeSession(id) {saveDraft();const index=sessions.findIndex(s=>s.id===id);const name=sessions[index].name;sessions.splice(index,1);if(selected===id)selected=sessions[Math.min(index,sessions.length-1)]?.id??null;render();($(`tab-${selected}`)||$('new-terminal')).focus();announce(`${name} closed.`);}
+function renderTabs() {
+  $('tabs').replaceChildren();
+  for(const session of sessions) {
+    const item=node('div','','session-item');item.setAttribute('role','presentation');
+    const tab=button('',()=>selectSession(session.id),`tab-${session.id}`);tab.className='tab';tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(selected===session.id));tab.setAttribute('aria-controls','terminal-panel');tab.tabIndex=selected===session.id?0:-1;
+    tab.append(node('small',session.engine),node('span',session.name));tab.title='Double-click to rename';tab.ondblclick=()=>{selectSession(session.id,false);openRename();};
+    tab.onkeydown=event=>{const i=sessions.indexOf(session);let n;if(event.key==='ArrowRight')n=(i+1)%sessions.length;if(event.key==='ArrowLeft')n=(i+sessions.length-1)%sessions.length;if(event.key==='Home')n=0;if(event.key==='End')n=sessions.length-1;if(n!==undefined){event.preventDefault();selectSession(sessions[n].id);}};
+    const close=button('×',()=>closeSession(session.id));close.className='close-session';close.setAttribute('aria-label',`Close ${session.name}`);item.append(tab,close);$('tabs').append(item);
+  }
+  $('rename-terminal').disabled=!active();
+}
+function renderOutput() {
+  const session=active();$('transcript').replaceChildren();$('term-search').value='';$('find-status').textContent='';findIndex=-1;
+  $('engine-label').textContent=session?.engine??'No session';$('model-label').textContent=session?.model??'';$('repo-label').textContent=session?.repo??'';
+  $('terminal-panel').removeAttribute('aria-labelledby');$('terminal-panel').setAttribute('aria-label','Terminal output');if(session)$('terminal-panel').setAttribute('aria-labelledby',`tab-${session.id}`);
+  $('composer').hidden=!session;$('find-form').hidden=!session;
+  if(!session){$('transcript').append(node('pre','No sessions attached.\n\nCreate a new terminal or resume a previous session.','output'));return;}
+  $('transcript').append(node('pre',`${session.engine} / ${session.model}\n${session.repo}`,'output'));
+  if(!session.output.length)$('transcript').append(node('pre','Terminal ready. Enter a message below.','output'));
+  for(const [kind,text,detail] of session.output){if(kind==='tool'){const d=node('details','','tool');d.append(node('summary',text),node('pre',detail));$('transcript').append(d);}else $('transcript').append(node('pre',text,kind));}
+  for(const text of session.messages)$('transcript').append(node('pre',text));
+  $('message').value=session.draft;$('compose-note').textContent='Simulated session · nothing is executed';$('message').removeAttribute('aria-invalid');
+}
+let findIndex=-1;
+function findNext(event){event?.preventDefault();const root=$('transcript');root.querySelectorAll('mark').forEach(mark=>mark.replaceWith(document.createTextNode(mark.textContent)));root.normalize();const query=$('term-search').value.toLowerCase();if(!query){$('find-status').textContent='Enter text to find.';return;}const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const hits=[];let text;while((text=walker.nextNode())){let from=0,index;while((index=text.textContent.toLowerCase().indexOf(query,from))!==-1){hits.push({text,index});from=index+query.length;}}if(!hits.length){$('find-status').textContent='No matches';return;}findIndex=(findIndex+1)%hits.length;const hit=hits[findIndex];const range=document.createRange();range.setStart(hit.text,hit.index);range.setEnd(hit.text,hit.index+query.length);const mark=node('mark');range.surroundContents(mark);mark.closest('details')?.setAttribute('open','');mark.scrollIntoView({block:'nearest'});$('find-status').textContent=`${findIndex+1} of ${hits.length}`;}
+$('find-form').onsubmit=findNext;$('term-search').oninput=()=>{findIndex=-1;};
+function renderAgents(){
+  const visible=agents.filter(a=>$('agents-scope').value==='all'||(a.terminalId===selected&&a.repo===active()?.repo));
+  if(!visible.some(a=>a.id===selectedAgent))selectedAgent=visible[0]?.id??null;
+  $('agent-list').replaceChildren();
+  for(const [label,running] of [['Running',true],['Recent',false]]){
+    const group=node('div');group.id=running?'agents-running':'agents-recent';group.append(node('h2',label,'group-label'));
+    const list=visible.filter(a=>(a.status==='Running')===running);
+    if(!list.length)group.append(node('p',running?'No running agents in this scope.':'No recent agents in this scope.','group-empty'));
+    for(const a of list){const row=button('',()=>{selectedAgent=a.id;renderAgents();$(`agent-${a.id}`).focus();},`agent-${a.id}`);row.className='agent';row.setAttribute('aria-pressed',String(a.id===selectedAgent));row.setAttribute('aria-controls','agent-detail');const title=node('span','','agent-title');title.append(node('span',a.name),node('small',a.status));row.append(title,node('span',`${a.engine} · ${a.activity}`,'agent-task'),node('span',a.meta,'agent-task'),node('span',a.feed,'agent-task'));group.append(row);}
+    $('agent-list').append(group);
+  }
+  $('agent-detail').replaceChildren();const a=agent();if(!a){$('agent-detail').append(node('p','No agent attached to this terminal.'));return;}
+  $('agent-detail').append(node('h2',a.name),node('p',a.repo));
+  const actions=node('div','','detail-actions');actions.append(button('Talk',()=>{talkingId=a.id;$('talk-title').textContent=`Talk · ${a.name}`;$('talk-message').value='';$('talk-feedback').textContent='';renderThread();openDialog('talk-dialog');},'agent-talk'));
+  actions.append(button(a.logOpen?'Hide log':'Log',()=>{a.logOpen=!a.logOpen;renderAgents();$('agent-log-toggle').focus();},'agent-log-toggle'));
+  if(a.status==='Running')actions.append(button('Stop',()=>{stoppingId=a.id;$('stop-description').textContent=`Stop ${a.name}? This only changes the sample agent.`;openDialog('stop-dialog');},'agent-stop'));
+  $('agent-detail').append(actions);
+  if(a.logOpen)$('agent-detail').append(node('pre',`[Read] ${a.repo}\n[${a.engine}] ${a.activity}\n[Check] ${a.feed}\n[State] ${a.status}`,'agent-log'));
+  const plan=node('details','','plan');plan.append(node('summary','Plan'));const list=node('ol');for(const [glyph,title,owner] of a.plan){const li=node('li',`[${glyph}] ${title} `);li.append(node('span',`· ${owner}`));list.append(li);}plan.append(list);$('agent-detail').append(plan);
+}
+function render(){renderTabs();renderOutput();renderAgents();}
+$('agents-scope').onchange=renderAgents;
+$('agents-toggle').onclick=()=>{const collapsed=$('panes').classList.toggle('collapsed');$('agents-toggle').setAttribute('aria-expanded',String(!collapsed));$('agents-toggle').textContent=collapsed?'Agents ▸':'Agents ▾';};
+$('message').oninput=()=>{saveDraft();$('message').removeAttribute('aria-invalid');$('compose-note').textContent='Simulated session · nothing is executed';};
+$('message').onkeydown=event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();$('composer').requestSubmit();}};
+$('composer').onsubmit=event=>{event.preventDefault();const session=active();if(!session)return;const text=$('message').value.trim();if(!text){$('compose-note').textContent='Enter a message before sending.';$('message').setAttribute('aria-invalid','true');$('message').focus();announce('Enter a message before sending.');return;}session.messages.push(`› ${text}`,`${session.engine}: Sample reply received. No commands executed.`);session.draft='';renderOutput();$('transcript').scrollTop=$('transcript').scrollHeight;$('message').focus();announce('Sample response received.');};
+function resetModels(){const engine=$('session-engine').value;$('session-model').replaceChildren(new Option(`Default (${models[engine][0]})`,'default'),...models[engine].map(m=>new Option(m,m)),new Option('Custom…','custom'));$('custom-label').hidden=true;$('custom-model').value='';}
+$('session-engine').onchange=resetModels;$('session-model').onchange=()=>{$('custom-label').hidden=$('session-model').value!=='custom';};
+$('new-terminal').onclick=()=>{$('new-form').reset();resetModels();$('new-feedback').textContent='';openDialog('new-dialog');$('session-name').focus();};
+$('new-form').onsubmit=event=>{event.preventDefault();const name=$('session-name').value.trim(),path=$('session-repo').value.trim(),engine=$('session-engine').value,choice=$('session-model').value;const model=choice==='default'?models[engine][0]:choice==='custom'?$('custom-model').value.trim():choice;if(!name||!path||!model){$('new-feedback').textContent='Name, repository path and model are required.';return;}saveDraft();const session={id:nextId++,name,engine,model,repo:path,draft:'',messages:[],output:[]};sessions.push(session);selected=session.id;$('new-dialog').close();render();announce(`${name} created.`);};
+function openRename(){if(!active())return;$('rename-name').value=active().name;$('rename-feedback').textContent='';openDialog('rename-dialog');$('rename-name').select();}
+$('rename-terminal').onclick=openRename;
+$('rename-form').onsubmit=event=>{event.preventDefault();const name=$('rename-name').value.trim();if(!name){$('rename-feedback').textContent='Enter a non-empty name.';return;}if(name===active().name){$('rename-feedback').textContent='Name is unchanged.';return;}saveDraft();active().name=name;$('rename-dialog').close();renderTabs();announce('Terminal renamed.');};
+function renderResume(){const filter=$('resume-repo').value.trim().toLowerCase();$('resume-list').replaceChildren();const list=fixtures.filter(s=>s.repo.toLowerCase().includes(filter));if(!list.length)$('resume-list').append(node('p','No historical sessions for this repository.','feedback'));for(const source of list){const row=button('',()=>{saveDraft();const existing=sessions.find(s=>s.historyName===source.name);if(existing)selected=existing.id;else{const s={...source,id:nextId++,historyName:source.name,name:`${source.name} · resumed`,draft:'',messages:[]};sessions.push(s);selected=s.id;}$('resume-dialog').close();render();announce('Historical sample session resumed.');});row.className='resume-row';row.append(node('span',source.name),node('small',`${source.engine} · ${source.model} · ${source.repo}`));$('resume-list').append(row);}}
+$('resume-terminal').onclick=()=>{$('resume-repo').value=active()?.repo??'';renderResume();openDialog('resume-dialog');};$('resume-repo').oninput=renderResume;
+function renderThread(){const a=agents.find(a=>a.id===talkingId);$('talk-thread').textContent=a.thread.join('\n\n');$('talk-thread').scrollTop=$('talk-thread').scrollHeight;}
+$('talk-form').onsubmit=event=>{event.preventDefault();const text=$('talk-message').value.trim();if(!text){$('talk-feedback').textContent='Enter a message before sending.';return;}const a=agents.find(a=>a.id===talkingId);a.thread.push(`You: ${text}`,`${a.engine}: Sample reply — message received.`);$('talk-message').value='';$('talk-feedback').textContent='Sample reply received.';renderThread();};
+$('confirm-stop').onclick=()=>{const a=agents.find(a=>a.id===stoppingId);a.status='Stopped';a.activity='Stopped locally';a.feed='Sample agent stopped by you.';$('stop-dialog').close();renderAgents();announce(`${a.name} stopped and moved to Recent.`);};
+render();
+
+const canvas = $('atmosphere');
+const ctx = canvas.getContext('2d',{alpha:false});
+let width = 0, height = 0, frame = 0, lastTime = 0, phase = 0;
+let paused = reduced.matches;
+const glyphs = ' .,:;+=*#';
+function draw() {
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,width,height);
+  ctx.font = '12px Menlo, monospace'; ctx.textBaseline = 'middle';
+  const stepX = 10, stepY = 13;
+  for(let y = 0; y < height; y += stepY) {
+    for(let x = 0; x < width; x += stepX) {
+      const u = x / width, v = y / height;
+      const center = .99 - .38*u + .12*Math.sin(u*6.4-phase*.38);
+      const distance = (v-center) / (.15 + .05*Math.sin(u*4+phase*.22));
+      if(Math.abs(distance)>1.45) continue;
+      const envelope = Math.pow(Math.max(0,1-Math.abs(distance)/1.45),.7);
+      const fold = Math.sin(distance*13 + u*9 - phase*.65 + 1.7*Math.sin(u*7+phase*.3));
+      const ridge = Math.pow((fold+1)/2,2);
+      const density = envelope*(.16+.84*ridge);
+      if(density<.12) continue;
+      const shade = Math.round(42+density*115);
+      ctx.fillStyle = `rgb(${shade},${shade},${shade+3})`;
+      ctx.fillText(glyphs[Math.min(glyphs.length-1,Math.floor(density*(glyphs.length-1)))],x,y);
+    }
+  }
+}
+function sizeCanvas() {
+  const scale = Math.min(1,1600/innerWidth,1100/innerHeight);
+  width = Math.round(innerWidth*scale); height = Math.round(innerHeight*scale);
+  canvas.width = width; canvas.height = height; draw();
+}
+function tick(now) {
+  frame = 0;
+  if(paused || document.hidden) return;
+  if(!lastTime) lastTime = now;
+  const elapsed = now-lastTime;
+  if(elapsed >= 1000/30) {phase += Math.min(elapsed,100)/1000; lastTime = now; draw();}
+  frame = requestAnimationFrame(tick);
+}
+function syncMotion() {
+  cancelAnimationFrame(frame); frame = 0; lastTime = 0;
+  $('motion-toggle').textContent = paused ? 'Resume motion' : 'Pause motion';
+  if(!paused && !document.hidden) frame = requestAnimationFrame(tick);
+}
+$('motion-toggle').addEventListener('click',() => {paused = !paused; syncMotion(); announce(paused ? 'Background motion paused.' : 'Background motion resumed.');});
+reduced.addEventListener('change',event => {paused = event.matches; if(event.matches) document.getAnimations().forEach(animation => animation.cancel()); syncMotion(); announce(paused ? 'Reduced motion enabled. Background paused.' : 'Reduced motion disabled. Background resumed.');});
+document.addEventListener('visibilitychange',syncMotion);
+window.addEventListener('resize',sizeCanvas);
+sizeCanvas(); syncMotion();
+})();
+</script>
+</body>
+</html>

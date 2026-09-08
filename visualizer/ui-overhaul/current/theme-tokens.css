@@ -1,0 +1,25 @@
+/* Mission Control — LOCKED theme tokens. Use these variables only. */
+:root {
+  /* palette */
+  --mc-bg: #0d0d0f;            /* app background */
+  --mc-bg-raised: #141418;     /* cards, drawers */
+  --mc-border: #2a2a30;        /* default 2px borders */
+  --mc-fg: #d8d8d8;            /* body text */
+  --mc-fg-dim: #7a7a85;        /* secondary text */
+  --mc-green: #33ff66;         /* primary / ok / running */
+  --mc-amber: #ffb000;         /* warning / peak-hours / paused */
+  --mc-red: #ff3b3b;           /* failed / danger */
+  --mc-coral: #d97757;         /* Claude accent (brand) */
+  --mc-cyan: #33ccff;          /* GLM accent */
+  --mc-white: #f5f5f0;         /* Codex accent / highlights */
+
+  /* type */
+  --mc-font-pixel: 'Press Start 2P', monospace;   /* headings, labels, buttons */
+  --mc-font-mono: ui-monospace, 'SF Mono', Menlo, monospace; /* body, logs, data */
+
+  /* shape */
+  --mc-border-w: 2px;
+  --mc-radius: 0;                    /* never round */
+  --mc-shadow: 4px 4px 0 #000;       /* hard offset only, no blur */
+  --mc-space: 8px;                   /* base unit; use multiples */
+}

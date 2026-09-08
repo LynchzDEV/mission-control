@@ -1,0 +1,188 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const htmlPath = path.resolve(__dirname, '../terminal-layout.html');
+const html = fs.readFileSync(htmlPath, 'utf8');
+const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)];
+assert.equal(scripts.length, 1);
+assert(!/<script\b[^>]*\bsrc\s*=/i.test(html), 'No external scripts');
+new vm.Script(scripts[0][1], { filename: htmlPath });
+console.log('PASS standalone script syntax and no external scripts');
+if (process.argv.includes('--syntax-only')) process.exit(0);
+const { chromium } = require('/Users/lynchz/.npm/_npx/9833c18b2d85bc59/node_modules/playwright');
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+(async () => {
+  const browser = await chromium.connectOverCDP(process.env.CDP_URL || 'http://127.0.0.1:9222', { noDefaults: true });
+  const pages = browser.contexts().flatMap(context => context.pages()).filter(page => {
+    const url = new URL(page.url());
+    return url.hostname === '127.0.0.1' && url.port === '47831' && url.pathname.endsWith('/terminal-layout.html');
+  });
+  assert.equal(pages.length, 1, 'Parent must open exactly one terminal-layout.html page');
+  const page = pages[0];
+  const originalViewport = page.viewportSize();
+  const errors = [];
+  const onError = error => errors.push(error.message);
+  page.on('pageerror', onError);
+  const visible = async selector => assert(await page.locator(selector).isVisible(), selector + ' visible');
+  const click = selector => page.locator(selector).click();
+  const paneBox = index => page.locator('.pane').nth(index).boundingBox();
+  const ratio = () => page.locator('#divider').getAttribute('aria-valuenow').then(Number);
+  const session = id => click(`#sessions [data-session="${id}"]`);
+  try {
+    await page.setViewportSize({ width: 1512, height: 909 });
+    await page.reload();
+    await visible('#divider');
+    let first = await paneBox(0), second = await paneBox(1);
+    assert(second.x > first.x + first.width && Math.abs(first.y - second.y) < 2, 'Side-by-side split');
+    assert(Math.abs(first.width - second.width) < 3, 'Equal initial panes');
+    assert(!(await page.locator('#chat').isVisible()), 'Chat is closed by default');
+    await click('#chat-toggle');
+    await visible('#chat');
+    const beforeChat = (await paneBox(0)).width;
+    await click('#chat-toggle');
+    assert((await paneBox(0)).width > beforeChat + 100, 'Closing chat returns width');
+    await click('#chat-toggle');
+    await page.locator('#divider').focus();
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await ratio(), 55);
+    const divider = await page.locator('#divider').boundingBox();
+    await page.mouse.move(divider.x + divider.width / 2, divider.y + divider.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(divider.x + 60, divider.y + divider.height / 2);
+    await page.mouse.up();
+    assert(await ratio() > 55, 'Pointer resize');
+    const savedRatio = await ratio();
+    await page.locator('.pane').nth(1).locator('.focus').click();
+    assert.equal(await page.locator('.pane').count(), 1);
+    assert.equal(await page.locator('.pane').getAttribute('data-session'), 'review');
+    await click('.focus');
+    assert.equal(await ratio(), savedRatio, 'Focus restores exact ratio');
+    await click('#vertical');
+    first = await paneBox(0); second = await paneBox(1);
+    assert(second.y > first.y + first.height && Math.abs(first.x - second.x) < 2, 'Stacked split');
+    for (const edge of ['Home', 'End']) {
+      await page.locator('#divider').focus();
+      await page.keyboard.press(edge);
+      const contained = await page.locator('.pane').evaluateAll(panes => panes.every(pane => {
+        const bounds = pane.getBoundingClientRect();
+        const input = pane.querySelector('input').getBoundingClientRect();
+        return input.bottom <= bounds.bottom && input.top >= bounds.top && pane.querySelector('.terminal-content').clientHeight >= 40;
+      }));
+      assert(contained, `Stacked ${edge} keeps input and output visible`);
+    }
+    await page.locator('#divider').focus();
+    await page.keyboard.press('ArrowUp');
+    const stackedRatio = await ratio();
+    await page.locator('.pane').first().locator('.focus').click();
+    await click('.focus');
+    assert.equal(await ratio(), stackedRatio);
+    assert(await page.locator('#panes').evaluate(node => node.classList.contains('stacked')));
+    await click('#horizontal');
+    await session('layout');
+    await page.locator('#chat-draft').fill('Layout draft');
+    await page.locator('#command-0').fill('layout command draft');
+    await page.locator('#sessions [data-session="review"]').focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.session), 'review', 'Keyboard session switch retains focus');
+    assert.equal(await page.locator('#chat-draft').inputValue(), '');
+    await page.locator('#chat-draft').fill('Review draft');
+    await session('layout');
+    assert.equal(await page.locator('#chat-draft').inputValue(), 'Layout draft');
+    assert.equal(await page.locator('#command-0').inputValue(), 'layout command draft');
+    await page.locator('#chat-draft').fill('   ');
+    await click('.composer button');
+    assert.match(await page.locator('#chat-feedback').innerText(), /Write a message/);
+    assert.equal(await page.locator('.message.user').count(), 0);
+    await page.locator('#chat-draft').fill('Keep the split');
+    await click('.composer button');
+    assert.equal(await page.locator('.message.user').innerText(), 'You\nKeep the split');
+    assert.match(await page.locator('.messages').innerText(), /no agent was contacted/);
+    await click('summary');
+    await visible('details pre');
+    await page.locator('#command-0').fill('pwd');
+    await page.locator('#command-0').press('Enter');
+    assert.match(await page.locator('.pane.active .output').innerText(), /\$ pwd/);
+    await page.locator('#command-0').fill('preserved command');
+    await session('shell');
+    await visible('.pane.active .empty');
+    assert.match(await page.locator('#chat').innerText(), /No associated agent/);
+    assert.equal(await page.locator('#chat-draft').count(), 0);
+    await session('layout');
+    assert.match(await page.locator('.pane.active .output').innerText(), /\$ pwd/);
+    assert.equal(await page.locator('.pane.active input').inputValue(), 'preserved command');
+    await session('review');
+    await click('#split-close');
+    assert.equal(await page.locator('.pane').count(), 1);
+    await visible('#sessions [data-session="layout"]');
+    await session('layout');
+    assert.match(await page.locator('.output').innerText(), /\$ pwd/);
+    await session('review');
+    assert.equal(await page.locator('#chat-draft').inputValue(), 'Review draft');
+    await click('#split-close');
+    for (const title of ['Main', 'Usage', 'Settings']) {
+      await click(`[data-sheet="${title}"]`);
+      await visible('#sheet');
+      if (title === 'Main') assert.equal(await page.locator('#sheet li').count(), 4);
+      if (title === 'Usage') assert.match(await page.locator('#sheet').innerText(), /Combined total: unavailable/);
+      if (title === 'Settings') {
+        assert.equal(await page.locator('#sheet select').count(), 3);
+        await page.locator('#role-Plan').selectOption({ label: 'Codex / gpt-6-astra' });
+        await click('#settings-motion');
+        assert.equal(await page.locator('body').getAttribute('data-motion'), 'paused');
+        await click('#settings-motion');
+      }
+      await page.keyboard.press('Escape');
+      assert(!(await page.locator('#sheet').isVisible()));
+      assert.equal(await page.evaluate(() => document.activeElement.dataset.sheet), title, 'Sheet returns focus');
+    }
+    await click('[data-sheet="Main"]');
+    await click('#sheet-close');
+    assert(!(await page.locator('#sheet').isVisible()));
+    await click('#new-terminal');
+    await page.locator('#terminal-name').fill('Layout notes');
+    await click('.new-form button');
+    assert.match(await page.locator('.pane.active header').innerText(), /Layout notes/);
+    await visible('.pane.active .empty');
+    assert.equal(await page.locator('#sessions [data-session]').count(), 4);
+    await click('#motion-toggle');
+    assert.equal(await page.locator('body').getAttribute('data-motion'), 'paused');
+    const still = await page.locator('canvas').evaluate(node => node.toDataURL());
+    await delay(120);
+    assert.equal(await page.locator('canvas').evaluate(node => node.toDataURL()), still, 'Paused wave stays still');
+    await click('#motion-toggle');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.waitForFunction(() => document.body.dataset.motion === 'paused', null, { polling: 100 });
+    assert.equal(await page.locator('body').getAttribute('data-motion'), 'paused');
+    assert(await page.locator('#motion-toggle').isDisabled());
+    const reducedFrame = await page.locator('canvas').evaluate(node => node.toDataURL());
+    await page.locator('.pane.active .focus').click();
+    assert.equal(await page.evaluate(() => document.getAnimations().length), 0, 'No focus animation under reduced motion');
+    await delay(120);
+    assert.equal(await page.locator('canvas').evaluate(node => node.toDataURL()), reducedFrame);
+    await click('.focus');
+    for (const width of [320, 375, 414, 768, 1000]) {
+      await page.setViewportSize({ width, height: 909 });
+      const dimensions = await page.evaluate(() => ({ viewport: innerWidth, root: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
+      assert(dimensions.root <= dimensions.viewport && dimensions.body <= dimensions.viewport, `No overflow at ${width}px`);
+      await visible('#chat-toggle');
+      await visible('.pane.active input');
+      await click('[data-sheet="Settings"]');
+      const sheet = await page.locator('#sheet').boundingBox();
+      assert(sheet.x >= 0 && sheet.x + sheet.width <= width, `Sheet fits ${width}px`);
+      await page.keyboard.press('Escape');
+    }
+    assert.deepEqual(errors, [], 'No page errors');
+    console.log('PASS split, focus/restore, resize, sessions, drafts, sends, empty/no-agent states, sheets, motion, responsive overflow');
+  } finally {
+    page.off('pageerror', onError);
+    await page.emulateMedia({ reducedMotion: null });
+    if (originalViewport) await page.setViewportSize(originalViewport);
+    else {
+      const cdp = await page.context().newCDPSession(page);
+      try { await cdp.send('Emulation.clearDeviceMetricsOverride'); } finally { await cdp.detach(); }
+    }
+    await page.reload();
+    await browser.close();
+  }
+})().then(() => process.exit(0), error => { console.error(error); process.exit(1); });

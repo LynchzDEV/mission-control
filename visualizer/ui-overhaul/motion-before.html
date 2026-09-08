@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Mission Control — Motion study</title>
+<style>
+:root{color-scheme:dark;--fg:#ededed;--muted:#a0a0a0;--rule:#2b2b2e;--panel:#101012;--accent:#f26a3d;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--fg);background:#000}
+*{box-sizing:border-box}body{margin:0;min-height:100svh}button,input,textarea,select{font:inherit}button{cursor:pointer;color:inherit;background:none;border:0}button,input,textarea,select,summary{outline-offset:5px} :focus-visible{outline:2px solid var(--accent)}button:hover{background:#ffffff09}button:disabled{cursor:default}h1,h2,p{margin:0}h1,h2{font-size:14px;font-weight:500}small,.meta{font-size:12px;color:var(--muted)}#atmosphere{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:-1}.stage{padding:clamp(32px,8vh,90px) 7vw 180px;max-width:1600px;margin:auto}.workspace{width:100%;max-width:1120px;border:1px solid var(--rule);background:var(--panel)}.topbar{min-height:58px;display:flex;align-items:center;gap:26px;padding:12px 22px;border-bottom:1px solid var(--rule)}.brand{font-weight:600;letter-spacing:-.25px;white-space:nowrap}.brand-mark{display:inline-block;width:7px;height:7px;background:var(--accent);margin-right:10px}.topbar h1{color:var(--muted);border-left:1px solid var(--rule);padding-left:26px}.disclosure{margin-left:auto;white-space:nowrap}.sessionbar{display:flex;min-width:0;border-bottom:1px solid var(--rule);min-height:49px}.tabs{display:flex;flex:1;min-width:0;overflow-x:auto;scrollbar-width:thin}.tab{position:relative;flex:none;padding:14px 22px;color:var(--muted);border-right:1px solid var(--rule);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color 180ms,background 180ms}.tab[aria-selected=true]{color:var(--fg);background:#19191c}.tab[aria-selected=true]:after{content:"";position:absolute;bottom:0;left:22px;right:22px;height:2px;background:var(--accent)}.new{padding:10px 18px;white-space:nowrap;border-left:1px solid var(--rule);font-size:12px}.panes{display:grid;grid-template-columns:minmax(0,1fr) 260px;min-height:465px}.terminal{display:flex;flex-direction:column;min-width:0}.terminal-head{display:flex;align-items:center;justify-content:space-between;padding:17px 24px;gap:12px;font-size:12px;color:var(--muted)}.terminal-head .path{font-family:Menlo,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.transcript{padding:13px 28px 32px;min-height:296px;max-height:48vh;overflow:auto;flex:1;font:14px/1.8 Menlo,Consolas,monospace;overflow-wrap:anywhere}.message{margin-bottom:24px;display:grid;grid-template-columns:18px minmax(0,1fr);gap:12px}.prompt{color:var(--accent)}.response-mark{color:var(--muted)}.speaker{display:block;color:var(--muted);font:12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin-bottom:6px}.tool{margin:0 0 24px 30px;color:var(--muted);font-size:12px}.tool summary{cursor:pointer;width:fit-content;padding:4px 0}.tool p{padding:10px 0;color:var(--fg)}.empty{padding-top:28px}.empty p{color:var(--muted);margin-top:8px;max-width:330px}.composer{margin:0 22px 18px;border-top:1px solid var(--rule);padding-top:15px}.compose-line{display:flex;align-items:center;gap:12px}.compose-line>span{color:var(--accent);font-family:Menlo,monospace}.compose-line textarea{resize:vertical;min-height:42px;max-height:130px;height:42px;width:100%;min-width:0;background:transparent;border:0;color:var(--fg);padding:10px 0;font:14px/1.5 Menlo,Consolas,monospace}.compose-line textarea::placeholder{color:var(--muted)}.send{border:1px solid #444448;padding:6px 12px;border-radius:4px}.compose-note{font-size:12px;color:var(--muted);margin:7px 0 0 22px;min-height:18px}.compose-note.error{color:var(--accent)}.agents{border-left:1px solid var(--rule);display:flex;flex-direction:column}.agents-heading{padding:18px 20px;display:flex;align-items:center;justify-content:space-between}.agent{display:block;width:100%;text-align:left;padding:16px 20px;border-left:2px solid transparent}.agent[aria-pressed=true]{background:#19191c;border-left-color:var(--accent)}.agent-title{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:5px}.agent-task{display:block;color:var(--muted);font-size:12px}.agent-status{font-size:12px;color:var(--muted)}.detail{margin-top:auto;padding:21px 20px 24px;border-top:1px solid var(--rule)}.detail p{margin-top:7px;color:var(--muted);font-size:12px}.detail dl{margin:18px 0 0;font-size:12px;display:grid;grid-template-columns:1fr 1fr;gap:9px}.detail dt{color:var(--muted)}.detail dd{margin:0;text-align:right}.ambient-footer{max-width:1120px;display:flex;justify-content:space-between;align-items:center;padding:17px 0;gap:20px;color:var(--muted);font-size:12px}.motion-toggle{font-size:12px;padding:7px 10px;border:1px solid var(--rule);background:#090909;border-radius:4px;white-space:nowrap}.motion-symbol{display:inline-block;margin-right:8px;width:10px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}dialog{width:min(420px,calc(100% - 32px));padding:26px;background:#151517;color:var(--fg);border:1px solid #444448;border-radius:6px}dialog::backdrop{background:#000b}dialog h2{font-size:18px;margin-bottom:22px}dialog label{display:block;margin-top:16px;color:var(--muted);font-size:12px}dialog input,dialog select{display:block;width:100%;margin-top:7px;background:#0c0c0e;color:var(--fg);border:1px solid #444448;border-radius:3px;padding:10px;font-size:14px}.dialog-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.dialog-actions button{padding:8px 13px;border:1px solid var(--rule);border-radius:4px}.dialog-actions .create{background:var(--fg);color:#101012}#dialog-note{margin-top:18px;font-size:12px;color:var(--muted)}
+@media(min-width:1400px){.stage{padding-top:11vh}.panes{min-height:500px}}
+@media(max-width:999px){.stage{padding:32px 24px 150px}.panes{grid-template-columns:minmax(0,1fr) 230px}.topbar{gap:18px}.topbar h1{padding-left:18px}.tab{padding-inline:16px}}
+@media(max-width:700px){.stage{padding:24px 14px 140px}.topbar{padding:14px;gap:12px;flex-wrap:wrap}.topbar h1{padding-left:12px}.disclosure{flex-basis:100%;margin-left:17px}.sessionbar{flex-wrap:wrap}.tabs{flex-basis:100%}.tab{flex:1;max-width:none;font-size:14px}.new{width:100%;text-align:left;border:0;border-top:1px solid var(--rule);padding:10px 16px}.panes{grid-template-columns:minmax(0,1fr)}.terminal-head{padding:16px}.transcript{padding:12px 16px 24px;min-height:270px;max-height:420px}.message{gap:8px}.composer{margin-inline:16px}.agents{border-left:0;border-top:1px solid var(--rule)}.agents-heading{padding:14px 16px}.agent{padding:12px 16px}.detail{padding:16px}.detail dl{max-width:300px}.ambient-footer{align-items:flex-start;gap:10px}.ambient-footer>span{max-width:150px}.tool{margin-left:26px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<canvas id="atmosphere" aria-hidden="true"></canvas>
+<div class="stage">
+<main class="workspace" aria-label="Sample terminal workspace">
+<header class="topbar"><span class="brand"><span class="brand-mark" aria-hidden="true"></span>Mission Control</span><h1>Terminals</h1><span class="disclosure meta">Sample preview</span></header>
+<div class="sessionbar"><div class="tabs" role="tablist" aria-label="Terminal sessions" id="tabs"></div><button class="new" id="new-terminal" type="button">+ New terminal</button></div>
+<div class="panes">
+<section class="terminal" id="terminal-panel" role="tabpanel" tabindex="0"><div class="terminal-head"><span class="path">~/mission-control</span><span id="engine-label"></span></div><div id="transcript" class="transcript"></div>
+<form class="composer" id="composer" novalidate><div class="compose-line"><span aria-hidden="true">›</span><label for="message" class="sr-only">Message to selected sample terminal</label><textarea id="message" rows="1" placeholder="Send a message…" aria-describedby="compose-note"></textarea><button class="send" type="submit">Send</button></div><p class="compose-note" id="compose-note">Simulated session · nothing is executed</p></form>
+</section>
+<aside class="agents" aria-label="Sample agents"><div class="agents-heading"><h2>Agents</h2><span class="meta">2 sample</span></div><div id="agent-list"></div><section class="detail" id="agent-detail" aria-label="Selected agent detail"></section></aside>
+</div>
+</main>
+<footer class="ambient-footer"><span>Motion study <span aria-hidden="true">/</span> Terminals</span><button class="motion-toggle" id="motion-toggle" type="button">Pause motion</button></footer>
+</div>
+<dialog id="new-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-note"><form id="new-form"><h2 id="dialog-title">New terminal</h2><label for="session-name">Name<input id="session-name" name="name" maxlength="48" required placeholder="e.g. Navigation polish" autocomplete="off"></label><label for="session-engine">Engine<select id="session-engine" name="engine"><option>Claude</option><option>GLM</option><option selected>Codex</option></select></label><p id="dialog-note">Creates a sample session for this preview.</p><div class="dialog-actions"><button type="button" id="cancel-dialog">Cancel</button><button type="submit" class="create">Create terminal</button></div></form></dialog>
+<div id="status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+const sessions = [
+{id:1,name:'UI overhaul',engine:'Codex',draft:'',messages:[{kind:'request',text:'Keep session tabs visible when the Agents panel opens.'},{kind:'response',text:'The tabs stay in place. Agent details open alongside the terminal.'}],tool:'Inspect terminal layout',result:'Sample result · server/views/terminals.tsx. No files were accessed.'},
+{id:2,name:'Model lists',engine:'Claude',draft:'',messages:[{kind:'request',text:'Keep the model picker current.'},{kind:'response',text:'The available models are ready for review.'}],tool:'Inspect model list',result:'Sample result · Claude, GLM, Codex. No service was contacted.'}
+];
+const agents = [{name:'Codex',task:'UI overhaul',status:'Working',detail:'Composing the terminal workspace.',engine:'Codex',session:'UI overhaul'},{name:'Claude',task:'Model lists',status:'Ready',detail:'Model picker changes are ready to review.',engine:'Claude',session:'Model lists'}];
+let selected = 1;
+let selectedAgent = 0;
+const active = () => sessions.find(session => session.id === selected);
+const announce = text => { $('status').textContent = text; };
+function transition(element) {
+  element.getAnimations().forEach(animation => animation.cancel());
+  if (!reduced.matches) element.animate([{opacity:.35,transform:'translateY(3px)'},{opacity:1,transform:'translateY(0)'}],{duration:190,easing:'ease-out'});
+}
+function renderTabs() {
+  $('tabs').replaceChildren(...sessions.map(session => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'tab'; button.id = `tab-${session.id}`;
+    button.role = 'tab'; button.textContent = session.name;
+    button.setAttribute('aria-selected', String(session.id === selected));
+    button.setAttribute('aria-controls','terminal-panel'); button.tabIndex = session.id === selected ? 0 : -1;
+    button.addEventListener('click', () => selectSession(session.id));
+    button.addEventListener('keydown', event => {
+      const index = sessions.findIndex(item => item.id === session.id);
+      let next;
+      if(event.key === 'ArrowRight') next = (index + 1) % sessions.length;
+      if(event.key === 'ArrowLeft') next = (index - 1 + sessions.length) % sessions.length;
+      if(event.key === 'Home') next = 0;
+      if(event.key === 'End') next = sessions.length - 1;
+      if(next !== undefined) {event.preventDefault(); selectSession(sessions[next].id);}
+    });
+    return button;
+  }));
+}
+function renderConversation() {
+  const session = active();
+  $('terminal-panel').setAttribute('aria-labelledby',`tab-${selected}`);
+  $('engine-label').textContent = session.engine;
+  $('transcript').replaceChildren();
+  if (!session.messages.length) {
+    const empty = document.createElement('div'); empty.className = 'empty';
+    const title = document.createElement('p'); title.textContent = 'Your terminal is ready.'; title.style.color = 'var(--fg)';
+    const hint = document.createElement('p'); hint.textContent = 'Send a message below to try a simulated conversation.';
+    empty.append(title,hint); $('transcript').append(empty);
+  }
+  session.messages.forEach(message => {
+    const row = document.createElement('div'); row.className = 'message';
+    const mark = document.createElement('span'); mark.className = message.kind === 'request' ? 'prompt' : 'response-mark'; mark.textContent = message.kind === 'request' ? '›' : '↳'; mark.setAttribute('aria-hidden','true');
+    const content = document.createElement('div');
+    const speaker = document.createElement('span'); speaker.className = 'speaker'; speaker.textContent = message.kind === 'request' ? 'You' : `${session.engine} · simulated`;
+    const text = document.createElement('p'); text.textContent = message.text;
+    content.append(speaker,text); row.append(mark,content); $('transcript').append(row);
+  });
+  if(session.tool) {
+    const detail = document.createElement('details'); detail.className = 'tool'; detail.open = Boolean(session.toolOpen);
+    const summary = document.createElement('summary'); summary.textContent = session.tool;
+    const result = document.createElement('p'); result.textContent = session.result;
+    detail.append(summary,result); detail.addEventListener('toggle',() => {session.toolOpen = detail.open;}); $('transcript').append(detail);
+  }
+  $('message').value = session.draft;
+  $('compose-note').textContent = 'Simulated session · nothing is executed'; $('compose-note').classList.remove('error'); $('message').removeAttribute('aria-invalid');
+}
+function selectSession(id) {
+  active().draft = $('message').value; selected = id; renderTabs(); renderConversation();
+  $(`tab-${id}`).focus(); transition($('transcript')); announce(`${active().name} selected.`);
+}
+function renderAgents() {
+  $('agent-list').replaceChildren(...agents.map((agent,index) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'agent'; button.setAttribute('aria-pressed',String(index === selectedAgent)); button.setAttribute('aria-controls','agent-detail');
+    const title = document.createElement('span'); title.className = 'agent-title';
+    const name = document.createElement('span'); name.textContent = agent.name;
+    const status = document.createElement('span'); status.className = 'agent-status'; status.textContent = agent.status;
+    const task = document.createElement('span'); task.className = 'agent-task'; task.textContent = agent.task;
+    title.append(name,status); button.append(title,task);
+    button.addEventListener('click',() => {selectedAgent = index; renderAgents(); $('agent-list').children[index].focus(); transition($('agent-detail')); announce(`${agent.name} selected. ${agent.status}.`);});
+    return button;
+  }));
+  const agent = agents[selectedAgent];
+  $('agent-detail').replaceChildren();
+  const heading = document.createElement('h2'); heading.textContent = agent.name;
+  const description = document.createElement('p'); description.textContent = agent.detail;
+  const list = document.createElement('dl');
+  for(const [key,value] of [['Session',agent.session],['Engine',agent.engine]]) {const term = document.createElement('dt'); term.textContent = key; const definition = document.createElement('dd'); definition.textContent = value; list.append(term,definition);}
+  $('agent-detail').append(heading,description,list);
+}
+$('message').addEventListener('input',() => {active().draft = $('message').value; $('message').removeAttribute('aria-invalid'); $('compose-note').classList.remove('error'); $('compose-note').textContent = 'Simulated session · nothing is executed';});
+$('composer').addEventListener('submit',event => {
+  event.preventDefault(); const text = $('message').value.trim();
+  if(!text) {$('compose-note').textContent = 'Enter a message before sending.'; $('compose-note').classList.add('error'); $('message').setAttribute('aria-invalid','true'); $('message').focus(); announce('Enter a message before sending.'); return;}
+  const session = active(); session.messages.push({kind:'request',text},{kind:'response',text:'Message received. This is a simulated reply; no actions were run.'}); session.draft = '';
+  renderConversation(); $('transcript').scrollTop = $('transcript').scrollHeight; $('message').focus(); announce('Sample message sent. Simulated response received.');
+});
+$('new-terminal').addEventListener('click',() => {$('new-form').reset(); $('new-dialog').showModal(); $('session-name').focus();});
+$('cancel-dialog').addEventListener('click',() => $('new-dialog').close());
+$('new-dialog').addEventListener('close',() => $('new-terminal').focus());
+$('session-name').addEventListener('input',() => $('session-name').setCustomValidity(''));
+$('new-form').addEventListener('submit',event => {
+  event.preventDefault(); const name = $('session-name').value.trim();
+  if(!name) {$('session-name').setCustomValidity('Enter a terminal name.'); $('session-name').reportValidity(); return;}
+  active().draft = $('message').value;
+  const session = {id:sessions.length+1,name,engine:$('session-engine').value,draft:'',messages:[]}; sessions.push(session); selected = session.id;
+  $('new-dialog').close(); renderTabs(); renderConversation(); transition($('transcript')); announce(`${name} sample terminal created.`);
+});
+renderTabs(); renderConversation(); renderAgents();
+const canvas = $('atmosphere');
+const ctx = canvas.getContext('2d',{alpha:false});
+let width = 0, height = 0, frame = 0, lastTime = 0, phase = 0;
+let paused = reduced.matches;
+const glyphs = ' .,:;+=*#';
+function draw() {
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,width,height);
+  ctx.font = '12px Menlo, monospace'; ctx.textBaseline = 'middle';
+  const stepX = 10, stepY = 13;
+  for(let y = 0; y < height; y += stepY) {
+    for(let x = 0; x < width; x += stepX) {
+      const u = x / width, v = y / height;
+      const center = .99 - .38*u + .12*Math.sin(u*6.4-phase*.38);
+      const distance = (v-center) / (.15 + .05*Math.sin(u*4+phase*.22));
+      if(Math.abs(distance)>1.45) continue;
+      const envelope = Math.pow(Math.max(0,1-Math.abs(distance)/1.45),.7);
+      const fold = Math.sin(distance*13 + u*9 - phase*.65 + 1.7*Math.sin(u*7+phase*.3));
+      const ridge = Math.pow((fold+1)/2,2);
+      const density = envelope*(.16+.84*ridge);
+      if(density<.12) continue;
+      const shade = Math.round(42+density*115);
+      ctx.fillStyle = `rgb(${shade},${shade},${shade+3})`;
+      ctx.fillText(glyphs[Math.min(glyphs.length-1,Math.floor(density*(glyphs.length-1)))],x,y);
+    }
+  }
+}
+function sizeCanvas() {
+  const scale = Math.min(1,1600/innerWidth,1100/innerHeight);
+  width = Math.round(innerWidth*scale); height = Math.round(innerHeight*scale);
+  canvas.width = width; canvas.height = height; draw();
+}
+function tick(now) {
+  frame = 0;
+  if(paused || document.hidden) return;
+  if(!lastTime) lastTime = now;
+  const elapsed = now-lastTime;
+  if(elapsed >= 1000/30) {phase += Math.min(elapsed,100)/1000; lastTime = now; draw();}
+  frame = requestAnimationFrame(tick);
+}
+function syncMotion() {
+  cancelAnimationFrame(frame); frame = 0; lastTime = 0;
+  $('motion-toggle').textContent = paused ? 'Resume motion' : 'Pause motion';
+  if(!paused && !document.hidden) frame = requestAnimationFrame(tick);
+}
+$('motion-toggle').addEventListener('click',() => {paused = !paused; syncMotion(); announce(paused ? 'Background motion paused.' : 'Background motion resumed.');});
+reduced.addEventListener('change',event => {paused = event.matches; if(event.matches) document.getAnimations().forEach(animation => animation.cancel()); syncMotion(); announce(paused ? 'Reduced motion enabled. Background paused.' : 'Reduced motion disabled. Background resumed.');});
+document.addEventListener('visibilitychange',syncMotion);
+window.addEventListener('resize',sizeCanvas);
+sizeCanvas(); syncMotion();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,728 @@
+{
+  "cases": 90,
+  "errors": [],
+  "unexpectedRequests": [],
+  "overflow": [],
+  "results": [
+    {
+      "variant": "a",
+      "page": "lanes",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "lanes",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "lanes",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "lanes",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "lanes",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "lanes",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "dispatch",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "dispatch",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "dispatch",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "dispatch",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "dispatch",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "dispatch",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "terminals",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "terminals",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "terminals",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "terminals",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "terminals",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "terminals",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "review",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "review",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "review",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "review",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "review",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "review",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "settings",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "settings",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "settings",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "settings",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "settings",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "a",
+      "page": "settings",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "lanes",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "lanes",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "lanes",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "lanes",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "lanes",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "lanes",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "dispatch",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "dispatch",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "dispatch",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "dispatch",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "dispatch",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "dispatch",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "terminals",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "terminals",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "terminals",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "terminals",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "terminals",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "terminals",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "review",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "review",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "review",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "review",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "review",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "review",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "settings",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "settings",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "settings",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "settings",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "settings",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "b",
+      "page": "settings",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "lanes",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "lanes",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "lanes",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "lanes",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "lanes",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "lanes",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "dispatch",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "dispatch",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "dispatch",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "dispatch",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "dispatch",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "dispatch",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "terminals",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "terminals",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "terminals",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "terminals",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "terminals",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "terminals",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "review",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "review",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "review",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "review",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "review",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "review",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "settings",
+      "width": 320,
+      "documentWidth": 320,
+      "viewport": 320,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "settings",
+      "width": 375,
+      "documentWidth": 375,
+      "viewport": 375,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "settings",
+      "width": 414,
+      "documentWidth": 414,
+      "viewport": 414,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "settings",
+      "width": 768,
+      "documentWidth": 768,
+      "viewport": 768,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "settings",
+      "width": 1280,
+      "documentWidth": 1280,
+      "viewport": 1280,
+      "clipped": []
+    },
+    {
+      "variant": "c",
+      "page": "settings",
+      "width": 1440,
+      "documentWidth": 1440,
+      "viewport": 1440,
+      "clipped": []
+    }
+  ]
+}

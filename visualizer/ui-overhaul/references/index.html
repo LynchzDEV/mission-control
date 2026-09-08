@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>References</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #f7f7f5;
+        color: #111;
+        font-family: system-ui, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      main { max-width: 1600px; margin: 0 auto; padding: 24px; }
+      h1 { margin: 0; font-size: 22px; font-weight: 600; }
+      header p { margin: 4px 0 24px; }
+      .references { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+      figure { min-width: 0; margin: 0; border-top: 1px solid #d5d5d0; padding-top: 16px; }
+      .image-link { display: block; height: clamp(180px, 26vw, 360px); }
+      img { display: block; width: 100%; height: 100%; object-fit: contain; }
+      figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 12px; }
+      .number { font-variant-numeric: tabular-nums; }
+      strong { font-weight: 600; }
+      a { color: inherit; text-underline-offset: 3px; }
+      .source { margin-left: auto; font-size: 12px; }
+      a:focus-visible { outline: 2px solid #111; outline-offset: 4px; }
+      @media (max-width: 699px) {
+        .references { grid-template-columns: minmax(0, 1fr); }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>References</h1>
+        <p>Actual product screens. Click an image to enlarge.</p>
+      </header>
+      <div class="references">
+        <figure>
+          <a class="image-link" href="./ghostty.png" target="_blank" rel="noopener">
+            <img src="./ghostty.png" alt="Ghostty terminal product screenshot">
+          </a>
+          <figcaption>
+            <span class="number">01</span><strong>Ghostty</strong><span>Tabs and splits.</span>
+            <a class="source" href="https://mitchellh.com/writing/ghostty-is-coming" target="_blank" rel="noopener">Source</a>
+          </figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="./zed.png" target="_blank" rel="noopener">
+            <img src="./zed.png" alt="Zed code editor workspace product screenshot">
+          </a>
+          <figcaption>
+            <span class="number">02</span><strong>Zed</strong><span>One workspace.</span>
+            <a class="source" href="https://zed.dev/agentic" target="_blank" rel="noopener">Source</a>
+          </figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="./raycast.png" target="_blank" rel="noopener">
+            <img src="./raycast.png" alt="Raycast search and actions product screenshot">
+          </a>
+          <figcaption>
+            <span class="number">03</span><strong>Raycast</strong><span>Search and act.</span>
+            <a class="source" href="https://manual.raycast.com" target="_blank" rel="noopener">Source</a>
+          </figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="./fork.png" target="_blank" rel="noopener">
+            <img src="./fork.png" alt="Fork Git client review product screenshot">
+          </a>
+          <figcaption>
+            <span class="number">04</span><strong>Fork</strong><span>Review at a glance.</span>
+            <a class="source" href="https://git-fork.com/" target="_blank" rel="noopener">Source</a>
+          </figcaption>
+        </figure>
+      </div>
+    </main>
+  </body>
+</html>

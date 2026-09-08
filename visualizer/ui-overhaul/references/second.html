@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>More references</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: #f7f7f5;
+        color: #111;
+        font-family: system-ui, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      main { max-width: 1600px; margin: 0 auto; padding: 24px; }
+      h1 { margin: 0; font-size: 22px; font-weight: 600; }
+      header p { margin: 4px 0 24px; }
+      .references { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+      figure { min-width: 0; margin: 0; border-top: 1px solid #d5d5d0; padding-top: 16px; }
+      .image-link { display: block; height: clamp(180px, 30vh, 320px); }
+      img { display: block; width: 100%; height: 100%; object-fit: contain; }
+      figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 12px; }
+      .number { font-variant-numeric: tabular-nums; }
+      strong { font-weight: 600; }
+      a { color: inherit; text-underline-offset: 3px; }
+      .source { margin-left: auto; font-size: 12px; }
+      a:focus-visible { outline: 2px solid #111; outline-offset: 4px; }
+      @media (max-width: 699px) {
+        .references { grid-template-columns: minmax(0, 1fr); }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>More references</h1>
+        <p>Shared panes, fewer controls. Click an image to enlarge. <small><a href="./index.html">Earlier set</a></small></p>
+      </header>
+      <div class="references">
+        <figure>
+          <a class="image-link" href="./httpie.png" target="_blank" rel="noopener">
+            <img src="./httpie.png" alt="HTTPie empty workspace with request and response panes.">
+          </a>
+          <figcaption>
+            <span class="number">05</span><strong>HTTPie</strong><span>Empty workspace.</span>
+            <a class="source" href="https://httpie.io/app" target="_blank" rel="noopener">Source</a>
+          </figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="./marta.png" target="_blank" rel="noopener">
+            <img src="./marta.png" alt="Marta file manager showing two panes and a command bar.">
+          </a>
+          <figcaption>
+            <span class="number">06</span><strong>Marta</strong><span>Two panes, few controls.</span>
+            <a class="source" href="https://marta.sh/" target="_blank" rel="noopener">Source</a>
+          </figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="./transmit.png" target="_blank" rel="noopener">
+            <img src="./transmit.png" alt="Transmit with a file list beside a connection form.">
+          </a>
+          <figcaption>
+            <span class="number">07</span><strong>Transmit</strong><span>Focused action pane.</span>
+            <a class="source" href="https://panic.com/transmit/" target="_blank" rel="noopener">Source</a>
+          </figcaption>
+        </figure>
+        <figure>
+          <a class="image-link" href="./things.png" target="_blank" rel="noopener">
+            <img src="./things.png" alt="Things Today list with generous spacing and subdued metadata.">
+          </a>
+          <figcaption>
+            <span class="number">08</span><strong>Things</strong><span>Quiet rows.</span>
+            <a class="source" href="https://culturedcode.com/things/features/" target="_blank" rel="noopener">Source</a>
+          </figcaption>
+        </figure>
+      </div>
+    </main>
+  </body>
+</html>
