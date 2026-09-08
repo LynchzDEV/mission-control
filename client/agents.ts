@@ -31,7 +31,7 @@ export type AgentJob = {
 export type AgentThread = ThreadGroup<AgentJob>
 
 export const RECENT_LIMIT = 8
-export const AGENTS_STORE_KEY = 'mc.agents.open'
+export const AGENTS_STORE_KEY = 'mc.agents.open.v2'
 
 const POLL_MS = 3_000
 const ELAPSED_TICK_MS = 1_000
@@ -426,9 +426,9 @@ function updateElapsed(): void {
 
 export function readPanelOpen(): boolean {
   try {
-    return localStorage.getItem(AGENTS_STORE_KEY) !== '0'
+    return localStorage.getItem(AGENTS_STORE_KEY) === '1'
   } catch {
-    return true
+    return false
   }
 }
 
@@ -443,14 +443,18 @@ export function writePanelOpen(open: boolean): void {
 function applyPanelOpen(open: boolean): void {
   host('termgrid')?.classList.toggle('agents-off', !open)
   const toggle = host('agents-toggle')
-  if (toggle !== null) toggle.textContent = open ? 'AGENTS ◂' : '▸'
+  if (toggle !== null) toggle.textContent = open ? 'Close activity' : 'Activity'
+  host('activity-open')?.setAttribute('aria-expanded', String(open))
+  host('agents-panel')?.setAttribute('aria-label', 'Agent activity')
   dispatchEvent(new Event('resize'))
 }
 
 export function installAgents(): void {
   if (host('agents-panel') === null) return
   installDrawer()
-  applyPanelOpen(readPanelOpen())
+  addEventListener('mc:agent-open', event => openDrawer((event as CustomEvent<{id:string;label:string;engine:string;elapsed:string}>).detail))
+  writePanelOpen(false)
+  applyPanelOpen(false)
   addEventListener('mc:terminal-scope', (event) => {
     const detail = (event as CustomEvent<{ id: string | null; cwd: string | null }>).detail
     scopeId = detail.id
@@ -461,6 +465,7 @@ export function installAgents(): void {
     scopeAll = !scopeAll
     void refresh()
   })
+  host('activity-open')?.addEventListener('click', () => { const open = !readPanelOpen(); writePanelOpen(open); applyPanelOpen(open) })
   host('agents-toggle')?.addEventListener('click', () => {
     const open = !readPanelOpen()
     writePanelOpen(open)

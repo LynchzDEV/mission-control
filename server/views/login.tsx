@@ -20,7 +20,6 @@ function Gate(props: {
     page: props.page,
     chrome: false,
     islands: ['forms'],
-    meta: props.page === 'setup' ? 'FIRST RUN · NO PASSWORD SET' : 'LOCKED · SESSION REQUIRED',
     children: (
       <div class="gate">
         <div class="gatebox">
@@ -28,7 +27,7 @@ function Gate(props: {
           <div class="hint">{props.hint}</div>
           <form id="gate-form" data-action={props.action}>
             <div class="field">
-              <label for="password">PASSWORD</label>
+              <label for="password">Password</label>
               <input
                 type="password"
                 id="password"
@@ -41,7 +40,7 @@ function Gate(props: {
             <button class="btn go" type="submit">
               {props.submit}
             </button>
-            <div class="msg" id="gate-msg"></div>
+            <div class="msg" id="gate-msg" role="status" aria-live="polite"></div>
           </form>
         </div>
       </div>
@@ -53,10 +52,10 @@ export function SetupPage({ minPasswordLength }: GateProps): string {
   return Gate({
     page: 'setup',
     title: 'Mission Control — Setup',
-    heading: 'MISSION CONTROL',
-    hint: `First run. Choose a password (min ${minPasswordLength} characters). It is hashed with argon2id and stored under ~/.config/mission-control.`,
+    heading: 'Set up your workspace',
+    hint: `First run. Choose a password (min ${minPasswordLength} characters). Use this password to access your workspace.`,
     action: '/api/setup',
-    submit: 'CREATE',
+    submit: 'Create workspace',
     autocomplete: 'new-password',
     placeholder: `min ${minPasswordLength} characters`,
   })
@@ -66,10 +65,10 @@ export function LoginPage(): string {
   return Gate({
     page: 'login',
     title: 'Mission Control — Login',
-    heading: 'MISSION CONTROL',
-    hint: 'Three engines standing by. Sign in to take the console.',
+    heading: 'Sign in',
+    hint: 'Sign in to return to your terminals, jobs, and conversations.',
     action: '/api/login',
-    submit: 'LOG IN',
+    submit: 'Sign in',
     autocomplete: 'current-password',
     placeholder: 'password',
   })

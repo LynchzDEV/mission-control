@@ -1,6 +1,7 @@
 node_modules/
 *.log
 public/vendor/
+public/ui-preview/
 .claude/
 .worktree
 .playwright-mcp/

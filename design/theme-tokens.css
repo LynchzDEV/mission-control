@@ -1,25 +1,36 @@
-/* Mission Control — LOCKED theme tokens. Use these variables only. */
 :root {
-  /* palette */
-  --mc-bg: #0d0d0f;            /* app background */
-  --mc-bg-raised: #141418;     /* cards, drawers */
-  --mc-border: #2a2a30;        /* default 2px borders */
-  --mc-fg: #d8d8d8;            /* body text */
-  --mc-fg-dim: #7a7a85;        /* secondary text */
-  --mc-green: #33ff66;         /* primary / ok / running */
-  --mc-amber: #ffb000;         /* warning / peak-hours / paused */
-  --mc-red: #ff3b3b;           /* failed / danger */
-  --mc-coral: #d97757;         /* Claude accent (brand) */
-  --mc-cyan: #33ccff;          /* GLM accent */
-  --mc-white: #f5f5f0;         /* Codex accent / highlights */
-
-  /* type */
-  --mc-font-pixel: 'Press Start 2P', monospace;   /* headings, labels, buttons */
-  --mc-font-mono: ui-monospace, 'SF Mono', Menlo, monospace; /* body, logs, data */
-
-  /* shape */
-  --mc-border-w: 2px;
-  --mc-radius: 0;                    /* never round */
-  --mc-shadow: 4px 4px 0 #000;       /* hard offset only, no blur */
-  --mc-space: 8px;                   /* base unit; use multiples */
+  --background: #070a0c; --text: #e9eef0; --muted: #a0acb2; --quiet: #76848b; --line: #263137;
+  --lime: #bfd38b; --coral: #d4a091; --ice: #91b0dc; --agent-surface: #0e1820;
+  --ui: 'Helvetica Neue', Helvetica, Arial, sans-serif; --code: Menlo, monospace;
+  --mc-bg: #070a0c;
+  --mc-bg-raised: #101619;
+  --mc-border: #263137;
+  --mc-fg: #e9eef0;
+  --mc-fg-dim: #a0acb2;
+  --mc-green: #bfd38b;
+  --mc-amber: #d4b77d;
+  --mc-red: #e89999;
+  --mc-coral: #d4a091;
+  --mc-cyan: #91b0dc;
+  --mc-white: #bfd38b;
+  --mc-primary: #bfd38b;
+  --mc-primary-hover: #d5e5af;
+  --mc-primary-soft: #20291b;
+  --mc-terminal: #070a0c;
+  --mc-terminal-fg: #e9eef0;
+  --mc-terminal-dim: #a0acb2;
+  --mc-terminal-border: #263137;
+  --mc-terminal-select: #354530;
+  --mc-motion: #85858a;
+  --mc-hairline: #192126;
+  --mc-edge: #58656b;
+  --mc-edge-dim: #303c42;
+  --mc-scrim: #070a0c66;
+  --mc-font-ui: 'Helvetica Neue', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mc-font-pixel: var(--mc-font-ui);
+  --mc-font-mono: Menlo, 'SF Mono', ui-monospace, monospace;
+  --mc-border-w: 1px;
+  --mc-radius: 6px;
+  --mc-shadow: 0 12px 40px #070a0c12;
+  --mc-space: 8px;
 }

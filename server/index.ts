@@ -48,7 +48,7 @@ const JS_HEADERS = { 'content-type': 'text/javascript; charset=utf-8', 'cache-co
 const MODULE_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/
 
 type CachedModule = {
-  mtimeMs: number
+  stamp: string
   code: string
 }
 
@@ -68,14 +68,16 @@ export async function transpileClientModule(requested: string): Promise<string |
   }
   if (!info.isFile()) return null
 
+  const files = [...new Bun.Glob('*.ts').scanSync(CLIENT_DIR)].sort()
+  const stamp = (await Promise.all(files.map(async (file) => { const value = await stat(join(CLIENT_DIR, file)); return `${file}:${value.mtimeMs}:${value.size}` }))).join('|')
   const cached = transpileCache.get(name)
-  if (cached !== undefined && cached.mtimeMs === info.mtimeMs) return cached.code
+  if (cached !== undefined && cached.stamp === stamp) return cached.code
 
   const built = await Bun.build({ entrypoints: [path], target: 'browser', write: false })
   if (!built.success || built.outputs.length === 0) return null
 
   const code = await built.outputs[0]!.text()
-  transpileCache.set(name, { mtimeMs: info.mtimeMs, code })
+  transpileCache.set(name, { stamp, code })
   return code
 }
 
@@ -91,18 +93,18 @@ function loginPage(): Response {
   return page(LoginPage())
 }
 
-function appShellPage(): Response {
-  return page(LanesPage())
+async function appShellPage(): Promise<Response> {
+  return page(await terminalsPage())
 }
 
-async function settingsPage(): Promise<string> {
+async function settingsPage(embedded = false): Promise<string> {
   const [view, config, models] = await Promise.all([currentView(), readConfig(), modelsCache.get()])
-  return SettingsPage({ ...view, roles: config.roles, autoReview: config.autoReview, models, minPasswordLength: MIN_PASSWORD_LENGTH })
+  return SettingsPage({ ...view, embedded, roles: config.roles, autoReview: config.autoReview, models, minPasswordLength: MIN_PASSWORD_LENGTH })
 }
 
-async function dispatchPage(): Promise<string> {
+async function dispatchPage(embedded = false): Promise<string> {
   const [roles, models] = await Promise.all([readRoles(), modelsCache.get()])
-  return DispatchPage({ defaultEngine: roles.execute.engine, defaultModel: roles.execute.model, models })
+  return DispatchPage({ embedded, defaultEngine: roles.execute.engine, defaultModel: roles.execute.model, models })
 }
 
 async function terminalsPage(): Promise<string> {
@@ -110,7 +112,7 @@ async function terminalsPage(): Promise<string> {
   return TerminalsPage({ defaultEngine: roles.plan.engine, defaultModel: roles.plan.model, models })
 }
 
-const TAB_PAGES: Record<string, () => string | Promise<string>> = {
+const TAB_PAGES: Record<string, (embedded?: boolean) => string | Promise<string>> = {
   '/lanes': LanesPage,
   '/dispatch': dispatchPage,
   '/terminals': terminalsPage,
@@ -127,7 +129,7 @@ function tabPages() {
         set.headers.location = '/'
         return ''
       }
-      return page(await view())
+      return page(await (new URL(request.url).searchParams.get('embed') === '1' || path === '/terminals' ? view(new URL(request.url).searchParams.get('embed') === '1') : terminalsPage()))
     })
   }
   return instance

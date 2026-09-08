@@ -8,7 +8,8 @@ function isTyping(target: EventTarget | null): boolean {
 
 function destinationFor(key: string): string | null {
   const link = document.querySelector<HTMLAnchorElement>(`#tabs a[data-key="${key}"]`)
-  return link === null ? null : link.getAttribute('href')
+  const routes: Record<string, string> = { '1': '/lanes', '2': '/dispatch', '3': '/terminals', '4': '/review', '5': '/settings' }
+  return link?.getAttribute('href') ?? routes[key] ?? null
 }
 
 export function installTabShortcuts(): void {
@@ -17,7 +18,7 @@ export function installTabShortcuts(): void {
     const href = destinationFor(event.key)
     if (href === null) return
     event.preventDefault()
-    location.assign(href)
+    dispatchEvent(new CustomEvent('mc:navigate', { detail: href }))
   })
 }
 

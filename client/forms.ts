@@ -18,14 +18,18 @@ function installGate(): void {
     event.preventDefault()
     const field = form.querySelector<HTMLInputElement>('#password')
     const password = field?.value ?? ''
-    say(message, 'CHECKING…', true)
+    const submit = form.querySelector<HTMLButtonElement>('button[type=submit]')
+    if (submit?.disabled) return
+    if (submit) submit.disabled = true
+    say(message, 'Signing in…', true)
     const result = await postJson(action, { password })
+    if (submit) submit.disabled = false
     if (!result.ok) {
       say(message, errorText(result).toUpperCase(), false)
       return
     }
     say(message, 'OK · ENTERING', true)
-    location.assign('/lanes')
+    location.assign('/terminals')
   })
 }
 
@@ -35,7 +39,7 @@ function collect(button: HTMLElement): Record<string, string> {
     const name = key.trim()
     if (name === '') continue
     const input = document.querySelector<HTMLInputElement>(`#${name}`)
-    if (input === null || input.value === '') continue
+    if (input === null || (input.value === '' && !name.endsWith('_model'))) continue
     payload[name] = input.value
   }
   return payload
@@ -63,9 +67,15 @@ function installSecretRows(): void {
         say(status, 'NOTHING TO SAVE', false)
         return
       }
+      if (button.hasAttribute('disabled')) return
+      button.setAttribute('disabled', '')
+      say(status, 'Saving…', true)
       const result = await postJson(button.dataset.post ?? '', payload)
+      button.removeAttribute('disabled')
       say(status, result.ok ? 'SAVED' : errorText(result).toUpperCase(), result.ok)
       if (!result.ok) return
+      dispatchEvent(new Event('mc:settings-refresh'))
+      if (parent !== window) parent.postMessage({ type: 'mc:settings-saved' }, location.origin)
       for (const name of Object.keys(payload)) {
         const input = document.querySelector<HTMLInputElement>(`#${name}`)
         if (input === null || input.type !== 'password') continue
@@ -95,7 +105,11 @@ function installApiTokenRow(): void {
 
   revealButton?.addEventListener('click', async (event) => {
     event.preventDefault()
+    if (revealButton.hasAttribute('disabled')) return
+    revealButton.setAttribute('disabled', '')
+    say(status(revealButton), 'Copying token…', true)
     const result = await postJson('/api/secrets/api-token/reveal', {})
+    revealButton.removeAttribute('disabled')
     if (!result.ok) {
       say(status(revealButton), errorText(result).toUpperCase(), false)
       return
@@ -103,15 +117,19 @@ function installApiTokenRow(): void {
     const value = typeof result.data.apiToken === 'string' ? result.data.apiToken : ''
     try {
       await navigator.clipboard.writeText(value)
-      say(status(revealButton), `${value} · COPIED`, true)
+      say(status(revealButton), 'Token copied to clipboard', true)
     } catch {
-      say(status(revealButton), value, true)
+      say(status(revealButton), 'Clipboard unavailable. Allow clipboard access and try again.', false)
     }
   })
 
   rotateButton?.addEventListener('click', async (event) => {
     event.preventDefault()
+    if (rotateButton.hasAttribute('disabled')) return
+    rotateButton.setAttribute('disabled', '')
+    say(status(rotateButton), 'Rotating token…', true)
     const result = await postJson('/api/secrets/api-token/rotate', {})
+    rotateButton.removeAttribute('disabled')
     if (!result.ok) {
       say(status(rotateButton), errorText(result).toUpperCase(), false)
       return
@@ -126,6 +144,8 @@ function installApiTokenRow(): void {
 
 function installTodoRows(): void {
   document.querySelectorAll<HTMLElement>('[data-todo]').forEach((button) => {
+    button.setAttribute('aria-disabled', 'true')
+    button.title = 'Unavailable: ' + (button.dataset.todo ?? 'Not implemented')
     button.addEventListener('click', (event) => {
       event.preventDefault()
       const status = document.querySelector<HTMLElement>(`#${button.dataset.status ?? ''}`)
@@ -145,7 +165,7 @@ async function refreshEngineStatus(): Promise<void> {
   const quota = await getJson('/api/quota')
   if (!quota.ok) {
     markFixture('quota', true)
-    return
+    throw new Error('Provider status unavailable')
   }
   markFixture('quota', false)
   const claude = readRecord(quota.data.claude)
@@ -159,18 +179,21 @@ async function refreshEngineStatus(): Promise<void> {
   const glm = readRecord(quota.data.glm)
   const codex = readRecord(quota.data.codex)
 
-  pill('#s-claude-auth', claude.available === false ? 'NO CCUSAGE' : 'LOGGED IN', claude.available === false ? 'bad' : 'ok')
-  pill('#s-glm-conn', glm.available === false ? 'QUOTA API DOWN' : 'QUOTA API OK', glm.available === false ? 'bad' : 'ok')
-  pill('#s-codex-oauth', codex.authed === true ? 'AUTHED' : 'EXPIRED · exit 1', codex.authed === true ? 'ok' : 'bad')
+  pill('#s-claude-auth', claude.available === true ? 'Usage available' : 'Usage unavailable', claude.available === true ? 'ok' : 'bad')
+  pill('#s-glm-conn', glm.available === true ? 'Quota available' : 'Quota unavailable', glm.available === true ? 'ok' : 'bad')
+  pill('#s-codex-oauth', codex.authed === true ? 'Authenticated' : codex.authed === false ? 'Sign-in needed' : 'Authentication unavailable', codex.authed === true ? 'ok' : 'bad')
 }
 
 function installStatusProbes(): void {
   if (document.querySelector('#s-claude-auth') === null) return
-  void refreshEngineStatus()
+  void refreshEngineStatus().catch(() => text('#s-msg', 'Provider status unavailable. Use Test to retry.'))
   document.querySelectorAll<HTMLElement>('[data-probe]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.preventDefault()
-      void refreshEngineStatus()
+      const output = document.querySelector<HTMLElement>(`#${button.dataset.status ?? 's-msg'}`)
+      say(output, 'Checking provider…', true)
+      button.setAttribute('disabled', '')
+      void refreshEngineStatus().then(() => { button.removeAttribute('disabled'); say(output, 'Provider status refreshed', true) }).catch(() => { button.removeAttribute('disabled'); say(output, 'Provider status unavailable', false) })
     })
   })
 }
@@ -197,8 +220,10 @@ function installColumnEntrance(): void {
 }
 
 installGate()
-installSecretRows()
-installApiTokenRow()
+if (document.body.dataset.previewReadonly === 'true') {
+  document.querySelectorAll<HTMLButtonElement>('[data-post],[data-api-token-reveal],[data-api-token-rotate]').forEach(button => { button.disabled = true; button.title = 'Settings writes unavailable in preview' })
+  text('#s-msg', 'Preview only. Settings writes are unavailable; displayed defaults are placeholders.')
+} else { installSecretRows(); installApiTokenRow() }
 installTodoRows()
 installStatusProbes()
 installModelPickers()

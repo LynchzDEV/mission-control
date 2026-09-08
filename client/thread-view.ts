@@ -188,12 +188,13 @@ function newestJobId(model: ThreadModel): string {
   return last === undefined ? '' : last.jobId
 }
 
-function miniOf(row: ThreadRow, running: boolean): MiniRow[] {
+function miniOf(row: ThreadRow, running: boolean, multiline = false): MiniRow[] {
+  const preview = multiline ? (value: string) => value : oneLine
   if (row.kind === 'prompt') {
-    return [{ key: row.key, cls: 'req', glyph: '›', title: '', text: oneLine(row.text) }]
+    return [{ key: row.key, cls: 'req', glyph: '›', title: '', text: preview(row.text) }]
   }
   if (row.kind === 'thinking') {
-    return [{ key: row.key, cls: 'think', glyph: '✻', title: '', text: oneLine(row.text) }]
+    return [{ key: row.key, cls: 'think', glyph: '✻', title: '', text: preview(row.text) }]
   }
   if (row.kind === 'tool') {
     const live = isPendingTool(row, running)
@@ -205,15 +206,15 @@ function miniOf(row: ThreadRow, running: boolean): MiniRow[] {
       text: row.detail,
     }
     if (!row.isError) return [head]
-    return [head, { key: `${row.key}=`, cls: 'err', glyph: '⎿', title: '', text: oneLine(row.result) }]
+    return [head, { key: `${row.key}=`, cls: 'err', glyph: '⎿', title: '', text: preview(row.result) }]
   }
-  return [{ key: row.key, cls: 'resp', glyph: '✓', title: '', text: oneLine(row.text) }]
+  return [{ key: row.key, cls: 'resp', glyph: '✓', title: '', text: preview(row.text) }]
 }
 
-export function miniRows(model: ThreadModel, limit: number = MINI_ROW_LIMIT): MiniRow[] {
+export function miniRows(model: ThreadModel, limit: number = MINI_ROW_LIMIT, multiline = false): MiniRow[] {
   const rows: MiniRow[] = []
   for (const row of model.rows) {
-    for (const mini of miniOf(row, model.running)) {
+    for (const mini of miniOf(row, model.running, multiline)) {
       const previous = rows[rows.length - 1]
       const echo = previous !== undefined && previous.cls === 'resp' && mini.cls === 'resp'
       if (echo && previous.text === mini.text) continue
@@ -325,11 +326,11 @@ function reconcile<T extends { key: string }>(
   }
 }
 
-export function createMiniList(host: HTMLElement, limit: number = MINI_ROW_LIMIT): RowList {
+export function createMiniList(host: HTMLElement, limit: number = MINI_ROW_LIMIT, multiline = false): RowList {
   const nodes = new Map<string, HTMLElement>()
   return {
     sync(model: ThreadModel): void {
-      reconcile(host, miniRows(model, limit), miniSignature, buildMini, nodes)
+      reconcile(host, miniRows(model, limit, multiline), miniSignature, buildMini, nodes)
     },
   }
 }
@@ -428,26 +429,48 @@ export function createFullFeed(jobId: string, pollMs: number = DRAWER_POLL_MS): 
 
 export type MiniFeed = Feed
 
-export type MiniFeedOptions = { onOpen(): void; pollMs?(): number }
+export type MiniFeedOptions = { onOpen(): void; pollMs?(): number; multiline?: boolean; activityJobId?: string }
 
 export function createMiniFeed(jobId: string, options: MiniFeedOptions): MiniFeed {
-  const root = el('div', 'mini')
+  const root = el('div', options.activityJobId ? 'mini agent-activity' : 'mini')
   root.hidden = true
   const rows = el('div', 'mlist')
   const more = el('div', 'more')
   more.onclick = () => options.onOpen()
   root.append(rows, more)
-  const list = createMiniList(rows)
+  const list = createMiniList(rows, MINI_ROW_LIMIT, options.multiline)
 
   let timer: ReturnType<typeof setTimeout> | undefined
   let stopped = true
+  let fetching = false
 
   async function tick(): Promise<void> {
+    if (stopped || fetching) return
+    fetching = true
+    clearTimeout(timer)
     const model = await fetchThread(jobId)
-    if (stopped || model === null) return
-    root.hidden = model.rows.length === 0
-    list.sync(model)
-    more.textContent = miniFooter(model)
+    fetching = false
+    if (stopped) return
+    if (model === null) { root.hidden = false; more.textContent = 'Activity unavailable. Retrying…'; root.dataset.state = 'error'; timer = setTimeout(() => void tick(), options.pollMs?.() ?? CARD_POLL_MS); return }
+    root.dataset.state = model.rows.length ? 'ready' : 'empty'
+    root.hidden = false
+    if (options.activityJobId) {
+      const current = model.rows.filter(row => row.jobId === options.activityJobId)
+      const tool = current.findLast(row => row.kind === 'tool')
+      const thought = current.findLast(row => ['thinking','text','result'].includes(row.kind) && row.text)
+      rows.replaceChildren()
+      if (tool) {
+        const action = el('div', 'tool'), badge = el('span'), file = el('code')
+        badge.textContent = tool.title; file.textContent = tool.detail; file.title = tool.detail
+        action.append(badge, file); rows.append(action)
+      }
+      const activity = el('p'); activity.textContent = tool?.isError ? `Tool failed: ${firstLine(tool.result) || tool.detail || tool.title}` : thought?.text || (tool ? 'Working on this step.' : model.running ? 'Waiting for activity…' : 'No activity reported.')
+      activity.title = activity.textContent; rows.append(activity)
+      more.textContent = ''
+    } else {
+      list.sync(model)
+      more.textContent = miniFooter(model)
+    }
     if (!model.running) return
     clearTimeout(timer)
     timer = setTimeout(() => void tick(), options.pollMs?.() ?? CARD_POLL_MS)

@@ -10,11 +10,11 @@ export type TabLink = {
 }
 
 export const TABS: TabLink[] = [
-  { tab: 'lanes', href: '/lanes', label: 'LANES', key: '1' },
-  { tab: 'dispatch', href: '/dispatch', label: 'DISPATCH', key: '2' },
-  { tab: 'terminals', href: '/terminals', label: 'TERMINALS', key: '3' },
-  { tab: 'review', href: '/review', label: 'REVIEW', key: '4' },
-  { tab: 'settings', href: '/settings', label: 'SETTINGS', key: '5' },
+  { tab: 'lanes', href: '/lanes', label: 'Main', key: '1' },
+  { tab: 'dispatch', href: '/dispatch', label: 'Dispatch', key: '2' },
+  { tab: 'terminals', href: '/terminals', label: 'Terminals', key: '3' },
+  { tab: 'review', href: '/review', label: 'Review', key: '4' },
+  { tab: 'settings', href: '/settings', label: 'Settings', key: '5' },
 ]
 
 export type LayoutProps = {
@@ -23,6 +23,7 @@ export type LayoutProps = {
   meta?: JSX.Element | string
   tab?: Tab
   chrome?: boolean
+  embedded?: boolean
   islands?: string[]
   vendor?: string[]
   styles?: string[]
@@ -58,27 +59,10 @@ export function Layout(props: LayoutProps): string {
   const chrome = props.chrome !== false
   const body = (
     <body data-page={props.page}>
-      <div class="top">
-        <div class="l">MISSION CONTROL</div>
-        <div id="meta">{props.meta ?? ''}</div>
-      </div>
-      {chrome ? (
-        <nav class="tabs" id="tabs">
-          {TABS.map((entry) => (
-            <a
-              href={entry.href}
-              class={entry.tab === props.tab ? 'on' : ''}
-              data-key={entry.key}
-              data-tab={entry.tab}
-            >
-              <i>{entry.key}</i>
-              {entry.label}
-            </a>
-          ))}
-        </nav>
-      ) : (
-        ''
-      )}
+      {!props.embedded ? <div class="top masthead">
+        <a class="l" href="/terminals" aria-label="Mission Control home">Mission Control<span class="brand-mark" aria-hidden="true">_</span></a>
+        {chrome ? <><nav class="tabs" id="tabs" aria-label="Workspace">{TABS.filter(entry => entry.tab === 'terminals' || entry.tab === 'lanes').map(entry => <a href={entry.href} data-tab={entry.tab} data-key={entry.key} aria-current={entry.tab === props.tab ? 'page' : undefined} class={entry.tab === props.tab ? 'on' : ''}>{entry.label}</a>)}<a href="/lanes?view=usage">Usage</a></nav><div class="usage-summary" id="provider-summary" aria-label="Live provider usage">{['Claude', 'GLM', 'Codex'].map(provider => <section class="provider-usage"><div class="quota-heading"><span class="quota-provider">{provider}</span><span class="quota-period">5h</span><strong>—</strong></div><span class="quota-unavailable">Unavailable</span><div class="quota-week">Weekly · Unavailable</div></section>)}</div><div class="global-actions"><a href="/dispatch">New job</a><a href="/review" id="global-attention">Review <span>—</span></a><a href="/settings">Settings</a></div></> : ''}
+      </div> : ''}
       <div class="body" data-tab={props.tab ?? 'gate'}>
         {props.children ?? ''}
       </div>
@@ -87,8 +71,8 @@ export function Layout(props: LayoutProps): string {
   )
 
   return `<!doctype html>\n${(
-    <html lang="en">
-      {head(props.title, props.vendor ?? [], props.islands ?? [], props.styles ?? [])}
+    <html lang="en" class={props.embedded ? 'embedded-view' : undefined}>
+      {head(props.title, props.vendor ?? [], [...new Set(['workspace', 'provider-usage', ...(props.islands ?? [])])], props.styles ?? [])}
       {body}
     </html>
   )}`

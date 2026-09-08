@@ -453,3 +453,9 @@ describe('sortThreadsByActivity', () => {
     expect(groups).toEqual(input)
   })
 })
+
+test('mini feed excerpt mode preserves multiple lines for the awareness window', () => {
+  const model = toThreadModel({messages:[{jobId:'a',kind:'text',text:'First line\nSecond line\nThird line'}]})
+  expect(miniRows(model,6,true)[0]!.text).toBe('First line\nSecond line\nThird line')
+  expect(miniRows(model)[0]!.text).not.toContain('Second line')
+})

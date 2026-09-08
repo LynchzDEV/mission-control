@@ -38,85 +38,16 @@ afterEach(async () => {
 })
 
 async function render(path: string): Promise<{ status: number; html: string }> {
-  const response = await app.handle(new Request(`http://localhost${path}`, { headers: { cookie } }))
+  const response = await app.handle(new Request(`http://localhost${path}?embed=1`, { headers: { cookie } }))
   return { status: response.status, html: await response.text() }
 }
 
 const PAGES: [string, string[]][] = [
-  [
-    '/lanes',
-    [
-      'id="plan-nodes"',
-      'id="flowpanel"',
-      'id="plan-steps"',
-      'id="plan-next"',
-      'id="activity-feed"',
-      'class="tproc" id="activity-feed"',
-      'id="mc-drawer"',
-      'ACTIVITY · PROCESS',
-      'class="node tpl" id="nd-spec"',
-      'id="nd-spec"',
-      'id="nd-impl"',
-      'id="nd-codex"',
-      'id="nd-verify"',
-      'id="nd-merged"',
-      'AT THIS STATION',
-      'TECH LEAD',
-      'JUNIOR FLEET',
-      'OUTSIDE CRITIC',
-      'id="m1"',
-      'id="m2"',
-      'id="m3"',
-      'id="fsvg"',
-      'id="chips"',
-      'id="station-claude"',
-      'id="station-glm"',
-      'id="station-codex"',
-      'id="block-clock"',
-      'id="review-count"',
-    ],
-  ],
-  [
-    '/settings',
-    ['API TOKEN', 'BASE URL', 'MODEL MAP', 'CONNECTION', 'class="applab"', 'GLM PEAK', 'id="bind"'],
-  ],
-  [
-    '/dispatch',
-    [
-      'id="dispatch-form"',
-      'type="checkbox" id="worktree" name="worktree" checked',
-      'run in its own worktree',
-      'id="jobs-body"',
-      'id="log-drawer"',
-      'id="mc-drawer"',
-      'id="prompt"',
-    ],
-  ],
-  [
-    '/terminals',
-    [
-      'id="term-strip"',
-      'id="term-pane"',
-      'id="term-form"',
-      'id="term-engine"',
-      'id="term-cwd"',
-      'id="termgrid"',
-      'class="termmain"',
-      'id="agents-panel"',
-      'id="agents-message" role="status" aria-live="polite"',
-      'id="agents-toggle"',
-      'id="agents-running"',
-      'id="agents-recent"',
-      'id="agents-empty"',
-      'id="mc-dim"',
-      'id="mc-drawer"',
-      'RUNNING',
-      'agents-recent-toggle',
-      'NO AGENTS RUNNING · dispatch from /dispatch or via mc-dispatch',
-      'shows cockpit-dispatched jobs · in-terminal subagents are not observable',
-    ],
-  ],
-  ['/review', ['id="review-body"', 'REVIEW QUEUE']],
+  ['/lanes', ['id="work-view"', 'id="work-list"', 'id="work-selected"', 'id="work-filter"', 'id="usage-view"']],
+  ['/settings', ['Connections', 'Work defaults', 'Access', 'id="bind"']],
+  ['/dispatch', ['id="dispatch-form"', 'id="prompt"', 'Isolated worktree', 'id="work-list"']],
+  ['/terminals', ['id="term-pane"', 'id="term-strip"', 'id="term-form"', 'id="agents-panel"', 'id="ascii-horizon"']],
+  ['/review', ['id="work-view"', 'data-mode="review"']],
 ]
 
 const ISLAND_MARKERS: [string, string[]][] = [
@@ -124,7 +55,7 @@ const ISLAND_MARKERS: [string, string[]][] = [
     'agents.js',
     ['TALK \u25be', 'OPEN FULL TRANSCRIPT', 'mc-drawer', '/thread', '/reply', 'reply to this agent'],
   ],
-  ['dispatch.js', ['TALK \u25be', 'OPEN FULL TRANSCRIPT', 'mc-drawer', '/thread', '/reply', 'LAND', '/land', 'worktree']],
+  ['dispatch.js', ['work-selected', '/thread', '/reply', '/land', 'worktree']],
   ['flow.js', ['/thread', 'activity-feed', 'mcd-tx']],
 ]
 
@@ -174,8 +105,13 @@ describe('tab views', () => {
       const { html } = await render(path)
       expect(html).toContain('href="/theme-tokens.css"')
       expect(html).toContain('href="/theme.css"')
-      expect(html).toContain('data-key="1"')
-      expect(html).toContain('data-key="5"')
+      if (path === '/terminals') {
+        expect(html).toContain('data-key="1"')
+        expect(html).toContain('href="/settings"')
+      } else {
+        expect(html).not.toContain('id="tabs"')
+        expect(html).toContain('class="embedded-view"')
+      }
       expect(html).toContain('/js/nav.js')
     }
   })
@@ -185,14 +121,14 @@ describe('tab views', () => {
     expect(html).not.toContain('class="task"')
     expect(html).not.toContain('orders-export')
     expect(html).not.toContain('moni-audio')
-    expect(html).toContain('0 DIFFS TO REVIEW')
+    expect(html).toContain('id="work-status"')
   })
 
-  test('lanes serves the mascot vendor scripts and no CDN url', async () => {
+  test('overview serves local motion assets without mascot or CDN scripts', async () => {
     const { html } = await render('/lanes')
-    expect(html).toContain('/vendor/textmode.umd.js')
-    expect(html).toContain('/vendor/textmode.filters.umd.js')
-    expect(html).toContain('/vendor/anime.umd.min.js')
+    expect(html).not.toContain('/vendor/textmode.umd.js')
+    expect(html).not.toContain('/vendor/textmode.filters.umd.js')
+    expect(html).toContain('/js/work.js')
     expect(html).not.toContain('cdn.jsdelivr.net')
     expect(html).not.toContain('fonts.googleapis.com')
   })
@@ -206,7 +142,7 @@ describe('tab views', () => {
       }),
     )
     const { html } = await render('/settings')
-    expect(html).toContain('id="roles-band"')
+    expect(html).toContain('Work defaults')
     expect(html).toContain('data-post="/api/roles"')
     expect(html).toMatch(/<select id="plan"[^>]*>(?:(?!<\/select>).)*<option value="codex" selected/s)
     expect(html).toMatch(/<select id="execute"[^>]*>(?:(?!<\/select>).)*<option value="claude" selected/s)
@@ -239,14 +175,14 @@ describe('tab views', () => {
     expect(html).toMatch(/<input id="review_model" name="review_model"[^>]*value="gpt-z-custom"/)
     expect(html).not.toMatch(/<input id="review_model" name="review_model"[^>]*hidden/)
     expect(html).toContain('data-fields="plan,execute,review,plan_model,execute_model,review_model,autoReview"')
-    expect(html).toContain('blank model = engine default')
+    expect(html).toContain('blank model uses the engine default')
   })
 
   test('settings renders the auto-review opt-in with config-selected state', async () => {
     const before = await render('/settings')
-    expect(before.html).toContain('AUTO-REVIEW')
+    expect(before.html).toContain('Automatic review')
     expect(before.html).toContain('id="autoReview"')
-    expect(before.html).toContain('off = review on demand')
+    expect(before.html).toContain('Work defaults')
     expect(before.html).toMatch(/<option value="off" selected/)
     expect(before.html).not.toMatch(/<option value="on" selected/)
 
@@ -312,11 +248,12 @@ describe('tab views', () => {
     }
   })
 
-  test('every tab marks its own tab active exactly once', async () => {
+  test('direct routes have one accessible navigation while embedded views omit duplicate chrome', async () => {
     for (const [path] of PAGES) {
-      const { html } = await render(path)
-      expect(html.match(/class="on" data-key=/g)?.length).toBe(1)
-      expect(html).toContain(`<a href="${path}" class="on" data-key=`)
+      const response = await app.handle(new Request(`http://localhost${path}`, { headers: { cookie } }))
+      const html = await response.text()
+      expect(html.match(/aria-current="page"/g)?.length).toBe(1)
+      expect(html).toContain('aria-label="Workspace"')
     }
   })
 
@@ -325,6 +262,20 @@ describe('tab views', () => {
       const response = await app.handle(new Request(`http://localhost${path}`))
       expect(response.status).toBe(302)
       expect(response.headers.get('location')).toBe('/')
+    }
+  })
+})
+
+describe('persistent workspace routes', () => {
+  test('home and every direct secondary route carry the persistent terminal shell', async () => {
+    for (const path of ['/', '/terminals', '/lanes', '/dispatch', '/review', '/settings']) {
+      const response = await app.handle(new Request(`http://localhost${path}`, { headers: { cookie } }))
+      const html = await response.text()
+      expect(response.status).toBe(200)
+      expect(html).toContain('id="termgrid"')
+      expect(html).toContain('id="ascii-horizon"')
+      expect(html).toContain('/js/workspace.js')
+      expect(html).toContain('aria-label="Directories and sessions"')
     }
   })
 })
@@ -357,7 +308,7 @@ describe('gate views', () => {
 })
 
 describe('client islands', () => {
-  const ISLANDS = ['nav', 'forms', 'sprites', 'flow', 'lanes', 'resize', 'dispatch', 'terminal', 'agents']
+  const ISLANDS = ['work', 'nav', 'forms', 'sprites', 'flow', 'lanes', 'resize', 'dispatch', 'terminal', 'agents']
 
   for (const island of ISLANDS) {
     test(`/js/${island}.js transpiles to browser javascript`, async () => {
@@ -394,10 +345,12 @@ describe('flow route', () => {
   })
 })
 
-test('Claude proxy usage placeholders start hidden on Settings and Lanes', async () => {
-  for (const [path, id] of [['/settings', 's-claude-other'], ['/lanes', 'n1other']]) {
+test('work views replace inherited racks and tables', async () => {
+  for (const path of ['/lanes', '/dispatch', '/review']) {
     const { html } = await render(path)
-    expect(html).toMatch(new RegExp(`<div id="${id}"[^>]*color:var\\(--mc-fg-dim\\)[^>]*hidden[^>]*></div>`))
-    expect(html).not.toContain('via claude binary (glm/proxy)')
+    expect(html).not.toContain('<table')
+    expect(html).not.toContain('class="racks"')
+    expect(html).not.toContain('id="fsvg"')
+    expect(html).toContain('id="work-status"')
   }
 })

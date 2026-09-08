@@ -88,6 +88,7 @@ export type Anime = {
 }
 
 export function anime(): Anime | null {
+  if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return null
   const found = (window as unknown as { anime?: Anime }).anime
   return found !== undefined && typeof found.animate === 'function' ? found : null
 }

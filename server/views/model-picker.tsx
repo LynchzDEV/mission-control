@@ -13,7 +13,7 @@ export function ModelPicker(props: {
   const custom = value !== '' && !list.includes(value)
   return (
     <span class="mpick">
-      <select class="model-pick" id={`${props.id}_pick`} data-model-for={props.engineSelectId} data-model-input={props.id}>
+      <select class="model-pick" id={`${props.id}_pick`} data-model-for={props.engineSelectId} data-model-input={props.id} aria-label="Model">
         <option value="">engine default</option>
         {list.map((model) => (
           <option value={model} selected={model === value}>
@@ -30,7 +30,7 @@ export function ModelPicker(props: {
         value={value}
         maxlength="100"
         autocomplete="off"
-        placeholder="model id"
+        placeholder="model id" aria-label="Custom model ID"
         hidden={!custom}
       />
     </span>

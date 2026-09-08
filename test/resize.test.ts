@@ -215,7 +215,7 @@ describe('normalizeTriple / normalizePair', () => {
 
 const PASSWORD = 'correct-horse-battery'
 
-describe('lanes view: dividers + resize island', () => {
+describe('work view replaces lanes dividers', () => {
   let dir: string
   let app: Elysia
   let cookie: string
@@ -243,26 +243,20 @@ describe('lanes view: dividers + resize island', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  test('/lanes carries the reset-layout control, hidden until a divider moves', async () => {
-    const response = await app.handle(new Request('http://localhost/lanes', { headers: { cookie } }))
+  test('/lanes carries the work navigator without inherited layout controls', async () => {
+    const response = await app.handle(new Request('http://localhost/lanes?embed=1', { headers: { cookie } }))
     const html = await response.text()
-
-    expect(html).toContain('id="reset-layout"')
-    expect(html).toContain('class="reset-layout off"')
-    expect(html).toContain('RESET LAYOUT')
+    expect(html).toContain('id="work-list"')
+    expect(html).toContain('id="work-selected"')
+    expect(html).not.toContain('id="reset-layout"')
   })
 
-  test('/lanes serves all five divider elements and the resize island script', async () => {
-    const response = await app.handle(new Request('http://localhost/lanes', { headers: { cookie } }))
+  test('/lanes loads the work island instead of legacy divider behavior', async () => {
+    const response = await app.handle(new Request('http://localhost/lanes?embed=1', { headers: { cookie } }))
     const html = await response.text()
-
-    for (const kind of ['flow', 'panel', 'rack-1', 'rack-2', 'plan']) {
-      expect(html).toContain(`data-resize="${kind}"`)
-    }
-    expect(html).toContain('mc-divider-h')
-    expect(html).toContain('mc-divider-v')
-    expect(html).toContain('role="separator"')
-    expect(html).toContain('/js/resize.js')
+    expect(html).toContain('/js/work.js')
+    expect(html).not.toContain('data-resize=')
+    expect(html).not.toContain('/js/resize.js')
   })
 
   test('/js/resize.js transpiles to browser javascript with no leftover TS syntax', async () => {
@@ -281,6 +275,6 @@ describe('lanes view: dividers + resize island', () => {
     const response = await app.handle(new Request('http://localhost/js/lanes.js', { headers: { cookie } }))
     expect(response.status).toBe(200)
     const code = await response.text()
-    expect(code).toContain('installLanes')
+    expect(code).toContain('refreshUsage')
   })
 })
