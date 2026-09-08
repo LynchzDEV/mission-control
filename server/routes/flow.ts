@@ -7,7 +7,7 @@ import {
   sessionsDueForAutoArchive,
 } from '../archive'
 import { requireSession } from '../auth'
-import { deriveFlow, isSessionFinished, jobsForSession, planOnlySession, sessionKey, type SessionFlow } from '../flow'
+import { deriveFlow, isSessionFinished, effectivePlan, jobsForSession, planOnlySession, sessionKey, type SessionFlow } from '../flow'
 import type { JobManager, JobRecord } from '../jobs'
 import { createPlanStore, isStepStatus, parsePlanInput, type Plan, type PlanStore } from '../plans'
 import type { TerminalRegistry } from '../terminals'
@@ -81,7 +81,7 @@ export async function flowSnapshot(
     const archived = archives.isArchived(label)
     if (archived && !includeArchived) continue
     const job = activityJob(jobs, label)
-    const plan = stored[label] ?? null
+    const plan = effectivePlan(stored[label] ?? null, jobsForSession(jobs, label))
     sessions[label] = {
       ...(derived.sessions[label] ?? planOnlySession()),
       plan,

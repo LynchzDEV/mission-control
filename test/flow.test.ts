@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { awaitsReview, countPendingReviews, deriveFlow, isSessionFinished, sessionKey } from '../server/flow'
+import { awaitsReview, countPendingReviews, deriveFlow, effectivePlan, isSessionFinished, sessionKey } from '../server/flow'
 import type { SessionFlow } from '../server/flow'
 import type { JobRecord } from '../server/jobs'
 import type { Plan } from '../server/plans'
@@ -316,4 +316,47 @@ describe('review predicate', () => {
 test('completed worktrees with committed changes count as pending review', () => {
   const snapshot = deriveFlow({ jobs: [job({ status: 'done', worktree: '/repo/.worktree/task', diffStat: null })], terminals: [], now: NOW })
   expect(snapshot.reviewCount).toBe(1)
+})
+
+describe('effectivePlan', () => {
+  const plan: Plan = {
+    label: 'orders-export-fix',
+    updatedAt: NOW,
+    next: '',
+    steps: [
+      { title: 'Root cause', assignee: 'claude', status: 'done' },
+      { title: 'Implement', assignee: 'glm', status: 'pending' },
+      { title: 'Cross-review', assignee: 'codex', status: 'pending' },
+      { title: 'Deploy', assignee: 'user', status: 'pending' },
+    ],
+  }
+  const statuses = (value: Plan | null) => value?.steps.map((step) => step.status)
+
+  test('returns the stored plan untouched when no job has run', () => {
+    expect(effectivePlan(plan, [])).toBe(plan)
+    expect(effectivePlan(null, [job()])).toBeNull()
+  })
+
+  test('a running job makes its assignee step active; a finished one makes it done', () => {
+    expect(statuses(effectivePlan(plan, [job({ engine: 'glm', status: 'running' })]))).toEqual(['done', 'active', 'pending', 'pending'])
+    const codexRunning = [job({ id: 'g', engine: 'glm', status: 'done', endedAt: NOW }), job({ id: 'c', engine: 'codex', status: 'running', startedAt: NOW - MINUTE, reviewOf: 'g' })]
+    expect(statuses(effectivePlan(plan, codexRunning))).toEqual(['done', 'done', 'active', 'pending'])
+  })
+
+  test('user steps and stored done steps never move; failed jobs keep the stored status', () => {
+    const done: Plan = { ...plan, steps: plan.steps.map((step) => ({ ...step, status: 'done' as const })) }
+    expect(statuses(effectivePlan(done, [job({ engine: 'glm', status: 'running' })]))).toEqual(['done', 'done', 'done', 'done'])
+    expect(statuses(effectivePlan(plan, [job({ engine: 'glm', status: 'failed', endedAt: NOW })]))).toEqual(['done', 'pending', 'pending', 'pending'])
+  })
+
+  test('threads map to steps in start order and a follow-up reply on a finished step reactivates it', () => {
+    const twoGlmSteps: Plan = { ...plan, steps: [plan.steps[1]!, { title: 'Tests', assignee: 'glm', status: 'pending' }] }
+    const first = job({ id: 'a', engine: 'glm', status: 'done', startedAt: NOW - 30 * MINUTE, endedAt: NOW - 20 * MINUTE })
+    const second = job({ id: 'b', engine: 'glm', status: 'running', startedAt: NOW - 5 * MINUTE })
+    expect(statuses(effectivePlan(twoGlmSteps, [second, first]))).toEqual(['done', 'active'])
+    const reply = job({ id: 'a-2', engine: 'glm', status: 'running', startedAt: NOW - MINUTE, threadRoot: 'a' })
+    expect(statuses(effectivePlan(plan, [first, reply]))).toEqual(['done', 'active', 'pending', 'pending'])
+    const extra = job({ id: 'c', engine: 'glm', status: 'running', startedAt: NOW - MINUTE })
+    expect(statuses(effectivePlan(plan, [first, extra]))).toEqual(['done', 'active', 'pending', 'pending'])
+  })
 })

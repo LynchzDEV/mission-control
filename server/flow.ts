@@ -1,7 +1,7 @@
 import { basename } from 'node:path'
 
 import type { JobRecord } from './jobs'
-import type { Plan } from './plans'
+import type { Plan, PlanStep } from './plans'
 import type { TerminalRecord } from './terminals'
 
 export type StageState = 'done' | 'active' | 'queued' | 'future' | 'error'
@@ -154,6 +154,59 @@ function pickCurrent(sessions: Record<string, SessionFlow>): string {
     Object.values(sessions[key] as SessionFlow).some((stage) => stage[0] === 'active'),
   )
   return attention ?? keys[0] ?? ''
+}
+
+type ThreadState = { startedAt: number; status: JobRecord['status'] }
+
+function threadsByEngine(jobs: readonly JobRecord[]): Map<string, ThreadState[]> {
+  const roots = new Map<string, { engine: string; startedAt: number; newest: JobRecord }>()
+  for (const job of jobs) {
+    const root = job.threadRoot || job.id
+    const entry = roots.get(root)
+    if (!entry) roots.set(root, { engine: job.engine, startedAt: job.startedAt, newest: job })
+    else {
+      entry.startedAt = Math.min(entry.startedAt, job.startedAt)
+      if (job.startedAt >= entry.newest.startedAt) entry.newest = job
+    }
+  }
+  const grouped = new Map<string, ThreadState[]>()
+  for (const entry of [...roots.values()].sort((a, b) => a.startedAt - b.startedAt)) {
+    const list = grouped.get(entry.engine) ?? []
+    list.push({ startedAt: entry.startedAt, status: entry.newest.status })
+    grouped.set(entry.engine, list)
+  }
+  return grouped
+}
+
+function stepStatusFor(thread: ThreadState | undefined, stored: PlanStep['status']): PlanStep['status'] {
+  if (!thread) return stored
+  if (thread.status === 'running' || thread.status === 'queued') return 'active'
+  if (thread.status === 'done') return 'done'
+  return stored
+}
+
+export function effectivePlan(plan: Plan | null, jobs: readonly JobRecord[]): Plan | null {
+  if (plan === null || jobs.length === 0) return plan
+  const threads = threadsByEngine(jobs)
+  const cursor = new Map<string, number>()
+  const lastIndex = new Map<string, number>()
+  const steps = plan.steps.map((step, index) => {
+    const list = threads.get(step.assignee)
+    if (!list) return step
+    lastIndex.set(step.assignee, index)
+    const position = cursor.get(step.assignee) ?? 0
+    cursor.set(step.assignee, position + 1)
+    const status = step.status === 'done' ? 'done' : stepStatusFor(list[position], step.status)
+    return status === step.status ? step : { ...step, status }
+  })
+  for (const [engine, list] of threads) {
+    const index = lastIndex.get(engine)
+    const consumed = cursor.get(engine) ?? 0
+    if (index === undefined || consumed >= list.length) continue
+    const newest = list.at(-1)!
+    if (newest.status === 'running' || newest.status === 'queued') steps[index] = { ...steps[index]!, status: 'active' }
+  }
+  return steps.every((step, index) => step === plan.steps[index]) ? plan : { ...plan, steps }
 }
 
 export function planOnlySession(): SessionFlow {
