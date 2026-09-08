@@ -1,8 +1,12 @@
+import { readFile, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { readCodexLimits, resetIso, usagePercent, type UsageLimits } from './codex-limits'
 import { resolveBinary } from './engines'
 import type { Secrets } from './secrets'
 
-export type ClaudeQuota =
-  | {
+type ClaudeEstimate =
+  | (UsageLimits & {
       available: true
       active: boolean
       tokens: number
@@ -11,14 +15,16 @@ export type ClaudeQuota =
       costUSD: number | null
       resetsAt: string | null
       blockPercent: number | null
-    }
+    })
   | { available: false; reason: string }
+
+export type ClaudeQuota = ClaudeEstimate | (UsageLimits & { available: true; active: false; tokens: null; otherTokens: null; costUSD: null; resetsAt: null; blockPercent: null })
 
 export type GlmQuota =
   | { available: true; fiveHourPct: number; monthlyPct: number | null }
   | { available: false; reason: string }
 
-export type CodexQuota = { available: true; authed: boolean } | { available: false; reason: string }
+export type CodexQuota = (UsageLimits & { available: true; authed: boolean }) | { available: false; reason: string }
 
 export type PeakInfo = { peak: boolean; minutesToChange: number }
 
@@ -40,7 +46,7 @@ async function runCommand(cmd: string[], opts: { timeoutMs?: number } = {}): Pro
   const [command, ...args] = cmd
   if (command === undefined) return { stdout: '', exitCode: 1 }
 
-  const proc = Bun.spawn([command, ...args], { stdout: 'pipe', stderr: 'pipe' })
+  const proc = Bun.spawn([command, ...args], { stdout: 'pipe', stderr: 'ignore' })
   const timer = setTimeout(() => proc.kill(), opts.timeoutMs ?? 10_000)
   try {
     const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
@@ -92,7 +98,7 @@ function readModelBreakdown(entry: Record<string, unknown>) {
   return { tokens, otherTokens, costUSD, otherCostUSD, nonCacheTokens }
 }
 
-export function parseCcusageBlocksJson(raw: string): ClaudeQuota {
+export function parseCcusageBlocksJson(raw: string): ClaudeEstimate {
   try {
     const parsed: unknown = JSON.parse(raw)
     if (!isRecord(parsed) || !Array.isArray(parsed.blocks)) {
@@ -124,7 +130,7 @@ export function parseCcusageBlocksJson(raw: string): ClaudeQuota {
   }
 }
 
-export function parseCcusageDailyJson(raw: string): ClaudeQuota {
+export function parseCcusageDailyJson(raw: string): ClaudeEstimate {
   try {
     const parsed: unknown = JSON.parse(raw)
     if (!isRecord(parsed) || !Array.isArray(parsed.daily) || parsed.daily.length === 0) {
@@ -149,8 +155,8 @@ export function parseCcusageDailyJson(raw: string): ClaudeQuota {
   }
 }
 
-export async function fetchClaudeQuota(run: CommandRunner = runCommand, now: Date = new Date()): Promise<ClaudeQuota> {
-  let blockQuota: ClaudeQuota | null = null
+async function fetchClaudeEstimate(run: CommandRunner, now: Date): Promise<ClaudeEstimate> {
+  let blockQuota: ClaudeEstimate | null = null
   try {
     const blocks = await run(['npx', 'ccusage@latest', 'blocks', '--json', '--breakdown'], { timeoutMs: 10_000 })
     if (blocks.exitCode === 0) {
@@ -294,12 +300,37 @@ export async function fetchGlmQuota(
   }
 }
 
-export async function fetchCodexQuota(run: CommandRunner = runCommand): Promise<CodexQuota> {
+export type ClaudeCacheReader = () => Promise<{ raw: string; mtimeMs: number } | null>
+const readClaudeCache: ClaudeCacheReader = async () => {
+  const path = join(homedir(), '.cache/ccstatusline/usage.json')
+  const info = await stat(path)
+  if (info.size > 64_000) return null
+  return { raw: await readFile(path, 'utf8'), mtimeMs: info.mtimeMs }
+}
+export function parseClaudeCache(cache: { raw: string; mtimeMs: number } | null, now: Date): UsageLimits | null {
+  if (!cache || !Number.isFinite(cache.mtimeMs) || cache.mtimeMs > now.getTime() || now.getTime() - cache.mtimeMs > 180_000) return null
+  try {
+    const data: unknown = JSON.parse(cache.raw)
+    if (!isRecord(data)) return null
+    const fiveHourPct = usagePercent(data.sessionUsage), weeklyPct = usagePercent(data.weeklyUsage)
+    if (fiveHourPct === null && weeklyPct === null) return null
+    return { fiveHourPct, weeklyPct, fiveHourResetsAt: resetIso(data.sessionResetAt), weeklyResetsAt: resetIso(data.weeklyResetAt), source: 'ccstatusline cache', observedAt: new Date(cache.mtimeMs).toISOString() }
+  } catch { return null }
+}
+export async function fetchClaudeQuota(run: CommandRunner = runCommand, now: Date = new Date(), readCache: ClaudeCacheReader = run === runCommand ? readClaudeCache : async () => null): Promise<ClaudeQuota> {
+  const [estimate, cache] = await Promise.all([fetchClaudeEstimate(run, now), readCache().then(value => parseClaudeCache(value, now)).catch(() => null)])
+  if (!cache) return estimate
+  if (estimate.available) return { ...estimate, ...cache }
+  return { available: true, active: false, tokens: null, otherTokens: null, costUSD: null, resetsAt: null, blockPercent: null, ...cache, reason: 'ccusage accounting unavailable' }
+}
+export async function fetchCodexQuota(run: CommandRunner = runCommand, collect: (() => Promise<UsageLimits>) | null = run === runCommand ? readCodexLimits : null): Promise<CodexQuota> {
+  const limits = collect ? collect().catch(() => ({ reason: 'Codex usage limits unavailable' })) : Promise.resolve({})
   try {
     const result = await run([resolveBinary('codex'), 'login', 'status'], { timeoutMs: 5_000 })
-    return { available: true, authed: result.exitCode === 0 }
-  } catch (error) {
-    return { available: false, reason: error instanceof Error ? error.message : 'codex unavailable' }
+    return { available: true, authed: result.exitCode === 0, ...await limits }
+  } catch {
+    await limits
+    return { available: false, reason: 'Codex authentication status unavailable' }
   }
 }
 

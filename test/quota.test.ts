@@ -262,7 +262,7 @@ describe('fetchCodexQuota', () => {
 
   test('available:false when codex is missing', async () => {
     const result = await fetchCodexQuota(runner({ 'codex login status': new Error('spawn codex ENOENT') }))
-    expect(result).toEqual({ available: false, reason: 'spawn codex ENOENT' })
+    expect(result).toEqual({ available: false, reason: 'Codex authentication status unavailable' })
   })
 })
 
