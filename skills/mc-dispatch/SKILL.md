@@ -115,6 +115,22 @@ A spec is goal + acceptance + pointers, not a pre-digested implementation:
 - One ticket = one job. Split only along worktree boundaries; never fan out
   4–6 parallel glm jobs on one tree.
 
+### Acceptance baseline — paste into EVERY worker prompt (claude, glm, codex)
+
+Workers run on the slim profile, so the prompt is their only contract. Every
+spec ends with these three lines verbatim, after the ticket-specific
+acceptance bullets (2026-09-08, user-mandated):
+
+```
+Done means all three hold, verified by you before you report:
+1. `bin/ci` passes locally (if the repo has no bin/ci, the repo's full test command passes).
+2. rspec passes with no hard or forced waits (no sleep, no fixed wait_for/timeout padding) and a clean run: zero warnings, zero error logs, zero deprecation output in the test output.
+3. Nothing on the remote is lost and the code stays compatible: fetch and rebase onto the latest remote tip before you finish, never force-push or drop commits, and keep existing callers, data and already-applied migrations working.
+```
+
+A job that reports done without stating how each of the three was checked
+is not done: reply to it (`/reply`) asking for the evidence before review.
+
 ## Plan first (makes the cockpit graph real)
 
 Post the plan AS SOON AS it is agreed in discussion — do not wait for dispatch.
