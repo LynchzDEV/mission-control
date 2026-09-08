@@ -53,7 +53,7 @@ const PAGES: [string, string[]][] = [
 const ISLAND_MARKERS: [string, string[]][] = [
   [
     'agents.js',
-    ['mc-drawer', '/thread', '/reply', 'reply to this agent'],
+    ['mc-drawer', '/thread', '/reply', 'Reply to this agent'],
   ],
   ['awareness.js', ['"mini"', 'waiting for response', '/thread', 'mc:agent-open']],
   ['dispatch.js', ['work-selected', '/thread', '/reply', '/land', 'worktree']],
@@ -76,7 +76,7 @@ describe('transcript islands', () => {
     const lanes = await (
       await app.handle(new Request('http://localhost/js/flow.js', { headers: { cookie } }))
     ).text()
-    expect(lanes).not.toContain('reply to this agent')
+    expect(lanes).not.toContain('Reply to this agent')
     expect(lanes).not.toContain('/reply')
     expect(lanes).not.toContain('mc-drawer')
   })
@@ -85,7 +85,7 @@ describe('transcript islands', () => {
     const agents = await (
       await app.handle(new Request('http://localhost/js/agents.js', { headers: { cookie } }))
     ).text()
-    expect(agents).toContain('SEND \u00b7 \u21e7')
+    expect(agents).toContain('\u21e7\u21b5 newline')
     expect(agents).not.toContain('"mini"')
     expect(agents).not.toContain('agents-panel')
   })

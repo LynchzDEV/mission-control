@@ -1,4 +1,5 @@
 import { getJson, postJson, readArray, readRecord, errorText, shellQuote, streamJobLog } from './shared'
+import { confirmDialog } from './dialog'
 import { groupByThread, sortThreadsByActivity, createFullFeed, fetchThread, sendReply, type Feed } from './thread-view'
 import { parsePlan, STAGES, type SessionFlow, type StageState, type Plan } from './plan-view'
 import { installModelPickers } from './model-picker'
@@ -97,10 +98,10 @@ function installWork(): void {
       review.append(button('Copy review command', () => { const cmd = `cd ${shellQuote(job.cwd)} && claude --continue`; void navigator.clipboard.writeText(cmd).then(() => { message.textContent = 'Review command copied' }).catch(() => { message.textContent = cmd }) }))
       if (reviewable(job)) review.append(button('Mark reviewed', () => void action(`/api/jobs/${job.id}/reviewed`, message)))
       else if (job.reviewedAt) review.append(node('p','Review acknowledged'))
-      if (job.worktree && job.status === 'done') { const landing = node('details'); landing.append(node('summary','Land worktree'), node('p', job.worktree)); landing.append(button('Land changes', () => { if (confirm(`Land ${job.label} onto its base branch? This changes the base checkout.`)) void action(`/api/jobs/${job.id}/land`, message) })); review.append(landing) }
+      if (job.worktree && job.status === 'done') { const landing = node('details'); landing.append(node('summary','Land worktree'), node('p', job.worktree)); landing.append(button('Land changes', () => { void confirmDialog(`Land ${job.label} onto its base branch? This changes the base checkout.`, { confirmLabel: 'Land changes' }).then(ok => { if (ok) void action(`/api/jobs/${job.id}/land`, message) }) })); review.append(landing) }
       metadata.append(review)
     }
-    if (job.status === 'running') metadata.append(button('Stop job', () => { if (confirm(`Stop ${job.label}?`)) void action(`/api/jobs/${job.id}/kill`, message) }))
+    if (job.status === 'running') metadata.append(button('Stop job', () => { void confirmDialog(`Stop ${job.label}?`, { confirmLabel: 'Stop job', danger: true }).then(ok => { if (ok) void action(`/api/jobs/${job.id}/kill`, message) }) }))
       if (scroller && scrollTop !== undefined) scroller.scrollTop = scrollTop
     }
     updateMetadata(item)

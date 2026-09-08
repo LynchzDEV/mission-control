@@ -69,6 +69,10 @@
   .agent-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .agent-window .agent-model { font:9px var(--ui); color:var(--quiet); margin-left:auto; }
   .agent-window summary svg { width:12px; height:12px; color:var(--quiet); }
+  .agent-window summary .agent-expand { display:grid; place-items:center; width:18px; height:18px; margin-left:auto; padding:0; border:0; background:transparent; color:var(--quiet); cursor:pointer; }
+  .agent-window summary .agent-expand:hover { color:var(--text); }
+  .agent-window summary .agent-expand svg { width:12px; height:12px; }
+  .agent-window summary .agent-model { margin-left:0; }
   .agent-window:not([open]) summary svg { transform:rotate(180deg); }
   .agent-output { padding:11px 12px 12px; color:var(--muted); font:9px/1.7 var(--code); }
   .agent-feed { max-height:none; overflow:visible; }

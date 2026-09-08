@@ -344,13 +344,13 @@ describe('fullRows', () => {
 describe('thread counts', () => {
   test('counts tool calls and thoughts for the drawer header', () => {
     expect(threadCounts(model(EXCHANGE))).toEqual({ tools: 2, thoughts: 1 })
-    expect(headerStats(model(EXCHANGE))).toBe('2 TOOLS · 1 THOUGHTS · ESC CLOSE')
-    expect(headerStats(null)).toBe('ESC CLOSE')
+    expect(headerStats(model(EXCHANGE))).toBe('2 tools · 1 thoughts')
+    expect(headerStats(null)).toBe('')
   })
 
   test('reports the live status word', () => {
-    expect(statusLabel(model([], true))).toBe('RUNNING')
-    expect(statusLabel(model([]))).toBe('DONE')
+    expect(statusLabel(model([], true))).toBe('Running')
+    expect(statusLabel(model([]))).toBe('Done')
     expect(statusLabel(null)).toBe('…')
   })
 })

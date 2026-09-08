@@ -1,6 +1,7 @@
 import { restoreLayout, selectSession, visibleSessions, type TerminalLayout } from './terminal-layout'
 import { installModelPickers } from './model-picker'
 import { icon, ui, providerName, connectionLabel, installTerminalShell } from './terminal-view'
+import { confirmDialog, promptDialog } from './dialog'
 import { errorText, getJson, pathsFromUriList, postJson, readArray, shellQuote } from './shared'
 
 type TerminalSession = {
@@ -434,7 +435,7 @@ function attach(id: string): void {
     title.textContent = displayName(session)
     title.className = 'session-title'
     title.title = 'Focus this terminal; double-click to rename'
-    title.ondblclick = () => { const name = prompt('Terminal name', displayName(sessions.find(entry => entry.id === id) ?? session)); if (name?.trim()) void renameSession(id, name.trim().slice(0, 60)).catch(() => say('Could not rename session.')) }
+    title.ondblclick = () => { void promptDialog('Rename terminal', displayName(sessions.find(entry => entry.id === id) ?? session)).then(name => { if (name) void renameSession(id, name.slice(0, 60)).catch(() => say('Could not rename session.')) }) }
     const hide = document.createElement('button')
     hide.className = 'session-hide'
     hide.textContent = '−'
@@ -489,8 +490,8 @@ function attach(id: string): void {
     const view: SessionView = { root, host, term: instance, fit: addon, search: finder, socket: connection, observer }
     views.set(id, view)
     observer.observe(host)
-    root.addEventListener('pointerdown', () => { if (attachedId !== id) { activate(id); paintLayout() } })
     void document.fonts?.load("13px 'JetBrains Mono'").then(() => { const current = views.get(id); if (current === view) resizeView(view) }).catch(() => {})
+    root.addEventListener('pointerdown', () => { if (attachedId !== id) { activate(id); paintLayout() } })
     root.addEventListener('focusin', () => { if (attachedId !== id) { activate(id); paintLayout() } })
     title.onclick = () => { activate(id); paintLayout(); (instance as unknown as { focus(): void }).focus() }
     instance.attachCustomKeyEventHandler(macShortcutHandler(instance, connection))
@@ -515,7 +516,7 @@ function attach(id: string): void {
 
 async function killSession(id: string): Promise<void> {
   const session = sessions.find((entry) => entry.id === id)
-  if (!confirm(`End ${session ? displayName(session) : id}? This stops its running process.`)) return
+  if (!await confirmDialog(`End ${session ? displayName(session) : id}? This stops its running process.`, { confirmLabel: 'End session', danger: true })) return
   try {
     const response = await fetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'DELETE' })
     if (!response.ok) { say('Could not end session. Try again.'); return }

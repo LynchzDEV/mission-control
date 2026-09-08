@@ -12,7 +12,8 @@ beforeAll(async () => { const built = await Bun.build({entrypoints:['client/awar
 class Node {
   children: Node[] = []; dataset: Record<string,string> = {}; value = ''; textContent = ''; className = ''; hidden = false; disabled = false; parent: Node | null = null
   onchange?: () => void
-  onclick?: () => void
+  onclick?: (event?: any) => void
+  click() { this.onclick?.({preventDefault() {}, stopPropagation() {}}) }
   open = true
   attributes: Record<string,string> = {}; title = ''; namespaceURI = 'http://www.w3.org/2000/svg'
   style = {setProperty: (key:string, value:string) => { this.attributes[key] = value }}
@@ -79,6 +80,11 @@ test('all active cards retain DOM, collapse and flow independence; drawer uses c
   await h.poll()
   a.children[1]!.children[1]!.children[1]!.onclick!()
   expect(h.events[0].detail).toEqual({id:'a',label:'Renamed',engine:'codex',elapsed:'running'})
+  const expand = a.children[0]!.children.find(node => node.className === 'agent-expand')!
+  expect(expand.attributes['aria-label']).toBe('Open conversation for Renamed')
+  let stopped = false
+  expand.onclick!({preventDefault() {}, stopPropagation() { stopped = true }})
+  expect(stopped).toBe(true); expect(h.events).toHaveLength(2); expect(h.events[1].detail.id).toBe('a')
 })
 test('scope, completion, removal and same-thread new activity replace only the correct feeds', async () => {
   const h = harness(); await flush(); await h.scope()

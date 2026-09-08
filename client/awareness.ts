@@ -129,7 +129,7 @@ function install(): void {
   flow.tabIndex = 0; flow.setAttribute('role', 'region'); flow.setAttribute('aria-label', 'Work flow steps')
   const collection = document.querySelector<HTMLElement>('#active-agent-windows')!, agentStatus = document.querySelector<HTMLElement>('#active-agent-status')!
   const rails = [document.querySelector<HTMLElement>('#active-agents-left')!, document.querySelector<HTMLElement>('#active-agents-right')!]
-  type Card = { root: HTMLDetailsElement; label: HTMLElement; state: HTMLElement; activity: HTMLElement; count:HTMLElement; host: HTMLElement; feed?: MiniFeed; jobId: string }
+  type Card = { root: HTMLDetailsElement; label: HTMLElement; state: HTMLElement; activity: HTMLElement; count:HTMLElement; expand: HTMLElement; host: HTMLElement; feed?: MiniFeed; jobId: string }
   const cards = new Map<string, Card>()
   let items: WorkItem[] = [], jobs: WorkJob[] = [], flows: Record<string, unknown> = {}, unavailable = false
   let scopeId: string | null = null, cwd: string | null = null, current = '', signature = '', generation = 0
@@ -158,7 +158,10 @@ function install(): void {
         bars.setAttribute('aria-hidden', 'true')
         for (let i = 0; i < 4; i++) bars.append(element('i'))
         const label = element('span', '', 'agent-label'), state = element('span', '', 'agent-model')
-        summary.append(bars, label, state, icon('chevron'))
+        const expand = document.createElement('button'); expand.type = 'button'; expand.className = 'agent-expand'; expand.title = 'Open conversation'
+        expand.setAttribute('aria-label', `Open conversation for ${item.label}`); expand.append(icon('focus'))
+        expand.onclick = event => { event.preventDefault(); event.stopPropagation(); open.click() }
+        summary.append(bars, label, state, expand, icon('chevron'))
         const output = element('div', '', 'agent-output'), activity = element('span', '', 'activity-text'), host = element('div', '', 'agent-feed')
         const footer = element('div', '', 'agent-footer')
         const open = document.createElement('button'); open.type = 'button'; open.className = 'agent-open'; open.textContent = 'Open conversation ↗'
@@ -168,14 +171,14 @@ function install(): void {
           if (current) dispatchEvent(new CustomEvent('mc:agent-open', {detail:{id:current.id,label:current.label,engine:current.provider,elapsed:current.state}}))
         }
         footer.append(activity, open); output.append(host, footer); root.append(summary, output)
-        card = {root, label, state, activity, count:open, host, jobId:''}
+        card = {root, label, state, activity, count:open, expand, host, jobId:''}
         cards.set(item.id, card)
         const rail = rails[0]!.children.length <= rails[1]!.children.length ? rails[0]! : rails[1]!
         rail.append(root)
       }
       const elapsed = Math.max(0,Math.floor((Date.now() - item.job!.startedAt)/1000))
       card.label.textContent = item.label; card.label.title = item.label; card.state.textContent = providerName(item.provider)
-      card.count.setAttribute('aria-label', `Open conversation for ${item.label}`)
+      for (const control of [card.count, card.expand]) control.setAttribute('aria-label', `Open conversation for ${item.label}`)
       card.activity.textContent = item.state === 'queued' ? 'Queued' : `Working · ${elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed/60)}m ${elapsed%60}s`}`
       card.count.textContent = `Agent ${index+1} of ${threads.length}`
       card.root.dataset.engine = item.provider; card.root.dataset.running = String(item.state === 'running')

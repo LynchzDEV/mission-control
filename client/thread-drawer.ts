@@ -1,7 +1,6 @@
 import {
   DRAWER_POLL_MS,
   createFullList,
-  engineClass,
   fetchThread,
   sendReply,
   threadCounts,
@@ -11,9 +10,9 @@ import {
 
 export type DrawerTarget = { id: string; label: string; engine: string; elapsed: string }
 
-export const HINT_TEXT = '↵ SEND · ⇧↵ NEWLINE · continues the same session (resume)'
-export const SINGLE_TURN_NOTE = 'SINGLE-TURN ENGINE · NO REPLY'
-export const NO_SESSION_NOTE = 'NO SESSION ID YET · REPLY OPENS WHEN THE ENGINE REPORTS ONE'
+export const HINT_TEXT = '↵ send · ⇧↵ newline · continues the same session'
+export const SINGLE_TURN_NOTE = 'Single-turn engine · no reply'
+export const NO_SESSION_NOTE = 'No session id yet · reply opens when the engine reports one'
 export const OPEN_CLASS = 'mcd-open'
 
 export function optimisticRow(jobId: string, text: string, nonce: number): ThreadRow {
@@ -39,14 +38,14 @@ export function replyNote(model: ThreadModel | null): string {
 }
 
 export function headerStats(model: ThreadModel | null): string {
-  if (model === null) return 'ESC CLOSE'
+  if (model === null) return ''
   const counts = threadCounts(model)
-  return `${counts.tools} TOOLS · ${counts.thoughts} THOUGHTS · ESC CLOSE`
+  return `${counts.tools} tools · ${counts.thoughts} thoughts`
 }
 
 export function statusLabel(model: ThreadModel | null): string {
   if (model === null) return '…'
-  return model.running ? 'RUNNING' : 'DONE'
+  return model.running ? 'Running' : 'Done'
 }
 
 function el(tag: string, className = '', text = ''): HTMLElement {
@@ -67,6 +66,7 @@ type Shell = {
   note: HTMLElement
   input: HTMLTextAreaElement
   send: HTMLButtonElement
+  close: HTMLButtonElement
 }
 
 let shell: Shell | null = null
@@ -75,34 +75,58 @@ let timer: ReturnType<typeof setTimeout> | undefined
 let last: ThreadModel | null = null
 let list: ReturnType<typeof createFullList> | null = null
 let nonce = 0
+let opener: HTMLElement | null = null
+let focusPending = false
+const PROVIDER_LABEL: Record<string, string> = { claude: 'Claude', codex: 'Codex', glm: 'GLM' }
+
+function glyph(d: string): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 20 20'); svg.setAttribute('aria-hidden', 'true')
+  const path = document.createElementNS(svg.namespaceURI!, 'path'); path.setAttribute('d', d); svg.append(path)
+  return svg
+}
+
+function trapFocus(event: KeyboardEvent): void {
+  if (event.key !== 'Tab' || shell === null) return
+  const focusable = [...shell.root.querySelectorAll<HTMLElement>('button:not([disabled]), textarea:not([disabled])')]
+  const first = focusable[0], last = focusable.at(-1)
+  if (!first || !last) return
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+}
 
 function buildShell(root: HTMLElement): Shell {
   root.textContent = ''
-  const name = el('b')
-  const chip = el('span')
+  root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'mcd-title')
+  const name = el('h2'); name.id = 'mcd-title'
+  const chip = el('span', 'mcd-chip')
   const elapsed = el('span', 'mcd-el')
   const status = el('span', 'st')
-  const left = el('div')
-  left.append(name, el('span', 'mcd-sep', '·'), chip, el('span', 'mcd-sep', '·'), elapsed, el('span', 'mcd-sep', '·'), status)
+  const identity = el('div', 'mcd-identity')
+  identity.append(name, chip, elapsed, status)
   const stats = el('div', 'mcd-stats')
+  const close = document.createElement('button')
+  close.type = 'button'; close.className = 'mcd-close'; close.title = 'Close (Esc)'; close.setAttribute('aria-label', 'Close conversation')
+  close.append(glyph('M5 5l10 10M15 5L5 15'))
+  close.onclick = closeDrawer
   const head = el('div', 'mcd-head')
-  head.append(left, stats)
+  head.append(identity, stats, close)
 
   const transcript = el('div', 'mcd-tx')
-  const hint = el('div', 'mcd-hint', HINT_TEXT)
   const note = el('div', 'mcd-note')
-  note.hidden = true
-
+  note.hidden = true; note.setAttribute('role', 'alert')
   const input = document.createElement('textarea')
-  input.placeholder = 'reply to this agent…'
+  input.placeholder = 'Reply to this agent…'; input.rows = 2; input.setAttribute('aria-label', 'Reply to this agent')
   const send = document.createElement('button')
-  send.type = 'button'
-  send.textContent = 'SEND'
+  send.type = 'button'; send.className = 'mcd-send'; send.textContent = 'Send'
+  const compose = el('div', 'mcd-compose')
+  compose.append(input, send)
   const foot = el('div', 'mcd-foot')
-  foot.append(input, send)
+  foot.append(note, compose, el('div', 'mcd-hint', HINT_TEXT))
 
-  root.append(head, transcript, note, hint, foot)
-  return { root, name, chip, elapsed, status, stats, transcript, note, input, send }
+  root.append(head, transcript, foot)
+  root.addEventListener('keydown', trapFocus)
+  return { root, name, chip, elapsed, status, stats, transcript, note, input, send, close }
 }
 
 function applyModel(model: ThreadModel): void {
@@ -116,6 +140,7 @@ function applyModel(model: ThreadModel): void {
   shell.note.textContent = note
   shell.input.disabled = !model.canReply
   shell.send.disabled = !model.canReply
+  if (focusPending && model.canReply) { focusPending = false; shell.input.focus() }
 }
 
 async function tick(): Promise<void> {
@@ -157,8 +182,11 @@ export function isDrawerOpen(jobId: string): boolean {
 export function closeDrawer(): void {
   openId = ''
   last = null
+  focusPending = false
   clearTimeout(timer)
   document.body.classList.remove(OPEN_CLASS)
+  opener?.focus()
+  opener = null
 }
 
 export function openDrawer(target: DrawerTarget): void {
@@ -174,12 +202,14 @@ export function openDrawer(target: DrawerTarget): void {
     }
   }
 
+  opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  focusPending = true
   openId = target.id
   last = null
   clearTimeout(timer)
+  root.dataset.engine = target.engine
   shell.name.textContent = target.label
-  shell.chip.className = engineClass(target.engine)
-  shell.chip.textContent = target.engine.toUpperCase()
+  shell.chip.textContent = PROVIDER_LABEL[target.engine] ?? target.engine
   shell.elapsed.textContent = target.elapsed
   shell.status.textContent = '…'
   shell.stats.textContent = headerStats(null)
@@ -187,6 +217,7 @@ export function openDrawer(target: DrawerTarget): void {
   shell.transcript.textContent = ''
   list = createFullList(shell.transcript)
   document.body.classList.add(OPEN_CLASS)
+  shell.close.focus()
   void tick()
 }
 
