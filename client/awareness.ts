@@ -127,16 +127,7 @@ function install(): void {
   if (!select) return
   const flow = document.querySelector<HTMLElement>('#awareness-flow')!, status = document.querySelector<HTMLElement>('#awareness-status')!
   flow.tabIndex = 0; flow.setAttribute('role', 'region'); flow.setAttribute('aria-label', 'Work flow steps')
-  if (!document.querySelector('#active-agent-windows')) {
-    const collection = element('section'); collection.id = 'active-agent-windows'; collection.setAttribute('aria-label', 'Active agents')
-    const state = element('p', 'Select a terminal to see its active agents.'); state.id = 'active-agent-status'; state.setAttribute('role', 'status')
-    collection.append(state)
-    for (const side of ['left', 'right']) { const rail = element('div', '', 'active-agent-rail'); rail.id = `active-agents-${side}`; collection.append(rail) }
-    document.querySelector('.awareness-row .agent-window')?.remove()
-    flow.closest('.awareness-row')!.after(collection)
-  }
   const collection = document.querySelector<HTMLElement>('#active-agent-windows')!, agentStatus = document.querySelector<HTMLElement>('#active-agent-status')!
-  flow.closest('.awareness-row')!.append(collection)
   const rails = [document.querySelector<HTMLElement>('#active-agents-left')!, document.querySelector<HTMLElement>('#active-agents-right')!]
   type Card = { root: HTMLDetailsElement; label: HTMLElement; state: HTMLElement; activity: HTMLElement; count:HTMLElement; host: HTMLElement; feed?: MiniFeed; jobId: string }
   const cards = new Map<string, Card>()

@@ -31,14 +31,8 @@ class Node {
   closest() { return this.parent ?? this }
 }
 const flush = async () => { for (let i = 0; i < 40; i++) await Promise.resolve() }
-function harness(legacy = false) {
+function harness() {
   const nodes = new Map(['awareness-select','awareness-flow','awareness-status','active-agent-windows','active-agent-status','active-agents-left','active-agents-right','awareness-open'].map(id => ['#'+id,new Node()]))
-  const main = new Node(), row = new Node(), legacyWindow = new Node()
-  main.append(row); row.append(nodes.get('#awareness-flow')!, legacyWindow)
-  if (legacy) {
-    for (const id of ['active-agent-windows','active-agent-status','active-agents-left','active-agents-right']) nodes.delete('#'+id)
-    nodes.set('.awareness-row .agent-window', legacyWindow)
-  }
   const listeners = new Map<string,(event:any) => void>(), intervals: Array<() => void> = [], timers = new Map<number,() => void>()
   const events: any[] = [], reads: string[] = []
   const pending: Array<() => void> = []
@@ -63,19 +57,12 @@ function harness(legacy = false) {
       return {ok:!failed,status:failed ? 503 : 200,json:async () => thread ? {messages:state.messages,canReply:true,running:true,engine:'codex'} : url === '/api/jobs' ? {jobs:state.jobs} : {sessions:state.flows}}
     },
   })
-  return {nodes, state, observers, timers, reads, events, pending, main, row, legacyWindow,
+  return {nodes, state, observers, timers, reads, events, pending,
     scope:async (id:string|null = 'terminal') => { listeners.get('mc:terminal-scope')!({detail:{id,cwd:id ? '/repo' : null}}); await flush() },
     poll:async () => { intervals[0]!(); await flush() },
     cards:() => ['left','right'].flatMap(side => nodes.get('#active-agents-'+side)!.children),
   }
 }
-test('the running server single-window markup upgrades without restarting terminals', async () => {
-  const h = harness(true); await flush(); await h.scope()
-  expect(h.row.children).toContain(h.nodes.get('#active-agent-windows'))
-  expect(h.row.children).not.toContain(h.legacyWindow)
-  expect(h.cards()).toHaveLength(3)
-  expect(h.nodes.get('#active-agent-status')!.textContent).toBe('3 active agents')
-})
 test('all active cards retain DOM, collapse and flow independence; drawer uses current metadata', async () => {
   const h = harness(); await flush()
   expect(h.cards()).toHaveLength(0)

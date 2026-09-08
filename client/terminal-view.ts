@@ -31,6 +31,23 @@ export function connectionLabel(state?: string): string {
   return ({live:'Connected',closed:'Disconnected',error:'Connection failed'} as Record<string,string>)[state ?? ''] ?? 'Connecting'
 }
 
+function collapsible(key: string, toggleId: string, apply: (open: boolean) => void): void {
+  const toggle = document.getElementById(toggleId)
+  if (!toggle) return
+  let open = true
+  try { open = localStorage.getItem(key) !== '0' } catch {}
+  const sync = () => { apply(open); toggle.setAttribute('aria-expanded', String(open)); toggle.title = `${open ? 'Collapse' : 'Expand'} ${toggle.dataset.label ?? ''}`.trim(); dispatchEvent(new Event('resize')) }
+  toggle.addEventListener('click', () => { open = !open; try { localStorage.setItem(key, open ? '1' : '0') } catch {}; sync() })
+  sync()
+}
+function installPanels(root: HTMLElement, chat: HTMLElement): void {
+  const sidebarToggle = document.getElementById('sidebar-toggle'), flowToggle = document.getElementById('flow-toggle')
+  if (sidebarToggle) sidebarToggle.dataset.label = 'agents'
+  if (flowToggle) flowToggle.dataset.label = 'work flow'
+  collapsible('mc.sidebar.open', 'sidebar-toggle', open => { root.classList.toggle('sidebar-collapsed', !open); chat.setAttribute('aria-expanded', String(open)); chat.setAttribute('aria-pressed', String(open)) })
+  collapsible('mc.flow.open', 'flow-toggle', open => document.getElementById('flow-overview')?.classList.toggle('collapsed', !open))
+  chat.addEventListener('click', () => sidebarToggle?.click())
+}
 export function installTerminalShell(): void {
   const root = document.querySelector<HTMLElement>('#termgrid')
   if (!root || root.dataset.design === 'approved') return
@@ -48,13 +65,14 @@ export function installTerminalShell(): void {
     button.replaceChildren(icon(glyph), document.createTextNode(label)); arrangement.append(button)
   }
   const chat = document.getElementById('activity-open')!
-  chat.className = 'conversation-control'; chat.replaceChildren(icon('chat'), document.createTextNode('Agent chat'))
+  chat.className = 'conversation-control'; chat.replaceChildren(icon('chat'), document.createTextNode('Agents'))
   for (const id of ['term-focus','term-find','term-reconnect','directory-toggle']) {
     const button = document.getElementById(id)
     if (button) menu.append(button)
   }
   menu.addEventListener('click', event => { if ((event.target as HTMLElement).closest('button')) utilities.open = false })
   tools.replaceChildren(arrangement, ui('span', 'control-divider'), chat, utilities); heading.append(tools)
+  installPanels(root, chat)
   const newTerminal = document.getElementById('term-new')!
   newTerminal.className = 'add-session'; newTerminal.replaceChildren(icon('add'), document.createTextNode('New terminal'))
   document.getElementById('term-strip')?.classList.add('session-strip')

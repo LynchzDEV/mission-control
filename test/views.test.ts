@@ -46,15 +46,16 @@ const PAGES: [string, string[]][] = [
   ['/lanes', ['id="work-view"', 'id="work-list"', 'id="work-selected"', 'id="work-filter"', 'id="usage-view"']],
   ['/settings', ['Connections', 'Work defaults', 'Access', 'id="bind"']],
   ['/dispatch', ['id="dispatch-form"', 'id="prompt"', 'Isolated worktree', 'id="work-list"']],
-  ['/terminals', ['id="term-pane"', 'id="term-strip"', 'id="term-form"', 'id="agents-panel"', 'id="ascii-horizon"']],
+  ['/terminals', ['id="term-pane"', 'id="term-strip"', 'id="term-form"', 'id="agent-sidebar"', 'id="ascii-horizon"']],
   ['/review', ['id="work-view"', 'data-mode="review"']],
 ]
 
 const ISLAND_MARKERS: [string, string[]][] = [
   [
     'agents.js',
-    ['TALK \u25be', 'OPEN FULL TRANSCRIPT', 'mc-drawer', '/thread', '/reply', 'reply to this agent'],
+    ['mc-drawer', '/thread', '/reply', 'reply to this agent'],
   ],
+  ['awareness.js', ['"mini"', 'waiting for response', '/thread', 'mc:agent-open']],
   ['dispatch.js', ['work-selected', '/thread', '/reply', '/land', 'worktree']],
   ['flow.js', ['/thread', 'activity-feed', 'mcd-tx']],
 ]
@@ -80,13 +81,13 @@ describe('transcript islands', () => {
     expect(lanes).not.toContain('mc-drawer')
   })
 
-  test('the mini card view and the drawer share one renderer', async () => {
+  test('the agents island carries only the drawer, never the retired activity panel', async () => {
     const agents = await (
       await app.handle(new Request('http://localhost/js/agents.js', { headers: { cookie } }))
     ).text()
-    expect(agents).toContain('"mini"')
-    expect(agents).toContain('waiting for response')
     expect(agents).toContain('SEND \u00b7 \u21e7')
+    expect(agents).not.toContain('"mini"')
+    expect(agents).not.toContain('agents-panel')
   })
 })
 
@@ -244,7 +245,7 @@ describe('tab views', () => {
     expect(html).not.toContain('class="arec"')
 
     for (const [path] of PAGES.filter(([entry]) => entry !== '/terminals')) {
-      expect((await render(path)).html).not.toContain('id="agents-panel"')
+      expect((await render(path)).html).not.toContain('id="agent-sidebar"')
     }
   })
 
