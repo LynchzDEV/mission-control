@@ -474,7 +474,7 @@ function attach(id: string): void {
     context.title = session.cwd
     root.append(header, caption, context, host, handle)
     deck.append(root)
-    const instance = new globals.Terminal({ convertEol: false, cursorBlink: true, fontFamily: "Menlo, 'SF Mono', monospace", fontSize: 13, macOptionIsMeta: true, scrollback: 10000, theme: THEME })
+    const instance = new globals.Terminal({ convertEol: false, cursorBlink: true, fontFamily: "'JetBrains Mono', Menlo, 'SF Mono', monospace", fontSize: 13, macOptionIsMeta: true, scrollback: 10000, theme: THEME })
     const loader = instance as unknown as { loadAddon(addon: unknown): void }
     const addon = new globals.FitAddon.FitAddon()
     loader.loadAddon(addon)
@@ -490,6 +490,7 @@ function attach(id: string): void {
     views.set(id, view)
     observer.observe(host)
     root.addEventListener('pointerdown', () => { if (attachedId !== id) { activate(id); paintLayout() } })
+    void document.fonts?.load("13px 'JetBrains Mono'").then(() => { const current = views.get(id); if (current === view) resizeView(view) }).catch(() => {})
     root.addEventListener('focusin', () => { if (attachedId !== id) { activate(id); paintLayout() } })
     title.onclick = () => { activate(id); paintLayout(); (instance as unknown as { focus(): void }).focus() }
     instance.attachCustomKeyEventHandler(macShortcutHandler(instance, connection))
