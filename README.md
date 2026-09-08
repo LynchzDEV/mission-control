@@ -55,7 +55,7 @@ bun test             # full suite — runs offline, no engine CLIs needed
 
 Installing Mission Control also installs the `mc-dispatch` orchestration skill into Claude Code. `bun install` (or the first cockpit start) links `~/.claude/skills/mc-dispatch` to `skills/mc-dispatch` in this repo — so the skill is a symlink, and `git pull` updates it with no further action. An existing hand-written copy at that path is never overwritten: it is moved aside to `~/.claude/skills-backup/mc-dispatch.pre-mission-control-<timestamp>` before the link is created — deliberately outside `skills/`, so Claude Code never loads the backup as a second skill.
 
-On `bun install` and every cockpit start, Claude's global instructions and skills are linked into `~/.codex`, and its Markdown agents are converted to Codex TOML agents; displaced instructions and skills are preserved under `~/.codex/backup/`. GLM already shares Claude's `~/.claude` configuration, while isolated worker profiles stay slim on purpose.
+On `bun install` and every cockpit start, Mission Control translates Claude's global instructions, skills and Markdown agents for Codex, skipping incompatible orchestration assets while keeping clean skills and supporting resources symlinked. Generated instructions and translated skills are real files, displaced personal assets are preserved under `~/.codex/backup/`, and unchanged output keeps its mtime; GLM continues to share `~/.claude`, while isolated worker profiles stay slim.
 
 ## Architecture
 
