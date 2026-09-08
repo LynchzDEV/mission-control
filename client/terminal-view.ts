@@ -7,7 +7,10 @@ const paths = {
   chat: 'M16 14H8l-4 3V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2ZM7 7h8M7 10h5',
   chevron: 'm5 12 5-5 5 5',
   add: 'M10 4v12M4 10h12',
-  more: 'M4 10h.01M10 10h.01M16 10h.01',
+  search: 'M9 4a5 5 0 1 0 0 10a5 5 0 1 0 0-10M13 13l4 4',
+  reconnect: 'M16 5v4h-4M15.6 9a6 6 0 1 0-.4 4',
+  close: 'M5 5l10 10M15 5L5 15',
+  minus: 'M4 10h12',
 } as const
 
 export function icon(name: keyof typeof paths): SVGSVGElement {
@@ -56,24 +59,13 @@ export function installTerminalShell(): void {
   stylesheet.rel = 'stylesheet'; stylesheet.href = '/terminal-design.css'; document.head.append(stylesheet)
   const heading = root.querySelector('.workspace-heading')!, tools = root.querySelector('.terminal-tools')!
   tools.className = 'terminal-tools view-controls'
-  const arrangement = ui('div', 'arrangement'), utilities = document.createElement('details')
-  utilities.className = 'terminal-utilities'
-  const summary = ui('summary'); summary.setAttribute('aria-label', 'Terminal actions'); summary.title = 'Terminal actions'; summary.append(icon('more'))
-  const menu = ui('div', 'terminal-actions'); utilities.append(summary, menu)
+  const arrangement = ui('div', 'arrangement')
   for (const [id, glyph, label] of [['split-horizontal','horizontal','Side by side'],['split-vertical','vertical','Stacked']] as const) {
     const button = document.getElementById(id)!
     button.replaceChildren(icon(glyph), document.createTextNode(label)); arrangement.append(button)
   }
   const chat = document.getElementById('activity-open')!
   chat.className = 'conversation-control'; chat.replaceChildren(icon('chat'), document.createTextNode('Agents'))
-  for (const id of ['term-focus','term-find','term-reconnect','directory-toggle']) {
-    const button = document.getElementById(id)
-    if (button) menu.append(button)
-  }
-  menu.addEventListener('click', event => { if ((event.target as HTMLElement).closest('button')) utilities.open = false })
-  tools.replaceChildren(arrangement, ui('span', 'control-divider'), chat, utilities); heading.append(tools)
+  tools.replaceChildren(arrangement, ui('span', 'control-divider'), chat); heading.append(tools)
   installPanels(root, chat)
-  const newTerminal = document.getElementById('term-new')!
-  newTerminal.className = 'add-session'; newTerminal.replaceChildren(icon('add'), document.createTextNode('New terminal'))
-  document.getElementById('term-strip')?.classList.add('session-strip')
 }

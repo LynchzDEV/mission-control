@@ -233,10 +233,13 @@ describe('tab views', () => {
     expect(html).not.toContain('cdn.jsdelivr.net')
   })
 
-  test('the terminals page ships the resume button and sessions panel', async () => {
+  test('the terminals page ships the composer with its resume tab and recent directories', async () => {
     const { html } = await render('/terminals')
-    expect(html).toContain('id="term-resume"')
-    expect(html).toContain('id="term-sessions"')
+    expect(html).toContain('id="term-tab-resume"')
+    expect(html).toContain('id="term-sessions-list"')
+    expect(html).toContain('id="term-directories"')
+    expect(html).not.toContain('id="term-resume"')
+    expect(html).not.toContain('Directories and sessions')
   })
 
   test('the agents panel ships empty and only on the terminals tab', async () => {
@@ -276,7 +279,7 @@ describe('persistent workspace routes', () => {
       expect(html).toContain('id="termgrid"')
       expect(html).toContain('id="ascii-horizon"')
       expect(html).toContain('/js/workspace.js')
-      expect(html).toContain('aria-label="Directories and sessions"')
+      expect(html).toContain('id="term-directories"')
     }
   })
 })

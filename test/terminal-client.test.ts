@@ -59,12 +59,11 @@ class Node {
 
 async function harness(initial: string[] = ['a', 'b'], saved?: object) {
   const nodes = new Map<string, Node>()
-  for (const id of ['directory-nav', 'directory-toggle', 'term-strip', 'term-none', 'term-new', 'term-pane', 'term-msg', 'terminal-welcome', 'workspace-name', 'workspace-path', 'term-focus', 'directory-list', 'split-horizontal', 'split-vertical', 'term-reconnect', 'term-find', 'term-form', 'term-cwd', 'term-engine', 'term-model', 'term-cancel']) {
-    const node = new Node(id.includes('split-') || id === 'term-focus' ? 'button' : 'div')
+  for (const id of ['term-strip', 'term-none', 'term-new', 'term-pane', 'term-msg', 'terminal-welcome', 'workspace-name', 'workspace-path', 'split-horizontal', 'split-vertical', 'term-form', 'term-cwd', 'term-engine', 'term-model', 'term-cancel']) {
+    const node = new Node(id.includes('split-') ? 'button' : 'div')
     node.id = id
     nodes.set(id, node)
   }
-  nodes.get('directory-nav')!.hidden = true
   nodes.get('term-pane')!.append(nodes.get('terminal-welcome')!)
   nodes.get('term-strip')!.append(nodes.get('term-new')!)
   nodes.get('term-engine')!.value = 'claude'
@@ -146,9 +145,10 @@ describe('terminal client lifecycle with inert API and socket doubles', () => {
     expect(h.sockets.every((socket) => !socket.closed)).toBe(true)
     h.nodes.get('split-horizontal')!.fire()
     expect(h.nodes.get('term-pane')!.dataset.count).toBe('2')
-    h.nodes.get('term-focus')!.fire()
+    const focus = h.nodes.get('term-pane')!.querySelector('.session-focus')!
+    focus.fire()
     expect(h.nodes.get('term-pane')!.dataset.count).toBe('1')
-    h.nodes.get('term-focus')!.fire()
+    focus.fire()
     expect(h.nodes.get('term-pane')!.dataset.count).toBe('2')
     expect(h.events).toContain('mc:terminal-scope')
     expect(h.requests.every((request) => request.method === 'GET')).toBe(true)
@@ -161,7 +161,7 @@ describe('terminal client lifecycle with inert API and socket doubles', () => {
     h.state.failCreate = true
     h.nodes.get('term-form')!.fire('submit')
     await h.flush()
-    expect(h.nodes.get('term-msg')!.textContent).toContain('OFFLINE')
+    expect(h.nodes.get('term-msg')!.textContent).toContain('offline')
     expect(h.sockets).toHaveLength(0)
   })
   test('failed list preserves live connections; ended session removes only its own view', async () => {
@@ -183,7 +183,7 @@ describe('terminal client lifecycle with inert API and socket doubles', () => {
     const h = await harness(['a'])
     h.sockets[0]!.onerror?.()
     expect(h.nodes.get('term-msg')!.textContent).toContain('Reconnect')
-    h.nodes.get('term-reconnect')!.fire()
+    h.nodes.get('term-pane')!.querySelector('.tool-reconnect')!.fire()
     expect(h.sockets).toHaveLength(2)
     expect(h.requests.every((request) => request.method === 'GET')).toBe(true)
   })
@@ -192,7 +192,7 @@ describe('terminal client lifecycle with inert API and socket doubles', () => {
 test('late callbacks from a replaced socket cannot change the active connection', async () => {
   const h = await harness(['a'])
   const old = h.sockets[0]!
-  h.nodes.get('term-reconnect')!.fire()
+  h.nodes.get('term-pane')!.querySelector('.tool-reconnect')!.fire()
   await h.flush()
   const message = h.nodes.get('term-msg')!.textContent
   old.onclose?.({ code: 4410 })
@@ -202,15 +202,6 @@ test('late callbacks from a replaced socket cannot change the active connection'
   expect(h.nodes.get('term-msg')!.textContent).toBe(message)
   expect(h.terms[0]!.output).toBe('')
   expect(h.terms[1]!.disposed).toBe(false)
-})
-test('empty terminal commands explain their required target and Find creates no overlay', async () => {
-  const h = await harness([])
-  for (const id of ['term-focus','term-find','term-reconnect']) {
-    h.nodes.get(id)!.fire()
-    expect(h.nodes.get('term-msg')!.textContent).toContain('Open a terminal')
-  }
-  expect(h.nodes.get('term-pane')!.children).toHaveLength(1)
-  expect(h.requests.every(request => request.method === 'GET')).toBe(true)
 })
 
 test('session activation and polling retain the double-click rename target', async () => {
@@ -244,32 +235,6 @@ test('connection feedback follows selection despite another socket opening', asy
   expect(h.nodes.get('term-msg')!.textContent).toBe('Connected · b')
 })
 
-test('directories toggle once at 700px and retain visibility across mobile and desktop resizing', async () => {
-  const h = await harness([])
-  const directory = h.nodes.get('directory-nav')!
-  const toggle = h.nodes.get('directory-toggle')!
-  const expectOpen = (open: boolean) => {
-    expect(directory.hidden).toBe(!open)
-    expect(directory.hasAttribute('data-mobile-open')).toBe(open)
-    expect(toggle.attrs['aria-expanded']).toBe(String(open))
-  }
-  expectOpen(false)
-  h.resize(700)
-  toggle.fire(); expectOpen(true)
-  toggle.fire(); expectOpen(false)
-  toggle.fire(); expectOpen(true)
-  h.resize(1200); expectOpen(true)
-  toggle.fire(); expectOpen(false)
-  h.resize(700); expectOpen(false)
-  toggle.fire(); expectOpen(true)
-  h.resize(500); expectOpen(true)
-  toggle.fire(); expectOpen(false)
-  h.resize(1200); expectOpen(false)
-  toggle.fire(); expectOpen(true)
-  h.resize(500); expectOpen(true)
-  toggle.fire(); expectOpen(false)
-  expect(h.requests.every(request => request.method === 'GET')).toBe(true)
-})
 
 test('initial resize preserves a saved split before sessions finish loading', async () => {
   const h = await harness(['a','b'],{ids:['a','b'],active:'b',axis:'horizontal',ratio:45,focused:false})

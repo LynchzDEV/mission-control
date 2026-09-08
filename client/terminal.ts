@@ -125,8 +125,6 @@ function paintLayout(): void {
   if (path) { path.textContent = `${sessions.length} sessions`; path.title = session?.cwd ?? '' }
   el('#split-horizontal')?.setAttribute('aria-pressed', String(layout.axis === 'horizontal'))
   el('#split-vertical')?.setAttribute('aria-pressed', String(layout.axis === 'vertical'))
-  const focus = el('#term-focus')
-  if (focus) { focus.textContent = layout.focused ? 'Restore' : 'Focus'; focus.setAttribute('aria-pressed', String(layout.focused)) }
   renderStrip()
   saveLayout()
 }
@@ -223,20 +221,6 @@ function renderStrip(): void {
     tab.onkeydown = event => { if (event.key === 'F2') { event.preventDefault(); editName(session, name) } }
     tab.title = `${session.cwd} · F2 to rename`
 
-    const close = document.createElement('span')
-    close.className = 'x'
-    close.setAttribute('role', 'button')
-    close.tabIndex = 0
-    close.setAttribute('aria-label', `End ${displayName(session)}`)
-    close.onkeydown = (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); void killSession(session.id) } }
-    close.textContent = '×'
-    close.title = 'kill session'
-    close.onclick = (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      void killSession(session.id)
-    }
-    tab.appendChild(close)
 
     tab.onclick = (event) => {
       event.preventDefault()
@@ -244,32 +228,41 @@ function renderStrip(): void {
     }
     strip.insertBefore(tab, newButton)
   }
-  const directory = el('#directory-list')
-  if (!directory) return
-  directory.replaceChildren()
-  const groups = new Map<string, TerminalSession[]>()
-  for (const session of sessions) groups.set(session.cwd, [...(groups.get(session.cwd) ?? []), session])
-  for (const [cwd, peers] of groups) {
-    const group = document.createElement('section')
-    const title = document.createElement('h3')
-    title.textContent = cwd.split('/').filter(Boolean).pop() ?? cwd
-    title.title = cwd
-    const exact = document.createElement('small')
-    exact.textContent = cwd
-    group.append(title, exact)
-    for (const peer of peers) {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.textContent = displayName(peer)
-      button.title = `${peer.engine} · ${cwd}`
-      button.classList.toggle('on', peer.id === attachedId)
-      button.setAttribute('aria-current', String(peer.id === attachedId))
-      button.onclick = () => attach(peer.id)
-      group.append(button)
-    }
-    directory.append(group)
+  renderDirectories()
+}
+
+const ENGINE_TONE: Record<string, string> = { codex: 'lime', claude: 'coral', glm: 'ice' }
+
+function shortPath(cwd: string): string {
+  return cwd.replace(/^\/(?:Users|home)\/[^/]+/, '~')
+}
+
+function renderDirectories(): void {
+  const list = el('#term-directories')
+  if (list === null) return
+  const current = el<HTMLInputElement>('#term-cwd')?.value.trim() ?? ''
+  const cwds = [...new Set([...readRecentCwds(), ...sessions.map((session) => session.cwd)])]
+  list.replaceChildren()
+  if (cwds.length === 0) { list.append(ui('p', 'list-empty', 'Directories you open appear here.')); return }
+  for (const cwd of cwds) {
+    const row = document.createElement('button')
+    row.type = 'button'
+    row.className = `dir-row${cwd === current ? ' is-current' : ''}`
+    row.title = cwd
+    const peers = sessions.filter((session) => session.cwd === cwd)
+    const chips = ui('span', 'dir-sessions')
+    if (peers.length === 0) chips.append(ui('em', 'ses none', 'No live sessions'))
+    for (const peer of peers) chips.append(ui('em', `ses ${ENGINE_TONE[peer.engine] ?? ''}`, displayName(peer)))
+    row.append(ui('span', 'dir-name', cwd.split('/').filter(Boolean).pop() ?? cwd), ui('span', 'dir-path', shortPath(cwd)), chips)
+    row.onclick = () => { const input = el<HTMLInputElement>('#term-cwd'); if (input) { input.value = cwd; input.focus() }; renderDirectories() }
+    list.append(row)
   }
-  if (groups.size === 0) directory.textContent = 'Your directories appear here when you open a terminal.'
+}
+
+function selectEngine(engine: string): void {
+  const select = el<HTMLSelectElement>('#term-engine')
+  if (select && select.value !== engine) { select.value = engine; select.dispatchEvent(new Event('change')) }
+  for (const chip of el('#term-engines')?.querySelectorAll<HTMLElement>('.engine') ?? []) chip.setAttribute('aria-checked', String(chip.dataset.engine === engine))
 }
 
 function displayName(session: TerminalSession): string {
@@ -314,7 +307,7 @@ async function renameSession(id: string, title: string): Promise<void> {
     body: JSON.stringify({ title }),
   })
   if (response.ok) { const titleButton = views.get(id)?.root.querySelector('button'); if (titleButton) titleButton.textContent = title }
-  say(response.ok ? 'RENAMED' : 'COULD NOT RENAME', response.ok)
+  say(response.ok ? 'Renamed' : 'Could not rename', response.ok)
   await refresh()
 }
 
@@ -341,7 +334,7 @@ function openSearchBox(): void {
     box = document.createElement('input')
     box.id = 'term-search'
     box.setAttribute('aria-label', 'Search active terminal')
-    box.placeholder = 'find… (enter next · shift+enter prev · esc close)'
+    box.placeholder = 'Find in this terminal · ↵ next · ⇧↵ previous · esc closes'
     box.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
         closeSearchBox()
@@ -437,8 +430,10 @@ function attach(id: string): void {
     title.title = 'Focus this terminal; double-click to rename'
     title.ondblclick = () => { void promptDialog('Rename terminal', displayName(sessions.find(entry => entry.id === id) ?? session)).then(name => { if (name) void renameSession(id, name.slice(0, 60)).catch(() => say('Could not rename session.')) }) }
     const hide = document.createElement('button')
-    hide.className = 'session-hide'
-    hide.textContent = '−'
+    hide.type = 'button'
+    hide.className = 'expand quiet-tool session-hide'
+    hide.append(icon('minus'))
+    hide.title = 'Hide pane'
     hide.setAttribute('aria-label', `Hide ${displayName(session)} pane`)
     hide.onclick = (event) => {
       event.stopPropagation()
@@ -453,9 +448,25 @@ function attach(id: string): void {
     focusPane.append(icon('focus'))
     focusPane.setAttribute('aria-label', `Focus ${displayName(session)} pane`)
     focusPane.onclick = () => { activate(id); layout.focused = !layout.focused; paintLayout() }
-    header.append(emblem, title, focusPane, hide)
-    const caption = ui('p', 'session-caption', session.cwd)
-    caption.title = session.cwd
+    const quietTool = (glyph: 'search' | 'reconnect' | 'close', className: string, label: string, onclick: () => void): HTMLButtonElement => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = `expand quiet-tool ${className}`
+      button.append(icon(glyph))
+      button.title = label
+      button.setAttribute('aria-label', `${label} · ${displayName(session)}`)
+      button.onclick = (event) => { event.stopPropagation(); onclick() }
+      return button
+    }
+    const tools = ui('span', 'pane-tools')
+    tools.append(
+      quietTool('search', 'tool-find', 'Find', () => { activate(id); openSearchBox() }),
+      quietTool('reconnect', 'tool-reconnect', 'Reconnect', () => { disposeView(id); attach(id) }),
+      hide,
+      quietTool('close', 'tool-end', 'End session', () => void killSession(id)),
+      focusPane,
+    )
+    header.append(emblem, title, tools)
     const host = document.createElement('div')
     host.className = 'terminal-surface'
     const handle = document.createElement('div')
@@ -473,7 +484,7 @@ function attach(id: string): void {
     context.className = 'session-context'
     context.append(ui('span', 'provider', providerName(session.engine)), ui('span', 'model connection-state', 'Connecting'), ui('span', 'context-dot', '/'), ui('span', 'path', session.cwd.split('/').filter(Boolean).at(-1) ?? session.cwd))
     context.title = session.cwd
-    root.append(header, caption, context, host, handle)
+    root.append(header, context, host, handle)
     deck.append(root)
     const instance = new globals.Terminal({ convertEol: false, cursorBlink: true, fontFamily: "'JetBrains Mono', Menlo, 'SF Mono', monospace", fontSize: 13, macOptionIsMeta: true, scrollback: 10000, theme: THEME })
     const loader = instance as unknown as { loadAddon(addon: unknown): void }
@@ -568,26 +579,32 @@ function rememberCwd(cwd: string): void {
   }
 }
 
-function fillRecentCwds(): void {
-  const list = el<HTMLDataListElement>('#term-recent-cwd')
-  if (list === null) return
-  list.textContent = ''
-  for (const cwd of readRecentCwds()) {
-    const option = document.createElement('option')
-    option.value = cwd
-    list.appendChild(option)
+function showComposerTab(tab: 'new' | 'resume'): void {
+  for (const button of el('#term-form')?.querySelectorAll<HTMLElement>('.composer-tab') ?? []) button.setAttribute('aria-selected', String(button.dataset.tab === tab))
+  const fresh = el('#term-panel-new'), history = el('#term-panel-resume')
+  if (fresh) fresh.hidden = tab !== 'new'
+  if (history) history.hidden = tab !== 'resume'
+  if (tab === 'new') {
+    const select = el<HTMLSelectElement>('#term-engine')
+    if (select) selectEngine(select.value)
+    renderDirectories()
+    el<HTMLInputElement>('#term-cwd')?.focus()
+    return
   }
+  const input = el<HTMLInputElement>('#term-sessions-cwd')
+  if (input === null) return
+  if (input.value.trim() === '') input.value = readRecentCwds()[0] ?? ''
+  if (input.value === '') input.focus()
+  else void loadSessions()
 }
 
-function toggleForm(open: boolean): void {
+function toggleForm(open: boolean, tab: 'new' | 'resume' = 'new'): void {
   closeSearchBox()
   const form = el<HTMLFormElement>('#term-form')
   if (form === null) return
   form.hidden = !open
-  if (open) {
-    fillRecentCwds()
-    el<HTMLInputElement>('#term-cwd')?.focus()
-  }
+  el('#term-new')?.setAttribute('aria-expanded', String(open))
+  if (open) showComposerTab(tab)
 }
 
 function ago(ms: number): string {
@@ -600,42 +617,26 @@ function ago(ms: number): string {
   return `${Math.round(hours / 24)}d ago`
 }
 
-function toggleSessions(open: boolean): void {
-  const panel = el<HTMLDivElement>('#term-sessions')
-  if (panel === null) return
-  panel.hidden = !open
-  if (!open) return
-  const form = el<HTMLFormElement>('#term-form')
-  if (form !== null) form.hidden = true
-  fillRecentCwds()
-  const input = el<HTMLInputElement>('#term-sessions-cwd')
-  if (input === null) return
-  input.value = readRecentCwds()[0] ?? ''
-  if (input.value === '') input.focus()
-  else void loadSessions()
-}
-
 async function loadSessions(): Promise<void> {
   const list = el<HTMLDivElement>('#term-sessions-list')
   const cwd = el<HTMLInputElement>('#term-sessions-cwd')?.value.trim() ?? ''
   if (list === null) return
   if (cwd === '') {
-    say('CWD IS REQUIRED')
+    say('Choose a directory first.')
     return
   }
+  const where = el('#term-sessions-where')
+  if (where) where.textContent = shortPath(cwd)
   const result = await getJson(`/api/terminals/sessions?cwd=${encodeURIComponent(cwd)}`)
   if (!result.ok) {
     list.textContent = ''
-    say(errorText(result).toUpperCase())
+    say(`Could not read Claude history: ${errorText(result)}`)
     return
   }
   list.textContent = ''
   const rows = readArray(result.data.sessions)
   if (rows.length === 0) {
-    const none = document.createElement('div')
-    none.className = 'none'
-    none.textContent = 'NO SESSIONS FOR THIS CWD'
-    list.appendChild(none)
+    list.append(ui('p', 'list-empty', 'No Claude history in this directory.'))
     return
   }
   for (const raw of rows) {
@@ -643,21 +644,12 @@ async function loadSessions(): Promise<void> {
     const title = typeof raw.title === 'string' ? raw.title : id
     const updatedAt = typeof raw.updatedAt === 'number' ? raw.updatedAt : 0
     const bytes = typeof raw.bytes === 'number' ? raw.bytes : 0
-    const row = document.createElement('a')
-    row.href = '#'
-    row.className = 'srow'
+    const row = document.createElement('button')
+    row.type = 'button'
+    row.className = 'resume-row'
     row.dataset.session = id
-    const name = document.createElement('span')
-    name.className = 'name'
-    name.textContent = title
-    const meta = document.createElement('span')
-    meta.className = 'meta'
-    meta.textContent = `${ago(updatedAt)} · ${Math.round(bytes / 1024)} KB`
-    row.append(name, meta)
-    row.onclick = (event) => {
-      event.preventDefault()
-      void resumeSession(id, title.slice(0, 40), cwd)
-    }
+    row.append(ui('span', 'resume-title', title), ui('span', 'resume-when', ago(updatedAt)), ui('span', 'resume-where', shortPath(cwd)), ui('span', 'resume-size', `${Math.round(bytes / 1024)} KB`))
+    row.onclick = () => void resumeSession(id, title.slice(0, 40), cwd)
     list.appendChild(row)
   }
 }
@@ -682,12 +674,12 @@ async function resumeSession(id: string, title: string, cwd: string): Promise<vo
   creating = false
   el<HTMLButtonElement>('#term-form button[type=submit]')?.removeAttribute('disabled')
   if (!result.ok) {
-    say(errorText(result).toUpperCase())
+    say(`Could not resume: ${errorText(result)}`)
     return
   }
-  say('SESSION RESUMED', true)
+  say('Session resumed', true)
   rememberCwd(cwd)
-  toggleSessions(false)
+  toggleForm(false)
   await refresh()
   const terminalId = result.data.id
   if (typeof terminalId === 'string') attach(terminalId)
@@ -698,7 +690,8 @@ async function openTerminal(event: Event): Promise<void> {
   const engine = el<HTMLSelectElement>('#term-engine')?.value ?? 'claude'
   const cwd = el<HTMLInputElement>('#term-cwd')?.value.trim() ?? ''
   if (cwd === '') {
-    say('CWD IS REQUIRED')
+    say('Choose a directory first.')
+    el<HTMLInputElement>('#term-cwd')?.focus()
     return
   }
   const model = el<HTMLSelectElement>('#term-engine')?.value === engine ? el<HTMLInputElement>('#term-model')?.value.trim() ?? '' : ''
@@ -717,10 +710,10 @@ async function openTerminal(event: Event): Promise<void> {
   creating = false
   el<HTMLButtonElement>('#term-form button[type=submit]')?.removeAttribute('disabled')
   if (!result.ok) {
-    say(errorText(result).toUpperCase())
+    say(`Could not open terminal: ${errorText(result)}`)
     return
   }
-  say('SESSION OPEN', true)
+  say('Terminal opened', true)
   rememberCwd(cwd)
   toggleForm(false)
   await refresh()
@@ -808,22 +801,20 @@ function installDrop(pane: HTMLElement): void {
 export function installTerminals(): void {
   if (el('#term-strip') === null) return
   installTerminalShell()
-  const directory = el('#directory-nav')
-  const directoryToggle = el('#directory-toggle')
-  const syncDirectory = () => {
-    if (!directory) return
-    directory.toggleAttribute('data-mobile-open', !directory.hidden)
-    directoryToggle?.setAttribute('aria-expanded', String(!directory.hidden))
-  }
-  syncDirectory()
-  el('#term-new')?.addEventListener('click', () => toggleForm(true))
+  const form = el<HTMLFormElement>('#term-form')
+  el('#term-new')?.addEventListener('click', () => toggleForm(form?.hidden ?? true))
   el('#term-cancel')?.addEventListener('click', () => { splitNext = false; toggleForm(false) })
-  el('#term-resume')?.addEventListener('click', () => {
-    const panel = el<HTMLDivElement>('#term-sessions')
-    if (panel === null) return
-    toggleSessions(panel.hidden)
+  for (const cancel of form?.querySelectorAll<HTMLElement>('.composer-cancel') ?? []) cancel.addEventListener('click', () => { splitNext = false; toggleForm(false) })
+  el('#term-tab-new')?.addEventListener('click', () => showComposerTab('new'))
+  el('#term-tab-resume')?.addEventListener('click', () => showComposerTab('resume'))
+  for (const chip of el('#term-engines')?.querySelectorAll<HTMLElement>('.engine') ?? []) chip.addEventListener('click', () => selectEngine(chip.dataset.engine ?? 'claude'))
+  form?.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault(); splitNext = false; toggleForm(false) } })
+  if (typeof document.addEventListener === 'function') document.addEventListener('click', (event) => {
+    if (!form || form.hidden) return
+    const path = event.composedPath()
+    if ([form, el('#term-new'), el('#welcome-new')].some((node) => node && path.includes(node))) return
+    toggleForm(false)
   })
-  el('#term-sessions-close')?.addEventListener('click', () => toggleSessions(false))
   el('#term-sessions-load')?.addEventListener('click', () => void loadSessions())
   el<HTMLInputElement>('#term-sessions-cwd')?.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
@@ -836,10 +827,6 @@ export function installTerminals(): void {
   el('#welcome-new')?.addEventListener('click', () => toggleForm(true))
   el('#split-horizontal')?.addEventListener('click', () => split('horizontal'))
   el('#split-vertical')?.addEventListener('click', () => split('vertical'))
-  el('#term-focus')?.addEventListener('click', () => { if (!attachedId) { say('Open a terminal before using Focus.'); return }; layout.focused = !layout.focused; paintLayout() })
-  el('#term-find')?.addEventListener('click', openSearchBox)
-  el('#term-reconnect')?.addEventListener('click', () => { if (attachedId) { const id = attachedId; disposeView(id); attach(id) } else say('Open a terminal before reconnecting.') })
-  directoryToggle?.addEventListener('click', () => { if (directory) { directory.hidden = !directory.hidden; syncDirectory() } })
   addEventListener('resize', () => { paintLayout(); sendResize() })
   addEventListener('mc:workspace-visible', () => { paintLayout(); sendResize() })
   void refresh()

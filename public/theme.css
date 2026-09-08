@@ -41,97 +41,18 @@
   color: var(--mc-red);
 }
 
-.termbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: var(--mc-rowh);
-  padding: 4px 20px;
-  border-bottom: 1px solid var(--mc-hairline);
-}
 
-.termbar select,
-.termbar input {
-  background: var(--mc-bg-raised);
-  border: 1px solid var(--mc-border);
-  color: var(--mc-fg);
-  padding: 9px 10px;
-  font-family: var(--mc-font-mono);
-  font-size: 12px;
-}
 
-.termbar input {
-  flex: 1;
-}
 
-.termbar select:focus,
-.termbar input:focus {
-  outline: none;
-  border-color: var(--mc-green);
-}
 
-.termbar .msg {
-  margin-top: 0;
-}
 
-.termbar.sessions {
-  flex-wrap: wrap;
-}
 
-.termbar .slist {
-  flex-basis: 100%;
-  display: flex;
-  flex-direction: column;
-  max-height: 40vh;
-  overflow-y: auto;
-}
 
-.slist .srow {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--mc-border);
-  color: var(--mc-fg);
-  text-decoration: none;
-  font-family: var(--mc-font-mono);
-  font-size: 12px;
-}
 
-.slist .srow:hover {
-  background: var(--mc-bg-raised);
-}
 
-.slist .srow .name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-.slist .srow .meta,
-.slist .none {
-  color: var(--mc-fg-dim);
-  white-space: nowrap;
-}
 
-#term-search {
-  position: absolute;
-  top: calc(var(--mc-rowh) + 8px);
-  right: 16px;
-  z-index: 5;
-  width: 320px;
-  background: var(--mc-bg-raised);
-  border: 1px solid var(--mc-green);
-  color: var(--mc-fg);
-  padding: 8px 10px;
-  font-family: var(--mc-font-mono);
-  font-size: 12px;
-  outline: none;
-}
 
-#term-search[hidden] {
-  display: none;
-}
 
 #term-pane.live {
   display: block;
@@ -490,13 +411,12 @@
   }
 }
 
-.termbar[hidden]{display:none}
+
 
 .arecent-toggle{background:none;border:0;padding:0;cursor:pointer;color:var(--mc-fg-dim);font:inherit;font-size:9px;letter-spacing:.25em;text-align:left;width:100%}
 .arecent-toggle:hover{color:var(--mc-fg)}
 
 .terminal-content { display: flex; flex: 1; min-height: 360px; min-width: 0; }
-.directory-nav { flex: 0 0 206px; width: 206px; padding: 18px 16px 16px 22px; border-top: 1px solid var(--mc-border); border-right: 1px solid var(--mc-border); overflow: auto; }
 #directory-list { font-size: 13px; color: var(--mc-fg-dim); padding-top: 14px; }
 #directory-list section { margin-bottom: 24px; }
 #directory-list h3 { margin: 0 0 3px; color: var(--mc-fg); font-size: 15px; }
@@ -511,9 +431,6 @@
 .strip a.on { background: var(--mc-bg-raised); color: var(--mc-primary); border-color: var(--mc-primary); }
 .strip button { flex: none; height: 34px; }
 .termnone { font: 12px var(--mc-font-ui); padding: 0; margin-right: auto; border: 0; flex: none; }
-.termbar { padding: 16px; flex-wrap: wrap; background: var(--mc-bg-raised); border-bottom: 1px solid var(--mc-border); gap: 8px; max-height: 45vh; overflow: auto; }
-.termbar input, .termbar select { min-width: 0; border-radius: 6px; font: 13px var(--mc-font-ui); }
-.termbar input { flex: 1 1 180px; }
 .terminal-status { margin: 0; padding: 4px 16px; min-height: 28px; font-size: 12px; flex: none; }
 .terminal-deck { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); flex: 1; gap: 8px; min-height: 160px; min-width: 0; padding: 0 16px; position: relative; }
 .terminal-deck[data-count="2"][data-axis=horizontal] { grid-template-columns: minmax(0, var(--split-ratio)) minmax(0, 1fr); }
@@ -729,7 +646,6 @@ body[data-motion=paused] .signal,body[data-motion=paused] .activity-bars i,body[
 #term-resume { background:transparent; border:0; font-size:11px; }
 .footnote { display:flex; justify-content:space-between; margin-top:24px; font:10px var(--ui); color:var(--quiet); }
 #motion-toggle { padding:0; border:0; background:transparent; color:var(--quiet); font:10px var(--ui); }
-.directory-nav { position:absolute; top:150px; bottom:65px; left:42px; z-index:8; width:270px; background:var(--agent-surface); border:1px solid var(--line); box-shadow:var(--mc-shadow); overflow:auto; }
 .work-detail { background:var(--background); }
 .work-nav { background:var(--background); }
 
