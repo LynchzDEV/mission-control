@@ -50,6 +50,7 @@ export function translateInstructions(claudeMd: string): string {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!
     if (line.startsWith('## Continuous-improvement rules')) break
+    if (/^# Claude Global Instructions\s*$/.test(line)) continue
     if (/^## graphify\s*$/i.test(line)) { graphify = true; continue }
     if (graphify && /^#{1,2}\s/.test(line)) graphify = false
     if (graphify || /^\s*@RTK\.md\s*$/.test(line)) continue
