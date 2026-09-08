@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { normalizeUsage } from '../client/provider-usage'
+import { normalizeUsage, renderUsage } from '../client/provider-usage'
 test('missing windows stay unavailable, including monthly GLM and authenticated Codex', () => {
   expect(normalizeUsage('glm',{available:true,monthlyPct:70,fiveHourPct:28}).weekly.percent).toBeNull()
   expect(normalizeUsage('codex',{available:true,authed:true}).fiveHour.percent).toBeNull()
@@ -15,4 +15,19 @@ test('unavailable and malformed records never produce fake percentages', () => {
   for (const raw of [null,{available:false,fiveHourPct:10},{available:true,fiveHourPct:NaN,weeklyPct:101},{available:true,fiveHourPct:'20',weeklyPct:-1}]) {
     const value = normalizeUsage('codex',raw); expect(value.fiveHour.percent).toBeNull(); expect(value.weekly.percent).toBeNull()
   }
+})
+
+test('Codex shows the weekly window as its headline and skips the weekly row', () => {
+  const make = (): any => ({ children: [] as any[], append(...nodes: any[]) { this.children.push(...nodes) }, replaceChildren(...nodes: any[]) { this.children = nodes }, setAttribute() {} })
+  ;(globalThis as any).document = { createElement: make }
+  const host = make()
+  renderUsage(host, [normalizeUsage('codex',{available:true,fiveHourPct:61,weeklyPct:34}), normalizeUsage('claude',{available:true,fiveHourPct:24,weeklyPct:12})])
+  const [codex, claude] = host.children
+  expect(codex.children.length).toBe(2)
+  expect(codex.children[0].children[1].textContent).toBe('Weekly')
+  expect(codex.children[0].children[2].textContent).toBe('34')
+  expect(codex.children[1].value).toBe(34)
+  expect(claude.children.length).toBe(3)
+  expect(claude.children[0].children[1].textContent).toBe('5h')
+  delete (globalThis as any).document
 })

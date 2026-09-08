@@ -883,8 +883,7 @@ body[data-motion=paused] .signal,body[data-motion=paused] .activity-bars i,body[
 @media(prefers-reduced-motion:reduce){.signal,.activity-bars i,.agent-cursor{animation:none!important}}
 @media(max-width:800px){.session-emblem{width:28px;height:28px}.session-choice{gap:8px}.session-choice .glyph{width:24px;height:24px}.add-session{width:auto}.agent-output .tool span{font-size:9px;line-height:17px}.session-heading h2{font-size:21px}}
 
-
-.usage-summary{display:grid;grid-template-columns:repeat(3,minmax(0,120px));gap:25px;align-items:center;padding:0 24px;margin-top:0;margin-bottom:0}
+.usage-summary{display:grid;grid-template-columns:repeat(3,minmax(0,120px));gap:25px;align-items:start;padding:0 24px;margin-top:0;margin-bottom:0}
 .provider-usage{--usage-accent:var(--coral);min-width:0}.provider-usage:nth-child(2){--usage-accent:var(--ice)}.provider-usage:nth-child(3){--usage-accent:var(--lime)}
 .quota-heading{display:flex;align-items:baseline;gap:8px;line-height:22px;white-space:nowrap}.quota-provider{font-size:11px;font-weight:500;color:var(--usage-accent)}.quota-period{font-size:9px;color:var(--quiet);margin-left:auto}.quota-heading strong{font-size:20px;font-weight:450;font-variant-numeric:tabular-nums;letter-spacing:-.6px;color:var(--text)}.quota-heading strong small{font-size:11px;margin-left:1px;color:var(--muted)}
 .provider-usage meter{display:block;appearance:none;-webkit-appearance:none;border:0;border-radius:0;background:none;width:100%;height:4px;margin:5px 0 0}.provider-usage meter::-webkit-meter-bar{height:4px;border:0;border-radius:1px;background:var(--line)}.provider-usage meter::-webkit-meter-optimum-value{border-radius:1px;background:var(--usage-accent)}.provider-usage meter::-moz-meter-bar{border-radius:1px;background:var(--usage-accent)}
