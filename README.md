@@ -1,32 +1,52 @@
 # Mission Control
 
-**Run multiple AI coding agents like a dev team — from one browser tab.**
+**Your terminals, coding agents, and work in one browser tab.**
 
-Mission Control is a self-hosted cockpit for developers who use more than one AI coding CLI. Point it at your engines — Claude Code, a GLM lane through any Anthropic-compatible endpoint (z.ai coding plan), OpenAI Codex CLI — and get live quota dashboards, one-click job dispatch, real terminals in the browser, and a review queue for everything your agents produce.
+Mission Control is a self-hosted workspace for Claude Code, GLM through an Anthropic-compatible endpoint, and OpenAI Codex CLI. Open interactive terminals, follow the agents working on the selected session, check provider usage, and review completed work without losing your terminal context.
 
-![Mission Control — lanes](docs/images/lanes.gif)
+![Mission Control: split terminals, agent activity, and provider usage](docs/images/workspace.gif)
+
+*Recorded from the app with sample sessions, agent output, and usage values. [View the still image](docs/images/workspace.png).*
 
 ## Why
 
-If you run several AI coding subscriptions, you know the drill: five terminal tabs, no idea which quota is burning, agent output scattered across worktrees, and "what did the overnight run actually finish?" answered by archaeology. Mission Control puts the whole operation on one screen:
+When work spans several coding agents, terminal output, usage limits, and review results are easy to lose track of. Mission Control keeps them together:
 
-- **Which engine is healthy, and how much quota is left** — before you dispatch, not after the rate-limit hits.
-- **What every task is doing right now** — a live session-flow graph tracks each piece of work across engines: spec → implement → cross-review → verify → merged.
-- **Where the results are** — completed diffs land in a review queue instead of vanishing into scrollback.
+- **Stay in your terminal.** Visit Main, Usage, Review, or Settings and return to the same sessions and scrollback.
+- **See the current work.** A branched flow and individual activity windows show the active agents associated with the selected terminal.
+- **Find the results.** Search conversations and plans, inspect changes, and acknowledge reviews in one work navigator.
 
 ## Features
 
-🎛 **Lanes dashboard** — one card per engine: live quota (Claude 5-hour block via ccusage, GLM 5-hour window via the z.ai monitor API, Codex auth state), peak-hour countdown for discounted windows, running jobs and terminals, plus any engine sessions started *outside* the app, detected machine-wide.
+### Terminal workspace
 
-🚀 **Headless dispatch** — fire `claude -p` / `codex exec` jobs into any git repo, stream logs live over SSE, kill runaway jobs, get a diff-stat the moment a job lands.
+Run full interactive CLI interfaces through xterm.js and a terminal connection over WebSocket. Arrange up to four panes side by side or stacked, drag the dividers, focus a session, rename tabs, reconnect, or resume Claude history. Navigation preserves the live terminal connections.
 
-🖥 **Browser terminals** — full interactive TUIs (xterm.js ↔ pty over WebSocket): run Claude Code itself inside the cockpit, detach and reattach with scrollback replay, per-engine environment injected automatically.
+The workspace fills the available screen width and height. Narrow screens display the selected pane while retaining the saved split layout. Larger screens give agent activity its own side rails; longer lists scroll within their space. The ASCII background can be paused and respects reduced-motion preferences.
 
-🔍 **Review queue** — every completed job with a non-empty diff waits for a human, newest first, with a copy-paste command to open the work in context.
+### Flow and agent conversations
 
-⚙️ **One settings page** — per-engine setup with connection tests; API tokens entered once, stored server-side with `0600` permissions, never echoed back to the browser.
+Follow a manual plan or a flow built from the selected terminal's linked conversations. Each active conversation has its own window showing the latest tool, activity, and state. Open the full conversation for detail. Replies and automatic reviews stay with their originating conversation.
 
-📼 **Terminal-native look** — textmode/CRT aesthetic with animated engine mascots rendered by [textmode.js](https://code.textmode.art), motion by [anime.js](https://animejs.com). Dashboards shouldn't be boring.
+### Provider usage
+
+The header puts every provider's five-hour usage in the same position, with weekly usage underneath. The Usage page adds reset times and available accounting details.
+
+| Provider | Usage source |
+|---|---|
+| Claude Code | Fresh `ccstatusline` cache when available; a labeled `ccusage` estimate otherwise |
+| GLM | Five-hour and monthly usage from the z.ai monitor API; weekly usage is unavailable |
+| Codex | Five-hour and weekly windows reported by the Codex CLI account API |
+
+Missing or unsupported windows display **Unavailable**. Claude cost and token estimates remain separate from reported quota limits.
+
+### Work, dispatch, and review
+
+Search and filter conversations and plans in Main. Dispatch background `claude -p` or `codex exec` jobs, optionally in isolated worktrees; follow streamed output, reply with follow-up work, or stop a running job. Review completed changes, mark them reviewed, and land finished worktrees through the existing landing action.
+
+### Settings
+
+Configure engines and the plan, execute, and review roles; choose models and automatic review behavior; and test connections. Saved defaults refresh in the workspace while preserving forms you have already started editing.
 
 ## Quickstart
 
@@ -36,10 +56,10 @@ Requires [Bun](https://bun.sh) ≥ 1.2.
 git clone https://github.com/LynchzDEV/mission-control.git
 cd mission-control
 bun install
-bun run start        # → http://127.0.0.1:7777
+bun run start
 ```
 
-First visit: create a password (argon2id, min 10 chars). Then:
+Open [Mission Control](http://127.0.0.1:7777). On your first visit, create a password (argon2id, minimum 10 characters). Then:
 
 | Engine | Setup |
 |---|---|
@@ -48,8 +68,10 @@ First visit: create a password (argon2id, min 10 chars). Then:
 | Codex | `codex login` once in any terminal |
 
 ```sh
-bun test             # full suite — runs offline, no engine CLIs needed
+bun test
 ```
+
+The test suite runs offline without engine CLIs. To regenerate the static development preview on the existing server, run `bun scripts/render-ui-preview.ts` and open `/ui-preview/terminals.html`. Generated preview files are ignored by Git; the preview uses the server's work data, with Settings writes disabled.
 
 ## Claude Code skill
 
@@ -62,26 +84,28 @@ On `bun install` and every cockpit start, Mission Control translates Claude's gl
 ```
 Bun + Elysia (TypeScript end to end)
 ├── server-rendered JSX views (@kitajs/html) — no client framework
-├── client "islands" transpiled per-request by Bun.build — no bundler, no build step
+├── client "islands" bundled on demand by Bun.build — no separate build step
 ├── bun-pty ↔ xterm.js over WebSocket for terminals
 ├── SSE for live job logs
 └── JSON state in ~/.config/mission-control — no database
 ```
 
-The repo contains zero handwritten `.js` — TypeScript everywhere, transpiled at serve time.
+The application is written in TypeScript and CSS; client bundles are cached until their source changes. Standalone design studies and their capture tools live in `visualizer/ui-overhaul/`.
 
 ## Security
 
-- Binds `127.0.0.1` by default. Widening (e.g. to a Tailscale IP) is a deliberate settings change — authentication stays mandatory on every route and WebSocket upgrade either way.
+- Binds `127.0.0.1` by default. Widening (e.g. to a Tailscale IP) is a deliberate settings change. Workspace data, actions, and terminal WebSocket connections require authentication; health, login/setup, and static client assets are public.
 - Sessions are HMAC-signed httpOnly cookies; login is rate-limited (5 failures → 60s lockout).
-- Tokens and secrets: `~/.config/mission-control/` (`0700` dirs, `0600` files), passed to engines via environment only — never argv, never API responses, never client code.
+- Credentials are stored in `~/.config/mission-control/` (`0700` dirs, `0600` files). Provider credentials are passed to engines through their environment. Settings can explicitly reveal or rotate the separate cockpit API token after authentication.
 - Jobs and terminals only run in directories that resolve (post-symlink) under `$HOME`; traversal attempts are rejected.
 
 ## Docs
 
 - [`docs/SPEC.md`](docs/SPEC.md) — full engineering contract
 - [`docs/decisions/`](docs/decisions/) — recorded runtime decisions (e.g. why bun-pty over node-pty under Bun)
-- [`design/`](design/) — the design mockups and decision record the UI is ported from
+- [`visualizer/ui-overhaul/terminal-components.html`](visualizer/ui-overhaul/terminal-components.html) — the approved terminal component study
+- [`docs/decisions/ui-overhaul-verification.md`](docs/decisions/ui-overhaul-verification.md) — visual checks, responsive behavior, and known differences from the study
+- [`design/`](design/) — shared theme tokens and earlier design records
 
 ## Contributing
 
