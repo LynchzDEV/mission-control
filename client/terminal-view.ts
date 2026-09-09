@@ -61,9 +61,13 @@ function installSidebar(root: HTMLElement, toggle: HTMLElement, chat: HTMLElemen
     toggle.title = open ? 'Collapse agents' : 'Expand agents'
     dispatchEvent(new Event('resize'))
   }
-  toggle.addEventListener('click', () => { const open = root.classList.contains('sidebar-collapsed'); try { localStorage.setItem(key, open ? '1' : '0') } catch {}; apply() })
+  toggle.addEventListener('click', () => {
+    const opening = root.classList.contains('sidebar-collapsed')
+    try { if (!opening) localStorage.setItem(key, '0'); else if (agentsActive()) localStorage.removeItem(key); else localStorage.setItem(key, '1') } catch {}
+    apply()
+  })
   chat.addEventListener('click', () => toggle.click())
-  addEventListener('mc:agents-active', () => { try { localStorage.removeItem(key) } catch {}; apply() })
+  addEventListener('mc:agents-active', apply)
   apply()
 }
 export function installTerminalShell(): void {
