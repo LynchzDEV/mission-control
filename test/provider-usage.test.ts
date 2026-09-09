@@ -18,7 +18,7 @@ test('unavailable and malformed records never produce fake percentages', () => {
 })
 
 test('Codex shows the weekly window as its headline and skips the weekly row', () => {
-  const make = (): any => ({ children: [] as any[], append(...nodes: any[]) { this.children.push(...nodes) }, replaceChildren(...nodes: any[]) { this.children = nodes }, setAttribute() {} })
+  const make = (): any => ({ children: [] as any[], dataset: {} as Record<string, string>, append(...nodes: any[]) { this.children.push(...nodes) }, replaceChildren(...nodes: any[]) { this.children = nodes }, setAttribute() {} })
   ;(globalThis as any).document = { createElement: make }
   const host = make()
   renderUsage(host, [normalizeUsage('codex',{available:true,fiveHourPct:61,weeklyPct:34}), normalizeUsage('claude',{available:true,fiveHourPct:24,weeklyPct:12})])
@@ -29,5 +29,10 @@ test('Codex shows the weekly window as its headline and skips the weekly row', (
   expect(codex.children[1].value).toBe(34)
   expect(claude.children.length).toBe(3)
   expect(claude.children[0].children[1].textContent).toBe('5h')
+  renderUsage(host, [normalizeUsage('glm', null)])
+  const [glm] = host.children
+  expect(glm.dataset.unavailable).toBe('true')
+  expect(glm.children[1].className).toBe('quota-track')
+  expect(glm.title).toBe('Usage unavailable')
   delete (globalThis as any).document
 })

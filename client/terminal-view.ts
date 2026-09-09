@@ -45,11 +45,26 @@ function collapsible(key: string, toggleId: string, apply: (open: boolean) => vo
 }
 function installPanels(root: HTMLElement, chat: HTMLElement): void {
   const sidebarToggle = document.getElementById('sidebar-toggle'), flowToggle = document.getElementById('flow-toggle')
-  if (sidebarToggle) sidebarToggle.dataset.label = 'agents'
   if (flowToggle) flowToggle.dataset.label = 'work flow'
-  collapsible('mc.sidebar.open', 'sidebar-toggle', open => { root.classList.toggle('sidebar-collapsed', !open); chat.setAttribute('aria-expanded', String(open)); chat.setAttribute('aria-pressed', String(open)) })
   collapsible('mc.flow.open', 'flow-toggle', open => document.getElementById('flow-overview')?.classList.toggle('collapsed', !open))
-  chat.addEventListener('click', () => sidebarToggle?.click())
+  if (sidebarToggle) installSidebar(root, sidebarToggle, chat)
+}
+function installSidebar(root: HTMLElement, toggle: HTMLElement, chat: HTMLElement): void {
+  const key = 'mc.sidebar.open'
+  const manual = (): boolean | null => { try { const value = localStorage.getItem(key); return value === '1' ? true : value === '0' ? false : null } catch { return null } }
+  const agentsActive = (): boolean => document.getElementById('active-agent-windows')?.dataset.active === 'true'
+  const apply = (): void => {
+    const open = manual() ?? agentsActive()
+    root.classList.toggle('sidebar-collapsed', !open)
+    for (const control of [toggle, chat]) control.setAttribute('aria-expanded', String(open))
+    chat.setAttribute('aria-pressed', String(open))
+    toggle.title = open ? 'Collapse agents' : 'Expand agents'
+    dispatchEvent(new Event('resize'))
+  }
+  toggle.addEventListener('click', () => { const open = root.classList.contains('sidebar-collapsed'); try { localStorage.setItem(key, open ? '1' : '0') } catch {}; apply() })
+  chat.addEventListener('click', () => toggle.click())
+  addEventListener('mc:agents-active', () => { try { localStorage.removeItem(key) } catch {}; apply() })
+  apply()
 }
 export function installTerminalShell(): void {
   const root = document.querySelector<HTMLElement>('#termgrid')

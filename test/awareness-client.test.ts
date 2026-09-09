@@ -62,6 +62,7 @@ function harness() {
     scope:async (id:string|null = 'terminal') => { listeners.get('mc:terminal-scope')!({detail:{id,cwd:id ? '/repo' : null}}); await flush() },
     poll:async () => { intervals[0]!(); await flush() },
     cards:() => ['left','right'].flatMap(side => nodes.get('#active-agents-'+side)!.children),
+    opened:() => events.filter(event => event.type === 'mc:agent-open'),
   }
 }
 test('all active cards retain DOM, collapse and flow independence; drawer uses current metadata', async () => {
@@ -79,12 +80,13 @@ test('all active cards retain DOM, collapse and flow independence; drawer uses c
   h.state.jobs[0]!.label = 'Renamed'
   await h.poll()
   a.children[1]!.children[1]!.children[1]!.onclick!()
-  expect(h.events[0].detail).toEqual({id:'a',label:'Renamed',engine:'codex',elapsed:'running'})
+  expect(h.opened()[0].detail).toEqual({id:'a',label:'Renamed',engine:'codex',elapsed:'running'})
   const expand = a.children[0]!.children.find(node => node.className === 'agent-expand')!
   expect(expand.attributes['aria-label']).toBe('Open conversation for Renamed')
   let stopped = false
   expand.onclick!({preventDefault() {}, stopPropagation() { stopped = true }})
-  expect(stopped).toBe(true); expect(h.events).toHaveLength(2); expect(h.events[1].detail.id).toBe('a')
+  expect(stopped).toBe(true); expect(h.opened()).toHaveLength(2); expect(h.opened()[1].detail.id).toBe('a')
+  expect(h.events.filter(event => event.type === 'mc:agents-active').map(event => event.detail.count)).toEqual([0, 3])
 })
 test('scope, completion, removal and same-thread new activity replace only the correct feeds', async () => {
   const h = harness(); await flush(); await h.scope()
@@ -117,7 +119,7 @@ test('feed errors retry and list failures stop feeds then recover with collapse 
   expect(h.timers.size).toBe(0); expect(host.children).toHaveLength(0)
   expect(h.nodes.get('#active-agent-status')!.textContent).toContain('unavailable')
   card.children[1]!.children[1]!.children[1]!.onclick!()
-  expect(h.events[0]?.detail.id).toBe(card.dataset.thread)
+  expect(h.opened()[0]?.detail.id).toBe(card.dataset.thread)
   h.state.failed = false; await h.poll()
   expect(h.cards()).toContain(card); expect(card.open).toBe(false)
   expect(host.children[0]!.dataset.state).toBe('empty'); expect(h.timers.size).toBe(3)

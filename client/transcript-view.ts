@@ -1,7 +1,26 @@
 import { getJson, readArray } from './shared'
+import { renderMarkdown } from './markdown'
 
 export type TranscriptRow = { kind: string; text: string; title: string; detail: string; input: string; result: string; isError: boolean }
-export type TranscriptHandle = { root: HTMLElement; start(): void; stop(): void; refresh(): Promise<void>; focus(): void }
+export type SessionState = 'idle' | 'ready' | 'working' | 'waiting'
+export type TranscriptHandle = { root: HTMLElement; start(): void; stop(): void; refresh(): Promise<void>; focus(): void; state(): SessionState }
+export const STATE_LABEL: Record<SessionState, string> = { idle: 'Idle', ready: 'Ready', working: 'Working', waiting: 'Waiting for you' }
+
+export function sessionState(rows: TranscriptRow[], bound: boolean): SessionState {
+  const last = rows.at(-1)
+  if (!last) return bound ? 'ready' : 'idle'
+  if (last.kind === 'prompt' || last.kind === 'thinking' || last.kind === 'tool') return 'working'
+  return 'waiting'
+}
+
+export function lastTool(rows: TranscriptRow[]): string {
+  for (let index = rows.length - 1; index >= 0; index--) {
+    const row = rows[index]!
+    if (row.kind === 'prompt') return ''
+    if (row.kind === 'tool') return `${row.title} ${row.detail || row.input}`.trim()
+  }
+  return ''
+}
 
 const POLL_MS = 2000
 const PINNED_PX = 80
@@ -29,7 +48,7 @@ function el(tag: string, className = '', text = ''): HTMLElement {
 export function renderRow(row: TranscriptRow): HTMLElement {
   if (row.kind === 'prompt') { const p = el('p', 'command'); p.append(el('span', 'prompt', '›'), document.createTextNode(row.text)); return p }
   if (row.kind === 'thinking') { const box = el('details', 'thought'); box.append(el('summary', '', 'Thinking'), el('p', '', row.text)); return box }
-  if (row.kind === 'result') return el('p', `result${row.isError ? ' err' : ''}`, row.text)
+  if (row.kind === 'result') { const box = el('div', `result${row.isError ? ' err' : ''}`); box.append(renderMarkdown(row.text)); return box }
   if (row.kind === 'tool') {
     const wrap = el('div', 'tool-row')
     const line = el('div', `file-line${row.result ? ' has-result' : ''}`)
@@ -43,15 +62,20 @@ export function renderRow(row: TranscriptRow): HTMLElement {
     }
     return wrap
   }
-  return el('p', 'reply', row.text)
+  const reply = el('div', 'reply')
+  reply.append(renderMarkdown(row.text))
+  return reply
 }
 
-export function createTranscript(terminalId: string, send: (data: string) => void): TranscriptHandle {
+export function createTranscript(terminalId: string, send: (data: string) => void, onState?: (state: SessionState) => void): TranscriptHandle {
   const root = el('div', 'transcript-pane')
   const log = el('div', 'transcript')
   log.setAttribute('role', 'log'); log.setAttribute('aria-live', 'polite')
   const empty = el('p', 'transcript-empty', 'Waiting for the session to start writing its transcript…')
-  const cursor = el('span', 'cursor'); cursor.setAttribute('aria-hidden', 'true')
+  const cursor = el('p', 'working'); cursor.hidden = true
+  const caret = el('span', 'cursor'); caret.setAttribute('aria-hidden', 'true')
+  const workingText = el('span', 'working-text')
+  cursor.append(caret, workingText)
   log.append(empty, cursor)
   const composer = el('div', 'input-line')
   const input = document.createElement('textarea')
@@ -63,6 +87,8 @@ export function createTranscript(terminalId: string, send: (data: string) => voi
   const keys: string[] = []
   let timer: ReturnType<typeof setInterval> | undefined
   let generation = 0
+  let state: SessionState = 'idle'
+  let since = Date.now()
 
   const submit = (): void => {
     const text = input.value.trim()
@@ -91,6 +117,10 @@ export function createTranscript(terminalId: string, send: (data: string) => voi
       nodes[index] = node; keys[index] = key
     }
     while (nodes.length > rows.length) { nodes.pop()!.remove(); keys.pop() }
+    const next = sessionState(rows, bound)
+    if (next !== state) { state = next; since = Date.now(); onState?.(state) }
+    cursor.hidden = state !== 'working'
+    if (state === 'working') { const tool = lastTool(rows); workingText.textContent = `Working${tool ? ` · ${tool}` : ''} · ${Math.max(0, Math.round((Date.now() - since) / 1000))}s` }
     if (pinned) log.scrollTop = log.scrollHeight
   }
 
@@ -107,5 +137,6 @@ export function createTranscript(terminalId: string, send: (data: string) => voi
     stop() { clearInterval(timer); timer = undefined; generation++ },
     refresh,
     focus() { input.focus() },
+    state() { return state },
   }
 }

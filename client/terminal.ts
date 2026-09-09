@@ -2,7 +2,7 @@ import { restoreLayout, selectSession, visibleSessions, type TerminalLayout } fr
 import { installModelPickers } from './model-picker'
 import { icon, ui, providerName, connectionLabel, installTerminalShell } from './terminal-view'
 import { confirmDialog, promptDialog } from './dialog'
-import { createTranscript, type TranscriptHandle } from './transcript-view'
+import { STATE_LABEL, createTranscript, type TranscriptHandle } from './transcript-view'
 import { errorText, getJson, pathsFromUriList, postJson, readArray, shellQuote } from './shared'
 
 type TerminalSession = {
@@ -74,7 +74,7 @@ function setMode(id: string, view: SessionView, mode: PaneMode): void {
   view.host.hidden = mode !== 'shell'
   view.transcript.root.hidden = mode !== 'transcript'
   const toggle = view.root.querySelector<HTMLButtonElement>('.tool-mode')
-  if (toggle) { toggle.replaceChildren(icon(mode === 'shell' ? 'chat' : 'terminal')); toggle.title = mode === 'shell' ? 'Show transcript' : 'Show shell'; toggle.setAttribute('aria-label', `${toggle.title} · ${id}`) }
+  if (toggle) { toggle.replaceChildren(icon(mode === 'shell' ? 'chat' : 'terminal')); toggle.title = `${mode === 'shell' ? 'Show transcript' : 'Show shell'} · ⌘J`; toggle.setAttribute('aria-label', `${mode === 'shell' ? 'Show transcript' : 'Show shell'} · ${id}`) }
   try { localStorage.setItem(MODE_KEY, JSON.stringify({ ...readModes(), [id]: mode })) } catch {}
   if (mode === 'shell') { view.transcript.stop(); requestAnimationFrame(() => resizeView(view)); (view.term as unknown as { focus?: () => void }).focus?.() }
   else view.transcript.start()
@@ -146,7 +146,7 @@ function paintLayout(): void {
   const path = el('#workspace-path')
   const session = sessions.find((entry) => entry.id === layout.active)
   if (heading) heading.textContent = 'Terminals'
-  if (path) { path.textContent = `${sessions.length} sessions`; path.title = session?.cwd ?? '' }
+  if (path) { path.textContent = `${sessions.length} session${sessions.length === 1 ? '' : 's'}`; path.title = session?.cwd ?? '' }
   el('#split-horizontal')?.setAttribute('aria-pressed', String(layout.axis === 'horizontal'))
   el('#split-vertical')?.setAttribute('aria-pressed', String(layout.axis === 'vertical'))
   renderStrip()
@@ -219,7 +219,8 @@ function renderStrip(): void {
       const name = existing.querySelector<HTMLElement>('.name')
       if (name) name.textContent = displayName(session)
       const state = existing.querySelector<HTMLElement>('.session-state')
-      if (state) state.textContent = `${providerName(session.engine)} · ${views.has(session.id) ? connectionLabel(views.get(session.id)!.root.dataset.connection) : 'Available'}`
+      if (state) state.textContent = sessionStateText(session)
+      existing.dataset.state = sessionStateKey(session)
       continue
     }
     const tab = document.createElement('a')
@@ -241,7 +242,8 @@ function renderStrip(): void {
       event.stopPropagation()
       editName(session, name)
     }
-    copy.append(name, ui('small', 'session-state', `${providerName(session.engine)} · ${views.has(session.id) ? connectionLabel(views.get(session.id)!.root.dataset.connection) : 'Available'}`))
+    copy.append(name, ui('small', 'session-state', sessionStateText(session)))
+    tab.dataset.state = sessionStateKey(session)
     tab.append(copy)
     tab.onkeydown = event => { if (event.key === 'F2') { event.preventDefault(); editName(session, name) } }
     tab.title = `${session.cwd} · F2 to rename`
@@ -288,6 +290,19 @@ function selectEngine(engine: string): void {
   const select = el<HTMLSelectElement>('#term-engine')
   if (select && select.value !== engine) { select.value = engine; select.dispatchEvent(new Event('change')) }
   for (const chip of el('#term-engines')?.querySelectorAll<HTMLElement>('.engine') ?? []) chip.setAttribute('aria-checked', String(chip.dataset.engine === engine))
+}
+
+function sessionStateKey(session: TerminalSession): string {
+  const view = views.get(session.id)
+  if (!view) return 'available'
+  const connection = view.root.dataset.connection
+  return connection === 'live' ? view.transcript.state() : (connection ?? 'connecting')
+}
+
+function sessionStateText(session: TerminalSession): string {
+  const view = views.get(session.id)
+  const detail = !view ? 'Available' : view.root.dataset.connection === 'live' ? STATE_LABEL[view.transcript.state()] : connectionLabel(view.root.dataset.connection)
+  return `${providerName(session.engine)} · ${detail}`
 }
 
 function displayName(session: TerminalSession): string {
@@ -512,7 +527,7 @@ function attach(id: string): void {
     handle.onkeydown = (event) => { if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) { event.preventDefault(); resize(layout.ratio + (['ArrowLeft', 'ArrowUp'].includes(event.key) ? -5 : 5)) } }
     handle.onpointerdown = (event) => { event.preventDefault(); handle.setPointerCapture(event.pointerId) }
     handle.onpointermove = (event) => { if (!handle.hasPointerCapture(event.pointerId)) return; const bounds = deck.getBoundingClientRect(); resize(layout.axis === 'horizontal' ? (event.clientX - bounds.left) / bounds.width * 100 : (event.clientY - bounds.top) / bounds.height * 100) }
-    const transcript = createTranscript(id, (data) => { if (connection.readyState === WebSocket.OPEN) connection.send(new TextEncoder().encode(data)) })
+    const transcript = createTranscript(id, (data) => { if (connection.readyState === WebSocket.OPEN) connection.send(new TextEncoder().encode(data)) }, () => renderStrip())
     root.append(header, transcript.root, host, handle)
     deck.append(root)
     const instance = new globals.Terminal({ convertEol: false, cursorBlink: true, fontFamily: "'JetBrains Mono', Menlo, 'SF Mono', monospace", fontSize: 13, macOptionIsMeta: true, scrollback: 10000, theme: THEME })
@@ -833,6 +848,18 @@ export function installTerminals(): void {
   installTerminalShell()
   const form = el<HTMLFormElement>('#term-form')
   el('#term-new')?.addEventListener('click', () => toggleForm(form?.hidden ?? true))
+  el('#term-new')?.setAttribute('title', 'New terminal · ⌘K')
+  if (typeof document.addEventListener === 'function') document.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented) return
+    if (event.key === 'Escape') { if (form && !form.hidden) { splitNext = false; toggleForm(false) } else closeSearchBox(); return }
+    if (!event.metaKey || event.ctrlKey || event.altKey) return
+    const key = event.key.toLowerCase()
+    if (key === 'k') { event.preventDefault(); toggleForm(form?.hidden ?? true); return }
+    const view = attachedId ? views.get(attachedId) : undefined
+    if (key === 'j' && view && attachedId) { event.preventDefault(); setMode(attachedId, view, view.mode === 'shell' ? 'transcript' : 'shell'); return }
+    if (key === 'f' && view && attachedId) { event.preventDefault(); if (view.mode !== 'shell') setMode(attachedId, view, 'shell'); openSearchBox(); return }
+    if (/^[1-9]$/.test(key)) { const session = sessions[Number(key) - 1]; if (session) { event.preventDefault(); attach(session.id) } }
+  })
   el('#term-cancel')?.addEventListener('click', () => { splitNext = false; toggleForm(false) })
   for (const cancel of form?.querySelectorAll<HTMLElement>('.composer-cancel') ?? []) cancel.addEventListener('click', () => { splitNext = false; toggleForm(false) })
   el('#term-tab-new')?.addEventListener('click', () => showComposerTab('new'))

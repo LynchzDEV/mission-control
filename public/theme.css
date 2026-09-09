@@ -764,3 +764,7 @@ body.mcd-open { overflow:hidden; } body.mcd-open .mcd-dim { display:block; } bod
 @font-face { font-family:'JetBrains Mono'; font-style:normal; font-weight:700; font-display:swap; src:url('/fonts/JetBrainsMono-Bold.woff2') format('woff2'); }
 @font-face { font-family:'JetBrains Mono'; font-style:italic; font-weight:400; font-display:swap; src:url('/fonts/JetBrainsMono-Italic.woff2') format('woff2'); }
 @font-face { font-family:'JetBrains Mono'; font-style:italic; font-weight:700; font-display:swap; src:url('/fonts/JetBrainsMono-BoldItalic.woff2') format('woff2'); }
+
+.quota-track { display:block; height:4px; margin:5px 0 0; border-radius:1px; background:var(--line); }
+.quota-week .quota-track { height:2px; margin:0; }
+.provider-usage[data-unavailable=true] { opacity:.55; }

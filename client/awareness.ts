@@ -149,7 +149,8 @@ function install(): void {
       card.feed?.stop(); card.root.remove(); cards.delete(id)
     }
     agentStatus.textContent = !scopeId ? 'Select a terminal to see its active agents.' : threads.length ? `${threads.length} active agent${threads.length === 1 ? '' : 's'}` : 'No active agents for this terminal.'
-    collection.dataset.active = String(threads.length > 0)
+    const active = String(threads.length > 0)
+    if (collection.dataset.active !== active) { collection.dataset.active = active; dispatchEvent(new CustomEvent('mc:agents-active', {detail:{count:threads.length}})) }
     for (const [index,item] of threads.entries()) {
       let card = cards.get(item.id)
       if (!card) {

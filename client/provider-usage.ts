@@ -11,7 +11,7 @@ export function normalizeUsage(provider: string, raw: unknown): ProviderUsage {
 }
 export const weeklyOnly = (provider: string): boolean => provider === 'codex'
 function meter(window: QuotaWindow, label: string): HTMLElement {
-  if (window.percent === null) { const missing = document.createElement('span'); missing.className = 'quota-unavailable'; missing.textContent = 'Unavailable'; return missing }
+  if (window.percent === null) { const track = document.createElement('span'); track.className = 'quota-track'; track.setAttribute('role', 'img'); track.setAttribute('aria-label', `${label}: unavailable`); return track }
   const result = document.createElement('meter'); result.min = 0; result.max = 100; result.value = window.percent
   result.setAttribute('aria-label', `${label}: ${window.percent}%${window.estimate ? ' estimate' : ''}`)
   result.title = window.reset ? `Resets ${window.reset}` : 'Reset unavailable'
@@ -20,7 +20,8 @@ function meter(window: QuotaWindow, label: string): HTMLElement {
 export function renderUsage(host: HTMLElement, values: ProviderUsage[]): void {
   host.replaceChildren()
   for (const data of values) {
-    const section = document.createElement('section'); section.className = 'provider-usage'; section.title = data.reason
+    const section = document.createElement('section'); section.className = 'provider-usage'; section.title = data.reason || (data.fiveHour.percent === null && data.weekly.percent === null ? 'Usage unavailable' : '')
+    section.dataset.unavailable = String(data.fiveHour.percent === null && data.weekly.percent === null)
     const heading = document.createElement('div'); heading.className = 'quota-heading'
     const name = document.createElement('span'); name.className = 'quota-provider'; name.textContent = data.provider === 'glm' ? 'GLM' : data.provider[0]!.toUpperCase() + data.provider.slice(1)
     const single = weeklyOnly(data.provider), primary = single ? data.weekly : data.fiveHour
