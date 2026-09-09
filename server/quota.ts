@@ -307,8 +307,9 @@ const readClaudeCache: ClaudeCacheReader = async () => {
   if (info.size > 64_000) return null
   return { raw: await readFile(path, 'utf8'), mtimeMs: info.mtimeMs }
 }
+export const CLAUDE_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000
 export function parseClaudeCache(cache: { raw: string; mtimeMs: number } | null, now: Date): UsageLimits | null {
-  if (!cache || !Number.isFinite(cache.mtimeMs) || cache.mtimeMs > now.getTime() || now.getTime() - cache.mtimeMs > 180_000) return null
+  if (!cache || !Number.isFinite(cache.mtimeMs) || cache.mtimeMs > now.getTime() || now.getTime() - cache.mtimeMs > CLAUDE_CACHE_MAX_AGE_MS) return null
   try {
     const data: unknown = JSON.parse(cache.raw)
     if (!isRecord(data)) return null

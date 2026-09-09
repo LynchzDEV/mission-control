@@ -61,7 +61,8 @@ const now = new Date('2026-09-08T06:00:00Z')
 const raw = JSON.stringify({ sessionUsage: 24, weeklyUsage: 12, sessionResetAt: '2026-09-08T07:00:00Z', weeklyResetAt: 'bad' })
 test('Claude cache uses mtime freshness, real zeros and validated resets', () => {
   expect(parseClaudeCache({ raw, mtimeMs: +now - 180000 }, now)).toMatchObject({ fiveHourPct: 24, weeklyPct: 12, weeklyResetsAt: null, source: 'ccstatusline cache', observedAt: new Date(+now - 180000).toISOString() })
-  for (const mtimeMs of [+now - 180001, +now + 1, NaN]) expect(parseClaudeCache({ raw, mtimeMs }, now)).toBeNull()
+  expect(parseClaudeCache({ raw, mtimeMs: +now - 11 * 3600_000 }, now)).toMatchObject({ fiveHourPct: 24, observedAt: new Date(+now - 11 * 3600_000).toISOString() })
+  for (const mtimeMs of [+now - 12 * 3600_000 - 1, +now + 1, NaN]) expect(parseClaudeCache({ raw, mtimeMs }, now)).toBeNull()
   for (const value of [null, { raw: '{', mtimeMs: +now }, { raw: '{"sessionUsage":101}', mtimeMs: +now }]) expect(parseClaudeCache(value, now)).toBeNull()
   expect(parseClaudeCache({ raw: '{"sessionUsage":0}', mtimeMs: +now }, now)?.fiveHourPct).toBe(0)
 })
@@ -71,7 +72,7 @@ test('cache enrichment preserves ccusage accounting and missing cache retains es
   const cached = await fetchClaudeQuota(run, now, async () => ({ raw, mtimeMs: +now }))
   expect(cached).toMatchObject({ ...baseline, fiveHourPct: 24, weeklyPct: 12 })
   expect(await fetchClaudeQuota(run, now, async () => { throw new Error('missing') })).toEqual(baseline)
-  expect(await fetchClaudeQuota(run, now, async () => ({ raw, mtimeMs: +now - 180001 }))).toEqual(baseline)
+  expect(await fetchClaudeQuota(run, now, async () => ({ raw, mtimeMs: +now - 12 * 3600_000 - 1 }))).toEqual(baseline)
 })
 test('quota source failure preserves Codex authentication status', async () => {
   expect(await fetchCodexQuota(async () => ({ exitCode: 0, stdout: 'private' }), async () => { throw new Error('SECRET') })).toEqual({ available: true, authed: true, reason: 'Codex usage limits unavailable' })

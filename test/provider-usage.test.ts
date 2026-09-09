@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { normalizeUsage, renderUsage } from '../client/provider-usage'
+import { ageLabel, normalizeUsage, renderUsage } from '../client/provider-usage'
 test('missing windows stay unavailable, including monthly GLM and authenticated Codex', () => {
   expect(normalizeUsage('glm',{available:true,monthlyPct:70,fiveHourPct:28}).weekly.percent).toBeNull()
   expect(normalizeUsage('codex',{available:true,authed:true}).fiveHour.percent).toBeNull()
@@ -35,4 +35,13 @@ test('Codex shows the weekly window as its headline and skips the weekly row', (
   expect(glm.children[1].className).toBe('quota-track')
   expect(glm.title).toBe('Usage unavailable')
   delete (globalThis as any).document
+})
+
+test('age label appears only once the observation is older than three minutes', () => {
+  const now = Date.parse('2026-09-09T02:00:00.000Z')
+  expect(ageLabel(null, now)).toBeNull()
+  expect(ageLabel('2026-09-09T01:58:30.000Z', now)).toBeNull()
+  expect(ageLabel('2026-09-09T01:46:00.000Z', now)).toBe('14m ago')
+  expect(ageLabel('2026-09-08T23:00:00.000Z', now)).toBe('3h ago')
+  expect(normalizeUsage('claude', { available: true, fiveHourPct: 24, source: 'ccstatusline cache', observedAt: '2026-09-09T01:46:00.000Z' }).observedAt).toBe('2026-09-09T01:46:00.000Z')
 })
