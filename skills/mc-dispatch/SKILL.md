@@ -118,18 +118,28 @@ A spec is goal + acceptance + pointers, not a pre-digested implementation:
 ### Acceptance baseline — paste into EVERY worker prompt (claude, glm, codex)
 
 Workers run on the slim profile, so the prompt is their only contract. Every
-spec ends with these three lines verbatim, after the ticket-specific
-acceptance bullets (2026-09-08, user-mandated):
+spec ends with these lines verbatim, after the ticket-specific acceptance
+bullets (2026-09-08, user-mandated; scoped 2026-09-09 so the full suite runs
+once per landed change, not once per worker iteration):
 
 ```
-Done means all three hold, verified by you before you report:
-1. `bin/ci` passes locally (if the repo has no bin/ci, the repo's full test command passes).
-2. rspec passes with no hard or forced waits (no sleep, no fixed wait_for/timeout padding) and a clean run: zero warnings, zero error logs, zero deprecation output in the test output.
+Done means all of these hold, verified by you before you report:
+1. Every spec for a file you touched, plus every spec that references a class or module you changed, passes locally. Run those specs while iterating and once more at the end. Do NOT run the full suite or bin/ci: the orchestrator runs it once at landing.
+2. Those runs have no hard or forced waits (no sleep, no fixed wait_for/timeout padding) and are clean: zero warnings, zero error logs, zero deprecation output.
 3. Nothing on the remote is lost and the code stays compatible: fetch and rebase onto the latest remote tip before you finish, never force-push or drop commits, and keep existing callers, data and already-applied migrations working.
+Report the exact spec command you ran and its summary line as evidence for 1 and 2.
 ```
 
-A job that reports done without stating how each of the three was checked
-is not done: reply to it (`/reply`) asking for the evidence before review.
+A job that reports done without that evidence is not done: reply to it
+(`/reply`) asking for it before review.
+
+**Landing gate (orchestrator, not the worker):** after `POST /api/jobs/<id>/land`
+cherry-picks onto the base branch, run `bin/ci` (or the repo's full test
+command) ONCE on the base branch before any push. One full run per landed
+change, serialized, never concurrently across worktrees — several full rspec
+runs against the shared test DB are what produced the
+`PG::TRDeadlockDetected` failures on 2026-09-03. A failure here is a NO-SHIP:
+fix via `/reply` to the job, re-land, re-run.
 
 ## Plan first (makes the cockpit graph real)
 
