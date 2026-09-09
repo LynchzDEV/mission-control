@@ -1,4 +1,5 @@
 import { Elysia } from 'elysia'
+import { parseTranscript, readTranscriptTail } from '../session-transcript'
 
 import { requireSession, verifyCookieHeader } from '../auth'
 import { checkDropSize, findOriginalFile, saveDroppedCopy } from '../drops'
@@ -117,6 +118,23 @@ function terminalApi(registry: TerminalRegistry, helpers: TerminalHelpers): Elys
       return { sessions: await sessionsFor(check.path) }
     })
     .get('/api/terminals', () => ({ sessions: registry.list() }))
+    .get('/api/terminals/:id/thread', async ({ params, set }) => {
+      const record = registry.get(params.id)
+      if (record === undefined) {
+        set.status = 404
+        return { error: 'terminal not found' }
+      }
+      const path = await registry.transcriptPath(params.id)
+      const text = path === null ? null : await readTranscriptTail(path)
+      return {
+        engine: record.engine,
+        sessionId: record.sessionId,
+        running: true,
+        canReply: false,
+        bound: text !== null,
+        messages: text === null ? [] : parseTranscript(record.engine, text),
+      }
+    })
     .patch('/api/terminals/:id', ({ params, body, set }) => {
       const title = normalizeTitle((body as Record<string, unknown> | null)?.title)
       if (title === null) {

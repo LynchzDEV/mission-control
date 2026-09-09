@@ -2,6 +2,8 @@ import { basename } from 'node:path'
 
 import { spawn, type IPty } from 'bun-pty'
 
+import { claudeTranscriptPath, findCodexRollout } from './session-transcript'
+
 import {
   ENGINE_NAMES,
   buildEnv,
@@ -30,6 +32,7 @@ export type TerminalRecord = {
   pid: number
   createdAt: number
   title: string
+  sessionId: string | null
 }
 
 export type CreateTerminalParams = {
@@ -58,6 +61,7 @@ export type TerminalRegistry = {
   kill(id: string): boolean
   rename(id: string, title: string): boolean
   replay(id: string): string
+  transcriptPath(id: string): Promise<string | null>
   subscribe(id: string, listener: OutputListener, onClose?: CloseListener): () => void
   shutdown(): void
 }
@@ -69,6 +73,7 @@ type Session = {
   pty: IPty
   buffer: RingBuffer
   listeners: Set<Subscriber>
+  transcript: string | null
 }
 
 function isEngineName(value: string): value is EngineName {
@@ -94,10 +99,11 @@ export function terminalArgs(
   engine: EngineName,
   model: string | undefined,
   resumeSessionId: string | undefined,
+  sessionId?: string,
 ): string[] {
   return [
     ...(engine === 'codex' ? ['--dangerously-bypass-approvals-and-sandbox'] : []),
-    ...(resumeSessionId === undefined ? [] : ['--resume', resumeSessionId]),
+    ...(resumeSessionId === undefined ? (engine === 'codex' || sessionId === undefined ? [] : ['--session-id', sessionId]) : ['--resume', resumeSessionId]),
     ...modelArgs(engine, model),
   ]
 }
@@ -169,9 +175,10 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     const rows = clampDimension(params.rows, DEFAULT_ROWS)
 
     const id = crypto.randomUUID()
+    const sessionId = engine === 'codex' ? null : (params.resumeSessionId ?? crypto.randomUUID())
     let pty: IPty
     try {
-      pty = spawn(terminalCommand(engine), fakeEnginesEnabled() ? [] : terminalArgs(engine, params.model, params.resumeSessionId), {
+      pty = spawn(terminalCommand(engine), fakeEnginesEnabled() ? [] : terminalArgs(engine, params.model, params.resumeSessionId, sessionId ?? undefined), {
         name: 'xterm-256color',
         cols,
         rows,
@@ -188,8 +195,9 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       pid: pty.pid,
       createdAt: Date.now(),
       title: normalizeTitle(params.title) ?? `${engine.toUpperCase()} · ${basename(cwdCheck.path)}`,
+      sessionId,
     }
-    const session: Session = { record, pty, buffer: createRingBuffer(), listeners: new Set() }
+    const session: Session = { record, pty, buffer: createRingBuffer(), listeners: new Set(), transcript: sessionId === null ? null : claudeTranscriptPath(env.CLAUDE_CONFIG_DIR, cwdCheck.path, sessionId) }
     sessions.set(id, session)
 
     pty.onData((chunk) => {
@@ -242,6 +250,12 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       if (session === undefined) return false
       session.pty.resize(clampDimension(cols, DEFAULT_COLS), clampDimension(rows, DEFAULT_ROWS))
       return true
+    },
+    async transcriptPath(id) {
+      const session = sessions.get(id)
+      if (session === undefined) return null
+      if (session.transcript === null && session.record.engine === 'codex') session.transcript = await findCodexRollout(session.record.cwd, session.record.createdAt)
+      return session.transcript
     },
     replay(id) {
       const session = sessions.get(id)

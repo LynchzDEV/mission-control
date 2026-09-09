@@ -2,6 +2,7 @@ import { restoreLayout, selectSession, visibleSessions, type TerminalLayout } fr
 import { installModelPickers } from './model-picker'
 import { icon, ui, providerName, connectionLabel, installTerminalShell } from './terminal-view'
 import { confirmDialog, promptDialog } from './dialog'
+import { createTranscript, type TranscriptHandle } from './transcript-view'
 import { errorText, getJson, pathsFromUriList, postJson, readArray, shellQuote } from './shared'
 
 type TerminalSession = {
@@ -54,7 +55,30 @@ let search: SearchAddonInstance | null = null
 let socket: WebSocket | null = null
 
 const LAYOUT_KEY = 'mc.term.layout.v2'
-type SessionView = { root: HTMLElement; host: HTMLElement; term: XtermInstance; fit: FitAddonInstance; search: SearchAddonInstance | null; socket: WebSocket; observer: ResizeObserver }
+type PaneMode = 'transcript' | 'shell'
+type SessionView = { root: HTMLElement; host: HTMLElement; term: XtermInstance; fit: FitAddonInstance; search: SearchAddonInstance | null; socket: WebSocket; observer: ResizeObserver; transcript: TranscriptHandle; mode: PaneMode }
+const MODE_KEY = 'mc.term.mode'
+
+function readModes(): Record<string, PaneMode> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(MODE_KEY) ?? '{}')
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, PaneMode> : {}
+  } catch {
+    return {}
+  }
+}
+
+function setMode(id: string, view: SessionView, mode: PaneMode): void {
+  view.mode = mode
+  view.root.dataset.mode = mode
+  view.host.hidden = mode !== 'shell'
+  view.transcript.root.hidden = mode !== 'transcript'
+  const toggle = view.root.querySelector<HTMLButtonElement>('.tool-mode')
+  if (toggle) { toggle.replaceChildren(icon(mode === 'shell' ? 'chat' : 'terminal')); toggle.title = mode === 'shell' ? 'Show transcript' : 'Show shell'; toggle.setAttribute('aria-label', `${toggle.title} · ${id}`) }
+  try { localStorage.setItem(MODE_KEY, JSON.stringify({ ...readModes(), [id]: mode })) } catch {}
+  if (mode === 'shell') { view.transcript.stop(); requestAnimationFrame(() => resizeView(view)); (view.term as unknown as { focus?: () => void }).focus?.() }
+  else view.transcript.start()
+}
 const views = new Map<string, SessionView>()
 let layout: TerminalLayout = restoreLayout(null, [])
 let initialized = false
@@ -131,6 +155,7 @@ function paintLayout(): void {
 
 function disposeView(id: string): void {
   if (attachedId === id) closeSearchBox()
+  views.get(id)?.transcript.stop()
   const view = views.get(id)
   if (!view) return
   views.delete(id)
@@ -459,14 +484,21 @@ function attach(id: string): void {
       return button
     }
     const tools = ui('span', 'pane-tools')
+    const modeToggle = document.createElement('button')
+    modeToggle.type = 'button'; modeToggle.className = 'expand tool-mode'; modeToggle.append(icon('terminal'))
+    modeToggle.onclick = (event) => { event.stopPropagation(); const current = views.get(id); if (current) setMode(id, current, current.mode === 'shell' ? 'transcript' : 'shell') }
     tools.append(
-      quietTool('search', 'tool-find', 'Find', () => { activate(id); openSearchBox() }),
+      quietTool('search', 'tool-find', 'Find', () => { activate(id); const current = views.get(id); if (current && current.mode !== 'shell') setMode(id, current, 'shell'); openSearchBox() }),
       quietTool('reconnect', 'tool-reconnect', 'Reconnect', () => { disposeView(id); attach(id) }),
       hide,
       quietTool('close', 'tool-end', 'End session', () => void killSession(id)),
+      modeToggle,
       focusPane,
     )
-    header.append(emblem, title, tools)
+    const meta = ui('span', 'session-meta')
+    meta.append(ui('span', 'provider', providerName(session.engine)), ui('span', 'connection-state', 'Connecting'), ui('span', 'path', session.cwd.split('/').filter(Boolean).at(-1) ?? session.cwd))
+    meta.title = session.cwd
+    header.append(emblem, title, meta, tools)
     const host = document.createElement('div')
     host.className = 'terminal-surface'
     const handle = document.createElement('div')
@@ -480,11 +512,8 @@ function attach(id: string): void {
     handle.onkeydown = (event) => { if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) { event.preventDefault(); resize(layout.ratio + (['ArrowLeft', 'ArrowUp'].includes(event.key) ? -5 : 5)) } }
     handle.onpointerdown = (event) => { event.preventDefault(); handle.setPointerCapture(event.pointerId) }
     handle.onpointermove = (event) => { if (!handle.hasPointerCapture(event.pointerId)) return; const bounds = deck.getBoundingClientRect(); resize(layout.axis === 'horizontal' ? (event.clientX - bounds.left) / bounds.width * 100 : (event.clientY - bounds.top) / bounds.height * 100) }
-    const context = document.createElement('div')
-    context.className = 'session-context'
-    context.append(ui('span', 'provider', providerName(session.engine)), ui('span', 'model connection-state', 'Connecting'), ui('span', 'context-dot', '/'), ui('span', 'path', session.cwd.split('/').filter(Boolean).at(-1) ?? session.cwd))
-    context.title = session.cwd
-    root.append(header, context, host, handle)
+    const transcript = createTranscript(id, (data) => { if (connection.readyState === WebSocket.OPEN) connection.send(new TextEncoder().encode(data)) })
+    root.append(header, transcript.root, host, handle)
     deck.append(root)
     const instance = new globals.Terminal({ convertEol: false, cursorBlink: true, fontFamily: "'JetBrains Mono', Menlo, 'SF Mono', monospace", fontSize: 13, macOptionIsMeta: true, scrollback: 10000, theme: THEME })
     const loader = instance as unknown as { loadAddon(addon: unknown): void }
@@ -498,9 +527,10 @@ function attach(id: string): void {
     const connection = new WebSocket(`${scheme}//${location.host}/ws/terminal/${encodeURIComponent(id)}`)
     connection.binaryType = 'arraybuffer'
     const observer = new ResizeObserver(() => { const view = views.get(id); if (view) resizeView(view) })
-    const view: SessionView = { root, host, term: instance, fit: addon, search: finder, socket: connection, observer }
+    const view: SessionView = { root, host, term: instance, fit: addon, search: finder, socket: connection, observer, transcript, mode: 'transcript' }
     views.set(id, view)
     observer.observe(host)
+    setMode(id, view, readModes()[id] ?? 'transcript')
     void document.fonts?.load("13px 'JetBrains Mono'").then(() => { const current = views.get(id); if (current === view) resizeView(view) }).catch(() => {})
     root.addEventListener('pointerdown', () => { if (attachedId !== id) { activate(id); paintLayout() } })
     root.addEventListener('focusin', () => { if (attachedId !== id) { activate(id); paintLayout() } })

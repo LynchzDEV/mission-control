@@ -73,10 +73,14 @@ describe('clampDimension', () => {
 describe('terminalArgs', () => {
   test('no flags without a model or resume target', () => {
     expect(terminalArgs('claude', undefined, undefined)).toEqual([])
+    expect(terminalArgs('claude', undefined, undefined, 'sid-1')).toEqual(['--session-id', 'sid-1'])
+    expect(terminalArgs('glm', 'glm-5', undefined, 'sid-2')).toEqual(['--session-id', 'sid-2', '--model', 'glm-5'])
+    expect(terminalArgs('codex', undefined, undefined, 'ignored')).toEqual(['--dangerously-bypass-approvals-and-sandbox'])
   })
 
   test('resume flag comes before the model flag', () => {
     expect(terminalArgs('claude', 'opus', 'abc')).toEqual(['--resume', 'abc', '--model', 'opus'])
+    expect(terminalArgs('claude', 'opus', 'abc', 'abc')).toEqual(['--resume', 'abc', '--model', 'opus'])
   })
 
   test('codex bypasses approvals and sandboxing and keeps its -m form', () => {

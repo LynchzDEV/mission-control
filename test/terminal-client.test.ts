@@ -121,7 +121,7 @@ async function harness(initial: string[] = ['a', 'b'], saved?: object) {
     },
     addEventListener: (name: string, callback: () => void) => listeners.set(name, callback), dispatchEvent: (event: { type: string }) => { events.push(event.type) },
     CustomEvent: class { constructor(public type: string, public detail: any) {} },
-    requestAnimationFrame: (fn: () => void) => { fn(); return 1 }, setInterval: (fn: () => void) => { intervals.push(fn) }, setTimeout,
+    requestAnimationFrame: (fn: () => void) => { fn(); return 1 }, setInterval: (fn: () => void) => { intervals.push(fn) }, clearInterval: () => {}, setTimeout,
     TextEncoder, TextDecoder, innerWidth: 1200, confirm: () => false, console,
   }
   context.window = context
