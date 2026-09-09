@@ -25,7 +25,7 @@ function installGate(): void {
     const result = await postJson(action, { password })
     if (submit) submit.disabled = false
     if (!result.ok) {
-      say(message, errorText(result).toUpperCase(), false)
+      say(message, errorText(result), false)
       return
     }
     say(message, 'OK · ENTERING', true)
@@ -52,7 +52,7 @@ function reveal(button: HTMLElement): boolean {
   if (input === null || !input.hidden) return false
   input.hidden = false
   input.focus()
-  button.textContent = 'SAVE'
+  button.textContent = 'Save'
   return true
 }
 
@@ -64,7 +64,7 @@ function installSecretRows(): void {
       const status = document.querySelector<HTMLElement>(`#${button.dataset.status ?? ''}`)
       const payload = collect(button)
       if (Object.keys(payload).length === 0) {
-        say(status, 'NOTHING TO SAVE', false)
+        say(status, 'Nothing to save', false)
         return
       }
       if (button.hasAttribute('disabled')) return
@@ -72,7 +72,7 @@ function installSecretRows(): void {
       say(status, 'Saving…', true)
       const result = await postJson(button.dataset.post ?? '', payload)
       button.removeAttribute('disabled')
-      say(status, result.ok ? 'SAVED' : errorText(result).toUpperCase(), result.ok)
+      say(status, result.ok ? 'Saved' : errorText(result), result.ok)
       if (!result.ok) return
       dispatchEvent(new Event('mc:settings-refresh'))
       if (parent !== window) parent.postMessage({ type: 'mc:settings-saved' }, location.origin)
@@ -81,12 +81,12 @@ function installSecretRows(): void {
         if (input === null || input.type !== 'password') continue
         input.value = ''
         input.hidden = true
-        button.textContent = 'REPLACE'
+        button.textContent = 'Replace token'
       }
       if (result.data.zaiAuthTokenConfigured === true) {
         const pillEl = document.querySelector<HTMLElement>('#s-token')
         if (pillEl !== null) {
-          pillEl.textContent = 'SET ●●●'
+          pillEl.textContent = 'Configured'
           pillEl.className = 'pill setpill'
         }
       }
@@ -111,7 +111,7 @@ function installApiTokenRow(): void {
     const result = await postJson('/api/secrets/api-token/reveal', {})
     revealButton.removeAttribute('disabled')
     if (!result.ok) {
-      say(status(revealButton), errorText(result).toUpperCase(), false)
+      say(status(revealButton), errorText(result), false)
       return
     }
     const value = typeof result.data.apiToken === 'string' ? result.data.apiToken : ''
@@ -131,14 +131,14 @@ function installApiTokenRow(): void {
     const result = await postJson('/api/secrets/api-token/rotate', {})
     rotateButton.removeAttribute('disabled')
     if (!result.ok) {
-      say(status(rotateButton), errorText(result).toUpperCase(), false)
+      say(status(rotateButton), errorText(result), false)
       return
     }
     if (pillEl !== null) {
-      pillEl.textContent = 'SET ●●●'
+      pillEl.textContent = 'Configured'
       pillEl.className = 'pill setpill'
     }
-    say(status(rotateButton), 'ROTATED', true)
+    say(status(rotateButton), 'Rotated', true)
   })
 }
 
@@ -149,7 +149,7 @@ function installTodoRows(): void {
     button.addEventListener('click', (event) => {
       event.preventDefault()
       const status = document.querySelector<HTMLElement>(`#${button.dataset.status ?? ''}`)
-      say(status, (button.dataset.todo ?? 'NOT WIRED YET').toUpperCase(), false)
+      say(status, button.dataset.todo ?? 'Not wired yet', false)
     })
   })
 }
@@ -182,6 +182,36 @@ async function refreshEngineStatus(): Promise<void> {
   pill('#s-claude-auth', claude.available === true ? 'Usage available' : 'Usage unavailable', claude.available === true ? 'ok' : 'bad')
   pill('#s-glm-conn', glm.available === true ? 'Quota available' : 'Quota unavailable', glm.available === true ? 'ok' : 'bad')
   pill('#s-codex-oauth', codex.authed === true ? 'Authenticated' : codex.authed === false ? 'Sign-in needed' : 'Authentication unavailable', codex.authed === true ? 'ok' : 'bad')
+}
+
+function installEngineChips(): void {
+  document.querySelectorAll<HTMLElement>('[data-engine-for]').forEach((group) => {
+    const select = document.getElementById(group.dataset.engineFor ?? '') as HTMLSelectElement | null
+    if (select === null) return
+    const chips = [...group.querySelectorAll<HTMLElement>('.engine')]
+    const sync = (): void => { for (const chip of chips) chip.setAttribute('aria-checked', String(chip.dataset.engine === select.value)) }
+    for (const chip of chips) chip.addEventListener('click', () => {
+      const engine = chip.dataset.engine ?? ''
+      if (engine === '' || select.value === engine) return
+      select.value = engine
+      select.dispatchEvent(new Event('change'))
+      sync()
+    })
+    select.addEventListener('change', sync)
+    sync()
+  })
+}
+
+function installSwitches(): void {
+  document.querySelectorAll<HTMLElement>('[data-switch-for]').forEach((button) => {
+    const name = button.dataset.switchFor ?? ''
+    const select = document.getElementById(name) as HTMLSelectElement | null
+    const state = document.getElementById(`${name}-state`)
+    if (select === null) return
+    const sync = (): void => { const on = select.value === 'on'; button.setAttribute('aria-checked', String(on)); if (state) state.textContent = on ? 'On' : 'Off' }
+    button.addEventListener('click', () => { select.value = select.value === 'on' ? 'off' : 'on'; select.dispatchEvent(new Event('change')); sync() })
+    sync()
+  })
 }
 
 function installStatusProbes(): void {
@@ -226,5 +256,7 @@ if (document.body.dataset.previewReadonly === 'true') {
 } else { installSecretRows(); installApiTokenRow() }
 installTodoRows()
 installStatusProbes()
+installEngineChips()
+installSwitches()
 installModelPickers()
 installColumnEntrance()

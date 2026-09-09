@@ -78,7 +78,7 @@ export function TerminalsPage(props: EnginePageProps): string {
     styles: ['/vendor/xterm.css'],
     meta: 'Live workspace',
     children: (
-      <div class="termgrid" id="termgrid">
+      <div class="termgrid mc-forms" id="termgrid">
         <div class="termmain"><div class="horizon"><canvas id="ascii-horizon" aria-hidden="true"></canvas></div>
           <div class="workspace-heading"><div><h1 id="workspace-name">Terminals</h1><p id="workspace-path">Open or resume a session in your directory.</p></div></div>
           <div class="terminal-tools"><div class="tool-group"><button class="btn" id="split-horizontal" type="button" title="Add an existing session side by side">Side by side</button><button class="btn" id="split-vertical" type="button" title="Stack existing sessions">Stacked</button></div><div class="tool-group"><button class="btn" id="activity-open" type="button" aria-expanded="true" aria-pressed="true">Agents</button></div></div>

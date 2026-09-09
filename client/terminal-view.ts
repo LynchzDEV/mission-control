@@ -70,8 +70,6 @@ export function installTerminalShell(): void {
   const root = document.querySelector<HTMLElement>('#termgrid')
   if (!root || root.dataset.design === 'approved') return
   root.dataset.design = 'approved'; root.classList.add('terminal-workspace')
-  const stylesheet = document.createElement('link')
-  stylesheet.rel = 'stylesheet'; stylesheet.href = '/terminal-design.css'; document.head.append(stylesheet)
   const heading = root.querySelector('.workspace-heading')!, tools = root.querySelector('.terminal-tools')!
   tools.className = 'terminal-tools view-controls'
   const arrangement = ui('div', 'arrangement')
