@@ -318,8 +318,19 @@ export function parseClaudeCache(cache: { raw: string; mtimeMs: number } | null,
     return { fiveHourPct, weeklyPct, fiveHourResetsAt: resetIso(data.sessionResetAt), weeklyResetsAt: resetIso(data.weeklyResetAt), source: 'ccstatusline cache', observedAt: new Date(cache.mtimeMs).toISOString() }
   } catch { return null }
 }
+export const CCUSAGE_MEMO_MS = 15 * 60_000
+let estimateMemo: { at: number; value: Promise<ClaudeEstimate> } | null = null
+
+function memoizedEstimate(run: CommandRunner, now: Date): Promise<ClaudeEstimate> {
+  if (run !== runCommand) return fetchClaudeEstimate(run, now)
+  if (estimateMemo !== null && now.getTime() - estimateMemo.at < CCUSAGE_MEMO_MS) return estimateMemo.value
+  const value = fetchClaudeEstimate(run, now)
+  estimateMemo = { at: now.getTime(), value }
+  return value
+}
+
 export async function fetchClaudeQuota(run: CommandRunner = runCommand, now: Date = new Date(), readCache: ClaudeCacheReader = run === runCommand ? readClaudeCache : async () => null): Promise<ClaudeQuota> {
-  const [estimate, cache] = await Promise.all([fetchClaudeEstimate(run, now), readCache().then(value => parseClaudeCache(value, now)).catch(() => null)])
+  const [estimate, cache] = await Promise.all([memoizedEstimate(run, now), readCache().then(value => parseClaudeCache(value, now)).catch(() => null)])
   if (!cache) return estimate
   if (estimate.available) return { ...estimate, ...cache }
   return { available: true, active: false, tokens: null, otherTokens: null, costUSD: null, resetsAt: null, blockPercent: null, ...cache, reason: 'ccusage accounting unavailable' }

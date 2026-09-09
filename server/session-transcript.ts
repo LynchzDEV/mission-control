@@ -151,6 +151,15 @@ export function parseTranscript(engine: string, text: string): TranscriptMessage
   return engine === 'codex' ? parseCodexTranscript(text) : parseClaudeTranscript(text)
 }
 
+export async function statTranscript(path: string): Promise<{ mtimeMs: number; size: number } | null> {
+  try {
+    const info = await stat(path)
+    return { mtimeMs: info.mtimeMs, size: info.size }
+  } catch {
+    return null
+  }
+}
+
 export async function readTranscriptTail(path: string, limit: number = TRANSCRIPT_TAIL_BYTES): Promise<string | null> {
   let handle
   try {

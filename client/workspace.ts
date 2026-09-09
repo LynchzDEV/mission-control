@@ -37,9 +37,11 @@ function installMotion(): void {
     context.font = `12px ${getComputedStyle(canvas).fontFamily}`
     context.fillStyle = getComputedStyle(canvas).color
     const chars = ' .,:;+=*#'
-    for (let y = 0; y < bounds.height; y += 13) {
+    const band = Math.min(270, innerHeight * .33)
+    const bottom = Math.min(bounds.height, band * 1.5 - bounds.top)
+    for (let y = 0; y < bottom; y += 13) {
       for (let x = 0; x < bounds.width; x += 10) {
-        const u = x / bounds.width, v = (y + bounds.top + 55) / Math.min(270, innerHeight * .33)
+        const u = x / bounds.width, v = (y + bounds.top + 55) / band
         const center = .99 - .38 * u + .12 * Math.sin(u * 6.4 - phase * .38)
         const distance = (v - center) / (.15 + .05 * Math.sin(u * 4 + phase * .22))
         if (Math.abs(distance) > 1.45) continue

@@ -124,6 +124,8 @@ function paintLayout(): void {
   deck.style.setProperty('--split-second', `${100 - layout.ratio}fr`)
   for (const [id, view] of views) {
     view.root.hidden = !visible.includes(id)
+    if (view.root.hidden) view.transcript.stop()
+    else if (view.mode === 'transcript') view.transcript.start()
     const position = visible.indexOf(id)
     view.root.dataset.position = String(position)
     view.root.dataset.divider = String(position >= 0 && visible.length > 1 && (layout.axis === 'vertical' ? position < (visible.length > 2 ? 2 : 1) : position % 2 === 0 && position < visible.length - 1))

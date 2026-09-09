@@ -1,5 +1,7 @@
 import { Elysia } from 'elysia'
-import { parseTranscript, readTranscriptTail } from '../session-transcript'
+import { parseTranscript, readTranscriptTail, statTranscript, type TranscriptMessage } from '../session-transcript'
+
+const transcriptCache = new Map<string, { key: string; messages: TranscriptMessage[] }>()
 
 import { requireSession, verifyCookieHeader } from '../auth'
 import { checkDropSize, findOriginalFile, saveDroppedCopy } from '../drops'
@@ -125,14 +127,25 @@ function terminalApi(registry: TerminalRegistry, helpers: TerminalHelpers): Elys
         return { error: 'terminal not found' }
       }
       const path = await registry.transcriptPath(params.id)
-      const text = path === null ? null : await readTranscriptTail(path)
+      const info = path === null ? null : await statTranscript(path)
+      const key = info === null ? '' : `${path}:${info.mtimeMs}:${info.size}`
+      let messages: TranscriptMessage[] = []
+      if (info !== null) {
+        const cached = transcriptCache.get(params.id)
+        if (cached?.key === key) messages = cached.messages
+        else {
+          const text = await readTranscriptTail(path!)
+          messages = text === null ? [] : parseTranscript(record.engine, text)
+          transcriptCache.set(params.id, { key, messages })
+        }
+      } else transcriptCache.delete(params.id)
       return {
         engine: record.engine,
         sessionId: record.sessionId,
         running: true,
         canReply: false,
-        bound: text !== null,
-        messages: text === null ? [] : parseTranscript(record.engine, text),
+        bound: info !== null,
+        messages,
       }
     })
     .patch('/api/terminals/:id', ({ params, body, set }) => {
