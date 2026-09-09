@@ -521,6 +521,8 @@ function attach(id: string): void {
     handle.tabIndex = 0
     handle.setAttribute('role', 'separator')
     handle.setAttribute('aria-label', 'Resize terminal split')
+    handle.title = 'Drag to resize · double-click to reset'
+    handle.addEventListener('dblclick', () => resize(50))
     handle.setAttribute('aria-valuemin', '25')
     handle.setAttribute('aria-valuemax', '75')
     const resize = (value: number): void => { layout.ratio = Math.max(25, Math.min(75, value)); handle.setAttribute('aria-valuenow', String(Math.round(layout.ratio))); paintLayout() }

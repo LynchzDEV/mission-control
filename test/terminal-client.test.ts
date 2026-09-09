@@ -13,7 +13,7 @@ class Node {
   parentElement: Node | null = null
   dataset: Record<string, string> = {}
   attrs: Record<string, string> = {}
-  style = { setProperty() {}, order: '' }
+  style = { vars: {} as Record<string, string>, setProperty(key: string, value: string) { this.vars[key] = value }, order: '' }
   hidden = false
   textContent = ''
   className = ''
@@ -270,4 +270,16 @@ test('four panes can change arrangement without adding another session', async (
   h.nodes.get('split-horizontal')!.fire()
   expect(h.nodes.get('term-pane')!.dataset.axis).toBe('horizontal')
   expect(h.sockets).toHaveLength(4)
+})
+
+test('double-clicking the divider resets the split to the centre', async () => {
+  const h = await harness()
+  h.nodes.get('split-horizontal')!.fire()
+  const deck = h.nodes.get('term-pane')! as any
+  const handle = h.nodes.get('term-pane')!.querySelector('.terminal-resizer')! as any
+  handle.onkeydown({ key: 'ArrowRight', preventDefault() {} })
+  expect(deck.style.vars['--split-first']).toBe('55fr')
+  handle.fire('dblclick')
+  expect(deck.style.vars['--split-first']).toBe('50fr')
+  expect(handle.attrs['aria-valuenow']).toBe('50')
 })
