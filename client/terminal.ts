@@ -873,7 +873,7 @@ export function installTerminals(): void {
   if (typeof document.addEventListener === 'function') document.addEventListener('click', (event) => {
     if (!form || form.hidden) return
     const path = event.composedPath()
-    if ([form, el('#term-new'), el('#welcome-new')].some((node) => node && path.includes(node))) return
+    if ([form, el('#term-new'), el('#welcome-new'), el('#split-horizontal'), el('#split-vertical')].some((node) => node && path.includes(node))) return
     toggleForm(false)
   })
   el('#term-sessions-load')?.addEventListener('click', () => void loadSessions())

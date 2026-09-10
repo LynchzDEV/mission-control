@@ -75,6 +75,7 @@ async function harness(initial: string[] = ['a', 'b'], saved?: object) {
   const intervals: Array<() => void> = []
   const events: string[] = []
   const listeners = new Map<string, () => void>()
+  const documentListeners = new Map<string, Array<(event: any) => void>>()
   class Socket {
     static OPEN = 1
     readyState = 1
@@ -107,7 +108,7 @@ async function harness(initial: string[] = ['a', 'b'], saved?: object) {
   }
   const storage = new Map<string, string>(saved ? [['mc.term.layout.v2',JSON.stringify(saved)]] : [])
   const context: Record<string, any> = {
-    document: { hidden: false, querySelector: (selector: string) => selector.startsWith('#') ? nodes.get(selector.slice(1)) ?? null : null, createElement: (tag: string) => new Node(tag), createElementNS: (_ns:string, tag:string) => new Node(tag) },
+    document: { hidden: false, addEventListener: (name: string, fn: (event: any) => void) => documentListeners.set(name, [...(documentListeners.get(name) ?? []), fn]), querySelector: (selector: string) => selector.startsWith('#') ? nodes.get(selector.slice(1)) ?? null : null, createElement: (tag: string) => new Node(tag), createElementNS: (_ns:string, tag:string) => new Node(tag) },
     Terminal, FitAddon: { FitAddon: class { fit() {} } }, WebSocket: Socket,
     location: { protocol: 'http:', host: 'localhost' },
     ResizeObserver: class { observe() {}; disconnect() {} },
@@ -130,7 +131,8 @@ async function harness(initial: string[] = ['a', 'b'], saved?: object) {
   const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
   await flush()
   const select = (id: string) => nodes.get('term-strip')!.querySelectorAll('a[data-term]').find((tab) => tab.dataset.term === id)!.fire()
-  return { resize: (width: number) => { context.innerWidth = width; listeners.get('resize')?.() }, nodes, sockets, terms, state, requests, context, intervals, events, select, flush }
+  const documentClick = (target: Node) => { for (const listener of documentListeners.get('click') ?? []) listener({ composedPath: () => [target, nodes.get('term-pane')], preventDefault() {} }) }
+  return { resize: (width: number) => { context.innerWidth = width; listeners.get('resize')?.() }, documentClick, nodes, sockets, terms, state, requests, context, intervals, events, select, flush }
 }
 
 describe('terminal client lifecycle with inert API and socket doubles', () => {
@@ -282,4 +284,16 @@ test('double-clicking the divider resets the split to the centre', async () => {
   handle.fire('dblclick')
   expect(deck.style.vars['--split-first']).toBe('50fr')
   expect(handle.attrs['aria-valuenow']).toBe('50')
+})
+
+test('splitting with a single session keeps the composer open through the same click', async () => {
+  const h = await harness(['a'])
+  const form = h.nodes.get('term-form')!
+  form.hidden = true
+  h.nodes.get('split-horizontal')!.fire()
+  expect(form.hidden).toBe(false)
+  h.documentClick(h.nodes.get('split-horizontal')!)
+  expect(form.hidden).toBe(false)
+  h.documentClick(h.nodes.get('term-pane')!)
+  expect(form.hidden).toBe(true)
 })
