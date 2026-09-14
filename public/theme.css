@@ -513,6 +513,7 @@ label { display:block; margin-bottom:7px; }
 .work-entry { display:flex; flex-direction:column; text-align:left; width:100%; gap:4px; background:transparent; border:0; border-bottom:1px solid var(--mc-border); border-radius:0; padding:15px 10px; overflow-wrap:anywhere; }
 .work-entry strong { font-weight:500; }
 .work-entry span { font-size:12px; color:var(--mc-primary); }
+.work-entry[data-rework="high"] span, .rework-high { color:var(--mc-amber); }
 .work-entry small { color:var(--mc-fg-dim); font-size:12px; }
 .work-entry[aria-pressed=true] { background:var(--mc-primary-soft); box-shadow:inset 3px 0 var(--mc-primary); }
 .work-detail { background:var(--mc-bg-raised); overflow:auto; min-width:0; padding:30px clamp(18px,4vw,64px); }

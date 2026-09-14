@@ -3,8 +3,9 @@ import { confirmDialog } from './dialog'
 import { groupByThread, sortThreadsByActivity, createFullFeed, fetchThread, sendReply, type Feed } from './thread-view'
 import { parsePlan, STAGES, type SessionFlow, type StageState, type Plan } from './plan-view'
 import { installModelPickers } from './model-picker'
-export type WorkJob = { id: string; threadRoot: string; label: string; engine: string; cwd: string; status: string; startedAt: number; endedAt: number | null; diffStat: string; worktree: string | null; reviewedAt: number | null; slowAt?: number | null; turns?: number }
-export type WorkItem = { id: string; label: string; state: string; provider: string; activity: string; job?: WorkJob; members?: WorkJob[]; plan: Plan | null; flowLabel?: string; stages?: SessionFlow | null; archived: boolean }
+export type WorkJob = { id: string; threadRoot: string; label: string; engine: string; cwd: string; status: string; startedAt: number; endedAt: number | null; diffStat: string; worktree: string | null; reviewedAt: number | null; slowAt?: number | null; turns?: number; reviewOf?: string | null; parentJobId?: string | null }
+export type Rework = { jobs: number; fixes: number; reviews: number; turns: number }
+export type WorkItem = { id: string; label: string; state: string; provider: string; activity: string; job?: WorkJob; members?: WorkJob[]; plan: Plan | null; flowLabel?: string; stages?: SessionFlow | null; archived: boolean; rework: Rework }
 const str = (value: unknown): string => typeof value === 'string' ? value : ''
 function parseStages(raw: Record<string, unknown>): SessionFlow | null {
   const stages: SessionFlow = {}
@@ -15,6 +16,15 @@ function parseStages(raw: Record<string, unknown>): SessionFlow | null {
   }
   return stages
 }
+export function reworkSummary(jobs: WorkJob[], label: string): Rework {
+  const same = jobs.filter(job => job.label === label)
+  const reviews = same.filter(job => job.reviewOf).length, fixes = same.filter(job => !job.reviewOf && job.parentJobId).length
+  return { jobs: same.length - reviews - fixes, fixes, reviews, turns: same.reduce((sum, job) => sum + (job.turns ?? 0), 0) }
+}
+const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : word.endsWith('x') ? 'es' : 's'}`
+export function reworkText(rework: Rework): string {
+  return [plural(rework.jobs, 'job'), rework.fixes ? plural(rework.fixes, 'fix') : '', rework.reviews ? plural(rework.reviews, 'review') : '', `${rework.turns} turns`].filter(Boolean).join(' · ')
+}
 export function buildWork(jobs: WorkJob[], flows: Record<string, unknown>): WorkItem[] {
   const used = new Set<string>()
   const items = sortThreadsByActivity(groupByThread(jobs)).map(thread => {
@@ -22,12 +32,12 @@ export function buildWork(jobs: WorkJob[], flows: Record<string, unknown>): Work
     const match = Object.entries(flows).find(([label, value]) => { const flow = readRecord(value); return jobs.some(member => (member.threadRoot || member.id) === thread.threadRoot && member.id === flow.activityJobId) || label === (job.label.trim() || job.id) })
     if (match) used.add(match[0])
     const flow = readRecord(match?.[1])
-    return { id: thread.threadRoot, label: job.label || job.id, state: job.status, provider: job.engine, activity: (flow.activityJobId === job.id ? str(flow.currentActivity) : '') || (job.endedAt ? `Finished ${new Date(job.endedAt).toLocaleString()}` : 'Started ' + new Date(job.startedAt).toLocaleString()), job, members: jobs.filter(member => (member.threadRoot || member.id) === thread.threadRoot), plan: parsePlan(flow.plan), flowLabel: match?.[0], stages: parseStages(flow), archived: flow.archived === true }
+    return { id: thread.threadRoot, label: job.label || job.id, state: job.status, provider: job.engine, activity: (flow.activityJobId === job.id ? str(flow.currentActivity) : '') || (job.endedAt ? `Finished ${new Date(job.endedAt).toLocaleString()}` : 'Started ' + new Date(job.startedAt).toLocaleString()), job, members: jobs.filter(member => (member.threadRoot || member.id) === thread.threadRoot), plan: parsePlan(flow.plan), flowLabel: match?.[0], stages: parseStages(flow), archived: flow.archived === true, rework: reworkSummary(jobs, job.label) }
   })
   for (const [label, raw] of Object.entries(flows)) {
     if (used.has(label)) continue
     const flow = readRecord(raw)
-    items.push({ id: `plan:${label}`, label, state: flow.finished ? 'done' : 'plan', provider: 'Manual plan', activity: str(flow.currentActivity), plan: parsePlan(flow.plan), flowLabel: label, stages: parseStages(flow), archived: flow.archived === true } as typeof items[number])
+    items.push({ id: `plan:${label}`, label, state: flow.finished ? 'done' : 'plan', provider: 'Manual plan', activity: str(flow.currentActivity), plan: parsePlan(flow.plan), flowLabel: label, stages: parseStages(flow), archived: flow.archived === true, rework: { jobs:0, fixes:0, reviews:0, turns:0 } } as typeof items[number])
   }
   return items
 }
@@ -81,13 +91,13 @@ function installWork(): void {
     selected.append(metadata, message)
     let metadataSignature = ''
     updateMetadata = item => {
-      const next = JSON.stringify([item.label, item.provider, item.state, item.activity, item.job?.id, item.job?.cwd, item.flowLabel, item.archived, item.plan, item.members?.map(job => [job.id, job.label, job.cwd, job.status, job.diffStat, job.worktree, job.reviewedAt])])
+      const next = JSON.stringify([item.label, item.provider, item.state, item.activity, item.job?.id, item.job?.cwd, item.flowLabel, item.archived, item.plan, item.rework, item.members?.map(job => [job.id, job.label, job.cwd, job.status, job.diffStat, job.worktree, job.reviewedAt])])
       if (next === metadataSignature) return
       metadataSignature = next
       const scroller = selected.parentElement
       const scrollTop = scroller?.scrollTop
       metadata.replaceChildren()
-    metadata.append(node('h1', item.label), node('p', `${item.provider} · ${item.state}`), node('p', item.job?.cwd ?? 'Manual plan only', 'work-path'))
+    metadata.append(node('h1', item.label), node('p', `${item.provider} · ${item.state}${item.job ? ` · ${reworkText(item.rework)}` : ''}`, item.rework.fixes > 1 ? 'rework-high' : ''), node('p', item.job?.cwd ?? 'Manual plan only', 'work-path'))
     if (item.flowLabel) metadata.append(button(item.archived ? 'Restore plan' : 'Archive plan', () => void action(`/api/flow/${encodeURIComponent(item.flowLabel!)}/${item.archived ? 'unarchive' : 'archive'}`, message)))
     if (item.plan) { const plan = node('section', '', 'ordered-plan'); plan.append(node('h2','Manual plan')); const steps = node('ol'); for (const step of item.plan.steps) steps.append(node('li', `${step.title} — ${step.assignee} · ${step.status}`)); plan.append(steps); if (item.plan.next) plan.append(node('p', `Next: ${item.plan.next}`)); metadata.append(plan) }
     const job = item.job
@@ -135,7 +145,7 @@ function installWork(): void {
     void refreshReply()
     reply.onsubmit = async event => { event.preventDefault(); if (send.disabled || replyPending.has(item.id)) return; const submitted = input.value; replyPending.add(item.id); send.disabled = true; message.textContent = 'Sending…'; const error = await sendReply(item.id,submitted); replyPending.delete(item.id); send.disabled = false; message.textContent = error || 'Reply sent'; if (!error) { const currentInput = replyInputs.get(item.id); if (currentInput?.value === submitted) currentInput.value = ''; try { if (localStorage.getItem(key) === submitted) localStorage.removeItem(key) } catch {}; if (active === item.id) await feed?.refresh() }; if (active === item.id) void refreshReply?.() }
   }
-  function paint(): void { const visible = filterWork(items,filter.value,search.value); if (loaded) active = chooseWork(visible,active); list.replaceChildren(); if (!visible.length) list.append(node('p','No work matches this view.')); for (const item of visible) { const entry = button('', () => { active = item.id; composing = false; paint() }); entry.className = 'work-entry'; entry.setAttribute('aria-pressed',String(active === item.id && !composing)); entry.append(node('strong', item.label), node('span', `${item.state} · ${item.provider}`), node('small',item.activity || 'No activity reported')); list.append(entry) }; detail(visible.find(item => item.id === active)) }
+  function paint(): void { const visible = filterWork(items,filter.value,search.value); if (loaded) active = chooseWork(visible,active); list.replaceChildren(); if (!visible.length) list.append(node('p','No work matches this view.')); for (const item of visible) { const entry = button('', () => { active = item.id; composing = false; paint() }); entry.className = 'work-entry'; entry.setAttribute('aria-pressed',String(active === item.id && !composing)); entry.dataset.rework = item.rework.fixes > 1 ? 'high' : 'ok'; entry.append(node('strong', item.label), node('span', `${item.state} · ${item.provider}${item.rework.fixes ? ` · ${plural(item.rework.fixes, 'fix')}` : ''}`), node('small',item.activity || 'No activity reported')); list.append(entry) }; detail(visible.find(item => item.id === active)) }
   async function refresh(): Promise<void> { const [jobs,flow] = await Promise.all([getJson('/api/jobs'),getJson('/api/flow?includeArchived=1')]); if (!jobs.ok || !flow.ok) { status.textContent = `Could not load ${!jobs.ok ? 'jobs' : 'plans'}: ${errorText(!jobs.ok ? jobs : flow)}. Retrying automatically.`; if (!items.length) list.textContent = 'Work unavailable'; return }; items = buildWork(readArray(jobs.data.jobs).map(raw => ({ ...raw, id: str(raw.id), threadRoot: str(raw.threadRoot) || str(raw.id) } as WorkJob)),readRecord(flow.data.sessions)); loaded = true; status.textContent = ''; paint() }
   search.oninput = paint; filter.onchange = () => { composing = false; paint() }
   if (form) {

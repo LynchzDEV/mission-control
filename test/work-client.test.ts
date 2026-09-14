@@ -156,3 +156,11 @@ test('deferred initial load preserves an older requested thread then follows fil
   search.value = ''; search.oninput?.(); await h.flush()
   expect(list.children.map(entry => entry.attrs['aria-pressed'])).toEqual(['true', 'false'])
 })
+test('the selected work header and list entry carry the rework summary', async () => {
+  const h = await harness(false, false, true)
+  const header = h.nodes.get('#work-selected')!.children[0]!
+  expect(header.children[1]!.textContent).toBe('codex · done · 1 job · 0 turns')
+  expect(header.children[1]!.className).toBe('')
+  const entry = h.nodes.get('#work-list')!.children[0]!
+  expect(entry.dataset.rework).toBe('ok'); expect(entry.children[1]!.textContent).toBe('done · codex')
+})
