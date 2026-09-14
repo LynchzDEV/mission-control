@@ -140,7 +140,9 @@ cross modules: every exact type goes in the spec.
 ### Pre-dispatch gate
 
 Check the finished spec against this list before `POST /api/jobs`. A miss
-means edit the spec, not dispatch:
+means edit the spec, not dispatch. The cockpit enforces the section, hedge
+and file-path checks itself: a prompt for the execute engine that fails them
+gets a 422 with the miss list, and no job is created.
 
 - [ ] every step names a file path and a signature
 - [ ] zero "or" / "either" / "as appropriate" in Decisions and Steps

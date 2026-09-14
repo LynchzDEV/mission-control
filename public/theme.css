@@ -533,6 +533,7 @@ label { display:block; margin-bottom:7px; }
 .reply-composer { display:flex; gap:10px; align-items:flex-end; margin-top:20px; }
 .reply-composer textarea { flex:1; min-height:90px; }
 .job-composer>textarea { width:100%; min-height:200px; margin:8px 0 24px; }
+#dispatch-msg { white-space:pre-line; }
 .composer-context { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:20px; }
 .composer-context input,.composer-context select { display:block; width:100%; margin-top:7px; }
 .mpick { display:flex; gap:6px; flex-wrap:wrap; min-width:0; }

@@ -10,6 +10,8 @@ import { readSecrets } from '../secrets'
 import type { EngineResolver } from '../jobs-engine-iface'
 import { engineSupportsResume } from '../jobs-engine-iface'
 import { MAX_MODEL_LENGTH } from '../engines'
+import { lintSpec } from '../spec-lint'
+import { readRoles } from './roles'
 import { assembleThread, replySessionId, threadChain, threadIsRunning, threadRootOf } from '../threads'
 
 export const SSE_TAIL_BYTES = 4096
@@ -129,6 +131,14 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
       if (model !== undefined && model.length > MAX_MODEL_LENGTH) {
         set.status = 400
         return { error: 'model too long' }
+      }
+
+      if (payload.engine === (await readRoles()).execute.engine) {
+        const misses = lintSpec(payload.prompt)
+        if (misses.length > 0) {
+          set.status = 422
+          return { error: 'spec lint failed: the execute engine only takes an execution plan', misses }
+        }
       }
 
       const result = await manager.createJob(

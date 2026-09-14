@@ -13,6 +13,7 @@ import type { EngineResolver, EngineResolverParams } from '../server/jobs-engine
 import { engineArgs } from '../server/jobs-engine-iface'
 import { jobsRoutes, safeEnqueue } from '../server/routes/jobs'
 import { initScratchGitRepo, runGit } from './support/scratch-git-repo'
+import { executionPlan } from './support/execution-plan'
 
 const PASSWORD = 'correct-horse-battery'
 
@@ -224,7 +225,7 @@ describe('POST /api/jobs/:id/reviewed', () => {
     const app = buildApp(manager, echoResolver)
 
     const created = await app.handle(
-      post('/api/jobs', { engine: 'glm', cwd: repo, prompt: 'hi', label: 'reviewed-me' }, cookie),
+      post('/api/jobs', { engine: 'glm', cwd: repo, prompt: executionPlan('hi'), label: 'reviewed-me' }, cookie),
     )
     const job = (await created.json()) as { id: string }
     const finished = await pollUntilDone(app, cookie, job.id)
@@ -746,5 +747,33 @@ describe('POST /api/jobs/:id/land', () => {
     await writeFile(join(job.cwd, 'dirty.txt'), 'keep\n')
     expect((await app.handle(post(`/api/jobs/${job.id}/land`, {}, cookie))).status).toBe(409)
     expect(await readFile(join(job.cwd, 'dirty.txt'), 'utf8')).toBe('keep\n')
+  })
+})
+
+describe('POST /api/jobs spec lint', () => {
+  const thin = 'Goal: add a label filter.\nAcceptance:\n- works\nPointers: server/routes/jobs.ts'
+  const full = `${thin}\n## Decisions\n1. exact match.\n## Preserve\n- shape (server/routes/jobs.ts:152).\n## Steps\n### Step 1 — server/routes/jobs.ts\nedit.\nDone means all of these hold, verified by you before you report:\n1. specs pass.`
+
+  test('rejects a thin prompt for the execute engine with every miss listed', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), echoResolver)
+    const response = await app.handle(post('/api/jobs', { engine: 'glm', cwd: repo, prompt: thin, label: 'thin' }, cookie))
+    expect(response.status).toBe(422)
+    const body = (await response.json()) as { error: string; misses: string[] }
+    expect(body.error).toBe('spec lint failed: the execute engine only takes an execution plan')
+    expect(body.misses).toHaveLength(4)
+    expect(body.misses[0]).toBe('missing "## Decisions" section')
+    const listed = await app.handle(get('/api/jobs', cookie))
+    expect(((await listed.json()) as { jobs: unknown[] }).jobs).toEqual([])
+  })
+
+  test('a full plan for the execute engine and any prompt for other engines pass', async () => {
+    const cookie = await authCookie()
+    const app = buildApp(createJobManager(), echoResolver)
+    const planned = await app.handle(post('/api/jobs', { engine: 'glm', cwd: repo, prompt: full, label: 'full' }, cookie))
+    expect(planned.status).toBe(200)
+    const review = await app.handle(post('/api/jobs', { engine: 'codex', cwd: repo, prompt: 'Review ONLY the diff', label: 'full' }, cookie))
+    expect(review.status).toBe(200)
+    for (const created of [planned, review]) await pollUntilDone(app, cookie, ((await created.json()) as { id: string }).id)
   })
 })

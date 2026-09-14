@@ -40,7 +40,8 @@ export async function postJson(url: string, body: JsonRecord): Promise<ApiResult
 
 export function errorText(result: ApiResult): string {
   const message = result.data.error
-  if (typeof message === 'string' && message !== '') return message
+  const misses = Array.isArray(result.data.misses) ? result.data.misses.filter((miss): miss is string => typeof miss === 'string') : []
+  if (typeof message === 'string' && message !== '') return misses.length ? [message, ...misses.map(miss => `- ${miss}`)].join('\n') : message
   return result.status === 0 ? 'server unreachable' : `request failed (${result.status})`
 }
 

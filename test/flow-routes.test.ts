@@ -14,6 +14,7 @@ import { flowRoutes } from '../server/routes/flow'
 import { jobsRoutes } from '../server/routes/jobs'
 import { createTerminalRegistry } from '../server/terminals'
 import { initScratchGitRepo } from './support/scratch-git-repo'
+import { executionPlan } from './support/execution-plan'
 
 const PASSWORD = 'correct-horse-battery'
 const echoResolver: EngineResolver = ({ prompt }) => ({ cmd: 'echo', args: [prompt], env: {} })
@@ -115,7 +116,7 @@ describe('GET /api/flow', () => {
       .use(flowRoutes(manager, createTerminalRegistry()))
 
     const created = await app.handle(
-      post('/api/jobs', { engine: 'glm', cwd: repo, prompt: 'hi', label: 'flow-smoke' }, cookie),
+      post('/api/jobs', { engine: 'glm', cwd: repo, prompt: executionPlan('hi'), label: 'flow-smoke' }, cookie),
     )
     const job = (await created.json()) as { id: string }
 
@@ -151,7 +152,7 @@ describe('GET /api/flow', () => {
     const prompt =
       '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"description":"Run the suite"}}]}}'
     const created = await app.handle(
-      post('/api/jobs', { engine: 'glm', cwd: repo, prompt, label: 'activity-flow' }, cookie),
+      post('/api/jobs', { engine: 'glm', cwd: repo, prompt: executionPlan(prompt), label: 'activity-flow' }, cookie),
     )
     const job = (await created.json()) as { id: string }
 
@@ -273,7 +274,7 @@ describe('session archiving', () => {
     label: string,
   ): Promise<void> {
     const created = await app.handle(
-      post('/api/jobs', { engine: 'glm', cwd: repo, prompt: 'hi', label }, cookie),
+      post('/api/jobs', { engine: 'glm', cwd: repo, prompt: executionPlan('hi'), label }, cookie),
     )
     const job = (await created.json()) as { id: string }
     const deadline = Date.now() + 3_000

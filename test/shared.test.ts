@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { getJson, pathsFromUriList, shellQuote, streamJobLog } from '../client/shared'
+import { errorText, getJson, pathsFromUriList, shellQuote, streamJobLog } from '../client/shared'
 
 const originalFetch = globalThis.fetch
 
@@ -48,6 +48,14 @@ class FakeEventSource {
     this.closed = true
   }
 }
+
+describe('errorText', () => {
+  test('appends a misses list when the server sends one', () => {
+    expect(errorText({ ok: false, status: 422, data: { error: 'spec lint failed', misses: ['missing "## Decisions" section', 'step 2 names no file path'] } })).toBe('spec lint failed\n- missing "## Decisions" section\n- step 2 names no file path')
+    expect(errorText({ ok: false, status: 400, data: { error: 'plain' } })).toBe('plain')
+    expect(errorText({ ok: false, status: 0, data: {} })).toBe('server unreachable')
+  })
+})
 
 describe('streamJobLog', () => {
   const originalEventSource = globalThis.EventSource
