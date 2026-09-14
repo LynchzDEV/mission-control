@@ -147,6 +147,10 @@ gets a 422 with the miss list, and no job is created.
 - [ ] every step names a file path and a signature
 - [ ] zero "or" / "either" / "as appropriate" in Decisions and Steps
 - [ ] every existing behaviour the diff will touch appears under Preserve
+- [ ] a new validation, constraint or required association lists EVERY
+      creation site it breaks (grep the factories, specs and services that
+      build the record) as tasks — "about ten files" on 2026-09-14 was 28,
+      and the gap became an 84-minute job
 - [ ] every test example has a literal expected value
 - [ ] every step under `db/migrate/`, `config/credentials*`, or a deploy
       file was checked against global + project CLAUDE.md; a migration step
@@ -306,6 +310,11 @@ Use reply for: "also add tests", "you missed X", "explain what you changed" — 
 The old loop — implement → codex review → NO-SHIP → glm reply → review again —
 turned 10-minute UI tickets into 2-hour sessions. Replace it with:
 
+0. Review happens on the WORKTREE, before `land`. Landing first and reviewing
+   after turned a 9-task feature into 17 commits on local main (8 of them
+   corrections) that the owner could not review, and the day ended with a
+   rebuild onto a fresh worktree. Order: worker done → review → fix on the
+   worktree → land once, clean.
 1. `done` + non-empty `diffStat` → read the diff yourself (`git diff` in the
    worktree, or the review queue). Run the tests once. This is THE review for
    a small ticket. GLM never self-certifies, but codex is not the default
