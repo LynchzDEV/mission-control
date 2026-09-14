@@ -100,20 +100,58 @@ Check peak first: `GET /api/quota` → `peak.peak` true means 2× GLM credits
 
 ## Spec writing (the biggest lever after the profile)
 
-A spec is goal + acceptance + pointers, not a pre-digested implementation:
+The worker executes; the orchestrator decides. Every design choice the ticket
+involves is made in the main session, from reading the code, before dispatch.
+The job log (2026-09-14, 494 jobs) shows what leaving them open costs: nearly
+every fix-loop reply was a decision the worker made alone — subset vs exact
+header match, a return shape that had to be preserved, sliding vs fixed rate
+window, a spec asserting against the constant it tests — at 50–400 worker
+turns plus a review round each.
 
-- 1 line goal, 3–6 acceptance bullets (observable, testable), 2–5 file
-  pointers ("start at server/routes/terminals.ts POST handler"), constraints
-  (no commit, no restart, comment rule). Under ~60 lines for a small ticket.
-- Do NOT pre-read the whole feature to write it — the worker reads anyway; you
-  reading 15 files first doubles the cost. Read only what you need to name the
-  pointers and the acceptance. Exception: schema/contract changes across many
-  modules, where exact types belong in the spec.
-- Always include: `While iterating run only the tests for files you touch; run
-  the full suite ONCE at the end.` (measured: 55–62 full-suite runs per job
-  without it).
-- One ticket = one job. Split only along worktree boundaries; never fan out
-  4–6 parallel glm jobs on one tree.
+A spec is a numbered execution plan. Its parts, in this order:
+
+1. Header: `You are a Mission Control worker job: implement directly in this
+   tree, do NOT dispatch, do NOT post plans, do NOT invoke mc-dispatch. Execute
+   the steps below exactly; do not redesign. If a step cannot be done as
+   written, stop and report which one.`
+2. Repo, stack, base branch, ClickUp id.
+3. **Decisions** — every choice the ticket involves, each written as the chosen
+   answer: `Recall rule: remembered header set ⊆ file header set.` A spec
+   containing "or", "either", "as appropriate", "if it makes sense",
+   "whichever fits" is not ready.
+4. **Preserve** — each existing behaviour the diff touches, with its source:
+   `unrecognised slot → { value: nil, tag: "unknown" } (leads_helper.rb:41)`.
+5. **Steps** — numbered, one file per step: exact path, exact
+   method/function/type signature, exact commit message. Literal values
+   (constants, strings, Thai text, SQL, config keys) are copied into the step.
+   Prose is only for what the worker derives mechanically from a file you name.
+6. **Tests** — spec file path plus each example name with its literal expected
+   value. Expected values are never computed from the constant under test.
+7. **Constraints** — no commit / no push / no restart as applicable; the two
+   comment-rule lines verbatim; `While iterating run only the tests for files
+   you touch; run the full suite ONCE at the end.` (measured: 55–62 full-suite
+   runs per job without it).
+8. The acceptance baseline block below, verbatim.
+
+Writing 3–6 means reading the code the steps touch. That is the cost, and it
+is smaller than the review-fix loop it replaces. Contract or type changes that
+cross modules: every exact type goes in the spec.
+
+### Pre-dispatch gate
+
+Check the finished spec against this list before `POST /api/jobs`. A miss
+means edit the spec, not dispatch:
+
+- [ ] every step names a file path and a signature
+- [ ] zero "or" / "either" / "as appropriate" in Decisions and Steps
+- [ ] every existing behaviour the diff will touch appears under Preserve
+- [ ] every test example has a literal expected value
+- [ ] at most 8 steps inline; a longer plan lives in
+      `docs/superpowers/plans/*.md` in the tree and the spec says
+      "execute tasks N..M of <file> in order"
+
+One ticket = one job. Split only along worktree boundaries; never fan out
+4–6 parallel glm jobs on one tree.
 
 ### Acceptance baseline — paste into EVERY worker prompt (claude, glm, codex)
 
