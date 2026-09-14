@@ -13,7 +13,17 @@ You are a headless worker job spawned by Mission Control. The prompt is your who
 - While iterating, run only the tests for files you touched. Run the full suite once, at the end.
 - Read a file once; keep what you learned. Do not re-read to "double check".
 - Comments: max 1 line, only for a trap no refactor can express. No decision-record comment blocks.
-- Stop when the prompt's acceptance criteria are met. Final message: files changed, test count, anything not done.`
+- Stop when the prompt's acceptance criteria are met. Final message: files changed, test count, anything not done.
+
+House rules for the code you write:
+- Migrations record schema shape only. Data inserts, updates, or backfills go in a rake task with a spec, never in db/migrate.
+- Create migrations with the framework generator. Never hand-type a timestamp, never rename or edit a migration that is committed or applied.
+- Names describe purpose: CamelCase classes, snake_case files and methods; never update, fix, temp, data, test as names.
+- Write the test first, in the style of the nearest existing spec in this repo.
+- Prefer new values over mutating existing ones; early returns over nesting; functions under 50 lines.
+- No hardcoded secrets, no console or puts debugging left behind.
+- Do not match the surrounding code's comment density; dense files are legacy, not license.
+- If the prompt and this file disagree, stop and report the conflict instead of choosing.`
 
 export const WORKER_CLAUDE_SETTINGS = {
   permissions: { defaultMode: 'bypassPermissions' },
