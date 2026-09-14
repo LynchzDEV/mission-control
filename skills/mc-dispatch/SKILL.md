@@ -155,8 +155,25 @@ gets a 422 with the miss list, and no job is created.
       `docs/superpowers/plans/*.md` in the tree and the spec says
       "execute tasks N..M of <file> in order"
 
-One ticket = one job. Split only along worktree boundaries; never fan out
-4–6 parallel glm jobs on one tree.
+### One task = one job (one employee, one deliverable)
+
+A worker is one employee with one deliverable: one plan task, one commit,
+then stop. Never hand a worker the whole plan. A single 8-task job on
+2026-09-14 ran 84 minutes and 607 turns, most of it improvising around a
+sibling repo that moved underneath it; at turn 30 a worker is sharp, at turn
+600 it is writing throwaway scripts in /tmp.
+
+- **Dependent tasks chain** in one worktree under one label, through the plan
+  runner below. Each job starts with fresh context; a failure re-runs one
+  task, not the plan.
+- **Independent tasks fan out** into separate worktrees under separate labels
+  and land in order by cherry-pick. That is where unlimited headcount pays;
+  never two jobs on one tree at once.
+- **Cross-repo dependencies serialize.** A chain that depends on another
+  repo's change (army on core, api on core) does not start until that change
+  has landed; its first task pins to the landed SHA. Both chains running at
+  once is what stranded the 84-minute job.
+- A single-task ticket is still one `POST /api/jobs`.
 
 ### Acceptance baseline — paste into EVERY worker prompt (claude, glm, codex)
 
@@ -207,6 +224,32 @@ curl -s -X POST http://127.0.0.1:7777/api/flow/<label>/plan \
   dispatched job's live activity feed shows automatically (no action needed)
 
 ## Dispatch
+
+### Multi-task plan → the plan runner (default)
+
+```sh
+curl -s -X POST "http://127.0.0.1:7777/api/flow/<label>/run" \
+  -H "Authorization: Bearer $MC_TOKEN" -H 'content-type: application/json' \
+  -d '{"engine":"'"$EXEC_ENGINE"'","model":"'"$EXEC_MODEL"'","cwd":"<ABS_PATH_GIT_REPO>","terminalId":"'"${MC_TERMINAL_ID:-}"'",
+       "preamble":"<header + repo line + Decisions + Preserve + Constraints + acceptance baseline>",
+       "tasks":[{"title":"<task 1 title>","prompt":"<task 1 step body with exact path, signature, code, commit message>"}, ...]}'
+```
+
+- The server composes one prompt per task (preamble + `### Step N of M — title`
+  + body + "one commit, then stop"), lints every task up front (422 with
+  misses), and dispatches task 1 in `.worktree/<label>`. Each settle checks the
+  worktree HEAD: new commit → next task, same worktree, fresh context; no
+  commit or non-zero exit → run `failed`, remaining tasks stay `pending`.
+- The task list becomes the label's plan, so the flow graph shows one step
+  per task moving pending → active → done on its own; do not also POST a plan.
+- `GET .../run` reads state (`tasks[].status`, `commit`, `error`);
+  `POST .../run/stop` kills the current job and halts. 409 if a run is
+  already running for the label.
+- Task prompts are Steps bodies only; Decisions, Preserve and the baseline
+  live once in the preamble. Put "re-pin <dep repo> to <SHA>" as task 1 when
+  the chain depends on another repo's landed change.
+
+### Single task → one job
 
 ```sh
 curl -s -X POST http://127.0.0.1:7777/api/jobs \
