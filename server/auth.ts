@@ -14,6 +14,9 @@ export function allowToken(pathname: string, method: string): boolean {
   if (/^\/api\/flow\/[^/]+\/plan(\/\d+)?$/.test(pathname)) {
     return upperMethod === 'POST' || upperMethod === 'PATCH'
   }
+  if (/^\/api\/flow\/[^/]+\/run(\/stop)?$/.test(pathname)) {
+    return upperMethod === 'POST' || upperMethod === 'GET'
+  }
   if (/^\/api\/flow\/[^/]+\/(archive|unarchive)$/.test(pathname)) {
     return upperMethod === 'POST'
   }

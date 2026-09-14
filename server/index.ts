@@ -21,6 +21,9 @@ import { createJobManager } from './jobs'
 import { notifySlowJob } from './notify'
 import { createTerminalRegistry } from './terminals'
 import { realEngineResolver } from './jobs-engine-iface'
+import { createPlanRunner } from './plan-runner'
+import { createPlanStore } from './plans'
+import { runsRoutes } from './routes/runs'
 import { jobsRoutes } from './routes/jobs'
 import { metaRoutes } from './routes/meta'
 import { modelsCache, modelsRoutes } from './routes/models'
@@ -190,12 +193,15 @@ export async function createApp(): Promise<Elysia> {
   if (skills.linked.length > 0 || skills.movedAside.length > 0) {
     console.error(`skills: ${describeSkillInstall(skills)} -> ${claudeSkillsDir()}`)
   }
+  const planStore = createPlanStore()
   const jobManager = createJobManager({
     onJobSlow: notifySlowJob,
     onJobSettled: (record) => {
+      void planRunner.onJobSettled(record).catch(() => {})
       void maybeAutoReview(record, jobManager, { resolver: realEngineResolver }).catch(() => {})
     },
   })
+  const planRunner = createPlanRunner({ manager: jobManager, resolver: realEngineResolver, plans: planStore })
   const terminalRegistry = createTerminalRegistry()
 
   const app = new Elysia()
@@ -247,7 +253,8 @@ export async function createApp(): Promise<Elysia> {
     .use(metaRoutes(jobManager))
     .use(jobsRoutes(jobManager, realEngineResolver))
     .use(terminalsRoutes(terminalRegistry))
-    .use(flowRoutes(jobManager, terminalRegistry))
+    .use(flowRoutes(jobManager, terminalRegistry, planStore))
+    .use(runsRoutes(planRunner))
     .use(secretsRoutes)
     .use(rolesRoutes)
     .use(modelsRoutes)

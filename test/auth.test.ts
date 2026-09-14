@@ -198,6 +198,13 @@ describe('allowToken', () => {
     }
   })
 
+  test('allows POST and GET on per-label run endpoints', () => {
+    expect(allowToken('/api/flow/my-ticket/run', 'POST')).toBe(true)
+    expect(allowToken('/api/flow/my-ticket/run', 'GET')).toBe(true)
+    expect(allowToken('/api/flow/my-ticket/run/stop', 'POST')).toBe(true)
+    expect(allowToken('/api/flow/my-ticket/run/stop', 'DELETE')).toBe(false)
+  })
+
   test('allows POST/PATCH on per-label plan endpoints', () => {
     expect(allowToken('/api/flow/my-ticket/plan', 'POST')).toBe(true)
     expect(allowToken('/api/flow/my-ticket/plan/2', 'PATCH')).toBe(true)
