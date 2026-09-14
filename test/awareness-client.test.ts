@@ -1,11 +1,16 @@
 import { beforeAll, expect, test } from 'bun:test'
 import { runInNewContext } from 'node:vm'
-import { connectorPath } from '../client/awareness'
+import { connectorPath, workingLabel } from '../client/awareness'
 test('connectors stay straight on a level and round both corners symmetrically otherwise', () => {
   expect(connectorPath(20, 50, 300, 50, 220)).toBe('M20 50H300')
   expect(connectorPath(20, 50, 300, 20, 220)).toBe('M20 50H212Q220 50 220 42V28Q220 20 228 20H300')
   expect(connectorPath(20, 50, 300, 80, 220)).toBe('M20 50H212Q220 50 220 58V72Q220 80 228 80H300')
   expect(connectorPath(20, 50, 300, 56, 220)).toBe('M20 50H217Q220 50 220 53V53Q220 56 223 56H300')
+})
+test('working label counts seconds under a minute and minutes plus seconds after', () => {
+  expect(workingLabel(1000, 6000)).toBe('Working · 5s')
+  expect(workingLabel(1000, 66999)).toBe('Working · 1m 5s')
+  expect(workingLabel(9000, 1000)).toBe('Working · 0s')
 })
 let code = ''
 beforeAll(async () => { const built = await Bun.build({entrypoints:['client/awareness.ts'],target:'browser',format:'iife'}); expect(built.success).toBe(true); code = await built.outputs[0]!.text() })
@@ -61,6 +66,8 @@ function harness() {
   return {nodes, state, observers, timers, reads, events, pending,
     scope:async (id:string|null = 'terminal') => { listeners.get('mc:terminal-scope')!({detail:{id,cwd:id ? '/repo' : null}}); await flush() },
     poll:async () => { intervals[0]!(); await flush() },
+    tick:() => intervals[1]!(),
+    activity:(id:string) => nodes.get('#active-agents-left')!.children.concat(nodes.get('#active-agents-right')!.children).find(card => card.dataset.thread === id)!.children[1]!.children[1]!.children[0]!,
     cards:() => ['left','right'].flatMap(side => nodes.get('#active-agents-'+side)!.children),
     opened:() => events.filter(event => event.type === 'mc:agent-open'),
   }
@@ -203,4 +210,13 @@ test('compact activity excludes old turns and exposes a failed tool after a thou
   await h.poll()
   expect(rows.children).toHaveLength(1)
   expect(rows.children[0]!.textContent).toBe('Waiting for activity…')
+})
+test('working time ticks every second without a poll and leaves queued cards alone', async () => {
+  const h = harness(); h.state.jobs[1]!.status = 'queued'; await flush()
+  await h.scope()
+  const a = h.activity('a'), b = h.activity('b')
+  expect(a.textContent).toMatch(/^Working · /); expect(b.textContent).toBe('Queued')
+  a.textContent = 'stale'; b.textContent = 'stale'
+  h.tick()
+  expect(a.textContent).toMatch(/^Working · /); expect(b.textContent).toBe('stale')
 })

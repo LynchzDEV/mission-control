@@ -54,6 +54,10 @@ export function flowSteps(item: WorkItem): FlowStep[] {
   if (item.stages) return templateNodeSpecs(item.stages).map((spec,index) => ({title:['Spec','Implementation','Code review','Verification','Merged'][index]!,status:item.stages![STAGES[index]!]![0],detail:spec.chipText}))
   return item.members?.map(job => ({title:job.label || job.id,status:job.status === 'running' ? 'active' : job.status,assignee:job.engine,detail:`${job.engine} · ${job.status}`})) ?? []
 }
+export function workingLabel(startedAt: number, now: number): string {
+  const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000))
+  return `Working · ${elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`}`
+}
 export function connectorPath(x1: number, y1: number, x2: number, y2: number, bend: number): string {
   if (y1 === y2) return `M${x1} ${y1}H${x2}`
   const radius = Math.min(8, Math.abs(y2 - y1) / 2), direction = y2 > y1 ? 1 : -1
@@ -129,7 +133,7 @@ function install(): void {
   flow.tabIndex = 0; flow.setAttribute('role', 'region'); flow.setAttribute('aria-label', 'Work flow steps')
   const collection = document.querySelector<HTMLElement>('#active-agent-windows')!, agentStatus = document.querySelector<HTMLElement>('#active-agent-status')!
   const rails = [document.querySelector<HTMLElement>('#active-agents-left')!, document.querySelector<HTMLElement>('#active-agents-right')!]
-  type Card = { root: HTMLDetailsElement; label: HTMLElement; state: HTMLElement; activity: HTMLElement; count:HTMLElement; expand: HTMLElement; host: HTMLElement; feed?: MiniFeed; jobId: string }
+  type Card = { root: HTMLDetailsElement; label: HTMLElement; state: HTMLElement; activity: HTMLElement; count:HTMLElement; expand: HTMLElement; host: HTMLElement; feed?: MiniFeed; jobId: string; startedAt: number; running: boolean }
   const cards = new Map<string, Card>()
   let items: WorkItem[] = [], jobs: WorkJob[] = [], flows: Record<string, unknown> = {}, unavailable = false
   let scopeId: string | null = null, cwd: string | null = null, current = '', signature = '', generation = 0
@@ -172,15 +176,15 @@ function install(): void {
           if (current) dispatchEvent(new CustomEvent('mc:agent-open', {detail:{id:current.id,label:current.label,engine:current.provider,elapsed:current.state}}))
         }
         footer.append(activity, open); output.append(host, footer); root.append(summary, output)
-        card = {root, label, state, activity, count:open, expand, host, jobId:''}
+        card = {root, label, state, activity, count:open, expand, host, jobId:'', startedAt:0, running:false}
         cards.set(item.id, card)
         const rail = rails[0]!.children.length <= rails[1]!.children.length ? rails[0]! : rails[1]!
         rail.append(root)
       }
-      const elapsed = Math.max(0,Math.floor((Date.now() - item.job!.startedAt)/1000))
+      card.startedAt = item.job!.startedAt; card.running = item.state !== 'queued'
       card.label.textContent = item.label; card.label.title = item.label; card.state.textContent = providerName(item.provider)
       for (const control of [card.count, card.expand]) control.setAttribute('aria-label', `Open conversation for ${item.label}`)
-      card.activity.textContent = item.state === 'queued' ? 'Queued' : `Working · ${elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed/60)}m ${elapsed%60}s`}`
+      card.activity.textContent = card.running ? workingLabel(card.startedAt, Date.now()) : 'Queued'
       card.count.textContent = `Agent ${index+1} of ${threads.length}`
       card.root.dataset.engine = item.provider; card.root.dataset.running = String(item.state === 'running')
       if (card.jobId !== item.job!.id) {
@@ -232,5 +236,6 @@ function install(): void {
     items = buildWork(jobs, flows); paint()
   }
   void refresh(); setInterval(() => { if (!document.hidden) void refresh() },3000)
+  setInterval(() => { if (document.hidden) return; const now = Date.now(); for (const card of cards.values()) if (card.running) card.activity.textContent = workingLabel(card.startedAt, now) },1000)
 }
 if (typeof document !== 'undefined') install()
