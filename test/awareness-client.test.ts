@@ -40,7 +40,7 @@ const flush = async () => { for (let i = 0; i < 40; i++) await Promise.resolve()
 function harness() {
   const nodes = new Map(['awareness-select','awareness-flow','awareness-status','active-agent-windows','active-agent-status','active-agents-left','active-agents-right','awareness-open'].map(id => ['#'+id,new Node()]))
   const listeners = new Map<string,(event:any) => void>(), intervals: Array<() => void> = [], timers = new Map<number,() => void>()
-  const events: any[] = [], reads: string[] = []
+  const events: any[] = [], reads: string[] = [], posts: string[] = []
   const pending: Array<() => void> = []
   const observers: Array<{callback:() => void; disconnected:boolean}> = []
   let timerId = 0
@@ -56,14 +56,15 @@ function harness() {
     CustomEvent:class { constructor(public type:string, public detail:any) { this.detail = detail.detail } },
     addEventListener:(name:string,fn:any) => listeners.set(name,fn),dispatchEvent:(event:any) => events.push(event),
     setInterval:(fn:() => void) => intervals.push(fn),setTimeout:(fn:() => void) => { timers.set(++timerId,fn); return timerId },clearTimeout:(id:number) => timers.delete(id),
-    fetch:async (url:string) => {
+    fetch:async (url:string, init?:{method?:string}) => {
+      if (init?.method === 'POST') { posts.push(url); return {ok:true,status:200,json:async () => ({ok:true})} }
       const thread = url.endsWith('/thread'); if (thread) reads.push(url)
       if (thread && state.delayFeed) await new Promise<void>(resolve => pending.push(resolve))
       const failed = thread ? state.feedFailed : state.failed
       return {ok:!failed,status:failed ? 503 : 200,json:async () => thread ? {messages:state.messages,canReply:true,running:true,engine:'codex'} : url === '/api/jobs' ? {jobs:state.jobs} : {sessions:state.flows}}
     },
   })
-  return {nodes, state, observers, timers, reads, events, pending,
+  return {nodes, state, observers, timers, reads, posts, events, pending,
     scope:async (id:string|null = 'terminal') => { listeners.get('mc:terminal-scope')!({detail:{id,cwd:id ? '/repo' : null}}); await flush() },
     poll:async () => { intervals[0]!(); await flush() },
     tick:() => intervals[1]!(),
@@ -219,4 +220,16 @@ test('working time ticks every second without a poll and leaves queued cards alo
   a.textContent = 'stale'; b.textContent = 'stale'
   h.tick()
   expect(a.textContent).toMatch(/^Working · /); expect(b.textContent).toBe('stale')
+})
+test('a slow job shows its turn count and a Stop button that kills it with feedback', async () => {
+  const h = harness()
+  Object.assign(h.state.jobs[0]!, {slowAt: 5, turns: 120})
+  await flush(); await h.scope()
+  const a = h.activity('a'), stopA = a.parent!.children[2]!, stopB = h.activity('b').parent!.children[2]!
+  expect(a.textContent).toMatch(/^Working · .* · slow · 120 turns$/)
+  expect(a.parent!.parent!.parent!.dataset.slow).toBe('true'); expect(stopA.hidden).toBe(false)
+  expect(h.activity('b').textContent).not.toContain('slow'); expect(stopB.hidden).toBe(true)
+  a.textContent = 'stale'; h.tick(); expect(a.textContent).toMatch(/ · slow · 120 turns$/)
+  stopA.click(); await flush()
+  expect(h.posts).toEqual(['/api/jobs/a/kill']); expect(stopA.textContent).toBe('Stopping…'); expect(stopA.disabled).toBe(true)
 })

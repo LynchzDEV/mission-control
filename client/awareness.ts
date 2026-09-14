@@ -1,4 +1,4 @@
-import { getJson, readArray, readRecord, errorText } from './shared'
+import { getJson, postJson, readArray, readRecord, errorText } from './shared'
 import { buildWork, reviewable, type WorkItem, type WorkJob } from './work'
 import { createMiniFeed, groupByThread, type MiniFeed } from './thread-view'
 import { STAGES, templateNodeSpecs } from './plan-view'
@@ -133,7 +133,7 @@ function install(): void {
   flow.tabIndex = 0; flow.setAttribute('role', 'region'); flow.setAttribute('aria-label', 'Work flow steps')
   const collection = document.querySelector<HTMLElement>('#active-agent-windows')!, agentStatus = document.querySelector<HTMLElement>('#active-agent-status')!
   const rails = [document.querySelector<HTMLElement>('#active-agents-left')!, document.querySelector<HTMLElement>('#active-agents-right')!]
-  type Card = { root: HTMLDetailsElement; label: HTMLElement; state: HTMLElement; activity: HTMLElement; count:HTMLElement; expand: HTMLElement; host: HTMLElement; feed?: MiniFeed; jobId: string; startedAt: number; running: boolean }
+  type Card = { root: HTMLDetailsElement; label: HTMLElement; state: HTMLElement; activity: HTMLElement; count:HTMLElement; expand: HTMLElement; host: HTMLElement; stop: HTMLButtonElement; feed?: MiniFeed; jobId: string; startedAt: number; running: boolean; suffix: string }
   const cards = new Map<string, Card>()
   let items: WorkItem[] = [], jobs: WorkJob[] = [], flows: Record<string, unknown> = {}, unavailable = false
   let scopeId: string | null = null, cwd: string | null = null, current = '', signature = '', generation = 0
@@ -175,16 +175,20 @@ function install(): void {
           const current = activeAgents(jobs, flows, scopeId, cwd).find(thread => thread.id === item.id)
           if (current) dispatchEvent(new CustomEvent('mc:agent-open', {detail:{id:current.id,label:current.label,engine:current.provider,elapsed:current.state}}))
         }
-        footer.append(activity, open); output.append(host, footer); root.append(summary, output)
-        card = {root, label, state, activity, count:open, expand, host, jobId:'', startedAt:0, running:false}
+        const stop = document.createElement('button'); stop.type = 'button'; stop.className = 'agent-stop'; stop.textContent = 'Stop'; stop.title = 'Kill this job'; stop.hidden = true
+        stop.onclick = async () => { stop.disabled = true; stop.textContent = 'Stopping…'; const result = await postJson(`/api/jobs/${card!.jobId}/kill`, {}); if (!result.ok) { stop.disabled = false; stop.textContent = `Stop failed: ${errorText(result)}` } ; void refresh() }
+        footer.append(activity, open, stop); output.append(host, footer); root.append(summary, output)
+        card = {root, label, state, activity, count:open, expand, host, stop, jobId:'', startedAt:0, running:false, suffix:''}
         cards.set(item.id, card)
         const rail = rails[0]!.children.length <= rails[1]!.children.length ? rails[0]! : rails[1]!
         rail.append(root)
       }
       card.startedAt = item.job!.startedAt; card.running = item.state !== 'queued'
+      const slow = item.job!.slowAt !== null && item.job!.slowAt !== undefined
+      card.suffix = slow ? ` · slow · ${item.job!.turns} turns` : ''; card.stop.hidden = !slow; card.root.dataset.slow = String(slow)
       card.label.textContent = item.label; card.label.title = item.label; card.state.textContent = providerName(item.provider)
       for (const control of [card.count, card.expand]) control.setAttribute('aria-label', `Open conversation for ${item.label}`)
-      card.activity.textContent = card.running ? workingLabel(card.startedAt, Date.now()) : 'Queued'
+      card.activity.textContent = card.running ? workingLabel(card.startedAt, Date.now()) + card.suffix : 'Queued'
       card.count.textContent = `Agent ${index+1} of ${threads.length}`
       card.root.dataset.engine = item.provider; card.root.dataset.running = String(item.state === 'running')
       if (card.jobId !== item.job!.id) {
@@ -236,6 +240,6 @@ function install(): void {
     items = buildWork(jobs, flows); paint()
   }
   void refresh(); setInterval(() => { if (!document.hidden) void refresh() },3000)
-  setInterval(() => { if (document.hidden) return; const now = Date.now(); for (const card of cards.values()) if (card.running) card.activity.textContent = workingLabel(card.startedAt, now) },1000)
+  setInterval(() => { if (document.hidden) return; const now = Date.now(); for (const card of cards.values()) if (card.running) card.activity.textContent = workingLabel(card.startedAt, now) + card.suffix },1000)
 }
 if (typeof document !== 'undefined') install()

@@ -3,7 +3,7 @@ import { confirmDialog } from './dialog'
 import { groupByThread, sortThreadsByActivity, createFullFeed, fetchThread, sendReply, type Feed } from './thread-view'
 import { parsePlan, STAGES, type SessionFlow, type StageState, type Plan } from './plan-view'
 import { installModelPickers } from './model-picker'
-export type WorkJob = { id: string; threadRoot: string; label: string; engine: string; cwd: string; status: string; startedAt: number; endedAt: number | null; diffStat: string; worktree: string | null; reviewedAt: number | null }
+export type WorkJob = { id: string; threadRoot: string; label: string; engine: string; cwd: string; status: string; startedAt: number; endedAt: number | null; diffStat: string; worktree: string | null; reviewedAt: number | null; slowAt?: number | null; turns?: number }
 export type WorkItem = { id: string; label: string; state: string; provider: string; activity: string; job?: WorkJob; members?: WorkJob[]; plan: Plan | null; flowLabel?: string; stages?: SessionFlow | null; archived: boolean }
 const str = (value: unknown): string => typeof value === 'string' ? value : ''
 function parseStages(raw: Record<string, unknown>): SessionFlow | null {
