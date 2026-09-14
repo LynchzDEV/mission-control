@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { readSecrets, type Secrets } from './secrets'
-import { workerEnv, workerProfileDirs } from './worker-profile'
+import { ensureWorkerProfiles, workerEnv } from './worker-profile'
 
 export type EngineName = 'claude' | 'glm' | 'codex'
 
@@ -119,7 +119,7 @@ export async function buildEnv(
   const secrets = await readSecrets()
   const overlay = resolveEngine(engine).envFor(secrets)
   const env = { ...processEnvRecord(), ...overlay }
-  if (opts?.worker === true) Object.assign(env, workerEnv(engine, opts.profiles ?? workerProfileDirs()))
+  if (opts?.worker === true) Object.assign(env, workerEnv(engine, opts.profiles ?? (await ensureWorkerProfiles())))
   env.PATH = pathWithFallbackDirs(env.PATH)
   return env
 }

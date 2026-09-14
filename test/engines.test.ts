@@ -13,7 +13,7 @@ import {
 } from '../server/engines'
 import { realEngineResolver } from '../server/jobs-engine-iface'
 import { writeSecrets } from '../server/secrets'
-import { workerProfileDirs } from '../server/worker-profile'
+import { WORKER_CLAUDE_MD, workerProfileDirs } from '../server/worker-profile'
 
 const TOKEN = 'zai-secret-token-must-never-appear-in-argv'
 
@@ -121,6 +121,16 @@ describe('worker profile env', () => {
     const plain = await buildEnv('glm')
     expect(plain.CLAUDE_CONFIG_DIR).toBe(process.env.CLAUDE_CONFIG_DIR)
     expect(plain.CODEX_HOME).toBe(process.env.CODEX_HOME)
+  })
+
+  test('a worker build rewrites the profile files so a stale CLAUDE.md never reaches a job', async () => {
+    await writeSecrets({ zaiAuthToken: TOKEN })
+    const { mkdir, readFile, writeFile } = await import('node:fs/promises')
+    const claudeDir = workerProfileDirs().claude
+    await mkdir(claudeDir, { recursive: true })
+    await writeFile(join(claudeDir, 'CLAUDE.md'), 'stale rules')
+    await buildEnv('glm', { worker: true })
+    expect(await readFile(join(claudeDir, 'CLAUDE.md'), 'utf8')).toBe(WORKER_CLAUDE_MD)
   })
 
   test('the job resolver hands glm jobs the isolated worker profile', async () => {

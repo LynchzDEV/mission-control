@@ -17,7 +17,6 @@ import {
 import { maybeAutoReview } from './auto-review'
 import { quotaRoutes } from './routes/quota'
 import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
-import { ensureWorkerProfiles } from './worker-profile'
 import { createJobManager } from './jobs'
 import { notifySlowJob } from './notify'
 import { createTerminalRegistry } from './terminals'
@@ -183,7 +182,6 @@ function healthApi() {
 }
 
 export async function createApp(): Promise<Elysia> {
-  await ensureWorkerProfiles()
   const skills = await installSkills()
   const assets = await syncEngineAssets()
   if (assets.linked.length > 0 || assets.written.length > 0 || assets.movedAside.length > 0) {
