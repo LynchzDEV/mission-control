@@ -229,6 +229,20 @@ curl -s -X POST http://127.0.0.1:7777/api/flow/<label>/plan \
 
 ## Dispatch
 
+### Plan review before task 1 (codex, ~2 min)
+
+Of the 8 correction commits on 2026-09-14, 5 were design gaps a reader of the
+plan could name before any code existed: a race inside a transaction, a destroy
+with no cascade rule, a direct write that bypassed the parent's validation, a
+uniqueness collision in a backfill, a dry run that reported work it would skip.
+So the plan gets the adversarial pass, not only the diff:
+
+`{"engine":"$REVIEW_ENGINE","prompt":"Read <spec> and <plan> only. For each task list what breaks: concurrency, deletion/cascade, writes that bypass a validation, uniqueness collisions, dry-run vs real accounting, callers not in Preserve. Findings only, one line each; first line SHIP or NO-SHIP."}`
+
+Every finding becomes a Decision, a Preserve line, or a task BEFORE the run
+starts. Show the user the Decisions list at this point; a five-minute read of
+twenty decisions is where "data in a migration" gets caught, not commit 12.
+
 ### Multi-task plan → the plan runner (default)
 
 ```sh
@@ -326,6 +340,12 @@ turned 10-minute UI tickets into 2-hour sessions. Replace it with:
    ports, .env, generated files) and style are not findings. Fix via one
    `/reply` to the implementation job. Do NOT dispatch a second review after
    the fix — verify the fix yourself by reading the reply's diff.
+   **Fixes fold into the task they correct, never on top.** The worktree's
+   history is private until `land`, so the fix reply says: `git commit
+   --fixup <sha of the task commit>`; before landing run `GIT_SEQUENCE_EDITOR=:
+   git rebase -i --autosquash <base>` on the worktree. The landed history then
+   has exactly one commit per task however many review rounds ran. Migration
+   files keep their filename and timestamp through the squash.
 4. Verified good → commit per the repo's rules yourself, then mark it:
    `curl -s -X POST -H "Authorization: Bearer $MC_TOKEN" http://127.0.0.1:7777/api/jobs/<id>/reviewed`
    → flow shows MERGED, review counter drops.
