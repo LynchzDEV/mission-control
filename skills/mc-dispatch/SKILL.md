@@ -146,6 +146,9 @@ means edit the spec, not dispatch:
 - [ ] zero "or" / "either" / "as appropriate" in Decisions and Steps
 - [ ] every existing behaviour the diff will touch appears under Preserve
 - [ ] every test example has a literal expected value
+- [ ] every step under `db/migrate/`, `config/credentials*`, or a deploy
+      file was checked against global + project CLAUDE.md; a migration step
+      changes schema only, data moves are a rake task with a spec
 - [ ] at most 8 steps inline; a longer plan lives in
       `docs/superpowers/plans/*.md` in the tree and the spec says
       "execute tasks N..M of <file> in order"
