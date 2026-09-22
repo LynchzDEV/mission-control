@@ -185,7 +185,7 @@ Workers run on the slim profile, so the prompt is their only contract. Every
 spec ends with these lines verbatim, after the ticket-specific acceptance
 bullets (2026-09-08, user-mandated; scoped 2026-09-09 so the full suite runs
 once per landed change, not once per worker iteration; concern 4 added
-2026-09-14):
+2026-09-14; concern 5 added 2026-09-22):
 
 ```
 Done means all of these hold, verified by you before you report:
@@ -193,7 +193,8 @@ Done means all of these hold, verified by you before you report:
 2. Those runs have no hard or forced waits (no sleep, no fixed wait_for/timeout padding) and are clean: zero warnings, zero error logs, zero deprecation output.
 3. Nothing on the remote is lost and the code stays compatible: fetch and rebase onto the latest remote tip before you finish, never force-push or drop commits, and keep existing callers, data and already-applied migrations working.
 4. The engine HAS TO spin up on its own: `spec/dummy` boots and its specs run with no host, no sibling engine and no host table; you added no dependency that is not necessary, and any that is enters through a settings adapter, never a direct constant.
-Report the exact spec command you ran and its summary line as evidence for 1 and 2, and the dummy boot command for 4.
+5. Migrations track schema changes and nothing else: create every new migration with `bin/rails g migration` so it carries a real wall-clock timestamp, never rename or re-timestamp one that is committed or already applied anywhere, and never add, update or delete data inside one — a data move is its own rake task with a spec.
+Report the exact spec command you ran and its summary line as evidence for 1 and 2, the dummy boot command for 4, and the generator command plus resulting filename for any migration you added for 5.
 ```
 
 A job that reports done without that evidence is not done: reply to it
