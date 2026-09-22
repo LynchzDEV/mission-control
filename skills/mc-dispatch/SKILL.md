@@ -167,12 +167,26 @@ then stop. Never hand a worker the whole plan. A single 8-task job on
 sibling repo that moved underneath it; at turn 30 a worker is sharp, at turn
 600 it is writing throwaway scripts in /tmp.
 
+**Fan out first, chain only what must chain.** One long `o---o---o` is the
+slowest shape that works and it is the one you reach for by reflex. Before
+dispatching, walk the plan and write the dependency next to each task — the
+file it edits, the symbol it needs to already exist. Tasks with no arrow into
+them start NOW, in parallel:
+
+```
+o---o---o        reflex: 3 sequential jobs, 3x the wall clock
+o---o            what to dispatch instead: two chains plus a loner, all
+o---o            starting at once, landing in order by cherry-pick
+o
+```
+
+- **Independent tasks fan out** into separate worktrees under separate labels,
+  dispatched in the same breath, landed in order by cherry-pick. That is where
+  unlimited headcount pays; never two jobs on one tree at once.
 - **Dependent tasks chain** in one worktree under one label, through the plan
   runner below. Each job starts with fresh context; a failure re-runs one
-  task, not the plan.
-- **Independent tasks fan out** into separate worktrees under separate labels
-  and land in order by cherry-pick. That is where unlimited headcount pays;
-  never two jobs on one tree at once.
+  task, not the plan. A chain needs a named dependency — "it feels sequential"
+  is not one, and neither is "they touch the same repo".
 - **Cross-repo dependencies serialize.** A chain that depends on another
   repo's change (army on core, api on core) does not start until that change
   has landed; its first task pins to the landed SHA. Both chains running at
@@ -207,6 +221,16 @@ change, serialized, never concurrently across worktrees — several full rspec
 runs against the shared test DB are what produced the
 `PG::TRDeadlockDetected` failures on 2026-09-03. A failure here is a NO-SHIP:
 fix via `/reply` to the job, re-land, re-run.
+
+**Autonomous push conditions (default in the project's acceptance checklist):**
+when the user sets a session-scoped finish-and-push condition ("push to tip
+of remote once done"), default to including the project's own documented
+acceptance gate rather than waiting for them to append it — e.g. klangtech
+sessions have a standing `four-concerns-checklist` project memory (the worker
+contract's 4 acceptance lines) that is easy to forget in the condition's
+phrasing. Check for a matching project memory before treating "done" as
+"tests pass". [daily-retro 2026-09-21 E09 — the same gap recurred
+2026-09-15, 2026-09-18, and 2026-09-21]
 
 ## Plan first (makes the cockpit graph real)
 
@@ -363,3 +387,22 @@ turned 10-minute UI tickets into 2-hour sessions. Replace it with:
 - 400 "engine environment is not configured" → z.ai token missing in cockpit
   Settings — surface to user.
 - 401 → token rotated; re-read secrets.json.
+- `PG::DuplicateTable` / "already exists" on a worker's `db:migrate` inside a
+  worktree → do not treat it as a code bug first. The dev DB is shared across
+  worktrees/sessions (same root cause as klangtech-worktree-up's 2026-07-17
+  "shared dev DB schema.rb pollution" guardrail — this cockpit path spawns its
+  own worktrees and does not route through that skill). Run `git worktree
+  list`, check whether another worktree/session already applied a migration
+  creating the same table, and resolve which branch owns it before re-running
+  or rolling back. [daily-retro 2026-09-14 E10]
+- Codex review job fails repeatedly with `"The '<model>' model requires a
+  newer version of Codex. Please upgrade..."` (e.g. gpt-6-astra) → this is a
+  PATH problem, not a model problem: the cockpit resolved an outdated `codex`
+  binary (a `brew`/`nvm` install) ahead of the mise-managed one that actually
+  supports the model. Do not retry the identical dispatch. Run `which -a
+  codex` and compare every match's `codex --version` against the mise
+  install (`~/.local/share/mise/installs/node/*/bin/codex` or the active mise
+  shim) — the cockpit's own PATH/fallback-dir order needs the mise-managed
+  binary to resolve first. Fix the PATH/symlink once, then re-dispatch.
+  [daily-retro 2026-09-21 E03 — 4 identical failures in one session before
+  this was isolated]
