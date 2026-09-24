@@ -8,31 +8,6 @@ function say(element: HTMLElement | null, message: string, ok: boolean): void {
   element.classList.toggle('ok', ok)
 }
 
-function installGate(): void {
-  const form = document.querySelector<HTMLFormElement>('#gate-form')
-  if (form === null) return
-  const message = document.querySelector<HTMLElement>('#gate-msg')
-  const action = form.dataset.action ?? '/api/login'
-
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault()
-    const field = form.querySelector<HTMLInputElement>('#password')
-    const password = field?.value ?? ''
-    const submit = form.querySelector<HTMLButtonElement>('button[type=submit]')
-    if (submit?.disabled) return
-    if (submit) submit.disabled = true
-    say(message, 'Signing in…', true)
-    const result = await postJson(action, { password })
-    if (submit) submit.disabled = false
-    if (!result.ok) {
-      say(message, errorText(result), false)
-      return
-    }
-    say(message, 'OK · ENTERING', true)
-    location.assign('/terminals')
-  })
-}
-
 function collect(button: HTMLElement): Record<string, string> {
   const payload: Record<string, string> = {}
   for (const key of (button.dataset.fields ?? '').split(',')) {
@@ -249,7 +224,6 @@ function installColumnEntrance(): void {
   })
 }
 
-installGate()
 if (document.body.dataset.previewReadonly === 'true') {
   document.querySelectorAll<HTMLButtonElement>('[data-post],[data-api-token-reveal],[data-api-token-rotate]').forEach(button => { button.disabled = true; button.title = 'Settings writes unavailable in preview' })
   text('#s-msg', 'Preview only. Settings writes are unavailable; displayed defaults are placeholders.')

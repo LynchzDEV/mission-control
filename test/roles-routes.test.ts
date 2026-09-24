@@ -5,45 +5,28 @@ import { join } from 'node:path'
 
 import type { Elysia } from 'elysia'
 
-import { SESSION_COOKIE, resetLoginLimiter } from '../server/auth'
 import { createApp } from '../server/index'
 import { parseRoles } from '../server/routes/roles'
 import { DEFAULT_ROLES, readConfig } from '../server/secrets'
 
-const PASSWORD = 'correct-horse-battery'
-
 let dir: string
 let app: Elysia
-let cookie: string
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-roles-route-'))
   process.env.MISSION_CONTROL_CONFIG_DIR = dir
-  resetLoginLimiter()
   app = await createApp()
-
-  const setup = await app.handle(
-    new Request('http://localhost/api/setup', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: PASSWORD }),
-    }),
-  )
-  const jar = setup.headers.getSetCookie()
-  cookie = (jar.find((entry) => entry.startsWith(`${SESSION_COOKIE}=`)) as string).split(';')[0] as string
 })
 
 afterEach(async () => {
   delete process.env.MISSION_CONTROL_CONFIG_DIR
-  resetLoginLimiter()
   await rm(dir, { recursive: true, force: true })
 })
 
-function request(method: string, body?: unknown, withCookie = true): Request {
+function request(method: string, body?: unknown, origin = 'http://localhost'): Request {
   const headers: Record<string, string> = {}
-  if (withCookie) headers.cookie = cookie
   if (body !== undefined) headers['content-type'] = 'application/json'
-  return new Request('http://localhost/api/roles', {
+  return new Request(`${origin}/api/roles`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -126,8 +109,8 @@ describe('parseRoles', () => {
 })
 
 describe('/api/roles', () => {
-  test('GET returns defaults and requires a session', async () => {
-    expect((await app.handle(request('GET', undefined, false))).status).toBe(401)
+  test('GET returns defaults and refuses a rebinding host', async () => {
+    expect((await app.handle(request('GET', undefined, 'http://rebind.example'))).status).toBe(403)
     const response = await app.handle(request('GET'))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ ...DEFAULT_ROLES, autoReview: false })

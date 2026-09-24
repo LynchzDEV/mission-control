@@ -5,40 +5,24 @@ import { join } from 'node:path'
 
 import type { Elysia } from 'elysia'
 
-import { SESSION_COOKIE, resetLoginLimiter } from '../server/auth'
 import { createApp } from '../server/index'
-
-const PASSWORD = 'correct-horse-battery'
 
 let dir: string
 let app: Elysia
-let cookie: string
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-views-'))
   process.env.MISSION_CONTROL_CONFIG_DIR = dir
-  resetLoginLimiter()
   app = await createApp()
-
-  const setup = await app.handle(
-    new Request('http://localhost/api/setup', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: PASSWORD }),
-    }),
-  )
-  const jar = setup.headers.getSetCookie()
-  cookie = (jar.find((entry) => entry.startsWith(`${SESSION_COOKIE}=`)) as string).split(';')[0] as string
 })
 
 afterEach(async () => {
   delete process.env.MISSION_CONTROL_CONFIG_DIR
-  resetLoginLimiter()
   await rm(dir, { recursive: true, force: true })
 })
 
 async function render(path: string): Promise<{ status: number; html: string }> {
-  const response = await app.handle(new Request(`http://localhost${path}?embed=1`, { headers: { cookie } }))
+  const response = await app.handle(new Request(`http://localhost${path}?embed=1`))
   return { status: response.status, html: await response.text() }
 }
 
@@ -63,7 +47,7 @@ const ISLAND_MARKERS: [string, string[]][] = [
 describe('transcript islands', () => {
   for (const [file, markers] of ISLAND_MARKERS) {
     test(`/js/${file} ships the shared transcript renderer`, async () => {
-      const response = await app.handle(new Request(`http://localhost/js/${file}`, { headers: { cookie } }))
+      const response = await app.handle(new Request(`http://localhost/js/${file}`))
       expect(response.status).toBe(200)
       const code = await response.text()
       for (const marker of markers) {
@@ -74,7 +58,7 @@ describe('transcript islands', () => {
 
   test('the lanes mount carries no reply box and no drawer chrome', async () => {
     const lanes = await (
-      await app.handle(new Request('http://localhost/js/flow.js', { headers: { cookie } }))
+      await app.handle(new Request('http://localhost/js/flow.js'))
     ).text()
     expect(lanes).not.toContain('Reply to this agent')
     expect(lanes).not.toContain('/reply')
@@ -83,7 +67,7 @@ describe('transcript islands', () => {
 
   test('the agents island carries only the drawer, never the retired activity panel', async () => {
     const agents = await (
-      await app.handle(new Request('http://localhost/js/agents.js', { headers: { cookie } }))
+      await app.handle(new Request('http://localhost/js/agents.js'))
     ).text()
     expect(agents).toContain('\u21e7\u21b5 newline')
     expect(agents).not.toContain('"mini"')
@@ -138,7 +122,7 @@ describe('tab views', () => {
     await app.handle(
       new Request('http://localhost/api/roles', {
         method: 'POST',
-        headers: { cookie, 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ plan: 'codex', execute: 'claude', review: 'glm' }),
       }),
     )
@@ -159,7 +143,7 @@ describe('tab views', () => {
     await app.handle(
       new Request('http://localhost/api/roles', {
         method: 'POST',
-        headers: { cookie, 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           plan: { engine: 'claude', model: 'opus' },
           execute: 'glm',
@@ -190,7 +174,7 @@ describe('tab views', () => {
     const post = await app.handle(
       new Request('http://localhost/api/roles', {
         method: 'POST',
-        headers: { cookie, 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ plan: 'claude', execute: 'glm', review: 'codex', autoReview: 'on' }),
       }),
     )
@@ -205,7 +189,7 @@ describe('tab views', () => {
     await app.handle(
       new Request('http://localhost/api/roles', {
         method: 'POST',
-        headers: { cookie, 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           plan: { engine: 'claude', model: 'haiku' },
           execute: { engine: 'glm', model: 'glm-5.3-flash' },
@@ -254,18 +238,18 @@ describe('tab views', () => {
 
   test('direct routes have one accessible navigation while embedded views omit duplicate chrome', async () => {
     for (const [path] of PAGES) {
-      const response = await app.handle(new Request(`http://localhost${path}`, { headers: { cookie } }))
+      const response = await app.handle(new Request(`http://localhost${path}`))
       const html = await response.text()
       expect(html.match(/aria-current="page"/g)?.length).toBe(1)
       expect(html).toContain('aria-label="Workspace"')
     }
   })
 
-  test('unauthenticated tab requests are redirected to the gate', async () => {
-    for (const [path] of PAGES) {
-      const response = await app.handle(new Request(`http://localhost${path}`))
-      expect(response.status).toBe(302)
-      expect(response.headers.get('location')).toBe('/')
+  test('tab requests with a rebinding host are refused', async () => {
+    for (const path of ['/', ...PAGES.map(([entry]) => entry)]) {
+      const response = await app.handle(new Request(`http://rebind.example${path}`, { headers: { host: 'rebind.example:7777' } }))
+      expect(response.status).toBe(403)
+      expect(response.headers.get('location')).toBeNull()
     }
   })
 })
@@ -273,7 +257,7 @@ describe('tab views', () => {
 describe('persistent workspace routes', () => {
   test('home and every direct secondary route carry the persistent terminal shell', async () => {
     for (const path of ['/', '/terminals', '/lanes', '/dispatch', '/review', '/settings']) {
-      const response = await app.handle(new Request(`http://localhost${path}`, { headers: { cookie } }))
+      const response = await app.handle(new Request(`http://localhost${path}`))
       const html = await response.text()
       expect(response.status).toBe(200)
       expect(html).toContain('id="termgrid"')
@@ -281,33 +265,6 @@ describe('persistent workspace routes', () => {
       expect(html).toContain('/js/workspace.js')
       expect(html).toContain('id="term-directories"')
     }
-  })
-})
-
-describe('gate views', () => {
-  test('setup and login render through the shell without tab chrome', async () => {
-    const fresh = await mkdtemp(join(tmpdir(), 'mc-gate-'))
-    process.env.MISSION_CONTROL_CONFIG_DIR = fresh
-    const gateApp = await createApp()
-
-    const setup = await (await gateApp.handle(new Request('http://localhost/'))).text()
-    expect(setup).toContain('data-page="setup"')
-    expect(setup).toContain('data-action="/api/setup"')
-    expect(setup).not.toContain('class="tabs"')
-
-    await gateApp.handle(
-      new Request('http://localhost/api/setup', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ password: PASSWORD }),
-      }),
-    )
-
-    const login = await (await gateApp.handle(new Request('http://localhost/'))).text()
-    expect(login).toContain('data-page="login"')
-    expect(login).toContain('data-action="/api/login"')
-
-    await rm(fresh, { recursive: true, force: true })
   })
 })
 
@@ -327,12 +284,10 @@ describe('client islands', () => {
 })
 
 describe('flow route', () => {
-  test('serves the live session map behind the session guard', async () => {
-    expect((await app.handle(new Request('http://localhost/api/flow'))).status).toBe(401)
+  test('serves the live session map behind the local-access guard', async () => {
+    expect((await app.handle(new Request('http://rebind.example/api/flow'))).status).toBe(403)
 
-    const response = await app.handle(
-      new Request('http://localhost/api/flow', { headers: { cookie } }),
-    )
+    const response = await app.handle(new Request('http://localhost/api/flow'))
     expect(response.status).toBe(200)
     const body = (await response.json()) as {
       source: string

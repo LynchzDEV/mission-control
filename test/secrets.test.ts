@@ -5,8 +5,6 @@ import { join } from 'node:path'
 
 import {
   API_TOKEN_PREFIX,
-  AUTH_FILE,
-  CONFIG_FILE,
   CONFIG_FILE,
   DEFAULT_BIND,
   DEFAULT_ROLES,
@@ -17,11 +15,9 @@ import {
   parseBind,
   publicView,
   readApiToken,
-  readAuthRecord,
   readConfig,
   readSecrets,
   rotateApiToken,
-  writeAuthRecord,
   writeConfig,
   writeSecrets,
 } from '../server/secrets'
@@ -47,7 +43,6 @@ async function modeOf(path: string): Promise<number> {
 describe('defaults', () => {
   test('missing files fall back to documented defaults', async () => {
     expect(await readSecrets()).toEqual({ zaiAuthToken: null, zaiBaseUrl: DEFAULT_ZAI_BASE_URL, apiToken: null })
-    expect(await readAuthRecord()).toEqual({ passwordHash: null, cookieSecret: null })
     expect(await readConfig()).toEqual({ bind: DEFAULT_BIND, roles: DEFAULT_ROLES, autoReview: false })
   })
 
@@ -76,13 +71,8 @@ describe('round trip', () => {
     expect(stored.zaiBaseUrl).toBe('https://example.test/anthropic')
   })
 
-  test('auth and config survive write then read', async () => {
-    await writeAuthRecord({ passwordHash: '$argon2id$fake', cookieSecret: 'deadbeef' })
+  test('config survives write then read', async () => {
     await writeConfig({ bind: '0.0.0.0:8080' })
-    expect(await readAuthRecord()).toEqual({
-      passwordHash: '$argon2id$fake',
-      cookieSecret: 'deadbeef',
-    })
     expect(await readConfig()).toEqual({ bind: '0.0.0.0:8080', roles: DEFAULT_ROLES, autoReview: false })
   })
 
@@ -131,12 +121,10 @@ describe('round trip', () => {
 describe('permissions', () => {
   test('directory is 0700 and every file is 0600', async () => {
     await writeSecrets({ zaiAuthToken: TOKEN })
-    await writeAuthRecord({ passwordHash: 'hash' })
     await writeConfig({ bind: DEFAULT_BIND })
 
     expect(await modeOf(dir)).toBe(0o700)
     expect(await modeOf(configPath(SECRETS_FILE))).toBe(0o600)
-    expect(await modeOf(configPath(AUTH_FILE))).toBe(0o600)
     expect(await modeOf(configPath(CONFIG_FILE))).toBe(0o600)
   })
 

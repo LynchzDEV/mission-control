@@ -5,7 +5,6 @@ import { join } from 'node:path'
 
 import { Elysia } from 'elysia'
 
-import { SESSION_COOKIE, completeSetup, resetLoginLimiter } from '../server/auth'
 import { createApp } from '../server/index'
 import { createJobManager } from '../server/jobs'
 import type { JobManager } from '../server/jobs'
@@ -14,8 +13,6 @@ import { engineArgs } from '../server/jobs-engine-iface'
 import { jobsRoutes, safeEnqueue } from '../server/routes/jobs'
 import { initScratchGitRepo, runGit } from './support/scratch-git-repo'
 import { executionPlan } from './support/execution-plan'
-
-const PASSWORD = 'correct-horse-battery'
 
 const echoResolver: EngineResolver = ({ prompt }) => ({ cmd: 'echo', args: [prompt], env: {} })
 const sleepResolver: EngineResolver = () => ({ cmd: 'sleep', args: ['30'], env: {} })
@@ -26,7 +23,6 @@ let repo: string
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-jobs-routes-config-'))
   process.env.MISSION_CONTROL_CONFIG_DIR = configDir
-  resetLoginLimiter()
 
   repo = await mkdtemp(join(homedir(), 'mc-jobs-routes-scratch-'))
   await initScratchGitRepo(repo)
@@ -34,42 +30,33 @@ beforeEach(async () => {
 
 afterEach(async () => {
   delete process.env.MISSION_CONTROL_CONFIG_DIR
-  resetLoginLimiter()
   await rm(configDir, { recursive: true, force: true })
   await rm(repo, { recursive: true, force: true })
 })
-
-async function authCookie(): Promise<string> {
-  const result = await completeSetup(PASSWORD)
-  if (!result.ok) throw new Error('test harness setup failed')
-  return `${SESSION_COOKIE}=${result.token}`
-}
 
 function buildApp(manager: JobManager, resolver: EngineResolver): Elysia {
   return new Elysia().use(jobsRoutes(manager, resolver))
 }
 
-function post(path: string, body: unknown, cookie?: string): Request {
+const REBIND = 'http://rebind.example'
+
+function post(path: string, body: unknown, origin = 'http://localhost'): Request {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
-  if (cookie !== undefined) headers.cookie = cookie
-  return new Request(`http://localhost${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
+  return new Request(`${origin}${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
 }
 
-function get(path: string, cookie?: string): Request {
-  const headers: Record<string, string> = {}
-  if (cookie !== undefined) headers.cookie = cookie
-  return new Request(`http://localhost${path}`, { headers })
+function get(path: string, origin = 'http://localhost'): Request {
+  return new Request(`${origin}${path}`)
 }
 
 async function pollUntilDone(
   app: Elysia,
-  cookie: string,
   id: string,
   timeoutMs = 3000,
 ): Promise<{ id: string; status: string; diffStat: string | null }> {
   const deadline = Date.now() + timeoutMs
   for (;;) {
-    const response = await app.handle(get('/api/jobs', cookie))
+    const response = await app.handle(get('/api/jobs'))
     const { jobs } = (await response.json()) as { jobs: Array<{ id: string; status: string; diffStat: string | null }> }
     const job = jobs.find((entry) => entry.id === id)
     if (job !== undefined && job.status !== 'running') return job
@@ -79,102 +66,95 @@ async function pollUntilDone(
 }
 
 describe('POST /api/jobs', () => {
-  test('rejects an unauthenticated request', async () => {
+  test('rejects a rebinding host', async () => {
     const app = buildApp(createJobManager(), echoResolver)
     const response = await app.handle(
-      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'x' }),
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'x' }, REBIND),
     )
-    expect(response.status).toBe(401)
+    expect(response.status).toBe(403)
   })
 
   test('rejects an incomplete payload', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
-    const response = await app.handle(post('/api/jobs', { engine: 'claude' }, cookie))
+    const response = await app.handle(post('/api/jobs', { engine: 'claude' }))
     expect(response.status).toBe(400)
   })
 
   test('rejects a cwd outside HOME', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
     const response = await app.handle(
-      post('/api/jobs', { engine: 'claude', cwd: '/tmp', prompt: 'hi', label: 'x' }, cookie),
+      post('/api/jobs', { engine: 'claude', cwd: '/tmp', prompt: 'hi', label: 'x' }),
     )
     expect(response.status).toBe(400)
   })
 
   test('creates a job that completes with a readable log and a diffStat', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
 
     const created = await app.handle(
-      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hello-from-route', label: 'route-smoke' }, cookie),
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hello-from-route', label: 'route-smoke' }),
     )
     expect(created.status).toBe(200)
     const job = (await created.json()) as { id: string; status: string }
     expect(job.status).toBe('running')
 
-    const finished = await pollUntilDone(app, cookie, job.id)
+    const finished = await pollUntilDone(app, job.id)
     expect(finished.status).toBe('done')
 
-    const log = await app.handle(get(`/api/jobs/${job.id}/log`, cookie))
+    const log = await app.handle(get(`/api/jobs/${job.id}/log`))
     expect(log.status).toBe(200)
     expect(await log.text()).toContain('hello-from-route')
   })
 
   test('passes MC_JOB_ID in the spawned process env', async () => {
-    const cookie = await authCookie()
     const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "job=$MC_JOB_ID"'], env: {} })
     const app = buildApp(createJobManager(), envResolver)
 
     const created = await app.handle(
-      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'mc-job-id' }, cookie),
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'mc-job-id' }),
     )
     expect(created.status).toBe(200)
     const job = (await created.json()) as { id: string }
 
-    const finished = await pollUntilDone(app, cookie, job.id)
+    const finished = await pollUntilDone(app, job.id)
     expect(finished.status).toBe('done')
 
-    const log = await app.handle(get(`/api/jobs/${job.id}/log`, cookie))
+    const log = await app.handle(get(`/api/jobs/${job.id}/log`))
     expect(await log.text()).toContain(`job=${job.id}`)
   })
 
   test('passes an optional model to the resolver and stores it on the record', async () => {
-    const cookie = await authCookie()
     const calls: EngineResolverParams[] = []
     const app = buildApp(createJobManager(), capturingResolver(calls))
 
     const created = await app.handle(
-      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'with-model', model: 'opus' }, cookie),
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'with-model', model: 'opus' }),
     )
     expect(created.status).toBe(200)
     expect(calls[0]?.model).toBe('opus')
     expect(((await created.json()) as { model: string | null }).model).toBe('opus')
 
-    const { jobs } = (await (await app.handle(get('/api/jobs', cookie))).json()) as {
+    const { jobs } = (await (await app.handle(get('/api/jobs'))).json()) as {
       jobs: Array<{ label: string; model: string | null }>
     }
     expect(jobs.find((row) => row.label === 'with-model')?.model).toBe('opus')
   })
 
   test('defaults the record model to null when none is sent', async () => {
-    const cookie = await authCookie()
     const calls: EngineResolverParams[] = []
     const app = buildApp(createJobManager(), capturingResolver(calls))
 
     const created = await app.handle(
-      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'no-model' }, cookie),
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'no-model' }),
     )
     expect(((await created.json()) as { model: string | null }).model).toBeNull()
     expect(calls[0]?.model).toBeUndefined()
   })
 
   test('rejects a model longer than 100 characters', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
     const response = await app.handle(
-      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'l', model: 'x'.repeat(101) }, cookie),
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'l', model: 'x'.repeat(101) }),
     )
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ error: 'model too long' })
@@ -182,68 +162,65 @@ describe('POST /api/jobs', () => {
 })
 
 describe('GET /api/jobs', () => {
-  test('rejects an unauthenticated request', async () => {
+  test('rejects a rebinding host', async () => {
     const app = buildApp(createJobManager(), echoResolver)
-    const response = await app.handle(get('/api/jobs'))
-    expect(response.status).toBe(401)
+    const response = await app.handle(get('/api/jobs', REBIND))
+    expect(response.status).toBe(403)
   })
 
   test('lists dispatched jobs', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
     const created = await app.handle(
-      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'listed' }, cookie),
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'listed' }),
     )
     const job = (await created.json()) as { id: string }
 
-    const response = await app.handle(get('/api/jobs', cookie))
+    const response = await app.handle(get('/api/jobs'))
     const { jobs } = (await response.json()) as { jobs: Array<{ label: string; turns: number; lastTool: string | null }> }
     expect(jobs.some((entry) => entry.label === 'listed')).toBe(true)
     expect(jobs.find((entry) => entry.label === 'listed')).toMatchObject({ turns: 0, lastTool: null, slowAt: null })
 
-    await pollUntilDone(app, cookie, job.id)
+    await pollUntilDone(app, job.id)
   })
 })
 
 describe('POST /api/jobs/:id/reviewed', () => {
-  test('rejects an unauthenticated request', async () => {
+  test('rejects a rebinding host', async () => {
     const app = buildApp(createJobManager(), echoResolver)
-    const response = await app.handle(post('/api/jobs/does-not-exist/reviewed', {}))
-    expect(response.status).toBe(401)
+    const response = await app.handle(post('/api/jobs/does-not-exist/reviewed', {}, REBIND))
+    expect(response.status).toBe(403)
   })
 
   test('404s for an unknown job id', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
-    const response = await app.handle(post('/api/jobs/does-not-exist/reviewed', {}, cookie))
+    const response = await app.handle(post('/api/jobs/does-not-exist/reviewed', {}))
     expect(response.status).toBe(404)
   })
 
   test('stamps reviewedAt, keeps it stable on a repeat call, and drops the job from the flow queue', async () => {
-    const cookie = await authCookie()
     const manager = createJobManager()
     const app = buildApp(manager, echoResolver)
 
     const created = await app.handle(
-      post('/api/jobs', { engine: 'glm', cwd: repo, prompt: executionPlan('hi'), label: 'reviewed-me' }, cookie),
+      post('/api/jobs', { engine: 'glm', cwd: repo, prompt: executionPlan('hi'), label: 'reviewed-me' }),
     )
     const job = (await created.json()) as { id: string }
-    const finished = await pollUntilDone(app, cookie, job.id)
+    const finished = await pollUntilDone(app, job.id)
     expect(finished.status).toBe('done')
 
-    const listed = await app.handle(get('/api/jobs', cookie))
+    const listed = await app.handle(get('/api/jobs'))
     const { jobs } = (await listed.json()) as { jobs: Array<{ id: string; reviewedAt: number | null }> }
     expect(jobs.find((entry) => entry.id === job.id)?.reviewedAt).toBeNull()
 
-    const marked = await app.handle(post(`/api/jobs/${job.id}/reviewed`, {}, cookie))
+    const marked = await app.handle(post(`/api/jobs/${job.id}/reviewed`, {}))
     expect(marked.status).toBe(200)
     const reviewed = (await marked.json()) as { reviewedAt: number }
     expect(typeof reviewed.reviewedAt).toBe('number')
 
-    const again = await app.handle(post(`/api/jobs/${job.id}/reviewed`, {}, cookie))
+    const again = await app.handle(post(`/api/jobs/${job.id}/reviewed`, {}))
     expect(((await again.json()) as { reviewedAt: number }).reviewedAt).toBe(reviewed.reviewedAt)
 
-    const relisted = await app.handle(get('/api/jobs', cookie))
+    const relisted = await app.handle(get('/api/jobs'))
     const listedAgain = (await relisted.json()) as { jobs: Array<{ id: string; reviewedAt: number | null }> }
     expect(listedAgain.jobs.find((entry) => entry.id === job.id)?.reviewedAt).toBe(reviewed.reviewedAt)
     expect(manager.getJob(job.id)?.reviewedAt).toBe(reviewed.reviewedAt)
@@ -252,67 +229,62 @@ describe('POST /api/jobs/:id/reviewed', () => {
 
 describe('GET /api/jobs/:id/log', () => {
   test('404s for an unknown job id', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
-    const response = await app.handle(get('/api/jobs/does-not-exist/log', cookie))
+    const response = await app.handle(get('/api/jobs/does-not-exist/log'))
     expect(response.status).toBe(404)
   })
 })
 
 describe('POST /api/jobs/:id/kill', () => {
-  test('rejects an unauthenticated request', async () => {
+  test('rejects a rebinding host', async () => {
     const app = buildApp(createJobManager(), echoResolver)
-    const response = await app.handle(post('/api/jobs/does-not-exist/kill', {}))
-    expect(response.status).toBe(401)
+    const response = await app.handle(post('/api/jobs/does-not-exist/kill', {}, REBIND))
+    expect(response.status).toBe(403)
   })
 
   test('errors for a job id that is not running', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
-    const response = await app.handle(post('/api/jobs/does-not-exist/kill', {}, cookie))
+    const response = await app.handle(post('/api/jobs/does-not-exist/kill', {}))
     expect(response.status).toBe(404)
   })
 
   test('kills a running job', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), sleepResolver)
 
     const created = await app.handle(
-      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'irrelevant', label: 'kill-me' }, cookie),
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'irrelevant', label: 'kill-me' }),
     )
     const job = (await created.json()) as { id: string }
 
-    const killed = await app.handle(post(`/api/jobs/${job.id}/kill`, {}, cookie))
+    const killed = await app.handle(post(`/api/jobs/${job.id}/kill`, {}))
     expect(killed.status).toBe(200)
 
-    const finished = await pollUntilDone(app, cookie, job.id)
+    const finished = await pollUntilDone(app, job.id)
     expect(finished.status).toBe('failed')
   })
 })
 
 describe('GET /api/jobs/:id/stream', () => {
-  test('rejects an unauthenticated request', async () => {
+  test('rejects a rebinding host', async () => {
     const app = buildApp(createJobManager(), echoResolver)
-    const response = await app.handle(get('/api/jobs/does-not-exist/stream'))
-    expect(response.status).toBe(401)
+    const response = await app.handle(get('/api/jobs/does-not-exist/stream', REBIND))
+    expect(response.status).toBe(403)
   })
 
   test('404s for an unknown job id', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
-    const response = await app.handle(get('/api/jobs/does-not-exist/stream', cookie))
+    const response = await app.handle(get('/api/jobs/does-not-exist/stream'))
     expect(response.status).toBe(404)
   })
 
   test('streams the initial log tail then closes cleanly when the client aborts', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
 
     const created = await app.handle(
-      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'stream-me', label: 'stream' }, cookie),
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'stream-me', label: 'stream' }),
     )
     const job = (await created.json()) as { id: string }
-    await pollUntilDone(app, cookie, job.id)
+    await pollUntilDone(app, job.id)
 
     const server = app.listen({ hostname: '127.0.0.1', port: 0 })
     const base = `http://127.0.0.1:${server.server?.port}`
@@ -320,7 +292,6 @@ describe('GET /api/jobs/:id/stream', () => {
 
     try {
       const response = await fetch(`${base}/api/jobs/${job.id}/stream`, {
-        headers: { cookie },
         signal: controller.signal,
       })
       expect(response.status).toBe(200)
@@ -345,25 +316,23 @@ describe('GET /api/jobs/:id/activity', () => {
   const STREAM_LINE =
     '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"server/flow.ts"}}]}}'
 
-  test('rejects an unauthenticated request and 404s an unknown id', async () => {
-    const cookie = await authCookie()
+  test('rejects a rebinding host and 404s an unknown id', async () => {
     const app = buildApp(createJobManager(), echoResolver)
 
-    expect((await app.handle(get('/api/jobs/nope/activity'))).status).toBe(401)
-    expect((await app.handle(get('/api/jobs/nope/activity', cookie))).status).toBe(404)
+    expect((await app.handle(get('/api/jobs/nope/activity', REBIND))).status).toBe(403)
+    expect((await app.handle(get('/api/jobs/nope/activity'))).status).toBe(404)
   })
 
   test('parses the job log into a feed and reports the running activity on the list row', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
 
     const created = await app.handle(
-      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: STREAM_LINE, label: 'activity-smoke' }, cookie),
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: STREAM_LINE, label: 'activity-smoke' }),
     )
     const job = (await created.json()) as { id: string }
-    await pollUntilDone(app, cookie, job.id)
+    await pollUntilDone(app, job.id)
 
-    const feed = (await (await app.handle(get(`/api/jobs/${job.id}/activity`, cookie))).json()) as {
+    const feed = (await (await app.handle(get(`/api/jobs/${job.id}/activity`))).json()) as {
       status: string
       currentActivity: string | null
       events: Array<{ kind: string; title: string; detail: string }>
@@ -372,7 +341,7 @@ describe('GET /api/jobs/:id/activity', () => {
     expect(feed.events).toEqual([{ kind: 'tool', title: 'Edit', detail: 'server/flow.ts' }])
     expect(feed.currentActivity).toBe('Edit · server/flow.ts')
 
-    const { jobs } = (await (await app.handle(get('/api/jobs', cookie))).json()) as {
+    const { jobs } = (await (await app.handle(get('/api/jobs'))).json()) as {
       jobs: Array<{ id: string; currentActivity: string | null; turns: number; lastTool: string | null }>
     }
     expect(jobs.find((row) => row.id === job.id)?.currentActivity).toBe('Edit · server/flow.ts')
@@ -381,16 +350,15 @@ describe('GET /api/jobs/:id/activity', () => {
   })
 
   test('returns an empty feed for a job whose output is not stream-json', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
 
     const created = await app.handle(
-      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'plain text output', label: 'plain' }, cookie),
+      post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'plain text output', label: 'plain' }),
     )
     const job = (await created.json()) as { id: string }
-    await pollUntilDone(app, cookie, job.id)
+    await pollUntilDone(app, job.id)
 
-    const feed = (await (await app.handle(get(`/api/jobs/${job.id}/activity`, cookie))).json()) as {
+    const feed = (await (await app.handle(get(`/api/jobs/${job.id}/activity`))).json()) as {
       currentActivity: string | null
       events: unknown[]
     }
@@ -413,53 +381,49 @@ function capturingResolver(calls: EngineResolverParams[]): EngineResolver {
 
 async function dispatch(
   app: Elysia,
-  cookie: string,
   body: Record<string, unknown>,
 ): Promise<{ id: string }> {
-  const response = await app.handle(post('/api/jobs', body, cookie))
+  const response = await app.handle(post('/api/jobs', body))
   return (await response.json()) as { id: string }
 }
 
 describe('POST /api/jobs/:id/reply', () => {
-  test('rejects an unauthenticated request', async () => {
+  test('rejects a rebinding host', async () => {
     const app = buildApp(createJobManager(), sessionResolver)
-    const response = await app.handle(post('/api/jobs/anything/reply', { message: 'hi' }))
-    expect(response.status).toBe(401)
+    const response = await app.handle(post('/api/jobs/anything/reply', { message: 'hi' }, REBIND))
+    expect(response.status).toBe(403)
   })
 
   test('404s for an unknown job', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), sessionResolver)
-    const response = await app.handle(post('/api/jobs/nope/reply', { message: 'hi' }, cookie))
+    const response = await app.handle(post('/api/jobs/nope/reply', { message: 'hi' }))
     expect(response.status).toBe(404)
   })
 
   test('rejects a blank message', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), sessionResolver)
-    const job = await dispatch(app, cookie, { engine: 'claude', cwd: repo, prompt: 'p', label: 'l' })
-    await pollUntilDone(app, cookie, job.id)
+    const job = await dispatch(app, { engine: 'claude', cwd: repo, prompt: 'p', label: 'l' })
+    await pollUntilDone(app, job.id)
 
-    const response = await app.handle(post(`/api/jobs/${job.id}/reply`, { message: '   ' }, cookie))
+    const response = await app.handle(post(`/api/jobs/${job.id}/reply`, { message: '   ' }))
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ error: 'message is required' })
   })
 
   test('chains a new job whose argv carries --resume with the parent session id', async () => {
-    const cookie = await authCookie()
     const calls: EngineResolverParams[] = []
     const app = buildApp(createJobManager(), capturingResolver(calls))
 
-    const parent = await dispatch(app, cookie, {
+    const parent = await dispatch(app, {
       engine: 'claude',
       cwd: repo,
       prompt: 'reply with the word alpha',
       label: 'thread-work',
     })
-    await pollUntilDone(app, cookie, parent.id)
+    await pollUntilDone(app, parent.id)
 
     const response = await app.handle(
-      post(`/api/jobs/${parent.id}/reply`, { message: 'what word did you say?' }, cookie),
+      post(`/api/jobs/${parent.id}/reply`, { message: 'what word did you say?' }),
     )
     expect(response.status).toBe(200)
     const child = (await response.json()) as {
@@ -493,40 +457,38 @@ describe('POST /api/jobs/:id/reply', () => {
   })
 
   test('a reply inherits the parent model', async () => {
-    const cookie = await authCookie()
     const calls: EngineResolverParams[] = []
     const app = buildApp(createJobManager(), capturingResolver(calls))
 
-    const parent = await dispatch(app, cookie, {
+    const parent = await dispatch(app, {
       engine: 'claude',
       cwd: repo,
       prompt: 'reply with the word alpha',
       label: 'thread-work',
       model: 'opus',
     })
-    await pollUntilDone(app, cookie, parent.id)
+    await pollUntilDone(app, parent.id)
 
     const child = (await (
-      await app.handle(post(`/api/jobs/${parent.id}/reply`, { message: 'again' }, cookie))
+      await app.handle(post(`/api/jobs/${parent.id}/reply`, { message: 'again' }))
     ).json()) as { id: string; model: string | null }
     expect(child.model).toBe('opus')
     expect(calls[1]?.model).toBe('opus')
-    await pollUntilDone(app, cookie, child.id)
+    await pollUntilDone(app, child.id)
   })
 
   test('a reply to the reply stays on the same thread root', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), sessionResolver)
-    const root = await dispatch(app, cookie, { engine: 'claude', cwd: repo, prompt: 'one', label: 'l' })
-    await pollUntilDone(app, cookie, root.id)
+    const root = await dispatch(app, { engine: 'claude', cwd: repo, prompt: 'one', label: 'l' })
+    await pollUntilDone(app, root.id)
 
     const first = (await (
-      await app.handle(post(`/api/jobs/${root.id}/reply`, { message: 'two' }, cookie))
+      await app.handle(post(`/api/jobs/${root.id}/reply`, { message: 'two' }))
     ).json()) as { id: string }
-    await pollUntilDone(app, cookie, first.id)
+    await pollUntilDone(app, first.id)
 
     const second = (await (
-      await app.handle(post(`/api/jobs/${first.id}/reply`, { message: 'three' }, cookie))
+      await app.handle(post(`/api/jobs/${first.id}/reply`, { message: 'three' }))
     ).json()) as { threadRoot: string; parentJobId: string }
 
     expect(second.threadRoot).toBe(root.id)
@@ -534,55 +496,51 @@ describe('POST /api/jobs/:id/reply', () => {
   })
 
   test('400s while the job has produced no session id', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
-    const job = await dispatch(app, cookie, { engine: 'claude', cwd: repo, prompt: 'no json here', label: 'l' })
-    await pollUntilDone(app, cookie, job.id)
+    const job = await dispatch(app, { engine: 'claude', cwd: repo, prompt: 'no json here', label: 'l' })
+    await pollUntilDone(app, job.id)
 
-    const response = await app.handle(post(`/api/jobs/${job.id}/reply`, { message: 'hi' }, cookie))
+    const response = await app.handle(post(`/api/jobs/${job.id}/reply`, { message: 'hi' }))
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ error: 'job has no session id to resume yet' })
   })
 
   test('400s for an engine with no verified resume invocation', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), sessionResolver)
-    const job = await dispatch(app, cookie, { engine: 'mystery', cwd: repo, prompt: 'p', label: 'l' })
-    await pollUntilDone(app, cookie, job.id)
+    const job = await dispatch(app, { engine: 'mystery', cwd: repo, prompt: 'p', label: 'l' })
+    await pollUntilDone(app, job.id)
 
-    const response = await app.handle(post(`/api/jobs/${job.id}/reply`, { message: 'hi' }, cookie))
+    const response = await app.handle(post(`/api/jobs/${job.id}/reply`, { message: 'hi' }))
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ error: 'engine does not support conversation resume' })
   })
 })
 
 describe('GET /api/jobs/:id/thread', () => {
-  test('rejects an unauthenticated request and 404s an unknown job', async () => {
-    const cookie = await authCookie()
+  test('rejects a rebinding host and 404s an unknown job', async () => {
     const app = buildApp(createJobManager(), sessionResolver)
 
-    expect((await app.handle(get('/api/jobs/x/thread'))).status).toBe(401)
-    expect((await app.handle(get('/api/jobs/x/thread', cookie))).status).toBe(404)
+    expect((await app.handle(get('/api/jobs/x/thread', REBIND))).status).toBe(403)
+    expect((await app.handle(get('/api/jobs/x/thread'))).status).toBe(404)
   })
 
   test('returns the ordered conversation for the whole chain from either end', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), sessionResolver)
-    const root = await dispatch(app, cookie, {
+    const root = await dispatch(app, {
       engine: 'claude',
       cwd: repo,
       prompt: 'reply with the word alpha',
       label: 'l',
     })
-    await pollUntilDone(app, cookie, root.id)
+    await pollUntilDone(app, root.id)
 
     const child = (await (
-      await app.handle(post(`/api/jobs/${root.id}/reply`, { message: 'what word did you say?' }, cookie))
+      await app.handle(post(`/api/jobs/${root.id}/reply`, { message: 'what word did you say?' }))
     ).json()) as { id: string }
-    await pollUntilDone(app, cookie, child.id)
+    await pollUntilDone(app, child.id)
 
     for (const id of [root.id, child.id]) {
-      const thread = (await (await app.handle(get(`/api/jobs/${id}/thread`, cookie))).json()) as {
+      const thread = (await (await app.handle(get(`/api/jobs/${id}/thread`))).json()) as {
         rootId: string
         engine: string
         running: boolean
@@ -607,12 +565,11 @@ describe('GET /api/jobs/:id/thread', () => {
   })
 
   test('reports canReply false while no session id has appeared', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
-    const job = await dispatch(app, cookie, { engine: 'claude', cwd: repo, prompt: 'plain', label: 'l' })
-    await pollUntilDone(app, cookie, job.id)
+    const job = await dispatch(app, { engine: 'claude', cwd: repo, prompt: 'plain', label: 'l' })
+    await pollUntilDone(app, job.id)
 
-    const thread = (await (await app.handle(get(`/api/jobs/${job.id}/thread`, cookie))).json()) as {
+    const thread = (await (await app.handle(get(`/api/jobs/${job.id}/thread`))).json()) as {
       canReply: boolean
       sessionId: string | null
       messages: unknown[]
@@ -647,20 +604,15 @@ describe('safeEnqueue', () => {
 })
 
 describe('mounted in the real app', () => {
-  test('createApp wires the jobs routes behind the session guard', async () => {
+  test('createApp wires the jobs routes behind the local-access guard', async () => {
     configDir = await mkdtemp(join(tmpdir(), 'mc-jobs-routes-config-'))
     process.env.MISSION_CONTROL_CONFIG_DIR = configDir
     const app = await createApp()
 
-    const unauthed = await app.handle(get('/api/jobs'))
-    expect(unauthed.status).toBe(401)
+    const rebound = await app.handle(get('/api/jobs', REBIND))
+    expect(rebound.status).toBe(403)
 
-    const setup = await app.handle(post('/api/setup', { password: PASSWORD }))
-    const jar = setup.headers.getSetCookie()
-    const cookie = jar.find((entry) => entry.startsWith(`${SESSION_COOKIE}=`))?.split(';')[0]
-    expect(cookie).toBeDefined()
-
-    const listed = await app.handle(get('/api/jobs', cookie))
+    const listed = await app.handle(get('/api/jobs'))
     expect(listed.status).toBe(200)
     expect(await listed.json()).toEqual({ jobs: [] })
   })
@@ -668,25 +620,24 @@ describe('mounted in the real app', () => {
 
 describe('POST /api/jobs/:id/land', () => {
   async function setup(worktree = true) {
-    const cookie = await authCookie()
     const manager = createJobManager()
     const app = buildApp(manager, echoResolver)
-    const response = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hello', label: 'land-me', worktree }, cookie))
+    const response = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hello', label: 'land-me', worktree }))
     expect(response.status).toBe(200)
     const job = await response.json()
-    await pollUntilDone(app, cookie, job.id)
-    return { app, cookie, manager, job }
+    await pollUntilDone(app, job.id)
+    return { app, manager, job }
   }
 
   test('lands all commits oldest first, cleans up, and persists reviewed marking', async () => {
-    const { app, cookie, manager, job } = await setup()
+    const { app, manager, job } = await setup()
     await writeFile(join(job.cwd, 'result.txt'), 'first\n')
     await runGit(['add', '-A'], job.cwd)
     await runGit(['commit', '-m', 'first change'], job.cwd)
     await writeFile(join(job.cwd, 'result.txt'), 'second\n')
     await runGit(['add', '-A'], job.cwd)
     await runGit(['commit', '-m', 'second change'], job.cwd)
-    const response = await app.handle(post(`/api/jobs/${job.id}/land`, {}, cookie))
+    const response = await app.handle(post(`/api/jobs/${job.id}/land`, {}))
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(body.base).toBe(job.baseBranch)
@@ -700,9 +651,9 @@ describe('POST /api/jobs/:id/land', () => {
   })
 
   test('auto-commits dirty changes before landing', async () => {
-    const { app, cookie, job } = await setup()
+    const { app, job } = await setup()
     await writeFile(join(job.cwd, 'dirty.txt'), 'auto committed\n')
-    const response = await app.handle(post(`/api/jobs/${job.id}/land`, {}, cookie))
+    const response = await app.handle(post(`/api/jobs/${job.id}/land`, {}))
     expect(response.status).toBe(200)
     expect((await response.json()).landed).toHaveLength(1)
     expect(await readFile(join(repo, 'dirty.txt'), 'utf8')).toBe('auto committed\n')
@@ -712,7 +663,7 @@ describe('POST /api/jobs/:id/land', () => {
   })
 
   test('aborts the entire sequence on conflict and preserves the worktree', async () => {
-    const { app, cookie, manager, job } = await setup()
+    const { app, manager, job } = await setup()
     await writeFile(join(job.cwd, 'first.txt'), 'first commit\n')
     await runGit(['add', '-A'], job.cwd)
     await runGit(['commit', '-m', 'first'], job.cwd)
@@ -722,7 +673,7 @@ describe('POST /api/jobs/:id/land', () => {
     await writeFile(join(repo, 'README.md'), 'base\n')
     await runGit(['add', 'README.md'], repo)
     await runGit(['commit', '-m', 'base'], repo)
-    const response = await app.handle(post(`/api/jobs/${job.id}/land`, {}, cookie))
+    const response = await app.handle(post(`/api/jobs/${job.id}/land`, {}))
     expect(response.status).toBe(409)
     expect(await response.json()).toEqual({ error: 'cherry-pick conflict', files: ['README.md'] })
     expect(await readFile(join(repo, 'README.md'), 'utf8')).toBe('base\n')
@@ -735,17 +686,17 @@ describe('POST /api/jobs/:id/land', () => {
   })
 
   test('rejects jobs without a worktree and unknown jobs', async () => {
-    const { app, cookie, job } = await setup(false)
-    expect((await app.handle(post(`/api/jobs/${job.id}/land`, {}, cookie))).status).toBe(400)
-    expect((await app.handle(post('/api/jobs/missing/land', {}, cookie))).status).toBe(404)
-    expect((await app.handle(post(`/api/jobs/${job.id}/land`, {}))).status).toBe(401)
+    const { app, job } = await setup(false)
+    expect((await app.handle(post(`/api/jobs/${job.id}/land`, {}))).status).toBe(400)
+    expect((await app.handle(post('/api/jobs/missing/land', {}))).status).toBe(404)
+    expect((await app.handle(post(`/api/jobs/${job.id}/land`, {}, REBIND))).status).toBe(403)
   })
 
   test('refuses to land onto a different checked-out branch', async () => {
-    const { app, cookie, job } = await setup()
+    const { app, job } = await setup()
     await runGit(['checkout', '-b', 'other-base'], repo)
     await writeFile(join(job.cwd, 'dirty.txt'), 'keep\n')
-    expect((await app.handle(post(`/api/jobs/${job.id}/land`, {}, cookie))).status).toBe(409)
+    expect((await app.handle(post(`/api/jobs/${job.id}/land`, {}))).status).toBe(409)
     expect(await readFile(join(job.cwd, 'dirty.txt'), 'utf8')).toBe('keep\n')
   })
 })
@@ -755,25 +706,23 @@ describe('POST /api/jobs spec lint', () => {
   const full = `${thin}\n## Decisions\n1. exact match.\n## Preserve\n- shape (server/routes/jobs.ts:152).\n## Steps\n### Step 1 — server/routes/jobs.ts\nedit.\nDone means all of these hold, verified by you before you report:\n1. specs pass.`
 
   test('rejects a thin prompt for the execute engine with every miss listed', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
-    const response = await app.handle(post('/api/jobs', { engine: 'glm', cwd: repo, prompt: thin, label: 'thin' }, cookie))
+    const response = await app.handle(post('/api/jobs', { engine: 'glm', cwd: repo, prompt: thin, label: 'thin' }))
     expect(response.status).toBe(422)
     const body = (await response.json()) as { error: string; misses: string[] }
     expect(body.error).toBe('spec lint failed: the execute engine only takes an execution plan')
     expect(body.misses).toHaveLength(4)
     expect(body.misses[0]).toBe('missing "## Decisions" section')
-    const listed = await app.handle(get('/api/jobs', cookie))
+    const listed = await app.handle(get('/api/jobs'))
     expect(((await listed.json()) as { jobs: unknown[] }).jobs).toEqual([])
   })
 
   test('a full plan for the execute engine and any prompt for other engines pass', async () => {
-    const cookie = await authCookie()
     const app = buildApp(createJobManager(), echoResolver)
-    const planned = await app.handle(post('/api/jobs', { engine: 'glm', cwd: repo, prompt: full, label: 'full' }, cookie))
+    const planned = await app.handle(post('/api/jobs', { engine: 'glm', cwd: repo, prompt: full, label: 'full' }))
     expect(planned.status).toBe(200)
-    const review = await app.handle(post('/api/jobs', { engine: 'codex', cwd: repo, prompt: 'Review ONLY the diff', label: 'full' }, cookie))
+    const review = await app.handle(post('/api/jobs', { engine: 'codex', cwd: repo, prompt: 'Review ONLY the diff', label: 'full' }))
     expect(review.status).toBe(200)
-    for (const created of [planned, review]) await pollUntilDone(app, cookie, ((await created.json()) as { id: string }).id)
+    for (const created of [planned, review]) await pollUntilDone(app, ((await created.json()) as { id: string }).id)
   })
 })

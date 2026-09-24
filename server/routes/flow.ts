@@ -6,7 +6,7 @@ import {
   sessionLastActivity,
   sessionsDueForAutoArchive,
 } from '../archive'
-import { requireSession } from '../auth'
+import { requireLocal } from '../auth'
 import { deriveFlow, isSessionFinished, effectivePlan, jobsForSession, planOnlySession, sessionKey, type SessionFlow } from '../flow'
 import type { JobManager, JobRecord } from '../jobs'
 import { createPlanStore, isStepStatus, parsePlanInput, type Plan, type PlanStore } from '../plans'
@@ -105,7 +105,7 @@ export function flowRoutes(
   archives: ArchiveStore = createArchiveStore(),
 ): Elysia {
   return new Elysia()
-    .onBeforeHandle(requireSession)
+    .onBeforeHandle(requireLocal)
     .get('/api/flow', async ({ query }) => {
       const includeArchived = query?.includeArchived === '1' || query?.includeArchived === 'true'
       return await flowSnapshot(manager, registry, plans, archives, { includeArchived })

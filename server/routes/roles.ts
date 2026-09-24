@@ -1,6 +1,6 @@
 import { Elysia } from 'elysia'
 
-import { requireSession } from '../auth'
+import { requireLocal } from '../auth'
 import { ENGINE_NAMES, MAX_MODEL_LENGTH } from '../engines'
 import { type EngineRoles, type RoleAssignment, readConfig, writeConfig } from '../secrets'
 import { createConnectionStore } from '../agent-connections'
@@ -55,7 +55,7 @@ export async function rolesView(): Promise<EngineRoles & { autoReview: boolean }
 }
 
 export const rolesRoutes = new Elysia()
-  .onBeforeHandle(requireSession)
+  .onBeforeHandle(requireLocal)
   .get('/api/roles', () => rolesView())
   .post('/api/roles', async ({ body, set }) => {
     const parsed = parseRoles(body, [...ENGINE_NAMES, ...(await createConnectionStore().list()).map(connection => connection.id)])

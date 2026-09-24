@@ -3,34 +3,31 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Elysia } from 'elysia'
-import { completeSetup, SESSION_COOKIE } from '../server/auth'
 import { createJobManager } from '../server/jobs'
 import { fakeEchoResolver } from '../server/jobs-engine-iface'
 import { createWorkflowStore, defaultWorkflow } from '../server/workflows'
 import { createWorkflowRunner } from '../server/workflow-runner'
 import { studioRoutes } from '../server/routes/studio'
 
-let dir: string, app: Elysia, cookie: string
+let dir: string, app: Elysia
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-studio-api-'))
   process.env.MISSION_CONTROL_CONFIG_DIR = dir
-  const setup = await completeSetup('correct horse battery staple')
-  if (!setup.ok) throw new Error('Setup failed')
-  cookie = `${SESSION_COOKIE}=${setup.token}`
   const store = createWorkflowStore(dir)
   const runner = createWorkflowRunner({ manager: createJobManager(), resolver: fakeEchoResolver, store })
   app = new Elysia().use(studioRoutes(store, runner))
 })
 afterEach(async () => { delete process.env.MISSION_CONTROL_CONFIG_DIR; await rm(dir, { recursive: true, force: true }) })
-function request(path: string, body?: unknown, auth = true) {
-  return app.handle(new Request(`http://localhost/api/studio${path}`, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', ...(auth ? { cookie } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }))
+function request(path: string, body?: unknown, origin = 'http://localhost') {
+  return app.handle(new Request(`${origin}/api/studio${path}`, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }))
 }
 
-test('Studio configuration and execution require authentication', async () => {
-  for (const path of ['/workflows', '/connections', '/policy', '/runs', '/drafts', '/drafts/unknown']) expect((await request(path, undefined, false)).status).toBe(401)
-  expect((await request('/workflows', {}, false)).status).toBe(401)
-  expect((await request('/drafts', {description:'Build a flow'}, false)).status).toBe(401)
-  expect((await request('/drafts/unknown/stop', {}, false)).status).toBe(401)
+test('Studio configuration and execution refuse a rebinding host', async () => {
+  const rebind = 'http://rebind.example'
+  for (const path of ['/workflows', '/connections', '/policy', '/runs', '/drafts', '/drafts/unknown']) expect((await request(path, undefined, rebind)).status).toBe(403)
+  expect((await request('/workflows', {}, rebind)).status).toBe(403)
+  expect((await request('/drafts', {description:'Build a flow'}, rebind)).status).toBe(403)
+  expect((await request('/drafts/unknown/stop', {}, rebind)).status).toBe(403)
 })
 
 test('the draft endpoint returns JSON when no workflow is being drafted', async () => {

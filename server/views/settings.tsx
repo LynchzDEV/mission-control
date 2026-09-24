@@ -4,7 +4,7 @@ import type { EngineRoles } from '../secrets'
 import { Layout } from './layout'
 import { ModelListsScript, ModelPicker } from './model-picker'
 
-export type SettingsProps = { embedded?: boolean; zaiBaseUrl: string; zaiAuthTokenConfigured: boolean; apiTokenConfigured: boolean; bind: string; roles: EngineRoles; autoReview: boolean; models: ModelLists; minPasswordLength: number }
+export type SettingsProps = { embedded?: boolean; zaiBaseUrl: string; zaiAuthTokenConfigured: boolean; apiTokenConfigured: boolean; bind: string; roles: EngineRoles; autoReview: boolean; models: ModelLists }
 
 const ENGINE_LABEL: Record<string, string> = { claude: 'Claude', codex: 'Codex', glm: 'GLM' }
 const ROLES = [

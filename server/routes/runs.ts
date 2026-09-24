@@ -1,11 +1,11 @@
 import { Elysia } from 'elysia'
 
-import { requireSession } from '../auth'
+import { requireLocal } from '../auth'
 import { parseRunInput, type PlanRunner } from '../plan-runner'
 
 export function runsRoutes(runner: PlanRunner): Elysia {
   return new Elysia()
-    .onBeforeHandle(requireSession)
+    .onBeforeHandle(requireLocal)
     .post('/api/flow/:label/run', async ({ params, body, set }) => {
       const label = decodeURIComponent(params.label)
       const parsed = parseRunInput({ ...(typeof body === 'object' && body !== null ? body : {}), label })

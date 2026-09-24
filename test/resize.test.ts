@@ -5,7 +5,6 @@ import { join } from 'node:path'
 
 import type { Elysia } from 'elysia'
 
-import { SESSION_COOKIE, resetLoginLimiter } from '../server/auth'
 import { createApp } from '../server/index'
 import {
   DEFAULT_LAYOUT,
@@ -213,38 +212,23 @@ describe('normalizeTriple / normalizePair', () => {
   })
 })
 
-const PASSWORD = 'correct-horse-battery'
-
 describe('work view replaces lanes dividers', () => {
   let dir: string
   let app: Elysia
-  let cookie: string
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'mc-resize-'))
     process.env.MISSION_CONTROL_CONFIG_DIR = dir
-    resetLoginLimiter()
     app = await createApp()
-
-    const setup = await app.handle(
-      new Request('http://localhost/api/setup', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ password: PASSWORD }),
-      }),
-    )
-    const jar = setup.headers.getSetCookie()
-    cookie = (jar.find((entry) => entry.startsWith(`${SESSION_COOKIE}=`)) as string).split(';')[0] as string
   })
 
   afterEach(async () => {
     delete process.env.MISSION_CONTROL_CONFIG_DIR
-    resetLoginLimiter()
     await rm(dir, { recursive: true, force: true })
   })
 
   test('/lanes carries the work navigator without inherited layout controls', async () => {
-    const response = await app.handle(new Request('http://localhost/lanes?embed=1', { headers: { cookie } }))
+    const response = await app.handle(new Request('http://localhost/lanes?embed=1'))
     const html = await response.text()
     expect(html).toContain('id="work-list"')
     expect(html).toContain('id="work-selected"')
@@ -252,7 +236,7 @@ describe('work view replaces lanes dividers', () => {
   })
 
   test('/lanes loads the work island instead of legacy divider behavior', async () => {
-    const response = await app.handle(new Request('http://localhost/lanes?embed=1', { headers: { cookie } }))
+    const response = await app.handle(new Request('http://localhost/lanes?embed=1'))
     const html = await response.text()
     expect(html).toContain('/js/work.js')
     expect(html).not.toContain('data-resize=')
@@ -260,7 +244,7 @@ describe('work view replaces lanes dividers', () => {
   })
 
   test('/js/resize.js transpiles to browser javascript with no leftover TS syntax', async () => {
-    const response = await app.handle(new Request('http://localhost/js/resize.js', { headers: { cookie } }))
+    const response = await app.handle(new Request('http://localhost/js/resize.js'))
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
     const code = await response.text()
@@ -272,7 +256,7 @@ describe('work view replaces lanes dividers', () => {
   })
 
   test('/js/lanes.js still transpiles cleanly alongside the new island', async () => {
-    const response = await app.handle(new Request('http://localhost/js/lanes.js', { headers: { cookie } }))
+    const response = await app.handle(new Request('http://localhost/js/lanes.js'))
     expect(response.status).toBe(200)
     const code = await response.text()
     expect(code).toContain('refreshUsage')

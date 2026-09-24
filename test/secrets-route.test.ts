@@ -5,43 +5,29 @@ import { join } from 'node:path'
 
 import type { Elysia } from 'elysia'
 
-import { SESSION_COOKIE, resetLoginLimiter } from '../server/auth'
 import { createApp } from '../server/index'
 import { configPath } from '../server/secrets'
 
-const PASSWORD = 'correct-horse-battery'
 const TOKEN = 'zai-token-must-never-be-echoed'
 
 let dir: string
 let app: Elysia
-let cookie: string
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-secrets-route-'))
   process.env.MISSION_CONTROL_CONFIG_DIR = dir
-  resetLoginLimiter()
   app = await createApp()
-
-  const setup = await app.handle(
-    new Request('http://localhost/api/setup', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: PASSWORD }),
-    }),
-  )
-  const jar = setup.headers.getSetCookie()
-  cookie = (jar.find((entry) => entry.startsWith(`${SESSION_COOKIE}=`)) as string).split(';')[0] as string
 })
 
 afterEach(async () => {
   delete process.env.MISSION_CONTROL_CONFIG_DIR
-  resetLoginLimiter()
   await rm(dir, { recursive: true, force: true })
 })
 
-function post(body: unknown, withCookie = true): Request {
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
-  if (withCookie) headers.cookie = cookie
+const FOREIGN_ORIGIN = { host: '127.0.0.1:7777', origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' }
+
+function post(body: unknown, foreign = false): Request {
+  const headers: Record<string, string> = { 'content-type': 'application/json', ...(foreign ? FOREIGN_ORIGIN : {}) }
   return new Request('http://localhost/api/secrets', {
     method: 'POST',
     headers,
@@ -49,17 +35,14 @@ function post(body: unknown, withCookie = true): Request {
   })
 }
 
-function get(withCookie = true): Request {
-  return new Request(
-    'http://localhost/api/secrets',
-    withCookie ? { headers: { cookie } } : undefined,
-  )
+function get(foreign = false): Request {
+  return new Request('http://localhost/api/secrets', foreign ? { headers: FOREIGN_ORIGIN } : undefined)
 }
 
-describe('session guard', () => {
-  test('both verbs are 401 without a session', async () => {
-    expect((await app.handle(get(false))).status).toBe(401)
-    expect((await app.handle(post({ zaiAuthToken: TOKEN }, false))).status).toBe(401)
+describe('local-access guard', () => {
+  test('both verbs are 403 from a foreign Origin', async () => {
+    expect((await app.handle(get(true))).status).toBe(403)
+    expect((await app.handle(post({ zaiAuthToken: TOKEN }, true))).status).toBe(403)
   })
 })
 
@@ -76,19 +59,16 @@ describe('GET /api/secrets', () => {
 })
 
 describe('POST /api/secrets/api-token/reveal', () => {
-  test('requires a cookie', async () => {
+  test('is refused from a foreign Origin', async () => {
     const response = await app.handle(
-      new Request('http://localhost/api/secrets/api-token/reveal', { method: 'POST' }),
+      new Request('http://localhost/api/secrets/api-token/reveal', { method: 'POST', headers: FOREIGN_ORIGIN }),
     )
-    expect(response.status).toBe(401)
+    expect(response.status).toBe(403)
   })
 
   test('returns the token value once per call', async () => {
     const response = await app.handle(
-      new Request('http://localhost/api/secrets/api-token/reveal', {
-        method: 'POST',
-        headers: { cookie },
-      }),
+      new Request('http://localhost/api/secrets/api-token/reveal', { method: 'POST' }),
     )
     expect(response.status).toBe(200)
     const body = (await response.json()) as { apiToken: string }
@@ -97,30 +77,30 @@ describe('POST /api/secrets/api-token/reveal', () => {
 })
 
 describe('POST /api/secrets/api-token/rotate', () => {
-  test('requires a cookie', async () => {
+  test('is refused from a foreign Origin', async () => {
     const response = await app.handle(
-      new Request('http://localhost/api/secrets/api-token/rotate', { method: 'POST' }),
+      new Request('http://localhost/api/secrets/api-token/rotate', { method: 'POST', headers: FOREIGN_ORIGIN }),
     )
-    expect(response.status).toBe(401)
+    expect(response.status).toBe(403)
   })
 
   test('invalidates the previous token', async () => {
     const revealed = await app.handle(
-      new Request('http://localhost/api/secrets/api-token/reveal', { method: 'POST', headers: { cookie } }),
+      new Request('http://localhost/api/secrets/api-token/reveal', { method: 'POST' }),
     )
     const before = ((await revealed.json()) as { apiToken: string }).apiToken
 
     const rotated = await app.handle(
-      new Request('http://localhost/api/secrets/api-token/rotate', { method: 'POST', headers: { cookie } }),
+      new Request('http://localhost/api/secrets/api-token/rotate', { method: 'POST' }),
     )
     expect(rotated.status).toBe(200)
     const after = ((await rotated.json()) as { apiToken: string }).apiToken
     expect(after).not.toBe(before)
 
     const rejected = await app.handle(
-      new Request('http://localhost/api/jobs', { headers: { authorization: `Bearer ${before}` } }),
+      new Request('http://rebind.example/api/jobs', { headers: { authorization: `Bearer ${before}` } }),
     )
-    expect(rejected.status).toBe(401)
+    expect(rejected.status).toBe(403)
   })
 })
 

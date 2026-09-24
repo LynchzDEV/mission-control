@@ -1,6 +1,6 @@
 import { Elysia } from 'elysia'
 
-import { requireSession } from '../auth'
+import { requireLocal } from '../auth'
 import {
   type PublicSecretsView,
   parseBind,
@@ -87,7 +87,7 @@ export async function applyPatch(
 }
 
 export const secretsRoutes = new Elysia()
-  .onBeforeHandle(requireSession)
+  .onBeforeHandle(requireLocal)
   .get('/api/secrets', () => currentView())
   .post('/api/secrets', async ({ body, set }) => {
     const result = await applyPatch((body ?? {}) as SecretsPatch)

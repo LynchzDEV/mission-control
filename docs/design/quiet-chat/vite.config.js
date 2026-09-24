@@ -1,5 +1,4 @@
 import { fileURLToPath } from 'node:url'
-import { issueSessionToken, SESSION_COOKIE, SESSION_TTL_MS } from '../../../server/auth.ts'
 
 const origin = 'http://127.0.0.1:51947'
 
@@ -25,16 +24,11 @@ export default {
   plugins: [{
     name: 'local-workspace-access',
     configureServer(server) {
-      server.middlewares.use(async (request, response, next) => {
+      server.middlewares.use((request, response, next) => {
         if (!localRequestAllowed(request, origin)) { response.statusCode = 403; response.end('Local workspace access only'); return }
         if (/^\/api\/(jobs|flow|models|roles|studio\/workflows)(\?|$)/.test(request.url ?? '') && request.method !== 'GET') { response.statusCode = 405; response.end('Read-only activity'); return }
         response.setHeader('X-Frame-Options', 'DENY')
-        if (request.method === 'GET' && ['/', '/index.html'].includes(request.url?.split('?')[0])) {
-          try {
-            response.setHeader('Set-Cookie', `${SESSION_COOKIE}=${await issueSessionToken()}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`)
-            response.setHeader('Cache-Control', 'no-store')
-          } catch { response.statusCode = 503; response.end('Could not open the local workspace'); return }
-        }
+        if (request.method === 'GET' && ['/', '/index.html'].includes(request.url?.split('?')[0])) response.setHeader('Cache-Control', 'no-store')
         next()
       })
       server.httpServer?.prependListener('upgrade', (request, socket) => {

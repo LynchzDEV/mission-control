@@ -6,7 +6,6 @@ import { join } from 'node:path'
 
 import { Elysia } from 'elysia'
 
-import { SESSION_COOKIE, completeSetup, resetLoginLimiter } from '../server/auth'
 import { createApp } from '../server/index'
 import {
   CLOSE_TERMINAL_ENDED,
@@ -17,8 +16,6 @@ import {
 import { createTerminalRegistry, type TerminalRegistry } from '../server/terminals'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 
-const PASSWORD = 'correct-horse-battery'
-
 let configDir: string
 let repo: string
 let registry: TerminalRegistry
@@ -27,7 +24,6 @@ beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-terminals-routes-config-'))
   process.env.MISSION_CONTROL_CONFIG_DIR = configDir
   process.env.MC_FAKE_ENGINES = '1'
-  resetLoginLimiter()
 
   repo = await mkdtemp(join(homedir(), 'mc-terminals-routes-scratch-'))
   await initScratchGitRepo(repo)
@@ -38,36 +34,29 @@ afterEach(async () => {
   registry.shutdown()
   delete process.env.MISSION_CONTROL_CONFIG_DIR
   delete process.env.MC_FAKE_ENGINES
-  resetLoginLimiter()
   await rm(configDir, { recursive: true, force: true })
   await rm(repo, { recursive: true, force: true })
 })
-
-async function authCookie(): Promise<string> {
-  const result = await completeSetup(PASSWORD)
-  if (!result.ok) throw new Error('test harness setup failed')
-  return `${SESSION_COOKIE}=${result.token}`
-}
 
 function buildApp(): Elysia {
   return new Elysia().use(terminalsRoutes(registry))
 }
 
-function request(path: string, method: string, cookie?: string, body?: unknown): Request {
+const LOCAL = 'http://localhost'
+const REBIND = 'http://rebind.example'
+
+function request(path: string, method: string, origin = LOCAL, body?: unknown): Request {
   const headers: Record<string, string> = {}
-  if (cookie !== undefined) headers.cookie = cookie
   if (body !== undefined) headers['content-type'] = 'application/json'
-  return new Request(`http://localhost${path}`, {
+  return new Request(`${origin}${path}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   })
 }
 
-function formRequest(path: string, cookie: string | undefined, form: FormData): Request {
-  const headers: Record<string, string> = {}
-  if (cookie !== undefined) headers.cookie = cookie
-  return new Request(`http://localhost${path}`, { method: 'POST', headers, body: form })
+function formRequest(path: string, origin: string, form: FormData): Request {
+  return new Request(`${origin}${path}`, { method: 'POST', headers: { origin }, body: form })
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
@@ -98,9 +87,9 @@ type SocketProbe = {
   close(): Promise<void>
 }
 
-function openSocket(url: string, cookie?: string): SocketProbe {
+function openSocket(url: string, origin: string | null = 'http://127.0.0.1'): SocketProbe {
   const socket = new WebSocket(url, {
-    headers: cookie === undefined ? {} : { cookie },
+    headers: origin === null ? {} : { origin },
   } as unknown as string[])
   const received: string[] = []
   const closes: Array<{ code: number; reason: string }> = []
@@ -140,57 +129,52 @@ function openSocket(url: string, cookie?: string): SocketProbe {
 
 describe('PATCH /api/terminals/:id', () => {
   test('renames a session and echoes the record', async () => {
-    const cookie = await authCookie()
     const app = buildApp()
-    const created = await app.handle(request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo }))
+    const created = await app.handle(request('/api/terminals', 'POST', LOCAL, { engine: 'claude', cwd: repo }))
     const { id } = (await created.json()) as { id: string }
 
-    const renamed = await app.handle(request(`/api/terminals/${id}`, 'PATCH', cookie, { title: ' deploy box ' }))
+    const renamed = await app.handle(request(`/api/terminals/${id}`, 'PATCH', LOCAL, { title: ' deploy box ' }))
     expect(renamed.status).toBe(200)
     expect(((await renamed.json()) as { title: string }).title).toBe('deploy box')
     expect(registry.get(id)?.title).toBe('deploy box')
   })
 
-  test('rejects unauthenticated, blank-title, and unknown-id requests', async () => {
-    const cookie = await authCookie()
+  test('rejects rebinding-host, blank-title, and unknown-id requests', async () => {
     const app = buildApp()
-    const created = await app.handle(request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo }))
+    const created = await app.handle(request('/api/terminals', 'POST', LOCAL, { engine: 'claude', cwd: repo }))
     const { id } = (await created.json()) as { id: string }
 
-    expect((await app.handle(request(`/api/terminals/${id}`, 'PATCH', undefined, { title: 'x' }))).status).toBe(401)
-    expect((await app.handle(request(`/api/terminals/${id}`, 'PATCH', cookie, { title: '  ' }))).status).toBe(400)
-    expect((await app.handle(request(`/api/terminals/${id}`, 'PATCH', cookie, {}))).status).toBe(400)
-    expect((await app.handle(request('/api/terminals/nope', 'PATCH', cookie, { title: 'x' }))).status).toBe(404)
+    expect((await app.handle(request(`/api/terminals/${id}`, 'PATCH', REBIND, { title: 'x' }))).status).toBe(403)
+    expect((await app.handle(request(`/api/terminals/${id}`, 'PATCH', LOCAL, { title: '  ' }))).status).toBe(400)
+    expect((await app.handle(request(`/api/terminals/${id}`, 'PATCH', LOCAL, {}))).status).toBe(400)
+    expect((await app.handle(request('/api/terminals/nope', 'PATCH', LOCAL, { title: 'x' }))).status).toBe(404)
   })
 })
 
 describe('POST /api/terminals', () => {
-  test('rejects an unauthenticated request', async () => {
+  test('rejects a rebinding host', async () => {
     const response = await buildApp().handle(
-      request('/api/terminals', 'POST', undefined, { engine: 'claude', cwd: repo }),
+      request('/api/terminals', 'POST', REBIND, { engine: 'claude', cwd: repo }),
     )
-    expect(response.status).toBe(401)
+    expect(response.status).toBe(403)
   })
 
   test('rejects an incomplete payload', async () => {
-    const cookie = await authCookie()
-    const response = await buildApp().handle(request('/api/terminals', 'POST', cookie, { engine: 'claude' }))
+    const response = await buildApp().handle(request('/api/terminals', 'POST', LOCAL, { engine: 'claude' }))
     expect(response.status).toBe(400)
   })
 
   test('rejects a cwd outside HOME', async () => {
-    const cookie = await authCookie()
     const response = await buildApp().handle(
-      request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: '/tmp' }),
+      request('/api/terminals', 'POST', LOCAL, { engine: 'claude', cwd: '/tmp' }),
     )
     expect(response.status).toBe(400)
     expect(((await response.json()) as { error: string }).error).toBe('cwd must be under $HOME')
   })
 
   test('rejects glm while the z.ai token is unconfigured', async () => {
-    const cookie = await authCookie()
     const response = await buildApp().handle(
-      request('/api/terminals', 'POST', cookie, { engine: 'glm', cwd: repo }),
+      request('/api/terminals', 'POST', LOCAL, { engine: 'glm', cwd: repo }),
     )
     expect(response.status).toBe(400)
     expect(((await response.json()) as { error: string }).error).toBe(
@@ -199,38 +183,36 @@ describe('POST /api/terminals', () => {
   })
 
   test('creates a session that then appears in the list', async () => {
-    const cookie = await authCookie()
     const app = buildApp()
     const created = await app.handle(
-      request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo, cols: 100, rows: 40 }),
+      request('/api/terminals', 'POST', LOCAL, { engine: 'claude', cwd: repo, cols: 100, rows: 40 }),
     )
     expect(created.status).toBe(200)
     const terminal = (await created.json()) as { id: string; engine: string; pid: number }
     expect(terminal.engine).toBe('claude')
     expect(terminal.pid).toBeGreaterThan(0)
 
-    const listed = await app.handle(request('/api/terminals', 'GET', cookie))
+    const listed = await app.handle(request('/api/terminals', 'GET'))
     const { sessions } = (await listed.json()) as { sessions: Array<{ id: string }> }
     expect(sessions.map((entry) => entry.id)).toEqual([terminal.id])
   })
 
   test('accepts an optional model and rejects one longer than 100 characters', async () => {
-    const cookie = await authCookie()
     const app = buildApp()
 
     const created = await app.handle(
-      request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo, model: 'opus' }),
+      request('/api/terminals', 'POST', LOCAL, { engine: 'claude', cwd: repo, model: 'opus' }),
     )
     expect(created.status).toBe(200)
     const terminal = (await created.json()) as { id: string }
 
     expect(
-      (await app.handle(request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo, model: '' })))
+      (await app.handle(request('/api/terminals', 'POST', LOCAL, { engine: 'claude', cwd: repo, model: '' })))
         .status,
     ).toBe(200)
 
     const tooLong = await app.handle(
-      request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo, model: 'x'.repeat(101) }),
+      request('/api/terminals', 'POST', LOCAL, { engine: 'claude', cwd: repo, model: 'x'.repeat(101) }),
     )
     expect(tooLong.status).toBe(400)
     expect(await tooLong.json()).toEqual({ error: 'model too long' })
@@ -240,31 +222,29 @@ describe('POST /api/terminals', () => {
 })
 
 describe('GET /api/terminals', () => {
-  test('rejects an unauthenticated request', async () => {
-    const response = await buildApp().handle(request('/api/terminals', 'GET'))
-    expect(response.status).toBe(401)
+  test('rejects a rebinding host', async () => {
+    const response = await buildApp().handle(request('/api/terminals', 'GET', REBIND))
+    expect(response.status).toBe(403)
   })
 })
 
 describe('DELETE /api/terminals/:id', () => {
-  test('rejects an unauthenticated request', async () => {
-    const response = await buildApp().handle(request('/api/terminals/missing', 'DELETE'))
-    expect(response.status).toBe(401)
+  test('rejects a rebinding host', async () => {
+    const response = await buildApp().handle(request('/api/terminals/missing', 'DELETE', REBIND))
+    expect(response.status).toBe(403)
   })
 
   test('404s for an unknown id', async () => {
-    const cookie = await authCookie()
-    const response = await buildApp().handle(request('/api/terminals/missing', 'DELETE', cookie))
+    const response = await buildApp().handle(request('/api/terminals/missing', 'DELETE'))
     expect(response.status).toBe(404)
   })
 
   test('kills the pty process', async () => {
-    const cookie = await authCookie()
     const app = buildApp()
-    const created = await app.handle(request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo }))
+    const created = await app.handle(request('/api/terminals', 'POST', LOCAL, { engine: 'claude', cwd: repo }))
     const terminal = (await created.json()) as { id: string; pid: number }
 
-    const deleted = await app.handle(request(`/api/terminals/${terminal.id}`, 'DELETE', cookie))
+    const deleted = await app.handle(request(`/api/terminals/${terminal.id}`, 'DELETE'))
     expect(deleted.status).toBe(200)
     await waitFor(() => !processAlive(terminal.pid))
     expect(processAlive(terminal.pid)).toBe(false)
@@ -294,12 +274,24 @@ describe('readSocketMessage', () => {
 })
 
 describe('WS /ws/terminal/:id', () => {
-  test('refuses the upgrade without a session cookie', async () => {
+  test('refuses the upgrade without an Origin', async () => {
     const app = buildApp()
     const server = app.listen({ hostname: '127.0.0.1', port: 0 })
     const port = server.server?.port
     try {
-      const probe = openSocket(`ws://127.0.0.1:${port}/ws/terminal/anything`)
+      const probe = openSocket(`ws://127.0.0.1:${port}/ws/terminal/anything`, null)
+      await expect(probe.opened).rejects.toBeDefined()
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('refuses the upgrade from a foreign Origin', async () => {
+    const app = buildApp()
+    const server = app.listen({ hostname: '127.0.0.1', port: 0 })
+    const port = server.server?.port
+    try {
+      const probe = openSocket(`ws://127.0.0.1:${port}/ws/terminal/anything`, 'https://evil.example')
       await expect(probe.opened).rejects.toBeDefined()
     } finally {
       server.stop(true)
@@ -307,12 +299,11 @@ describe('WS /ws/terminal/:id', () => {
   })
 
   test('closes immediately for an unknown terminal id', async () => {
-    const cookie = await authCookie()
     const app = buildApp()
     const server = app.listen({ hostname: '127.0.0.1', port: 0 })
     const port = server.server?.port
     try {
-      const probe = openSocket(`ws://127.0.0.1:${port}/ws/terminal/missing`, cookie)
+      const probe = openSocket(`ws://127.0.0.1:${port}/ws/terminal/missing`)
       await probe.opened
       await waitFor(() => probe.closes.length > 0)
       expect(probe.closes[0]?.code).toBe(CLOSE_TERMINAL_NOT_FOUND)
@@ -322,25 +313,24 @@ describe('WS /ws/terminal/:id', () => {
   })
 
   test('bridges keystrokes to the pty, replays on reattach, and applies resize', async () => {
-    const cookie = await authCookie()
     const app = buildApp()
     const server = app.listen({ hostname: '127.0.0.1', port: 0 })
     const port = server.server?.port
 
     try {
       const created = await app.handle(
-        request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo, cols: 80, rows: 24 }),
+        request('/api/terminals', 'POST', LOCAL, { engine: 'claude', cwd: repo, cols: 80, rows: 24 }),
       )
       const terminal = (await created.json()) as { id: string; pid: number }
       const url = `ws://127.0.0.1:${port}/ws/terminal/${terminal.id}`
 
-      const first = openSocket(url, cookie)
+      const first = openSocket(url)
       await first.opened
       first.send('echo ws-bridge-hi\n')
       await waitFor(() => first.text().includes('ws-bridge-hi'))
       await first.close()
 
-      const second = openSocket(url, cookie)
+      const second = openSocket(url)
       await second.opened
       await waitFor(() => second.text().includes('ws-bridge-hi'))
       expect(second.text()).toContain('ws-bridge-hi')
@@ -360,20 +350,19 @@ describe('WS /ws/terminal/:id', () => {
   })
 
   test('closes the attached socket when the session is deleted', async () => {
-    const cookie = await authCookie()
     const app = buildApp()
     const server = app.listen({ hostname: '127.0.0.1', port: 0 })
     const port = server.server?.port
 
     try {
       const created = await app.handle(
-        request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo }),
+        request('/api/terminals', 'POST', LOCAL, { engine: 'claude', cwd: repo }),
       )
       const terminal = (await created.json()) as { id: string }
-      const probe = openSocket(`ws://127.0.0.1:${port}/ws/terminal/${terminal.id}`, cookie)
+      const probe = openSocket(`ws://127.0.0.1:${port}/ws/terminal/${terminal.id}`)
       await probe.opened
 
-      await app.handle(request(`/api/terminals/${terminal.id}`, 'DELETE', cookie))
+      await app.handle(request(`/api/terminals/${terminal.id}`, 'DELETE'))
       await waitFor(() => probe.closes.length > 0)
       expect(probe.closes[0]?.code).toBe(CLOSE_TERMINAL_ENDED)
     } finally {
@@ -383,50 +372,41 @@ describe('WS /ws/terminal/:id', () => {
 })
 
 describe('mounted in the real app', () => {
-  test('createApp wires the terminals routes behind the session guard', async () => {
+  test('createApp wires the terminals routes behind the local-access guard', async () => {
     const app = await createApp()
 
-    const unauthed = await app.handle(request('/api/terminals', 'GET'))
-    expect(unauthed.status).toBe(401)
+    const rebound = await app.handle(request('/api/terminals', 'GET', REBIND))
+    expect(rebound.status).toBe(403)
 
-    const setup = await app.handle(request('/api/setup', 'POST', undefined, { password: PASSWORD }))
-    const cookie = setup.headers
-      .getSetCookie()
-      .find((entry) => entry.startsWith(`${SESSION_COOKIE}=`))
-      ?.split(';')[0]
-    expect(cookie).toBeDefined()
-
-    const listed = await app.handle(request('/api/terminals', 'GET', cookie))
+    const listed = await app.handle(request('/api/terminals', 'GET'))
     expect(listed.status).toBe(200)
     expect(await listed.json()).toEqual({ sessions: [] })
   })
 })
 
 describe('POST /api/terminals/drops', () => {
-  test('rejects an unauthenticated request', async () => {
+  test('rejects a rebinding host', async () => {
     const form = new FormData()
     form.append('file', new File(['x'], 'a.txt'))
-    const response = await buildApp().handle(formRequest('/api/terminals/drops', undefined, form))
-    expect(response.status).toBe(401)
+    const response = await buildApp().handle(formRequest('/api/terminals/drops', REBIND, form))
+    expect(response.status).toBe(403)
   })
 
   test('rejects a request without a file', async () => {
-    const cookie = await authCookie()
     const form = new FormData()
     form.append('lastModified', '1')
-    const response = await buildApp().handle(formRequest('/api/terminals/drops', cookie, form))
+    const response = await buildApp().handle(formRequest('/api/terminals/drops', LOCAL, form))
     expect(response.status).toBe(400)
     expect(((await response.json()) as { error: string }).error).toBe('file is required')
   })
 
   test('saves an unknown file under the config dir and returns the copy', async () => {
-    const cookie = await authCookie()
     const app = new Elysia().use(terminalsRoutes(registry, { find: async () => null }))
     const payload = 'drop me'
     const form = new FormData()
     form.append('file', new File([payload], 'note.txt'))
     form.append('lastModified', '1700000000000')
-    const response = await app.handle(formRequest('/api/terminals/drops', cookie, form))
+    const response = await app.handle(formRequest('/api/terminals/drops', LOCAL, form))
     expect(response.status).toBe(200)
     const data = (await response.json()) as { path: string; original: boolean }
     expect(data.original).toBe(false)
@@ -436,11 +416,10 @@ describe('POST /api/terminals/drops', () => {
   })
 
   test('returns the original path from the finder without saving', async () => {
-    const cookie = await authCookie()
     const app = new Elysia().use(terminalsRoutes(registry, { find: async () => '/tmp/x.png' }))
     const form = new FormData()
     form.append('file', new File(['x'], 'x.png'))
-    const response = await app.handle(formRequest('/api/terminals/drops', cookie, form))
+    const response = await app.handle(formRequest('/api/terminals/drops', LOCAL, form))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ path: '/tmp/x.png', original: true })
     expect(await exists(join(configDir, 'drops', 'x.png'))).toBe(false)
@@ -448,29 +427,26 @@ describe('POST /api/terminals/drops', () => {
 })
 
 describe('GET /api/terminals/sessions', () => {
-  test('rejects an unauthenticated request', async () => {
-    const response = await buildApp().handle(request('/api/terminals/sessions?cwd=/x', 'GET'))
-    expect(response.status).toBe(401)
+  test('rejects a rebinding host', async () => {
+    const response = await buildApp().handle(request('/api/terminals/sessions?cwd=/x', 'GET', REBIND))
+    expect(response.status).toBe(403)
   })
 
   test('requires a cwd', async () => {
-    const cookie = await authCookie()
-    const response = await buildApp().handle(request('/api/terminals/sessions', 'GET', cookie))
+    const response = await buildApp().handle(request('/api/terminals/sessions', 'GET'))
     expect(response.status).toBe(400)
     expect(((await response.json()) as { error: string }).error).toBe('cwd is required')
   })
 
   test('rejects a cwd outside HOME', async () => {
-    const cookie = await authCookie()
     const response = await buildApp().handle(
-      request('/api/terminals/sessions?cwd=%2Ftmp', 'GET', cookie),
+      request('/api/terminals/sessions?cwd=%2Ftmp', 'GET'),
     )
     expect(response.status).toBe(400)
     expect(((await response.json()) as { error: string }).error).toBe('cwd must be under $HOME')
   })
 
   test('lists sessions for the validated cwd via the injectable helper', async () => {
-    const cookie = await authCookie()
     const seen: string[] = []
     const fixed = [{ id: 's1', title: 'old chat', startedAt: null, updatedAt: 1, bytes: 2 }]
     const app = new Elysia().use(
@@ -482,7 +458,7 @@ describe('GET /api/terminals/sessions', () => {
       }),
     )
     const response = await app.handle(
-      request(`/api/terminals/sessions?cwd=${encodeURIComponent(repo)}`, 'GET', cookie),
+      request(`/api/terminals/sessions?cwd=${encodeURIComponent(repo)}`, 'GET'),
     )
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ sessions: fixed })
@@ -492,18 +468,16 @@ describe('GET /api/terminals/sessions', () => {
 
 describe('POST /api/terminals with resumeSessionId', () => {
   test('rejects a malformed session id', async () => {
-    const cookie = await authCookie()
     const response = await buildApp().handle(
-      request('/api/terminals', 'POST', cookie, { engine: 'claude', cwd: repo, resumeSessionId: 'nope' }),
+      request('/api/terminals', 'POST', LOCAL, { engine: 'claude', cwd: repo, resumeSessionId: 'nope' }),
     )
     expect(response.status).toBe(400)
     expect(((await response.json()) as { error: string }).error).toBe('invalid session id')
   })
 
   test('rejects codex', async () => {
-    const cookie = await authCookie()
     const response = await buildApp().handle(
-      request('/api/terminals', 'POST', cookie, {
+      request('/api/terminals', 'POST', LOCAL, {
         engine: 'codex',
         cwd: repo,
         resumeSessionId: 'a1b2c3d4-e5f6-a1b2-c3d4-e5f6a1b2c3d4',
@@ -516,9 +490,8 @@ describe('POST /api/terminals with resumeSessionId', () => {
   })
 
   test('resumes a claude session with a custom title', async () => {
-    const cookie = await authCookie()
     const created = await buildApp().handle(
-      request('/api/terminals', 'POST', cookie, {
+      request('/api/terminals', 'POST', LOCAL, {
         engine: 'claude',
         cwd: repo,
         resumeSessionId: 'a1b2c3d4-e5f6-a1b2-c3d4-e5f6a1b2c3d4',

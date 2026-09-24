@@ -5,14 +5,12 @@ import { join } from 'node:path'
 
 import { Elysia } from 'elysia'
 
-import { SESSION_COOKIE, completeSetup, resetLoginLimiter } from '../server/auth'
 import { createApp } from '../server/index'
 import { createJobManager, type JobManager, type JobRecord } from '../server/jobs'
 import { BLOCK_MS, blockClock, createTokenSampler, tokensPerMinute } from '../server/meta'
 import type { QuotaComposite } from '../server/quota'
 import { metaRoutes } from '../server/routes/meta'
 
-const PASSWORD = 'correct-horse-battery'
 const NOW = Date.parse('2026-08-28T12:00:00.000Z')
 const MINUTE = 60_000
 
@@ -21,12 +19,10 @@ let configDir: string
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-meta-'))
   process.env.MISSION_CONTROL_CONFIG_DIR = configDir
-  resetLoginLimiter()
 })
 
 afterEach(async () => {
   delete process.env.MISSION_CONTROL_CONFIG_DIR
-  resetLoginLimiter()
   await rm(configDir, { recursive: true, force: true })
 })
 
@@ -157,21 +153,14 @@ function stubManager(jobs: JobRecord[]): JobManager {
   return { ...base, listJobs: () => jobs }
 }
 
-async function authCookie(): Promise<string> {
-  const result = await completeSetup(PASSWORD)
-  if (!result.ok) throw new Error('test harness setup failed')
-  return `${SESSION_COOKIE}=${result.token}`
-}
-
 describe('GET /api/meta', () => {
-  test('requires a session', async () => {
+  test('refuses a rebinding host', async () => {
     const app = new Elysia().use(metaRoutes(createJobManager()))
-    const response = await app.handle(new Request('http://localhost/api/meta'))
-    expect(response.status).toBe(401)
+    const response = await app.handle(new Request('http://rebind.example/api/meta'))
+    expect(response.status).toBe(403)
   })
 
   test('serves the live block clock, slope, and pending review count', async () => {
-    const cookie = await authCookie()
     const sampler = createTokenSampler()
     sampler.record(1_000, NOW)
     sampler.record(4_000, NOW + MINUTE)
@@ -185,7 +174,7 @@ describe('GET /api/meta', () => {
       }),
     )
 
-    const response = await app.handle(new Request('http://localhost/api/meta', { headers: { cookie } }))
+    const response = await app.handle(new Request('http://localhost/api/meta'))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
       source: 'live',
@@ -196,7 +185,6 @@ describe('GET /api/meta', () => {
   })
 
   test('serves a null block clock and slope when the quota has neither', async () => {
-    const cookie = await authCookie()
     const app = new Elysia().use(
       metaRoutes(stubManager([]), {
         quota: quotaWith(null),
@@ -205,7 +193,7 @@ describe('GET /api/meta', () => {
       }),
     )
 
-    const response = await app.handle(new Request('http://localhost/api/meta', { headers: { cookie } }))
+    const response = await app.handle(new Request('http://localhost/api/meta'))
     const body = (await response.json()) as { blockClock: unknown; tokPerMin: unknown; reviewCount: number }
     expect(body.blockClock).toBeNull()
     expect(body.tokPerMin).toBeNull()
@@ -213,9 +201,9 @@ describe('GET /api/meta', () => {
   })
 
   // The authed path is covered above with an injected quota; hitting it here would shell out to ccusage.
-  test('is mounted in the real app behind the session guard', async () => {
+  test('is mounted in the real app behind the local-access guard', async () => {
     const app = await createApp()
-    expect((await app.handle(new Request('http://localhost/api/meta'))).status).toBe(401)
+    expect((await app.handle(new Request('http://rebind.example/api/meta'))).status).toBe(403)
     expect((await app.handle(new Request('http://localhost/api/meta-nope'))).status).toBe(404)
   })
 })

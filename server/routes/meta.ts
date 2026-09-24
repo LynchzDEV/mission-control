@@ -1,6 +1,6 @@
 import { Elysia } from 'elysia'
 
-import { requireSession } from '../auth'
+import { requireLocal } from '../auth'
 import { countPendingReviews } from '../flow'
 import type { JobManager } from '../jobs'
 import { blockClock, type BlockClock, type TokenSampler } from '../meta'
@@ -35,5 +35,5 @@ export function metaRoutes(manager: JobManager, deps: Partial<MetaDeps> = {}): E
     sampler: deps.sampler ?? tokenSampler,
     now: deps.now ?? Date.now,
   }
-  return new Elysia().onBeforeHandle(requireSession).get('/api/meta', () => metaSnapshot(manager, resolved))
+  return new Elysia().onBeforeHandle(requireLocal).get('/api/meta', () => metaSnapshot(manager, resolved))
 }

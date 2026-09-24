@@ -5,45 +5,32 @@ import { join } from 'node:path'
 
 import type { Elysia } from 'elysia'
 
-import { SESSION_COOKIE, resetLoginLimiter } from '../server/auth'
 import { createApp } from '../server/index'
 import { readApiToken } from '../server/secrets'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 
-const PASSWORD = 'correct-horse-battery'
+const NON_LOCAL = 'http://rebind.example'
 
 let configDir: string
 let repo: string
 let app: Elysia
-let cookie: string
 let apiToken: string
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-api-token-config-'))
   process.env.MISSION_CONTROL_CONFIG_DIR = configDir
   process.env.MC_FAKE_ENGINES = '1'
-  resetLoginLimiter()
 
   repo = await mkdtemp(join(homedir(), 'mc-api-token-scratch-'))
   await initScratchGitRepo(repo)
 
   app = await createApp()
-  const setup = await app.handle(
-    new Request('http://localhost/api/setup', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: PASSWORD }),
-    }),
-  )
-  const jar = setup.headers.getSetCookie()
-  cookie = (jar.find((entry) => entry.startsWith(`${SESSION_COOKIE}=`)) as string).split(';')[0] as string
   apiToken = await readApiToken()
 })
 
 afterEach(async () => {
   delete process.env.MISSION_CONTROL_CONFIG_DIR
   delete process.env.MC_FAKE_ENGINES
-  resetLoginLimiter()
   await rm(configDir, { recursive: true, force: true })
   await rm(repo, { recursive: true, force: true })
 })
@@ -51,7 +38,7 @@ afterEach(async () => {
 function bearer(path: string, method = 'GET', body?: unknown): Request {
   const headers: Record<string, string> = { authorization: `Bearer ${apiToken}` }
   if (body !== undefined) headers['content-type'] = 'application/json'
-  return new Request(`http://localhost${path}`, {
+  return new Request(`${NON_LOCAL}${path}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -81,25 +68,25 @@ describe('bearer token scope', () => {
   })
 
   test('is rejected on /api/secrets and /api/terminals', async () => {
-    expect((await app.handle(bearer('/api/secrets'))).status).toBe(401)
-    expect((await app.handle(bearer('/api/terminals'))).status).toBe(401)
-    expect((await app.handle(bearer('/api/secrets/api-token/reveal', 'POST', {}))).status).toBe(401)
+    expect((await app.handle(bearer('/api/secrets'))).status).toBe(403)
+    expect((await app.handle(bearer('/api/terminals'))).status).toBe(403)
+    expect((await app.handle(bearer('/api/secrets/api-token/reveal', 'POST', {}))).status).toBe(403)
   })
 
   test('a wrong token is rejected everywhere', async () => {
     const headers = { authorization: 'Bearer mct_wrong-token-value' }
-    expect((await app.handle(new Request('http://localhost/api/jobs', { headers }))).status).toBe(401)
-    expect((await app.handle(new Request('http://localhost/api/flow', { headers }))).status).toBe(401)
+    expect((await app.handle(new Request(`${NON_LOCAL}/api/jobs`, { headers }))).status).toBe(403)
+    expect((await app.handle(new Request(`${NON_LOCAL}/api/flow`, { headers }))).status).toBe(403)
   })
 
-  test('reveal still requires a cookie even with a valid bearer token on an unrelated request', async () => {
+  test('reveal stays out of token scope even with a valid bearer token', async () => {
     const response = await app.handle(
-      new Request('http://localhost/api/secrets/api-token/reveal', {
+      new Request(`${NON_LOCAL}/api/secrets/api-token/reveal`, {
         method: 'POST',
         headers: { authorization: `Bearer ${apiToken}` },
       }),
     )
-    expect(response.status).toBe(401)
+    expect(response.status).toBe(403)
   })
 
   test('works for POST /api/flow/:label/archive and /unarchive', async () => {
@@ -109,8 +96,8 @@ describe('bearer token scope', () => {
     expect(unarchived.status).toBe(200)
   })
 
-  test('the cookie flow still works alongside the token scope', async () => {
-    const response = await app.handle(new Request('http://localhost/api/jobs', { headers: { cookie } }))
+  test('a plain local request works alongside the token scope', async () => {
+    const response = await app.handle(new Request('http://localhost/api/jobs'))
     expect(response.status).toBe(200)
   })
 })
@@ -120,6 +107,6 @@ test('dispatch tokens can read workflow versions but cannot edit policy or conne
   expect((await app.handle(bearer('/api/studio/policy'))).status).toBe(200)
   expect((await app.handle(bearer('/api/studio/runs'))).status).toBe(200)
   for (const path of ['/api/studio/workflows', '/api/studio/policy', '/api/studio/connections', '/api/studio/default', '/api/studio/drafts', '/api/studio/drafts/unknown/stop']) {
-    expect((await app.handle(bearer(path, 'POST', {}))).status).toBe(401)
+    expect((await app.handle(bearer(path, 'POST', {}))).status).toBe(403)
   }
 })

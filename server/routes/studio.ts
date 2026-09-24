@@ -1,6 +1,6 @@
 import { Elysia } from 'elysia'
 import { z } from 'zod'
-import { requireSession } from '../auth'
+import { requireLocal } from '../auth'
 import { BUILTIN_AGENTS, CONNECTION_PRESETS, createConnectionStore } from '../agent-connections'
 import { listModels } from '../models'
 import { modelsCache } from './models'
@@ -13,7 +13,7 @@ import { join } from 'node:path'
 export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, builder?: WorkflowBuilder) {
   const connections = createConnectionStore()
   return new Elysia()
-    .onBeforeHandle(requireSession)
+    .onBeforeHandle(requireLocal)
     .onError(({ error, set }) => {
       set.status = 400
       return { error: error instanceof Error ? error.message : 'Studio request failed' }

@@ -2,19 +2,10 @@ import { stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 import { staticPlugin } from '@elysiajs/static'
-import { cookie } from '@elysiajs/cookie'
 import { Elysia } from 'elysia'
 
-import {
-  MIN_PASSWORD_LENGTH,
-  SESSION_COOKIE,
-  SESSION_TTL_MS,
-  attemptLogin,
-  completeSetup,
-  isSetupComplete,
-  verifyCookieHeader,
-} from './auth'
 import { maybeAutoReview } from './auto-review'
+import { localRequestAllowed } from './local-access'
 import { quotaRoutes } from './routes/quota'
 import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
 import { createJobManager } from './jobs'
@@ -40,7 +31,6 @@ import { claudeSkillsDir, describeSkillInstall, installSkills } from './skill-in
 import { syncEngineAssets } from './engine-assets'
 import { DispatchPage } from './views/dispatch'
 import { LanesPage } from './views/lanes'
-import { LoginPage, SetupPage } from './views/login'
 import { ReviewPage } from './views/review'
 import { SettingsPage } from './views/settings'
 import { TerminalsPage } from './views/terminals'
@@ -102,21 +92,13 @@ function page(markup: string): Response {
   return new Response(markup, { headers: HTML_HEADERS })
 }
 
-function setupPage(): Response {
-  return page(SetupPage({ minPasswordLength: MIN_PASSWORD_LENGTH }))
-}
-
-function loginPage(): Response {
-  return page(LoginPage())
-}
-
 async function appShellPage(): Promise<Response> {
   return page(await terminalsPage())
 }
 
 async function settingsPage(embedded = false): Promise<string> {
   const [view, config, models] = await Promise.all([currentView(), readConfig(), modelsCache.get()])
-  return SettingsPage({ ...view, embedded, roles: config.roles, autoReview: config.autoReview, models, minPasswordLength: MIN_PASSWORD_LENGTH })
+  return SettingsPage({ ...view, embedded, roles: config.roles, autoReview: config.autoReview, models })
 }
 
 async function dispatchPage(embedded = false): Promise<string> {
@@ -142,49 +124,12 @@ function tabPages() {
   const instance = new Elysia()
   for (const [path, view] of Object.entries(TAB_PAGES)) {
     instance.get(path, async ({ request, set }) => {
-      if (!(await verifyCookieHeader(request.headers.get('cookie')))) {
-        set.status = 302
-        set.headers.location = '/'
-        return ''
-      }
-      return page(await (new URL(request.url).searchParams.get('embed') === '1' || path === '/terminals' ? view(new URL(request.url).searchParams.get('embed') === '1') : terminalsPage()))
+      if (!localRequestAllowed(request)) { set.status = 403; return 'local access only' }
+      const embedded = new URL(request.url).searchParams.get('embed') === '1'
+      return page(await (embedded || path === '/terminals' ? view(embedded) : terminalsPage()))
     })
   }
   return instance
-}
-
-type CookieJar = Record<
-  string,
-  {
-    set(options: {
-      value: string
-      httpOnly?: boolean
-      sameSite?: 'lax' | 'strict' | 'none'
-      path?: string
-      maxAge?: number
-    }): void
-    remove(): void
-  }
->
-
-function grantSession(jar: CookieJar, token: string): void {
-  jar[SESSION_COOKIE]?.set({
-    value: token,
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: Math.floor(SESSION_TTL_MS / 1000),
-  })
-}
-
-type IpResolver = { requestIP?: (request: Request) => { address: string } | null } | null
-
-export function rateLimitKey(request: Request, server: IpResolver): string {
-  const address = server?.requestIP?.(request)?.address
-  if (typeof address === 'string' && address !== '') return address
-  const forwarded = request.headers.get('x-forwarded-for')
-  if (forwarded !== null && forwarded !== '') return forwarded.split(',')[0]!.trim()
-  return 'local'
 }
 
 async function publicDirExists(): Promise<boolean> {
@@ -234,11 +179,9 @@ export async function createApp(): Promise<Elysia> {
   await workflowBuilder.recover()
 
   const app = new Elysia()
-    .use(cookie())
-    .get('/', async ({ request }) => {
-      if (!(await isSetupComplete())) return setupPage()
-      if (await verifyCookieHeader(request.headers.get('cookie'))) return appShellPage()
-      return loginPage()
+    .get('/', async ({ request, set }) => {
+      if (!localRequestAllowed(request)) { set.status = 403; return 'local access only' }
+      return appShellPage()
     })
     .get('/js/:file', async ({ params, set }) => {
       if (params.file.endsWith('.css')) {
@@ -252,34 +195,6 @@ export async function createApp(): Promise<Elysia> {
         return { error: 'not found' }
       }
       return new Response(code, { headers: JS_HEADERS })
-    })
-    .post('/api/setup', async ({ body, cookie: jar, set }) => {
-      const result = await completeSetup((body as { password?: unknown } | null)?.password)
-      if (!result.ok) {
-        set.status = result.status
-        return { error: result.error }
-      }
-      grantSession(jar as unknown as CookieJar, result.token)
-      return { ok: true }
-    })
-    .post('/api/login', async ({ body, cookie: jar, request, server, set }) => {
-      const result = await attemptLogin(
-        (body as { password?: unknown } | null)?.password,
-        rateLimitKey(request, server as IpResolver),
-      )
-      if (!result.ok) {
-        set.status = result.status
-        if (result.retryAfterMs !== undefined) {
-          set.headers['retry-after'] = String(Math.ceil(result.retryAfterMs / 1000))
-        }
-        return { error: result.error }
-      }
-      grantSession(jar as unknown as CookieJar, result.token)
-      return { ok: true }
-    })
-    .post('/api/logout', ({ cookie: jar }) => {
-      ;(jar as unknown as CookieJar)[SESSION_COOKIE]?.remove()
-      return { ok: true }
     })
     .use(tabPages())
     .use(healthApi())

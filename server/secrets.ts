@@ -10,7 +10,6 @@ export const DEFAULT_ZAI_BASE_URL = 'https://api.z.ai/api/anthropic'
 export const DEFAULT_BIND = '127.0.0.1:7777'
 
 export const SECRETS_FILE = 'secrets.json'
-export const AUTH_FILE = 'auth.json'
 export const CONFIG_FILE = 'config.json'
 
 export const API_TOKEN_PREFIX = 'mct_'
@@ -19,11 +18,6 @@ export type Secrets = {
   zaiAuthToken: string | null
   zaiBaseUrl: string
   apiToken: string | null
-}
-
-export type AuthRecord = {
-  passwordHash: string | null
-  cookieSecret: string | null
 }
 
 export type RoleAssignment = { engine: string; model: string | null }
@@ -127,20 +121,6 @@ export async function rotateApiToken(): Promise<string> {
   const generated = generateApiToken()
   await writeSecrets({ apiToken: generated })
   return generated
-}
-
-export async function readAuthRecord(): Promise<AuthRecord> {
-  const raw = await readJsonFile(AUTH_FILE)
-  return {
-    passwordHash: asString(raw.passwordHash),
-    cookieSecret: asString(raw.cookieSecret),
-  }
-}
-
-export async function writeAuthRecord(patch: Partial<AuthRecord>): Promise<AuthRecord> {
-  const merged: AuthRecord = { ...(await readAuthRecord()), ...patch }
-  await writeJsonFile(AUTH_FILE, merged)
-  return merged
 }
 
 function readRoleAssignment(value: unknown, fallback: RoleAssignment): RoleAssignment {

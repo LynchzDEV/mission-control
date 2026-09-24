@@ -3,7 +3,8 @@ import { parseTranscript, readTranscriptTail, statTranscript, type TranscriptMes
 
 const transcriptCache = new Map<string, { key: string; messages: TranscriptMessage[] }>()
 
-import { requireSession, verifyCookieHeader } from '../auth'
+import { requireLocal } from '../auth'
+import { localRequestAllowed } from '../local-access'
 import { checkDropSize, findOriginalFile, saveDroppedCopy } from '../drops'
 import { MAX_MODEL_LENGTH } from '../engines'
 import { MAX_TITLE_LENGTH, normalizeTitle, type TerminalRegistry } from '../terminals'
@@ -55,7 +56,7 @@ function terminalApi(registry: TerminalRegistry, helpers: TerminalHelpers): Elys
   const save = helpers.save ?? saveDroppedCopy
   const sessionsFor = helpers.listSessions ?? listSessions
   return new Elysia()
-    .onBeforeHandle(requireSession)
+    .onBeforeHandle(requireLocal)
     .post('/api/terminals', async ({ body, set }) => {
       const payload = body as Record<string, unknown> | null
       if (typeof payload?.engine !== 'string' || typeof payload.cwd !== 'string') {
@@ -184,10 +185,10 @@ function terminalSocket(registry: TerminalRegistry): Elysia {
   }
 
   return new Elysia().ws('/ws/terminal/:id', {
-    async beforeHandle({ request, set }) {
-      if (await verifyCookieHeader(request.headers.get('cookie'))) return
-      set.status = 401
-      return { error: 'unauthorized' }
+    beforeHandle({ request, set }) {
+      if (localRequestAllowed(request) && request.headers.get('origin') !== null) return
+      set.status = 403
+      return 'local access only'
     },
     open(ws) {
       const id = ws.data.params.id

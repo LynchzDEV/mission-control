@@ -2,7 +2,7 @@ import { watch } from 'node:fs'
 
 import { Elysia } from 'elysia'
 
-import { requireSession } from '../auth'
+import { requireLocal } from '../auth'
 import { parseActivity } from '../activity'
 import type { CreateJobParams, JobManager } from '../jobs'
 import { readLogFile, readLogSince, readLogTail, redactSecrets, createLogRedactor } from '../jobs'
@@ -114,7 +114,7 @@ export function createLogStreamResponse(path: string, signal: AbortSignal, secre
 
 export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysia {
   return new Elysia()
-    .onBeforeHandle(requireSession)
+    .onBeforeHandle(requireLocal)
     .post('/api/jobs', async ({ body, set }) => {
       const payload = body as Partial<CreateJobParams> | null
       if (
