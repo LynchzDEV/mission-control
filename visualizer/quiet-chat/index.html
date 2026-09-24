@@ -7,6 +7,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="./style.css">
   <script type="module" src="./preview.js"></script>
+  <script type="module" src="./usage-card.js"></script>
 </head>
 <body>
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -20,6 +21,8 @@
     <symbol id="spark-icon" viewBox="0 0 24 24"><path d="m14 3 2.4 6.6L23 12l-6.6 2.4L14 21l-2.4-6.6L5 12l6.6-2.4L14 3ZM5 3l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z"/></symbol>
     <symbol id="lock-icon" viewBox="0 0 20 20"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M7 8V6a3 3 0 0 1 6 0v2M10 11v3"/></symbol>
     <symbol id="back-icon" viewBox="0 0 20 20"><path d="M16 10H4m5-5-5 5 5 5"/></symbol>
+    <symbol id="folder-icon" viewBox="0 0 20 20"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H8l1.5 2h6A1.5 1.5 0 0 1 17 8.5v6a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5Z"/></symbol>
+    <symbol id="open-icon" viewBox="0 0 20 20"><path d="M11 4h5v5M16 4l-7 7M14 12v3.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5H8"/></symbol>
   </svg>
   <main class="canvas">
     <header class="toolbar">
@@ -30,6 +33,14 @@
         <div id="new-chat-menu" popover aria-label="New chat options"><button id="new-conversation">Chat <small>Design preview</small></button><button data-live>Claude Code <small>Live session</small></button></div>
       </nav>
       <nav aria-label="Session activity">
+        <section class="usage-card" aria-label="Provider usage (sample)">
+          <div class="usage-track" id="usage-track">
+            <div class="usage-item" data-provider="claude"><div class="usage-head"><img src="./vendor/providers/claude.svg" alt=""><span>Claude</span><small>5h</small><strong>42%</strong></div><meter min="0" max="100" value="42"></meter><div class="usage-week"><span>Week</span><meter min="0" max="100" value="61"></meter><span>61%</span></div></div>
+            <div class="usage-item" data-provider="glm"><div class="usage-head"><img src="./vendor/providers/glm.svg" alt=""><span>GLM</span><small>5h</small><strong>18%</strong></div><meter min="0" max="100" value="18"></meter><div class="usage-week"><span>Week</span><meter min="0" max="100" value="34"></meter><span>34%</span></div></div>
+            <div class="usage-item" data-provider="codex"><div class="usage-head"><img src="./vendor/providers/codex.svg" alt=""><span>Codex</span><small>Week</small><strong>73%</strong></div><meter min="0" max="100" value="73"></meter></div>
+            <div class="usage-item" data-provider="qwen"><div class="usage-head"><img src="./vendor/providers/qwen.svg" alt=""><span>Qwen</span><small>5h</small><strong>7%</strong></div><meter min="0" max="100" value="7"></meter><div class="usage-week"><span>Week</span><meter min="0" max="100" value="12"></meter><span>12%</span></div></div>
+          </div>
+        </section>
         <button id="open-studio" class="pill" aria-pressed="false">Studio</button>
         <button id="open-agents" class="round quiet-control" aria-expanded="false" aria-controls="agents" aria-label="Agents" title="Agents"><svg><use href="#agents-icon"/></svg></button>
         <button id="toggle-flow" class="round quiet-control" aria-label="Flow" title="Flow" aria-expanded="false" aria-controls="flow"><svg><use href="#flow-icon"/></svg></button>
@@ -83,8 +94,7 @@
       </section>
 
       <section id="conversation" class="conversation content-width" aria-label="Conversation" hidden>
-        <p class="conversation-project">Mission Control</p>
-        <div id="messages" role="log" aria-live="polite"></div>
+        <div id="messages" class="chat" role="log" aria-live="polite"></div>
       </section>
 
       <section id="studio" class="studio" aria-label="Workflow Studio" hidden>
@@ -130,6 +140,7 @@ Assignment: {{assignment}}</textarea></label><p class="muted">Changes apply to f
       <form id="composer" class="composer nui-neuromorphic-inset">
         <button type="button" class="round" data-dialog="session" aria-label="Session settings" title="Session settings"><svg><use href="#plus-icon"/></svg></button>
         <button type="button" id="show-history" class="round" aria-label="Chat history" title="Chat history"><svg><use href="#history-icon"/></svg></button>
+        <span id="project-chip" class="project-chip" title="Project for this chat"><svg><use href="#folder-icon"/></svg><span>Mission Control</span></span>
         <textarea id="message" rows="1" placeholder="Write a message here…" aria-label="Message" required></textarea>
         <button type="submit" class="round send" aria-label="Send message" title="Send message"><svg><use href="#arrow-icon"/></svg></button>
       </form>
@@ -171,6 +182,42 @@ Assignment: {{assignment}}</textarea></label><p class="muted">Changes apply to f
     <header class="dialog-heading"><h2 id="session-title">Session</h2><form method="dialog"><button class="round" aria-label="Close session settings"><svg><use href="#close-icon"/></svg></button></form></header>
     <form method="dialog" class="session-form"><label>Project<select id="project"><option>Mission Control</option><option>Website</option></select></label><label>Engine<select id="engine"><option>Codex</option><option>Claude</option><option>GLM</option></select></label><button class="pill done">Done</button></form>
   </dialog>
+
+  <template id="assistant-row">
+    <div class="msg assistant"><span class="avatar"><svg><use href="#spark-icon"/></svg></span><div class="msg-body"><div class="msg-meta"><strong>Mission Control</strong><time>now</time></div></div></div>
+  </template>
+  <template id="reply-simplify">
+    <div class="md">
+      <p>Let's start small: <strong>one quiet canvas</strong>, your conversations, and a place to type. Agents and Flow stay within reach and open only when you need them.</p>
+      <p>I've split it into two steps:</p>
+      <ol>
+        <li><strong>Build</strong> the single-canvas layout in <code>server/views/terminals.tsx</code></li>
+        <li><strong>Review</strong> by a different AI family before anything lands</li>
+      </ol>
+    </div>
+    <article class="team-card">
+      <header><strong>Team for this task</strong><span class="muted">2 agents · <svg class="inline-icon"><use href="#folder-icon"/></svg>mission-control</span><button type="button" class="text-button" data-open-agents>Open in Agents <svg><use href="#open-icon"/></svg></button></header>
+      <ol>
+        <li data-engine="claude" data-state="running"><span class="engine-disc"><img src="./vendor/providers/claude.svg" alt="Claude"></span><div><strong>Build the quiet canvas</strong><small>Claude · sonnet — layout work across several views</small><p class="latest"><span class="pulse"></span>Editing <code>terminals.tsx</code></p></div><span class="state">Running · 4m</span></li>
+        <li data-engine="codex" data-state="queued"><span class="engine-disc"><img src="./vendor/providers/codex.svg" alt="Codex"></span><div><strong>Review the layout</strong><small>Codex · gpt-5.5 — a different family reviews</small></div><span class="state">Next</span></li>
+      </ol>
+      <div class="team-progress"><span style="width:40%"></span></div>
+    </article>
+  </template>
+  <template id="reply-reconnect">
+    <div class="md">
+      <p>I'll follow the connection lifecycle and check how a session resumes after a disconnect. The conversation should stay in place.</p>
+      <pre><code>socket.onclose = () =&gt; scheduleReconnect(terminalId)</code></pre>
+    </div>
+  </template>
+  <template id="reply-workflow">
+    <div class="md">
+      <p>I'll walk through creating a workflow, choosing its steps, and starting a session. Then I'll check where the first run can be <em>simpler</em>.</p>
+    </div>
+  </template>
+  <template id="reply-default">
+    <div class="md"><p>This is a design preview. A connected AI would answer here, and start agents when the work needs them.</p></div>
+  </template>
 
   <footer class="preview-footer"><span id="preview-label">Design preview · sample content</span> <a href="./README.md" target="_blank" rel="noopener">Sources</a></footer>
 </body>

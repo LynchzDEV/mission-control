@@ -2,9 +2,9 @@ const $ = id => document.getElementById(id)
 const screens = ['welcome', 'history', 'conversation', 'studio']
 let chatScreen = 'welcome'
 const responses = {
-  'Simplify the terminal page': 'Let’s start small. One quiet canvas, your conversations, and a place to type.\n\nAgents and flow will stay within reach, opening only when you need them.',
-  'Fix the session reconnect': 'I’ll follow the connection lifecycle and check how the session resumes after a disconnect. The conversation should stay in place.',
-  'Review the workflow builder': 'I’ll walk through creating a workflow, choosing its steps, and starting a session. Then I’ll check where we can simplify the first run.',
+  'Simplify the terminal page': 'reply-simplify',
+  'Fix the session reconnect': 'reply-reconnect',
+  'Review the workflow builder': 'reply-workflow',
 }
 
 function showScreen(name) {
@@ -56,16 +56,27 @@ function setActivity(active) {
   document.querySelectorAll('.activity-filled').forEach(node => { node.hidden = !active })
 }
 
-function appendMessage(text, className) {
-  const message = document.createElement('p')
-  message.className = className
-  message.textContent = text
-  $('messages').append(message)
+function appendUserMessage(text) {
+  const row = document.createElement('div')
+  const bubble = document.createElement('div')
+  row.className = 'msg user'
+  bubble.className = 'user-message'
+  bubble.textContent = text
+  row.append(bubble)
+  $('messages').append(row)
+}
+
+function appendAssistantMessage(templateId) {
+  const row = $('assistant-row').content.firstElementChild.cloneNode(true)
+  row.querySelector('time').textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  row.querySelector('.msg-body').append($(templateId).content.cloneNode(true))
+  row.querySelector('[data-open-agents]')?.addEventListener('click', () => $('open-agents').click())
+  $('messages').append(row)
 }
 
 function showConversation(prompt) {
-  appendMessage(prompt, 'user-message')
-  appendMessage(responses[prompt] ?? responses['Simplify the terminal page'], 'assistant-message')
+  appendUserMessage(prompt)
+  appendAssistantMessage(responses[prompt] ?? 'reply-default')
   showScreen('conversation')
   setActivity($('messages').firstElementChild?.textContent === 'Simplify the terminal page')
   const stage = document.querySelector('.stage')
@@ -140,7 +151,7 @@ $('agent-reply').onsubmit = event => {
   $('reply').value = ''
 }
 $('session').addEventListener('close', () => {
-  document.querySelector('.conversation-project').textContent = $('project').value
+  $('project-chip').lastElementChild.textContent = $('project').value
   $('message').setAttribute('aria-label', `Message ${$('engine').value} in ${$('project').value}`)
 })
 

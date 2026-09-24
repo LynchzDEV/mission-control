@@ -1,0 +1,3 @@
+Source: @lobehub/icons-static-svg 1.95.1 (MIT) — https://github.com/lobehub/lobe-icons
+claude.svg = claude-color.svg, codex.svg = codex-color.svg, glm.svg = zai.svg
+qwen.svg = qwen-color.svg

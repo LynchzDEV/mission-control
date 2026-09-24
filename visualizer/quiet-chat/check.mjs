@@ -70,7 +70,7 @@ try {
   await page.screenshot({ animations: 'disabled', path: new URL('conversation.png', output).pathname })
 
   await page.locator('#message').fill('Keep this draft')
-  const messageCount = await page.locator('#messages > p').count()
+  const messageCount = await page.locator('#messages > .msg').count()
   await page.getByRole('button', { name: 'Studio', exact: true }).click()
   await page.screenshot({ animations: 'disabled', path: new URL('studio-home.png', output).pathname })
   await page.getByRole('button', { name: 'Use the default' }).click()
@@ -79,7 +79,7 @@ try {
   await page.getByLabel('Step name', { exact: true }).fill('Implement')
   await page.screenshot({ animations: 'disabled', path: new URL('studio-editor.png', output).pathname })
   await page.getByRole('button', { name: 'Back to chat' }).click()
-  assert.equal(await page.locator('#messages > p').count(), messageCount)
+  assert.equal(await page.locator('#messages > .msg').count(), messageCount)
   assert.equal(await page.locator('#message').inputValue(), 'Keep this draft')
   await page.getByRole('button', { name: 'Studio', exact: true }).click()
   assert.equal(await page.getByLabel('Step name', { exact: true }).inputValue(), 'Implement')
