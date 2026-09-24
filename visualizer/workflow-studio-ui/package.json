@@ -1,0 +1,1 @@
+{"name":"mc-workflow-design","private":true,"type":"module","scripts":{"dev":"vite --host 127.0.0.1 --port 51943 --strictPort","build":"vite build"},"dependencies":{"@xyflow/react":"12.11.6","react":"19","react-dom":"19"},"devDependencies":{"vite":"8.3.0"}}
