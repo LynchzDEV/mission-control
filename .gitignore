@@ -5,3 +5,5 @@ public/ui-preview/
 .claude/
 .worktree
 .playwright-mcp/
+public/quiet-chat/
+visualizer/quiet-chat/screenshots/
