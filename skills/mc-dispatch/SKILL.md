@@ -271,6 +271,22 @@ phrasing. Check for a matching project memory before treating "done" as
 "tests pass". [daily-retro 2026-09-21 E09 — the same gap recurred
 2026-09-15, 2026-09-18, and 2026-09-21]
 
+**UI parity citation (ticket-specific acceptance, not part of the verbatim
+block):** any spec for an Army / Backoffice / Portal screen that has an
+equivalent in a sibling repo MUST name the sibling file(s) the worker copies
+its fields, layout AND user journey from (path + what to mirror), and the
+worker's report must cite them. No citation = not dispatched; the reviewer
+rejects a UI job whose report lacks it. This is the mechanical answer to the
+`design-from-source` clause 13 loop (prose failed at 63 recurrences; Army
+export mapping/variable/journey redesigned from mockups instead of backoffice
+on 2026-09-23). [daily-retro 2026-09-23 E01-E03]
+
+**"All N concerns pass?" answers are a table.** When the user asks whether the
+acceptance concerns pass, reply with one line per concern (1-5: PASS/FAIL +
+the evidence command), never a bare "yes" — the user asked twice in a row on
+2026-09-23 because the first answer carried no per-concern status.
+[daily-retro 2026-09-23 E09]
+
 ## Plan first (makes the cockpit graph real)
 
 Post the plan AS SOON AS it is agreed in discussion — do not wait for dispatch.
