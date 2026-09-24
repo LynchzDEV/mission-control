@@ -1,6 +1,6 @@
 ---
 name: mc-dispatch
-description: COCKPIT-FIRST implementation routing. Use for ANY implementation request — create/build/write/fix/add CODE that ships (features, fixes, scripts, pages) — whenever Mission Control is running (curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7777/api/health returns 200 — or 401 on pre-2026-09 builds; both mean UP, anything else means down). NOT for analysis output — scans, audits, reports, docs-vs-reality checks, codebase Q&A go to native Explore/read-only agents (writing the report file does NOT make it implementation); post a plan label to the cockpit for visibility instead. NEVER dispatch a user's meta/routing question as a job prompt — answer it. The session stays orchestrator (plan → post plan → dispatch → review); the labor runs as a cockpit job (engine per GET /api/roles: `execute` for jobs, `review` for cross-review) so the user sees it in the session flow, agents panel, and review queue. Also triggers on "dispatch to glm", "send to codex", "/mc-dispatch". Skip only when the cockpit is not running, or the work is judgment/prod-critical per the dispatch table.
+description: COCKPIT-FIRST implementation routing. Use for ANY implementation request — create/build/write/fix/add CODE that ships (features, fixes, scripts, pages) — whenever Mission Control is running (curl -s -o /dev/null -w '%{http_code}' ${MC_URL:-http://127.0.0.1:7777}/api/health returns 200 — or 401 on pre-2026-09 builds; both mean UP, anything else means down). NOT for analysis output — scans, audits, reports, docs-vs-reality checks, codebase Q&A go to native Explore/read-only agents (writing the report file does NOT make it implementation); post a plan label to the cockpit for visibility instead. NEVER dispatch a user's meta/routing question as a job prompt — answer it. The session stays orchestrator (plan → post plan → dispatch → review); the labor runs as a cockpit job (engine per GET /api/roles: `execute` for jobs, `review` for cross-review) so the user sees it in the session flow, agents panel, and review queue. Also triggers on "dispatch to glm", "send to codex", "/mc-dispatch". Skip only when the cockpit is not running, or the work is judgment/prod-critical per the dispatch table.
 ---
 
 # mc-dispatch — cross-engine dispatch via Mission Control
@@ -20,7 +20,43 @@ Then: implement directly in the working tree, never post a plan, never call
 creates a second job on the same tree (happened 2026-09-04, job 43ba1200 →
 cfb3ddde) and nothing lands in the parent's diff.
 
-Mission Control (the local cockpit at `http://127.0.0.1:7777`) runs jobs on other
+## Versioned workflow entry
+
+This linked skill is a stable entry point. Never write a run's workflow or
+instructions into this shared file. Mission Control composes the versioned
+core prompt, selected blueprint, and current assignment for each node.
+
+Use the terminal-provided `MC_URL` and `MISSION_CONTROL_CONFIG_DIR` for this
+service. Never send a terminal from one MC instance to another instance.
+When `MC_TERMINAL_ID` is present, start `POST /api/studio/runs` with
+`terminalId`, the terminal directory as `cwd`, `label`, and the complete
+user `request`. The server uses that terminal’s pinned workflow.
+`MC_WORKFLOW_ID` and `MC_WORKFLOW_REVISION` identify the selection; do not
+replace it with a newer global default. To choose another workflow or
+version, open a new terminal with that selection.
+
+Outside an MC terminal, read `GET /api/studio/workflows` after authenticating.
+Use its `selected` workflow unless the user named another saved blueprint.
+Start `POST /api/studio/runs` with `cwd`, `label`, and the complete user
+`request`; include `workflowId` and `revision` for an explicit selection.
+Omit those two fields to use the selected default. Read progress with
+`GET /api/studio/runs/:id`. The run snapshots its blueprint, core prompt,
+agent settings, and skill contents. Report its actual status and evidence.
+
+The server owns planning, plan verification, implementation, review, and
+custom nodes. Once a workflow run starts, do not also post legacy jobs,
+start a second review, or follow the legacy execution steps below. On a
+blocked or failed run, report the reason; `POST /api/studio/runs/:id/retry`
+repeats the current step with its original revisions and may repeat side
+effects, so use it only when the user's authorization covers that retry.
+
+Only a 404 from the workflows endpoint means this is an older server: use
+the legacy flow below then. Authentication or validation failures are not
+a reason to bypass the workflow. Core policy and connection settings are
+edited through Studio, separately from blueprint editing. Worker jobs must
+never call these orchestration endpoints.
+
+Mission Control (the local cockpit at `$MC_URL`) runs jobs on other
 engines: `glm` (GLM-5.3-Flash via z.ai — bulk implementation labor) and `codex`
 (Codex CLI — cross-family review / overflow). Dispatching through it (instead of
 raw `ccglm`/`codex exec`) gets you: session-flow tracking, live logs, diff-stat
@@ -28,17 +64,20 @@ capture, and the review queue.
 
 ## Auth
 
-Token lives in `~/.config/mission-control/secrets.json` field `apiToken` (starts
+Set `MC_URL=${MC_URL:-http://127.0.0.1:7777}` when the terminal has not supplied it.
+Token lives in `${MISSION_CONTROL_CONFIG_DIR:-$HOME/.config/mission-control}/secrets.json` field `apiToken` (starts
 `mct_`). It is LAZY-GENERATED: if the field is absent, fire one throwaway Bearer
-request first (`curl -s -o /dev/null -H "Authorization: Bearer probe" http://127.0.0.1:7777/api/flow`)
+request first (`curl -s -o /dev/null -H "Authorization: Bearer probe" $MC_URL/api/flow`)
 and re-read the file — never conclude the feature is missing from an absent key. Read it with a scoped jq/python read — NEVER print it:
 
 ```sh
-MC_TOKEN=$(python3 -c "import json;print(json.load(open('$HOME/.config/mission-control/secrets.json'))['apiToken'])")
+MC_TOKEN=$(python3 -c 'import json,os;print(json.load(open(os.path.join(os.environ.get("MISSION_CONTROL_CONFIG_DIR",os.path.expanduser("~/.config/mission-control")),"secrets.json")))["apiToken"])')
 ```
 
 All calls: `-H "Authorization: Bearer $MC_TOKEN"`. Scope covers /api/jobs*,
-/api/flow, /api/quota, /api/meta, /api/roles, /api/models only.
+/api/flow, /api/quota, /api/meta, /api/roles, /api/models, read-only Studio
+workflow/policy endpoints, and Studio run start/read/stop/retry. It cannot
+edit blueprints, core policy, or agent connections.
 
 ## Roles (which engine does what)
 
@@ -46,7 +85,7 @@ The cockpit Settings page maps `plan | execute | review` to engines. READ IT
 FIRST — never hardcode glm/codex:
 
 ```sh
-ROLES=$(curl -s -H "Authorization: Bearer $MC_TOKEN" http://127.0.0.1:7777/api/roles)   # {"plan":{"engine":"claude","model":null},"execute":{"engine":"glm","model":null},"review":{"engine":"codex","model":null}}
+ROLES=$(curl -s -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/roles)   # {"plan":{"engine":"claude","model":null},"execute":{"engine":"glm","model":null},"review":{"engine":"codex","model":null}}
 EXEC_ENGINE=$(printf '%s' "$ROLES" | python3 -c "import json,sys;print(json.load(sys.stdin)['execute']['engine'])")
 EXEC_MODEL=$(printf '%s' "$ROLES" | python3 -c "import json,sys;print(json.load(sys.stdin)['execute']['model'] or '')")
 REVIEW_ENGINE=$(printf '%s' "$ROLES" | python3 -c "import json,sys;print(json.load(sys.stdin)['review']['engine'])")
@@ -243,7 +282,7 @@ Post the plan for the ticket — the cockpit renders it as the
 session's node graph (one node per step, assignee-colored, live states):
 
 ```sh
-curl -s -X POST http://127.0.0.1:7777/api/flow/<label>/plan \
+curl -s -X POST $MC_URL/api/flow/<label>/plan \
   -H "Authorization: Bearer $MC_TOKEN" -H 'content-type: application/json' \
   -d '{"steps":[{"title":"<step>","assignee":"claude|glm|codex|user","status":"pending|active|done"}],"next":"<what happens after>"}'
 ```
@@ -273,7 +312,7 @@ twenty decisions is where "data in a migration" gets caught, not commit 12.
 ### Multi-task plan → the plan runner (default)
 
 ```sh
-curl -s -X POST "http://127.0.0.1:7777/api/flow/<label>/run" \
+curl -s -X POST "$MC_URL/api/flow/<label>/run" \
   -H "Authorization: Bearer $MC_TOKEN" -H 'content-type: application/json' \
   -d '{"engine":"'"$EXEC_ENGINE"'","model":"'"$EXEC_MODEL"'","cwd":"<ABS_PATH_GIT_REPO>","terminalId":"'"${MC_TERMINAL_ID:-}"'",
        "preamble":"<header + repo line + Decisions + Preserve + Constraints + acceptance baseline>",
@@ -297,7 +336,7 @@ curl -s -X POST "http://127.0.0.1:7777/api/flow/<label>/run" \
 ### Single task → one job
 
 ```sh
-curl -s -X POST http://127.0.0.1:7777/api/jobs \
+curl -s -X POST $MC_URL/api/jobs \
   -H "Authorization: Bearer $MC_TOKEN" -H 'content-type: application/json' \
   -d '{"engine":"'"$EXEC_ENGINE"'","model":"'"$EXEC_MODEL"'","cwd":"<ABS_PATH_GIT_REPO>","worktree":true,"label":"<kebab-ticket-name>","prompt":"<SELF-CONTAINED SPEC>","terminalId":"'"${MC_TERMINAL_ID:-}"'"}'
 ```
@@ -314,10 +353,10 @@ curl -s -X POST http://127.0.0.1:7777/api/jobs \
 ## Monitor
 
 ```sh
-curl -s -H "Authorization: Bearer $MC_TOKEN" http://127.0.0.1:7777/api/jobs            # {jobs:[...]} newest first
-curl -s -H "Authorization: Bearer $MC_TOKEN" http://127.0.0.1:7777/api/jobs/<id>/log   # full log
-curl -s -H "Authorization: Bearer $MC_TOKEN" http://127.0.0.1:7777/api/flow            # plans + stages + currentActivity per label
-curl -s -H "Authorization: Bearer $MC_TOKEN" http://127.0.0.1:7777/api/jobs/<id>/activity  # live feed: what the model is doing now
+curl -s -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/jobs            # {jobs:[...]} newest first
+curl -s -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/jobs/<id>/log   # full log
+curl -s -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/flow            # plans + stages + currentActivity per label
+curl -s -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/jobs/<id>/activity  # live feed: what the model is doing now
 ```
 
 Poll `/api/jobs` until the job's `status` is `done`/`failed` (spawn a background
@@ -328,7 +367,7 @@ Time budget — a small ticket (UI tweak, one endpoint, a fix) should finish in
 5–10 min on the slim profile:
 - at 10 min, read `/api/jobs/<id>/activity`; if it is looping (re-reading the
   same files, re-running the full suite, retrying a failing command), kill it:
-  `curl -s -X POST -H "Authorization: Bearer $MC_TOKEN" http://127.0.0.1:7777/api/jobs/<id>/kill`
+  `curl -s -X POST -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/jobs/<id>/kill`
   then re-dispatch with a tighter spec (name the exact file + change).
 - 20 min without a diff on a small ticket = wrong spec, not a slow model. Stop
   and rewrite; do not wait it out.
@@ -339,9 +378,9 @@ Every job is a resumable thread (claude/glm via `--resume`, codex via `exec resu
 To steer or follow up without re-dispatching:
 
 ```sh
-curl -s -X POST http://127.0.0.1:7777/api/jobs/<id>/reply -H "Authorization: Bearer $MC_TOKEN" \
+curl -s -X POST $MC_URL/api/jobs/<id>/reply -H "Authorization: Bearer $MC_TOKEN" \
   -H 'content-type: application/json' -d '{"message":"<follow-up instruction>"}'   # → new chained job, same context
-curl -s -H "Authorization: Bearer $MC_TOKEN" http://127.0.0.1:7777/api/jobs/<id>/thread   # full ordered transcript: user/thinking/tool(+input,+result)/text/result
+curl -s -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/jobs/<id>/thread   # full ordered transcript: user/thinking/tool(+input,+result)/text/result
 ```
 
 Use reply for: "also add tests", "you missed X", "explain what you changed" — cheaper than a fresh spec, keeps the agent's context.
@@ -374,7 +413,7 @@ turned 10-minute UI tickets into 2-hour sessions. Replace it with:
    has exactly one commit per task however many review rounds ran. Migration
    files keep their filename and timestamp through the squash.
 4. Verified good → commit per the repo's rules yourself, then mark it:
-   `curl -s -X POST -H "Authorization: Bearer $MC_TOKEN" http://127.0.0.1:7777/api/jobs/<id>/reviewed`
+   `curl -s -X POST -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/jobs/<id>/reviewed`
    → flow shows MERGED, review counter drops.
 5. Verification proportional to risk: browser/Playwright checks for UI the user
    will click; curl for endpoints; nothing beyond `bun test` for internal
