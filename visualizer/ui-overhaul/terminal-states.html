@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Terminal states · Mission Control</title>
+<style>
+:root{--background:#070a0c;--text:#e9eef0;--muted:#a0acb2;--quiet:#76848b;--line:#263137;--sky:#7eadff;--mint:#b5e9a0;--ui:'Helvetica Neue',Helvetica,Arial,sans-serif;--code:Menlo,monospace}
+*{box-sizing:border-box}html,body{margin:0;min-width:0}body{background:var(--background);color:var(--text);font:13px var(--ui);-webkit-font-smoothing:antialiased}button,a{color:inherit;font:inherit}button{border:0;background:transparent;cursor:pointer}button:focus-visible,a:focus-visible{outline:2px solid var(--sky);outline-offset:5px}a{text-decoration:none}button:hover,a:hover{color:var(--sky)}svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}h1,h2,p{margin:0}#atmosphere{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none}
+.masthead{max-width:1512px;margin:auto;padding:18px 42px;min-height:62px;display:flex;align-items:center;gap:36px}.brand{font-size:16px;letter-spacing:-.6px;font-weight:600}.brand span{color:var(--muted)}.primary-nav{display:flex;align-items:center;gap:27px;font-size:12px;color:var(--muted)}.primary-nav [aria-current]{color:var(--text)}.preview-nav{margin-left:auto;display:flex;align-items:center;gap:22px;font-size:11px;color:var(--quiet)}
+main{max-width:1428px;margin:126px 42px 40px}.workspace-heading{background:var(--background);display:flex;align-items:center;gap:14px;margin-bottom:22px}.workspace-heading h1{font-size:18px;letter-spacing:-.5px;font-weight:500}.workspace-heading .count{color:var(--quiet);font-size:12px}.view-controls{margin-left:auto;display:flex;align-items:center;gap:22px}.arrangement{display:flex;gap:14px;align-items:center;color:var(--quiet)}.arrangement button{display:flex;align-items:center;gap:7px;padding:3px 0;font-size:11px}.arrangement button[aria-pressed=true]{color:var(--text)}.control-divider{width:1px;height:15px;background:var(--line)}.conversation-control{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);padding:3px 0}
+.terminal-deck{display:grid;grid-template-columns:minmax(0,1fr) 22px minmax(0,1fr);background:var(--background);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.terminal{height:500px;display:flex;flex-direction:column;min-width:0;padding:27px 25px 0}.terminal:first-child{padding-left:0}.terminal:last-child{padding-right:0}.terminal-divider{display:flex;align-items:center;justify-content:center;position:relative}.terminal-divider:before{content:'';width:1px;background:var(--line);height:100%;position:absolute}.terminal-divider:after{content:'';height:28px;width:3px;background:var(--quiet);border-radius:3px;position:relative;box-shadow:0 0 0 5px var(--background)}
+.session-heading{display:flex;align-items:flex-start;gap:14px}.session-heading h2{font-size:23px;font-weight:450;letter-spacing:-.85px;line-height:1.2}.session-heading .expand{margin-left:auto;color:var(--quiet);padding:2px 0}.session-caption{margin-top:9px;font-size:12px;color:var(--muted);line-height:1.6}.session-context{display:flex;align-items:center;gap:11px;color:var(--quiet);font-size:10px;margin-top:23px;padding-bottom:17px;border-bottom:1px solid var(--line);white-space:nowrap;min-width:0}.provider{color:var(--text);font-weight:500}.model{font-family:var(--code);font-size:9px}.context-dot{color:var(--quiet)}.path{margin-left:auto;overflow:hidden;text-overflow:ellipsis;font-family:var(--code);font-size:9px;text-align:right}
+.transcript{flex:1;min-height:0;overflow:auto;padding:21px 0;font:11px/1.9 var(--code);color:var(--muted)}.transcript p+p{margin-top:17px}.transcript .command{color:var(--text)}.prompt{color:var(--sky);margin-right:10px}.file-line{display:flex;gap:19px;align-items:baseline}.file-line span{color:var(--quiet)}.file-line code{font:inherit;color:var(--muted)}.result{border-left:1px solid var(--line);padding-left:15px;margin-top:17px!important}.result span{display:block}.result strong{font-weight:400;color:var(--text)}
+.input-line{min-height:53px;display:flex;align-items:center;gap:10px;font:11px var(--code);border-top:1px solid var(--line)}.input-line .input-prompt{color:var(--sky);font-size:16px}.input-line .input-placeholder{color:var(--quiet)}.input-line kbd{font:10px var(--code);color:var(--quiet);margin-left:auto}.cursor{height:13px;width:1px;background:var(--sky)}
+.session-strip{display:flex;align-items:stretch;gap:0;margin-top:18px;min-height:57px}.session-choice{position:relative;display:flex;align-items:center;text-align:left;padding:3px 28px 3px 0;margin-right:28px;gap:12px;color:var(--muted);border-right:1px solid var(--line)}.session-choice:last-of-type{border-right:0}.session-choice .glyph{width:20px;height:20px;display:grid;place-items:center;color:var(--quiet)}.session-choice .session-copy{display:flex;flex-direction:column;gap:7px}.session-choice strong{font-size:12px;letter-spacing:-.1px;font-weight:500}.session-choice small{font-size:10px;color:var(--quiet)}.session-choice[aria-pressed=true] strong{color:var(--text)}.session-choice[aria-pressed=true] .glyph{color:var(--sky)}.session-choice[aria-pressed=true]:after{content:'';position:absolute;width:18px;height:1px;background:var(--sky);bottom:-8px;left:0}.add-session{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:11px;color:var(--muted);padding:0}.add-session svg{width:15px;height:15px}.footnote{margin-top:29px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--quiet)}#motion-toggle{font-size:10px;color:var(--quiet);padding:0}
+@media(min-width:1513px){main{margin-left:auto;margin-right:auto}}
+@media(max-width:1100px){.masthead{padding:20px}.preview-nav .study-label{display:none}main{margin:125px 20px 40px}.terminal{padding:23px 15px 0}.session-heading h2{font-size:21px}.session-context{gap:7px}.path{max-width:40%}.session-choice{padding-right:19px;margin-right:19px}}
+@media(max-width:800px){.masthead{padding:12px;gap:18px;flex-wrap:wrap}.brand{width:100%;font-size:16px}.primary-nav{gap:20px}.preview-nav{gap:10px;font-size:10px}main{margin:105px 12px 35px}.workspace-heading{align-items:flex-start;flex-wrap:wrap;gap:10px}.view-controls{width:100%;margin:8px 0 0;gap:15px}.arrangement{gap:14px}.conversation-control{margin-left:auto}.terminal-deck{grid-template-columns:minmax(0,1fr)}.terminal{height:460px;padding:23px 0 0}.terminal-divider{height:24px;border-bottom:1px solid var(--line)}.terminal-divider:before{display:none}.terminal-divider:after{width:28px;height:2px}.session-heading h2{font-size:22px}.session-context{gap:8px}.session-strip{flex-wrap:wrap;gap:18px 0}.session-choice{margin:0 14px 0 0;padding:0 14px 0 0;gap:8px;min-height:40px}.session-choice strong{font-size:11px}.session-choice small{font-size:9px}.session-choice:nth-of-type(3){border-right:0}.add-session{margin-left:0;width:100%;padding:8px 0}.footnote{gap:20px;font-size:9px}.footnote button{font-size:9px}.model{font-size:8px}.path{font-size:8px}.transcript{font-size:10px}.input-line{font-size:10px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+<style id="awareness-components">
+.preview-nav{gap:18px}.preview-nav .study-label{display:none}.usage-summary{background:var(--background);margin-top:0;margin-bottom:0;display:flex;align-items:center;gap:25px;margin-left:auto;padding:0 25px;border-left:1px solid var(--line);border-right:1px solid var(--line)}.masthead{gap:30px}.primary-nav{gap:22px}.preview-nav{margin-left:0}.workspace-heading{margin-bottom:18px}
+.awareness-row{display:grid;grid-template-columns:minmax(0,1fr) 285px;gap:35px;margin-bottom:24px;align-items:stretch;background:var(--background)}.flow-summary{display:flex;align-items:center;gap:12px;height:24px}.flow-summary h2{font-size:11px;font-weight:500;letter-spacing:0}.flow-summary span{font-size:10px;color:var(--quiet)}.flow-map{position:relative;display:grid;grid-template-columns:35% 35% 30%;gap:0;align-items:center;min-height:91px}.flow-connections{position:absolute;inset:0;width:100%;height:100%;stroke:var(--line);stroke-width:1;pointer-events:none}.flow-connections .complete{stroke:var(--quiet)}.flow-node{position:relative;z-index:1;background:var(--background);display:flex;align-items:center;gap:10px;justify-self:start;padding:6px 12px 6px 0;min-width:0}.node-mark{display:grid;place-items:center;width:20px;height:20px;border:1px solid var(--line);border-radius:50%;flex-shrink:0;color:var(--quiet);font-size:10px}.flow-node.done .node-mark{color:var(--muted);border-color:var(--quiet)}.flow-node.working .node-mark{color:var(--sky);border-color:var(--sky)}.flow-node.working .node-mark:after{content:'';width:4px;height:4px;background:var(--sky);border-radius:50%}.node-copy{display:flex;flex-direction:column;gap:4px}.node-copy strong{font-size:11px;font-weight:500;white-space:nowrap}.node-copy small{font-size:9px;color:var(--quiet);white-space:nowrap}.flow-branches{display:flex;flex-direction:column;align-items:flex-start;gap:1px}.flow-node.working .node-copy small{color:var(--muted)}.flow-node.waiting strong{color:var(--quiet)}
+.agent-window{align-self:start;background:#101619;border:1px solid #303b42;border-radius:6px;box-shadow:0 8px 25px #0004;overflow:hidden;min-width:0}.agent-window summary{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;font-size:11px;font-weight:500;list-style:none;border-bottom:1px solid var(--line)}.agent-window summary::-webkit-details-marker{display:none}.agent-signal{width:5px;height:5px;background:var(--sky);border-radius:50%}.agent-window summary .agent-model{margin-left:auto;font-size:9px;font-weight:400;color:var(--quiet)}.agent-window summary svg{width:12px;height:12px;color:var(--quiet)}.agent-window:not([open]) summary{border-bottom:0}.agent-window:not([open]) summary svg{transform:rotate(180deg)}.agent-output{padding:11px 12px 12px;font:9px/1.7 var(--code);color:var(--muted)}.agent-output .tool{display:flex;gap:12px;margin-bottom:5px}.agent-output .tool span{color:var(--sky)}.agent-output .tool code{font:inherit;color:var(--text)}.agent-output p{white-space:normal}.agent-output .agent-footer{display:flex;justify-content:space-between;margin-top:8px;font:9px var(--ui);color:var(--quiet)}.agent-output .activity-text{color:var(--muted)}.terminal{height:405px;padding-top:22px}.session-heading h2{font-size:21px}.session-context{margin-top:18px;padding-bottom:14px}.transcript{padding-top:17px;font-size:10px}.transcript p+p{margin-top:13px}.result{margin-top:13px!important}.session-strip{margin-top:15px;min-height:49px}.footnote{margin-top:24px}
+@media(max-width:1300px){.usage-summary{gap:17px;padding:0 18px}.preview-nav .comparison-link{display:none}.flow-map{gap:0}.masthead{gap:24px}.flow-summary span{font-size:9px}}
+@media(max-width:1000px){.masthead{flex-wrap:wrap}.usage-summary{order:4;width:100%;margin:8px 0 0;border:0;border-top:1px solid var(--line);padding:14px 0 0;gap:28px}.preview-nav{margin-left:auto}.preview-nav .comparison-link{display:inline}.awareness-row{grid-template-columns:minmax(0,1fr) 230px;gap:20px}.flow-map{gap:0}.flow-node{gap:6px}.node-copy strong{font-size:10px}.node-copy small{font-size:8px}.agent-output{font-size:8px}}
+@media(max-width:800px){.masthead{gap:18px}.usage-summary{gap:0;justify-content:space-between;margin-top:0}.preview-nav{font-size:10px}.awareness-row{grid-template-columns:minmax(0,1fr);gap:17px;margin-bottom:20px}.flow-map{gap:0;min-height:100px}.flow-summary{height:22px}.flow-summary h2{font-size:11px}.flow-summary span{font-size:9px}.flow-node{padding-right:3px}.flow-node .node-mark{width:16px;height:16px;font-size:8px}.node-copy strong{font-size:9px}.node-copy small{font-size:8px}.agent-window{width:100%}.agent-output{font-size:10px}.terminal{height:450px}.transcript{font-size:10px}.session-heading h2{font-size:22px}.session-strip{margin-top:18px}.footnote{margin-top:25px}.path{max-width:36%}}
+</style>
+<style id="color-components">
+:root{--lime:#bfd38b;--coral:#d4a091;--ice:#91b0dc;--agent-surface:#0e1820}
+.brand span{color:var(--lime)}.primary-nav [aria-current]{color:var(--lime);position:relative}.primary-nav [aria-current]:after{content:'';position:absolute;bottom:-9px;left:0;width:12px;height:2px;background:var(--lime)}
+
+.workspace-heading h1:before{content:'';display:inline-block;vertical-align:1px;width:7px;height:7px;background:var(--lime);margin-right:10px;box-shadow:0 0 0 3px color-mix(in srgb,var(--lime) 12%,transparent)}.arrangement button[aria-pressed=true]{color:var(--lime)}.arrangement button[aria-pressed=true] svg{fill:color-mix(in srgb,var(--lime) 9%,transparent)}.conversation-control svg{color:var(--ice)}
+.flow-summary h2{color:var(--lime)}.flow-summary span{color:var(--muted)}.flow-node.done .node-mark{color:var(--background);border-color:var(--lime);background:var(--lime)}.flow-node.working{--node-accent:var(--lime)}.flow-node.working:last-child{--node-accent:var(--ice)}.flow-node.working .node-mark{border-color:color-mix(in srgb,var(--node-accent) 70%,transparent);color:var(--node-accent);background:color-mix(in srgb,var(--node-accent) 8%,var(--background));box-shadow:0 0 0 3px color-mix(in srgb,var(--node-accent) 5%,transparent)}.flow-node.working .node-mark:after{background:var(--node-accent);width:5px;height:5px}.flow-node.working .node-copy strong{color:var(--node-accent)}.flow-connections .complete{stroke:color-mix(in srgb,var(--lime) 25%,var(--line))}.flow-connections .signal{stroke-width:1.6;stroke-dasharray:10 240;animation:signal-travel 6s linear infinite}.flow-connections .signal.lime{stroke:var(--lime)}.flow-connections .signal.ice{stroke:var(--ice);animation-delay:-2s}
+.terminal{--session-accent:var(--lime);position:relative;background:linear-gradient(180deg,color-mix(in srgb,var(--session-accent) 4%,var(--background)),var(--background) 135px)}.terminal:last-child{--session-accent:var(--coral)}.terminal:before{content:'';position:absolute;top:-1px;left:0;width:100%;height:1px;background:linear-gradient(90deg,var(--session-accent),transparent 70%)}.session-heading{align-items:center;gap:12px}.session-emblem{width:29px;height:29px;display:grid;place-items:center;background:color-mix(in srgb,var(--session-accent) 10%,var(--background));color:var(--session-accent);border:1px solid color-mix(in srgb,var(--session-accent) 26%,var(--line));border-radius:7px 7px 7px 2px;box-shadow:inset 0 1px color-mix(in srgb,var(--session-accent) 10%,transparent);flex-shrink:0}.session-emblem svg{width:17px;height:17px}.session-heading .expand:hover{color:var(--session-accent)}.session-caption{margin-top:10px}.provider{color:var(--session-accent)}.provider:before{content:'';display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--session-accent);margin-right:6px;vertical-align:2px}.terminal .prompt,.terminal .input-prompt{color:var(--session-accent)}.terminal .cursor{background:var(--session-accent)}.terminal .result{border-color:color-mix(in srgb,var(--session-accent) 35%,var(--line))}.terminal .result strong{color:var(--session-accent)}.file-line span{color:var(--ice)}.file-line code{color:var(--text)}.input-line{border-top-color:color-mix(in srgb,var(--session-accent) 20%,var(--line));background:linear-gradient(90deg,color-mix(in srgb,var(--session-accent) 3%,var(--background)),transparent 75%)}.input-line kbd{background:color-mix(in srgb,var(--session-accent) 9%,var(--background));border:1px solid color-mix(in srgb,var(--session-accent) 25%,var(--line));border-radius:4px;padding:3px 7px;color:var(--session-accent);box-shadow:0 1px 0 color-mix(in srgb,var(--session-accent) 20%,var(--line))}
+.session-choice{--session-accent:var(--lime)}.session-choice:nth-child(2){--session-accent:var(--coral)}.session-choice .glyph{width:28px;height:28px;border-radius:6px;color:var(--session-accent);background:color-mix(in srgb,var(--session-accent) 7%,var(--background));border:1px solid color-mix(in srgb,var(--session-accent) 13%,var(--line))}.session-choice:nth-child(3) .glyph{color:var(--quiet);background:transparent;border-color:var(--line)}.session-choice[aria-pressed=true] .glyph{color:var(--lime);background:color-mix(in srgb,var(--lime) 11%,var(--background));border-color:color-mix(in srgb,var(--lime) 35%,var(--line))}.session-choice[aria-pressed=true] strong{color:var(--lime)}.session-choice[aria-pressed=true]:after{background:var(--lime);width:28px}.session-choice small{color:var(--muted)}.add-session{padding:7px 11px;align-self:center;color:var(--lime);border:1px solid color-mix(in srgb,var(--lime) 30%,var(--line));border-radius:5px;background:color-mix(in srgb,var(--lime) 7%,var(--background));box-shadow:inset 0 1px color-mix(in srgb,var(--lime) 8%,transparent)}.add-session:hover{background:color-mix(in srgb,var(--lime) 13%,var(--background));color:var(--text)}
+.agent-window{border-color:color-mix(in srgb,var(--ice) 35%,var(--line));background:var(--agent-surface);border-radius:7px;box-shadow:0 9px 30px #0004,inset 0 1px color-mix(in srgb,var(--ice) 12%,transparent)}.agent-window summary{background:color-mix(in srgb,var(--ice) 5%,var(--agent-surface));border-bottom-color:color-mix(in srgb,var(--ice) 18%,var(--line));color:var(--ice)}.activity-bars{display:flex;align-items:center;gap:2px;height:11px;width:15px;flex-shrink:0}.activity-bars i{display:block;width:2px;height:7px;background:var(--ice);animation:activity-level 1.3s ease-in-out infinite alternate}.activity-bars i:nth-child(2){height:11px;animation-delay:-.7s}.activity-bars i:nth-child(3){height:5px;animation-delay:-.4s}.activity-bars i:nth-child(4){height:9px;animation-delay:-1s}.agent-output .tool span{color:var(--ice);background:color-mix(in srgb,var(--ice) 9%,transparent);border:1px solid color-mix(in srgb,var(--ice) 20%,transparent);padding:0 4px;border-radius:3px;font:8px/15px var(--ui)}.agent-output .tool{gap:8px}.agent-output .tool code{color:var(--ice)}.agent-footer .activity-text{color:var(--ice)}.agent-cursor{display:inline-block;width:4px;height:9px;background:var(--ice);margin-left:4px;vertical-align:-1px;animation:cursor-blink 1.4s step-end infinite}.agent-footer:before{content:'';align-self:center;width:4px;height:4px;border-radius:50%;background:var(--ice);margin-right:5px}.agent-footer .activity-text{margin-right:auto}
+@keyframes signal-travel{to{stroke-dashoffset:-500}}@keyframes activity-level{to{transform:scaleY(.35);opacity:.45}}@keyframes cursor-blink{50%{opacity:0}}
+body[data-motion=paused] .signal,body[data-motion=paused] .activity-bars i,body[data-motion=paused] .agent-cursor{animation:none}
+@media(prefers-reduced-motion:reduce){.signal,.activity-bars i,.agent-cursor{animation:none!important}}
+@media(max-width:800px){.session-emblem{width:28px;height:28px}.session-choice{gap:8px}.session-choice .glyph{width:24px;height:24px}.add-session{width:auto}.agent-output .tool span{font-size:9px;line-height:17px}.session-heading h2{font-size:21px}}
+</style>
+
+<style id="uniform-usage">
+.usage-summary{display:grid;grid-template-columns:repeat(3,minmax(0,120px));gap:25px;align-items:center;padding:0 24px;margin-top:0;margin-bottom:0}
+.provider-usage{--usage-accent:var(--coral);min-width:0}.provider-usage:nth-child(2){--usage-accent:var(--ice)}.provider-usage:nth-child(3){--usage-accent:var(--lime)}
+.quota-heading{display:flex;align-items:baseline;gap:8px;line-height:22px;white-space:nowrap}.quota-provider{font-size:11px;font-weight:500;color:var(--usage-accent)}.quota-period{font-size:9px;color:var(--quiet);margin-left:auto}.quota-heading strong{font-size:20px;font-weight:450;font-variant-numeric:tabular-nums;letter-spacing:-.6px;color:var(--text)}.quota-heading strong small{font-size:11px;margin-left:1px;color:var(--muted)}
+.provider-usage meter{display:block;appearance:none;-webkit-appearance:none;border:0;border-radius:0;background:none;width:100%;height:4px;margin:5px 0 0}.provider-usage meter::-webkit-meter-bar{height:4px;border:0;border-radius:1px;background:var(--line)}.provider-usage meter::-webkit-meter-optimum-value{border-radius:1px;background:var(--usage-accent)}.provider-usage meter::-moz-meter-bar{border-radius:1px;background:var(--usage-accent)}
+.quota-week{display:grid;grid-template-columns:auto minmax(0,1fr) 24px;align-items:center;gap:7px;margin-top:7px;font-size:9px;line-height:12px;color:var(--quiet);font-variant-numeric:tabular-nums}.quota-week .week-value{text-align:right;color:var(--muted)}.quota-week meter{height:2px;margin:0}.quota-week meter::-webkit-meter-bar{height:2px}.quota-week meter::-webkit-meter-optimum-value{background:color-mix(in srgb,var(--usage-accent) 55%,var(--line))}.quota-week meter::-moz-meter-bar{background:color-mix(in srgb,var(--usage-accent) 55%,var(--line))}
+@media(max-width:1300px){.usage-summary{grid-template-columns:repeat(3,minmax(0,108px));gap:18px;padding:0 18px}}
+@media(max-width:1000px){.usage-summary{grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:28px;margin:8px 0 0;padding:14px 0 0}}
+@media(max-width:800px){.usage-summary{gap:19px;margin-top:0}.quota-heading{gap:5px}.quota-provider{font-size:10px}.quota-heading strong{font-size:18px}.quota-heading strong small{font-size:10px}.quota-week{gap:5px;font-size:8px;grid-template-columns:auto minmax(0,1fr) 22px}}
+</style>
+
+<style id="state-studies">
+.state-switcher{position:sticky;top:0;z-index:30;background:var(--background);border-bottom:1px solid var(--line)}
+#atmosphere{transform:translateY(46px)}
+.switcher-inner{max-width:1512px;margin:auto;padding:11px 42px;height:45px;display:flex;align-items:center;gap:22px;font-size:11px;color:var(--quiet)}
+.switcher-inner .study-name{color:var(--muted)}
+.state-tabs{display:flex;align-items:center;gap:6px;margin-left:auto}
+.state-tabs a{padding:4px 10px;border:1px solid transparent;border-radius:4px;color:var(--quiet);font-size:11px}
+.state-tabs a:hover{color:var(--text)}
+.state-tabs a[aria-current=page]{color:var(--lime);border-color:color-mix(in srgb,var(--lime) 30%,var(--line));background:color-mix(in srgb,var(--lime) 7%,var(--background))}
+.screen{display:none}.screen.is-active{display:block}
+.variant-tag{font-size:11px;color:var(--muted);border-left:1px solid var(--line);padding-left:14px}
+.source-note{font-family:var(--code);font-size:9px;color:var(--quiet)}
+.footnote{gap:24px}
+
+.new-chip{display:inline-flex;align-items:center;gap:5px;flex-shrink:0;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--lime);border:1px solid color-mix(in srgb,var(--lime) 32%,var(--line));background:color-mix(in srgb,var(--lime) 8%,var(--background));border-radius:3px;padding:2px 6px;line-height:14px}
+.new-chip:before{content:'';width:4px;height:4px;border-radius:50%;background:var(--lime)}
+
+.pane-tools{margin-left:auto;display:flex;align-items:center;gap:12px}
+.pane-tools .expand{margin-left:0}
+.quiet-tool{color:var(--quiet);padding:2px 0;opacity:0;transition:opacity .18s ease}
+.session-heading:hover .quiet-tool,.quiet-tool.is-hovered{opacity:1}
+.quiet-tool.is-hovered{color:var(--session-accent)}
+.retired-note{margin-left:10px;font-size:9px;color:var(--quiet);text-decoration:line-through}
+
+.composer{--composer-accent:var(--lime);color:var(--muted)}
+.composer-head{display:flex;align-items:center;gap:14px;min-height:26px}
+.composer-tabs{display:flex;align-items:center;gap:4px}
+.composer-tab{font-size:11px;color:var(--quiet);padding:4px 11px;border:1px solid transparent;border-radius:4px}
+.composer-tab[aria-selected=true]{color:var(--lime);border-color:color-mix(in srgb,var(--lime) 30%,var(--line));background:color-mix(in srgb,var(--lime) 7%,var(--background))}
+.composer-title{font-size:11px;font-weight:500;color:var(--lime)}
+.composer-dismiss{margin-left:auto;color:var(--quiet);padding:2px 0}
+.composer-dismiss svg{width:15px;height:15px}
+.composer-panel[hidden]{display:none!important}
+
+.engine-choice{display:flex;align-items:stretch;gap:9px}
+.engine{--engine-accent:var(--quiet);display:flex;flex-direction:column;align-items:flex-start;gap:5px;padding:9px 13px;border:1px solid var(--line);border-radius:6px;background:var(--background);color:var(--muted);font-size:12px;font-weight:500;letter-spacing:-.1px;min-width:104px}
+.engine.claude{--engine-accent:var(--coral)}.engine.codex{--engine-accent:var(--lime)}.engine.glm{--engine-accent:var(--ice)}
+.engine small{font:9px var(--code);color:var(--quiet);font-weight:400}
+.engine .dot{width:6px;height:6px;border-radius:50%;background:color-mix(in srgb,var(--engine-accent) 45%,var(--line))}
+.engine[aria-checked=true]{color:var(--engine-accent);border-color:color-mix(in srgb,var(--engine-accent) 40%,var(--line));background:color-mix(in srgb,var(--engine-accent) 8%,var(--background));box-shadow:inset 0 1px color-mix(in srgb,var(--engine-accent) 12%,transparent)}
+.engine[aria-checked=true] .dot{background:var(--engine-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--engine-accent) 14%,transparent)}
+.engine:hover{color:var(--engine-accent);border-color:color-mix(in srgb,var(--engine-accent) 28%,var(--line))}
+
+.field-row{display:flex;gap:22px;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
+.field-label{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--quiet)}
+.field input{width:100%;background:transparent;border:0;border-bottom:1px solid var(--line);color:var(--text);font:11px var(--code);padding:6px 0 8px}
+.field input::placeholder{color:var(--quiet)}
+.field input:focus{outline:0;border-bottom-color:var(--lime)}
+.field-hint{font-size:9px;color:var(--quiet)}
+
+.list-label{display:flex;align-items:baseline;gap:10px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--quiet);margin-bottom:9px}
+.list-label em{font-style:normal;letter-spacing:0;text-transform:none;font-size:9px;font-family:var(--code)}
+.dir-list,.resume-list{display:flex;flex-direction:column}
+.dir-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 16px;align-items:center;text-align:left;padding:10px 0;border-bottom:1px solid var(--line);color:var(--muted)}
+.dir-row:first-child{border-top:1px solid var(--line)}
+.dir-name{font-size:12px;font-weight:500;color:var(--text);letter-spacing:-.1px}
+.dir-path{grid-column:1;font:9px var(--code);color:var(--quiet)}
+.dir-sessions{grid-column:2;grid-row:1 / span 2;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.ses{--ses-accent:var(--quiet);font-style:normal;font-size:9px;color:var(--ses-accent);border:1px solid color-mix(in srgb,var(--ses-accent) 26%,var(--line));background:color-mix(in srgb,var(--ses-accent) 7%,var(--background));border-radius:3px;padding:2px 6px;white-space:nowrap}
+.ses.lime{--ses-accent:var(--lime)}.ses.coral{--ses-accent:var(--coral)}.ses.ice{--ses-accent:var(--ice)}
+.ses.none{color:var(--quiet);border-style:dashed;background:transparent}
+.dir-row:hover .dir-name{color:var(--lime)}
+.dir-row.is-current{background:linear-gradient(90deg,color-mix(in srgb,var(--lime) 5%,transparent),transparent 60%)}
+.dir-row.is-current .dir-name{color:var(--lime)}
+
+.resume-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 16px;text-align:left;padding:10px 0;border-bottom:1px solid var(--line);color:var(--muted)}
+.resume-row:first-child{border-top:1px solid var(--line)}
+.resume-title{font-size:12px;color:var(--text);letter-spacing:-.1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.resume-when{font:9px var(--code);color:var(--coral);text-align:right}
+.resume-where{grid-column:1;font:9px var(--code);color:var(--quiet)}
+.resume-size{grid-column:2;font:9px var(--code);color:var(--quiet);text-align:right}
+.resume-row:hover .resume-title{color:var(--coral)}
+
+.composer-actions{display:flex;align-items:center;gap:16px}
+.composer-open{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--lime);border:1px solid color-mix(in srgb,var(--lime) 30%,var(--line));border-radius:5px;background:color-mix(in srgb,var(--lime) 7%,var(--background));box-shadow:inset 0 1px color-mix(in srgb,var(--lime) 8%,transparent);padding:8px 15px}
+.composer-open:hover{background:color-mix(in srgb,var(--lime) 13%,var(--background));color:var(--text)}
+.composer-open svg{width:15px;height:15px}
+.composer-cancel{font-size:11px;color:var(--quiet)}
+.composer-actions kbd{margin-left:auto;font:9px var(--code);color:var(--quiet);border:1px solid var(--line);border-radius:4px;padding:3px 7px}
+
+.terminal-deck.has-sheet{display:block}
+.deck-panes{display:grid;grid-template-columns:minmax(0,1fr) 22px minmax(0,1fr)}
+.composer-sheet{border-bottom:1px solid var(--line);padding:22px 0 26px;background:linear-gradient(180deg,color-mix(in srgb,var(--lime) 4%,var(--background)),var(--background) 150px)}
+.sheet-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,420px);gap:35px;margin-top:20px;align-items:start}
+.sheet-left{display:flex;flex-direction:column;gap:20px;min-width:0}
+
+.session-strip{position:relative}
+.composer-popover{position:absolute;right:0;bottom:calc(100% + 14px);width:420px;z-index:12;background:var(--agent-surface);border:1px solid color-mix(in srgb,var(--lime) 32%,var(--line));border-radius:7px;box-shadow:0 18px 45px #0007,inset 0 1px color-mix(in srgb,var(--lime) 12%,transparent);padding:15px 17px 17px}
+.composer-popover:after{content:'';position:absolute;right:34px;bottom:-6px;width:10px;height:10px;background:var(--agent-surface);border-right:1px solid color-mix(in srgb,var(--lime) 32%,var(--line));border-bottom:1px solid color-mix(in srgb,var(--lime) 32%,var(--line));transform:rotate(45deg)}
+.composer-popover .composer-body{display:flex;flex-direction:column;gap:15px;margin-top:14px}
+.composer-popover .engine{min-width:0;flex:1;padding:8px 10px}
+.composer-popover .field-row{gap:16px}
+.composer-popover .dir-list,.composer-popover .resume-list{max-height:132px;overflow:auto}
+.composer-popover .dir-row,.composer-popover .resume-row{padding:8px 0}
+.add-session[aria-expanded=true]{background:color-mix(in srgb,var(--lime) 14%,var(--background));color:var(--text)}
+
+.terminal.composer-pane{--session-accent:var(--lime)}
+.pane-title-field{flex:1;min-width:0;background:transparent;border:0;border-bottom:1px solid color-mix(in srgb,var(--lime) 26%,var(--line));color:var(--text);font:450 21px var(--ui);letter-spacing:-.85px;padding:2px 0 5px}
+.pane-title-field::placeholder{color:var(--quiet)}
+.pane-title-field:focus{outline:0;border-bottom-color:var(--lime)}
+.composer-pane .session-heading{gap:12px}
+.composer-pane .session-context{gap:12px 14px;flex-wrap:wrap;white-space:normal}
+.composer-pane .dir-row,.composer-pane .resume-row{padding:8px 0}
+.composer-pane .session-context .engine{min-width:0;flex-direction:row;align-items:center;gap:7px;padding:5px 9px;font-size:11px}
+.composer-pane .session-context .engine small{display:none}
+.composer-pane .inline-field{display:flex;align-items:center;gap:7px;min-width:0;flex:1 1 240px}
+.composer-pane .inline-field .field-label{white-space:nowrap}
+.composer-pane .inline-field input{width:100%;background:transparent;border:0;border-bottom:1px solid var(--line);color:var(--text);font:10px var(--code);padding:4px 0 5px}
+.composer-pane .inline-field input::placeholder{color:var(--quiet)}
+.composer-pane .transcript{font-family:var(--ui)}
+.composer-pane .input-line{gap:16px;padding:0}
+
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;text-align:center;padding:40px 20px}
+.welcome h2{font-size:21px;font-weight:450;letter-spacing:-.85px}
+.welcome p{font-size:12px;color:var(--muted);line-height:1.6}
+.welcome .composer-open{margin-top:6px}
+
+.empty-row{display:grid;grid-template-columns:repeat(3,480px);gap:24px;overflow-x:auto;padding-bottom:12px;margin-top:20px}
+.crop{width:480px;height:600px;border:1px solid var(--line);border-radius:7px;background:var(--background);overflow:hidden;display:flex;flex-direction:column}
+.crop-label{display:flex;align-items:baseline;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font-size:11px;color:var(--lime);flex-shrink:0}
+.crop-label small{font-size:9px;color:var(--quiet)}
+.crop-body{padding:0 16px 16px;flex:1;min-height:0;display:flex;flex-direction:column}
+.crop .terminal-deck{display:flex;flex-direction:column;flex:1;min-height:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.crop .deck-panes{display:flex;flex-direction:column;flex:1;min-height:0}
+.crop .deck-area{flex:1;min-height:0}
+.crop .welcome{justify-content:flex-start;padding:30px 16px}
+.crop .terminal{height:auto;flex:1;min-height:0;padding:18px 0 0}
+.crop .composer-sheet{padding:15px 0 17px;flex-shrink:0}
+.crop .sheet-grid{grid-template-columns:minmax(0,1fr);gap:15px;margin-top:13px}
+.crop .sheet-left{gap:15px}
+.crop .engine{min-width:0;flex:1;padding:7px 9px;font-size:11px}
+.crop .session-strip{min-height:44px;margin-top:14px;flex-shrink:0}
+.crop .composer-popover{width:100%;right:0;padding:13px 14px 15px}
+.crop .composer-popover .composer-body{gap:13px;margin-top:12px}
+.crop .composer-popover .dir-list{max-height:none}
+.crop .composer-pane .transcript{padding:14px 0}
+.crop .composer-pane .input-line{min-height:47px}
+.crop .footnote{margin-top:16px}
+
+.now-shots{display:flex;flex-direction:column;gap:34px}
+.now-shots figure{margin:0;display:flex;flex-direction:column;gap:11px}
+.now-shots img{width:100%;display:block;border:1px solid var(--line);border-radius:6px}
+.now-shots figcaption{font-size:11px;color:var(--muted)}
+.now-shots figcaption b{font-weight:500;color:var(--text)}
+
+@media(max-width:1000px){
+.switcher-inner{padding:11px 20px;gap:14px}
+.state-tabs{gap:3px}.state-tabs a{padding:4px 8px}
+.sheet-grid{grid-template-columns:minmax(0,1fr);gap:22px}
+.composer-popover{width:min(420px,calc(100vw - 56px))}
+.engine{min-width:0;flex:1;padding:8px 10px}
+.variant-tag{border-left:0;padding-left:0}
+}
+@media(max-width:800px){
+.switcher-inner{padding:10px 12px;flex-wrap:wrap}
+.state-tabs{margin-left:0;width:100%;flex-wrap:wrap}
+.deck-panes{grid-template-columns:minmax(0,1fr)}
+.field-row{flex-direction:column;align-items:stretch;gap:14px}
+.footnote{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<canvas id="atmosphere" aria-hidden="true"></canvas>
+
+<div class="state-switcher">
+  <div class="switcher-inner">
+    <span class="study-name">Terminal states</span>
+    <span>New-terminal flow · placement study</span>
+    <nav class="state-tabs" aria-label="States">
+      <a href="#now" data-state="now">NOW</a>
+      <a href="#a" data-state="a">A · Sheet</a>
+      <a href="#b" data-state="b">B · Popover</a>
+      <a href="#c" data-state="c">C · Composer pane</a>
+      <a href="#empty" data-state="empty">Empty</a>
+    </nav>
+    <button id="motion-toggle" type="button">Pause motion</button>
+  </div>
+</div>
+
+<!-- ══ NOW ══ -->
+<section class="screen" data-screen="now" aria-label="Now">
+<header class="masthead"><div class="brand">Mission Control<span>_</span></div><nav class="primary-nav" aria-label="Workspace"><span>Main</span><span aria-current="page">Terminals</span><span>Usage</span></nav><div class="preview-nav"><span class="study-label">Shipped today</span><a class="comparison-link" href="/terminal-components.html">Approved study ↗</a></div></header>
+<main>
+<div class="workspace-heading"><h1>Terminals</h1><span class="count">Now</span><span class="variant-tag">The shipped screen, unchanged</span></div>
+<div class="now-shots">
+  <figure><img src="current/terminals-now-deck.png" alt="Mission Control Terminals with two live sessions"><figcaption><b>Two live sessions.</b> The deck as it ships today: pane title, absolute path as the caption line, and one focus icon per pane. Find and Reconnect are hidden behind the “…” utilities menu.</figcaption></figure>
+  <figure><img src="current/terminals-now-form.png" alt="The current new-terminal form with the utilities menu open"><figcaption><b>Opening a terminal today.</b> A one-line bar above the deck — native engine select, model input, directory input, Open, Cancel — and a separate Resume bar and Directories overlay reached from the “…” menu.</figcaption></figure>
+</div>
+<footer class="footnote"><span>Current implementation · screenshots, no redesign</span><span class="source-note">Real files: server/views/terminals.tsx · client/terminal.ts · client/terminal-view.ts</span></footer>
+</main>
+</section>
+
+<!-- ══ A · Sheet in the deck ══ -->
+<section class="screen" data-screen="a" aria-label="Variant A">
+<header class="masthead"><div class="brand">Mission Control<span>_</span></div><nav class="primary-nav" aria-label="Workspace"><span>Main</span><span aria-current="page">Terminals</span><span>Usage</span></nav><div class="usage-summary" aria-label="Sample provider usage">
+<section class="provider-usage" aria-label="Claude sample usage"><div class="quota-heading"><span class="quota-provider">Claude</span><span class="quota-period">5h</span><strong>24<small>%</small></strong></div><meter min="0" max="100" value="24" aria-label="Claude 5-hour usage: 24 percent, sample">24%</meter><div class="quota-week"><span>Weekly</span><meter min="0" max="100" value="12" aria-label="Claude weekly usage: 12 percent, sample">12%</meter><span class="week-value">12%</span></div></section>
+<section class="provider-usage" aria-label="GLM sample usage"><div class="quota-heading"><span class="quota-provider">GLM</span><span class="quota-period">5h</span><strong>28<small>%</small></strong></div><meter min="0" max="100" value="28" aria-label="GLM 5-hour usage: 28 percent, sample">28%</meter><div class="quota-week"><span>Weekly</span><meter min="0" max="100" value="8" aria-label="GLM weekly usage: 8 percent, design placeholder">8%</meter><span class="week-value">8%</span></div></section>
+<section class="provider-usage" aria-label="Codex sample usage"><div class="quota-heading"><span class="quota-provider">Codex</span><span class="quota-period">5h</span><strong>61<small>%</small></strong></div><meter min="0" max="100" value="61" aria-label="Codex 5-hour usage: 61 percent, sample">61%</meter><div class="quota-week"><span>Weekly</span><meter min="0" max="100" value="34" aria-label="Codex weekly usage: 34 percent, sample">34%</meter><span class="week-value">34%</span></div></section>
+</div><div class="preview-nav"><span class="study-label">Visual study</span><a class="comparison-link" href="/terminal-components.html">Approved study ↗</a><span>Settings</span></div></header>
+<main>
+<div class="workspace-heading"><h1>Terminals</h1><span class="count">3 sessions</span><span class="variant-tag">Variant A · Sheet in the deck</span><div class="view-controls"><div class="arrangement" aria-label="Layout preview"><button type="button" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1"/><path d="M10 4v12"/></svg>Side by side</button><button type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1"/><path d="M3 10h14"/></svg>Stacked</button></div><span class="control-divider"></span><button class="conversation-control" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 14H8l-4 3V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2Z"/><path d="M7 7h8M7 10h5"/></svg>Agent chat</button></div></div>
+<div class="awareness-row">
+<section class="flow-overview" aria-label="Sample flow visualization"><header class="flow-summary"><h2>UI overhaul</h2><span>Work flow · 2 agents working</span></header><div class="flow-map"><svg class="flow-connections" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><path class="signal lime" d="M10 50H230Q255 50 255 25H360"/><path class="signal ice" d="M10 50H255V75H360"/><path class="complete" d="M10 50H230Q255 50 255 25H360M255 50V75H360"/><path d="M360 25H570Q595 25 595 50H710M360 75H595V50"/></svg><div class="flow-node done"><span class="node-mark">✓</span><span class="node-copy"><strong>Direction</strong><small>Decided</small></span></div><div class="flow-branches"><div class="flow-node working"><span class="node-mark"></span><span class="node-copy"><strong>Components</strong><small>Designing</small></span></div><div class="flow-node working"><span class="node-mark"></span><span class="node-copy"><strong>Visual check</strong><small>Inspecting</small></span></div></div><div class="flow-node waiting"><span class="node-mark"></span><span class="node-copy"><strong>Your review</strong><small>Up next</small></span></div></div></section>
+<details class="agent-window" open><summary><span class="activity-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Visual check<span class="agent-model">Codex</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 12 5-5 5 5"/></svg></summary><div class="agent-output"><div class="tool"><span>Read</span><code>terminal-components.html</code></div><p>Inspecting headers, controls<br>and the spacing between sessions.<span class="agent-cursor" aria-hidden="true"></span></p><div class="agent-footer"><span class="activity-text">Working · 1m 24s</span><span>Sub-agent 2 of 2</span></div></div></details>
+</div>
+<div class="terminal-deck has-sheet">
+
+<section class="composer-sheet composer" data-composer aria-label="New terminal">
+  <div class="composer-head">
+    <span class="new-chip">New</span>
+    <span class="composer-title">Open a terminal</span>
+    <div class="composer-tabs" role="tablist" aria-label="New terminal mode"><button class="composer-tab" type="button" role="tab" aria-selected="true" data-tab="new">New</button><button class="composer-tab" type="button" role="tab" aria-selected="false" data-tab="resume">Resume</button></div>
+    <button class="composer-dismiss" type="button" aria-label="Dismiss"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button>
+  </div>
+
+  <div class="composer-panel" data-panel="new">
+    <div class="sheet-grid">
+      <div class="sheet-left">
+        <div class="engine-choice" role="radiogroup" aria-label="Engine">
+          <button class="engine claude" type="button" role="radio" aria-checked="false"><span class="dot"></span>Claude<small>fable</small></button>
+          <button class="engine codex" type="button" role="radio" aria-checked="true"><span class="dot"></span>Codex<small>gpt-6-astra</small></button>
+          <button class="engine glm" type="button" role="radio" aria-checked="false"><span class="dot"></span>GLM<small>glm-5</small></button>
+        </div>
+        <div class="field-row">
+          <label class="field"><span class="field-label">Model</span><input type="text" placeholder="engine default"></label>
+          <label class="field"><span class="field-label">Directory</span><input type="text" value="~/kingpinggroup/mission-control" placeholder="~/code/some-repo"></label>
+        </div>
+        <div class="composer-actions">
+          <button class="composer-open" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>Open terminal</button>
+          <button class="composer-cancel" type="button">Cancel</button>
+          <kbd>esc to dismiss</kbd>
+        </div>
+      </div>
+      <div class="sheet-right">
+        <div class="list-label">Recent directories<em>replaces the Directories overlay</em></div>
+        <div class="dir-list">
+          <button class="dir-row is-current" type="button"><span class="dir-name">mission-control</span><span class="dir-path">~/kingpinggroup/mission-control</span><span class="dir-sessions"><em class="ses lime">Terminal layout</em><em class="ses coral">Review pass</em></span></button>
+          <button class="dir-row" type="button"><span class="dir-name">klangtech-api</span><span class="dir-path">~/klangtech/klangtech-api</span><span class="dir-sessions"><em class="ses ice">Scratch shell</em></span></button>
+          <button class="dir-row" type="button"><span class="dir-name">portal-backoffice</span><span class="dir-path">~/klangtech/portal-backoffice</span><span class="dir-sessions"><em class="ses none">No live sessions</em></span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="composer-panel" data-panel="resume" hidden>
+    <div class="sheet-grid">
+      <div class="sheet-left">
+        <div class="field-row">
+          <label class="field"><span class="field-label">Claude history directory</span><input type="text" value="~/kingpinggroup/mission-control" placeholder="~/code/some-repo"></label>
+        </div>
+        <p class="field-hint">Resume reads Claude transcripts for one directory. Codex and GLM sessions always start new.</p>
+        <div class="composer-actions">
+          <button class="composer-open" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5"/></svg>Open terminal</button>
+          <button class="composer-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+      <div class="sheet-right">
+        <div class="list-label">Claude history<em>mission-control</em></div>
+        <div class="resume-list">
+          <button class="resume-row" type="button"><span class="resume-title">Workspace composition pass</span><span class="resume-when">14m ago</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">184 KB</span></button>
+          <button class="resume-row" type="button"><span class="resume-title">Quota window reporting</span><span class="resume-when">3h ago</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">96 KB</span></button>
+          <button class="resume-row" type="button"><span class="resume-title">Codex translate cleanup</span><span class="resume-when">yesterday</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">51 KB</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="deck-panes">
+<section class="terminal" aria-label="Terminal layout preview">
+<div class="session-heading"><span class="session-emblem" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><h2>Terminal layout</h2><span class="pane-tools"><button class="expand" type="button" aria-label="Focus Terminal layout"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m6 0h4v-4"/></svg></button><button class="expand quiet-tool is-hovered" type="button" aria-label="Find in Terminal layout"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5"/><path d="m13 13 4 4"/></svg></button><button class="expand quiet-tool" type="button" aria-label="Reconnect Terminal layout"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 5v4h-4"/><path d="M15.6 9a6 6 0 1 0-.4 4"/></svg></button></span><span class="new-chip">New</span></div>
+<p class="session-caption">Workspace composition and visual direction</p>
+<div class="session-context"><span class="provider">Codex</span><span class="model">gpt-6-astra</span><span class="context-dot">/</span><span class="path" title="~/kingpinggroup/mission-control">mission-control</span></div>
+<div class="transcript"><p class="command"><span class="prompt">›</span>Inspect the terminal workspace</p><p class="file-line"><span>Read</span><code>client/terminal.ts</code></p><div class="file-line"><span>Read</span><code>client/thread-view.ts</code></div><p class="result"><span><strong>Session layout mapped.</strong></span><span>Two terminals, one working context.</span><span>Conversation follows the selected session.</span></p><p>Ready to explore the visual direction.</p></div>
+<div class="input-line"><span class="input-prompt">›</span><span class="cursor" aria-hidden="true"></span><span class="input-placeholder">Give a direction…</span><kbd>↵</kbd></div>
+</section>
+<div class="terminal-divider" aria-hidden="true"></div>
+<section class="terminal" aria-label="Review pass preview">
+<div class="session-heading"><span class="session-emblem" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><h2>Review pass</h2><span class="pane-tools"><button class="expand" type="button" aria-label="Focus Review pass"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m6 0h4v-4"/></svg></button><button class="expand quiet-tool" type="button" aria-label="Find in Review pass"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5"/><path d="m13 13 4 4"/></svg></button><button class="expand quiet-tool" type="button" aria-label="Reconnect Review pass"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 5v4h-4"/><path d="M15.6 9a6 6 0 1 0-.4 4"/></svg></button></span></div>
+<p class="session-caption">A second perspective on the workspace</p>
+<div class="session-context"><span class="provider">Claude</span><span class="model">fable</span><span class="context-dot">/</span><span class="path" title="~/kingpinggroup/mission-control">mission-control</span></div>
+<div class="transcript"><p class="command"><span class="prompt">›</span>Review the current composition</p><p>The layout gives both sessions equal space.<br>The selected session stays easy to find.</p><p class="result"><span><strong>Three details to refine</strong></span><span>Type and spacing</span><span>Controls and session identity</span><span>Contrast between active and resting states</span></p><p>Waiting for your thoughts.</p></div>
+<div class="input-line"><span class="input-prompt">›</span><span class="input-placeholder">Continue this session…</span><kbd>↵</kbd></div>
+</section>
+</div>
+</div>
+<nav class="session-strip" aria-label="Session component preview">
+<button class="session-choice" type="button" aria-pressed="true"><span class="glyph"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><span class="session-copy"><strong>Terminal layout</strong><small>Codex · Waiting for you</small></span></button>
+<button class="session-choice" type="button" aria-pressed="false"><span class="glyph"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><span class="session-copy"><strong>Review pass</strong><small>Claude · Ready</small></span></button>
+<button class="session-choice" type="button" aria-pressed="false"><span class="glyph"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><span class="session-copy"><strong>Scratch shell</strong><small>Local · Idle</small></span></button>
+<button class="add-session" type="button" aria-expanded="true"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>New terminal</button>
+</nav>
+<footer class="footnote"><span>A · the sheet opens inside the deck and pushes the panes down · sample data</span><span class="source-note">Real files: server/views/terminals.tsx · client/terminal.ts · client/terminal-view.ts</span></footer>
+</main>
+</section>
+
+<!-- ══ B · Dock popover ══ -->
+<section class="screen" data-screen="b" aria-label="Variant B">
+<header class="masthead"><div class="brand">Mission Control<span>_</span></div><nav class="primary-nav" aria-label="Workspace"><span>Main</span><span aria-current="page">Terminals</span><span>Usage</span></nav><div class="usage-summary" aria-label="Sample provider usage">
+<section class="provider-usage" aria-label="Claude sample usage"><div class="quota-heading"><span class="quota-provider">Claude</span><span class="quota-period">5h</span><strong>24<small>%</small></strong></div><meter min="0" max="100" value="24" aria-label="Claude 5-hour usage: 24 percent, sample">24%</meter><div class="quota-week"><span>Weekly</span><meter min="0" max="100" value="12" aria-label="Claude weekly usage: 12 percent, sample">12%</meter><span class="week-value">12%</span></div></section>
+<section class="provider-usage" aria-label="GLM sample usage"><div class="quota-heading"><span class="quota-provider">GLM</span><span class="quota-period">5h</span><strong>28<small>%</small></strong></div><meter min="0" max="100" value="28" aria-label="GLM 5-hour usage: 28 percent, sample">28%</meter><div class="quota-week"><span>Weekly</span><meter min="0" max="100" value="8" aria-label="GLM weekly usage: 8 percent, design placeholder">8%</meter><span class="week-value">8%</span></div></section>
+<section class="provider-usage" aria-label="Codex sample usage"><div class="quota-heading"><span class="quota-provider">Codex</span><span class="quota-period">5h</span><strong>61<small>%</small></strong></div><meter min="0" max="100" value="61" aria-label="Codex 5-hour usage: 61 percent, sample">61%</meter><div class="quota-week"><span>Weekly</span><meter min="0" max="100" value="34" aria-label="Codex weekly usage: 34 percent, sample">34%</meter><span class="week-value">34%</span></div></section>
+</div><div class="preview-nav"><span class="study-label">Visual study</span><a class="comparison-link" href="/terminal-components.html">Approved study ↗</a><span>Settings</span></div></header>
+<main>
+<div class="workspace-heading"><h1>Terminals</h1><span class="count">3 sessions</span><span class="variant-tag">Variant B · Dock popover</span><div class="view-controls"><div class="arrangement" aria-label="Layout preview"><button type="button" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1"/><path d="M10 4v12"/></svg>Side by side</button><button type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1"/><path d="M3 10h14"/></svg>Stacked</button></div><span class="control-divider"></span><button class="conversation-control" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 14H8l-4 3V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2Z"/><path d="M7 7h8M7 10h5"/></svg>Agent chat</button></div></div>
+<div class="awareness-row">
+<section class="flow-overview" aria-label="Sample flow visualization"><header class="flow-summary"><h2>UI overhaul</h2><span>Work flow · 2 agents working</span></header><div class="flow-map"><svg class="flow-connections" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><path class="signal lime" d="M10 50H230Q255 50 255 25H360"/><path class="signal ice" d="M10 50H255V75H360"/><path class="complete" d="M10 50H230Q255 50 255 25H360M255 50V75H360"/><path d="M360 25H570Q595 25 595 50H710M360 75H595V50"/></svg><div class="flow-node done"><span class="node-mark">✓</span><span class="node-copy"><strong>Direction</strong><small>Decided</small></span></div><div class="flow-branches"><div class="flow-node working"><span class="node-mark"></span><span class="node-copy"><strong>Components</strong><small>Designing</small></span></div><div class="flow-node working"><span class="node-mark"></span><span class="node-copy"><strong>Visual check</strong><small>Inspecting</small></span></div></div><div class="flow-node waiting"><span class="node-mark"></span><span class="node-copy"><strong>Your review</strong><small>Up next</small></span></div></div></section>
+<details class="agent-window" open><summary><span class="activity-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Visual check<span class="agent-model">Codex</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 12 5-5 5 5"/></svg></summary><div class="agent-output"><div class="tool"><span>Read</span><code>terminal-components.html</code></div><p>Inspecting headers, controls<br>and the spacing between sessions.<span class="agent-cursor" aria-hidden="true"></span></p><div class="agent-footer"><span class="activity-text">Working · 1m 24s</span><span>Sub-agent 2 of 2</span></div></div></details>
+</div>
+<div class="terminal-deck">
+<section class="terminal" aria-label="Terminal layout preview">
+<div class="session-heading"><span class="session-emblem" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><h2>Terminal layout</h2><span class="pane-tools"><button class="expand" type="button" aria-label="Focus Terminal layout"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m6 0h4v-4"/></svg></button><button class="expand quiet-tool is-hovered" type="button" aria-label="Find in Terminal layout"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5"/><path d="m13 13 4 4"/></svg></button><button class="expand quiet-tool" type="button" aria-label="Reconnect Terminal layout"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 5v4h-4"/><path d="M15.6 9a6 6 0 1 0-.4 4"/></svg></button></span><span class="new-chip">New</span></div>
+<p class="session-caption">Workspace composition and visual direction</p>
+<div class="session-context"><span class="provider">Codex</span><span class="model">gpt-6-astra</span><span class="context-dot">/</span><span class="path" title="~/kingpinggroup/mission-control">mission-control</span></div>
+<div class="transcript"><p class="command"><span class="prompt">›</span>Inspect the terminal workspace</p><p class="file-line"><span>Read</span><code>client/terminal.ts</code></p><div class="file-line"><span>Read</span><code>client/thread-view.ts</code></div><p class="result"><span><strong>Session layout mapped.</strong></span><span>Two terminals, one working context.</span><span>Conversation follows the selected session.</span></p><p>Ready to explore the visual direction.</p></div>
+<div class="input-line"><span class="input-prompt">›</span><span class="cursor" aria-hidden="true"></span><span class="input-placeholder">Give a direction…</span><kbd>↵</kbd></div>
+</section>
+<div class="terminal-divider" aria-hidden="true"></div>
+<section class="terminal" aria-label="Review pass preview">
+<div class="session-heading"><span class="session-emblem" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><h2>Review pass</h2><span class="pane-tools"><button class="expand" type="button" aria-label="Focus Review pass"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m6 0h4v-4"/></svg></button><button class="expand quiet-tool" type="button" aria-label="Find in Review pass"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5"/><path d="m13 13 4 4"/></svg></button><button class="expand quiet-tool" type="button" aria-label="Reconnect Review pass"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 5v4h-4"/><path d="M15.6 9a6 6 0 1 0-.4 4"/></svg></button></span></div>
+<p class="session-caption">A second perspective on the workspace</p>
+<div class="session-context"><span class="provider">Claude</span><span class="model">fable</span><span class="context-dot">/</span><span class="path" title="~/kingpinggroup/mission-control">mission-control</span></div>
+<div class="transcript"><p class="command"><span class="prompt">›</span>Review the current composition</p><p>The layout gives both sessions equal space.<br>The selected session stays easy to find.</p><p class="result"><span><strong>Three details to refine</strong></span><span>Type and spacing</span><span>Controls and session identity</span><span>Contrast between active and resting states</span></p><p>Waiting for your thoughts.</p></div>
+<div class="input-line"><span class="input-prompt">›</span><span class="input-placeholder">Continue this session…</span><kbd>↵</kbd></div>
+</section>
+</div>
+<nav class="session-strip" aria-label="Session component preview">
+<button class="session-choice" type="button" aria-pressed="true"><span class="glyph"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><span class="session-copy"><strong>Terminal layout</strong><small>Codex · Waiting for you</small></span></button>
+<button class="session-choice" type="button" aria-pressed="false"><span class="glyph"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><span class="session-copy"><strong>Review pass</strong><small>Claude · Ready</small></span></button>
+<button class="session-choice" type="button" aria-pressed="false"><span class="glyph"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><span class="session-copy"><strong>Scratch shell</strong><small>Local · Idle</small></span></button>
+<button class="add-session" type="button" aria-expanded="true"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>New terminal</button>
+<div class="composer-popover composer" data-composer aria-label="New terminal">
+  <div class="composer-head">
+    <span class="new-chip">New</span>
+    <div class="composer-tabs" role="tablist" aria-label="New terminal mode"><button class="composer-tab" type="button" role="tab" aria-selected="true" data-tab="new">New</button><button class="composer-tab" type="button" role="tab" aria-selected="false" data-tab="resume">Resume</button></div>
+    <button class="composer-dismiss" type="button" aria-label="Dismiss"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button>
+  </div>
+  <div class="composer-panel composer-body" data-panel="new">
+    <div class="engine-choice" role="radiogroup" aria-label="Engine">
+      <button class="engine claude" type="button" role="radio" aria-checked="false"><span class="dot"></span>Claude<small>fable</small></button>
+      <button class="engine codex" type="button" role="radio" aria-checked="true"><span class="dot"></span>Codex<small>gpt-6-astra</small></button>
+      <button class="engine glm" type="button" role="radio" aria-checked="false"><span class="dot"></span>GLM<small>glm-5</small></button>
+    </div>
+    <div class="field-row">
+      <label class="field"><span class="field-label">Model</span><input type="text" placeholder="engine default"></label>
+      <label class="field"><span class="field-label">Directory</span><input type="text" value="~/kingpinggroup/mission-control" placeholder="~/code/some-repo"></label>
+    </div>
+    <div>
+      <div class="list-label">Recent directories<em>replaces the Directories overlay</em></div>
+      <div class="dir-list">
+        <button class="dir-row is-current" type="button"><span class="dir-name">mission-control</span><span class="dir-path">~/kingpinggroup/mission-control</span><span class="dir-sessions"><em class="ses lime">Terminal layout</em><em class="ses coral">Review pass</em></span></button>
+        <button class="dir-row" type="button"><span class="dir-name">klangtech-api</span><span class="dir-path">~/klangtech/klangtech-api</span><span class="dir-sessions"><em class="ses ice">Scratch shell</em></span></button>
+        <button class="dir-row" type="button"><span class="dir-name">portal-backoffice</span><span class="dir-path">~/klangtech/portal-backoffice</span><span class="dir-sessions"><em class="ses none">No live sessions</em></span></button>
+      </div>
+    </div>
+    <div class="composer-actions">
+      <button class="composer-open" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>Open terminal</button>
+      <button class="composer-cancel" type="button">Cancel</button>
+      <kbd>esc</kbd>
+    </div>
+  </div>
+  <div class="composer-panel composer-body" data-panel="resume" hidden>
+    <label class="field"><span class="field-label">Claude history directory</span><input type="text" value="~/kingpinggroup/mission-control" placeholder="~/code/some-repo"></label>
+    <div>
+      <div class="list-label">Claude history<em>mission-control</em></div>
+      <div class="resume-list">
+        <button class="resume-row" type="button"><span class="resume-title">Workspace composition pass</span><span class="resume-when">14m ago</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">184 KB</span></button>
+        <button class="resume-row" type="button"><span class="resume-title">Quota window reporting</span><span class="resume-when">3h ago</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">96 KB</span></button>
+        <button class="resume-row" type="button"><span class="resume-title">Codex translate cleanup</span><span class="resume-when">yesterday</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">51 KB</span></button>
+      </div>
+    </div>
+    <div class="composer-actions">
+      <button class="composer-open" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5"/></svg>Open terminal</button>
+      <button class="composer-cancel" type="button">Cancel</button>
+    </div>
+  </div>
+</div>
+</nav>
+<footer class="footnote"><span>B · the popover is anchored above “+ New terminal” and never moves the deck · sample data</span><span class="source-note">Real files: server/views/terminals.tsx · client/terminal.ts · client/terminal-view.ts</span></footer>
+</main>
+</section>
+
+<!-- ══ C · Empty pane as composer ══ -->
+<section class="screen" data-screen="c" aria-label="Variant C">
+<header class="masthead"><div class="brand">Mission Control<span>_</span></div><nav class="primary-nav" aria-label="Workspace"><span>Main</span><span aria-current="page">Terminals</span><span>Usage</span></nav><div class="usage-summary" aria-label="Sample provider usage">
+<section class="provider-usage" aria-label="Claude sample usage"><div class="quota-heading"><span class="quota-provider">Claude</span><span class="quota-period">5h</span><strong>24<small>%</small></strong></div><meter min="0" max="100" value="24" aria-label="Claude 5-hour usage: 24 percent, sample">24%</meter><div class="quota-week"><span>Weekly</span><meter min="0" max="100" value="12" aria-label="Claude weekly usage: 12 percent, sample">12%</meter><span class="week-value">12%</span></div></section>
+<section class="provider-usage" aria-label="GLM sample usage"><div class="quota-heading"><span class="quota-provider">GLM</span><span class="quota-period">5h</span><strong>28<small>%</small></strong></div><meter min="0" max="100" value="28" aria-label="GLM 5-hour usage: 28 percent, sample">28%</meter><div class="quota-week"><span>Weekly</span><meter min="0" max="100" value="8" aria-label="GLM weekly usage: 8 percent, design placeholder">8%</meter><span class="week-value">8%</span></div></section>
+<section class="provider-usage" aria-label="Codex sample usage"><div class="quota-heading"><span class="quota-provider">Codex</span><span class="quota-period">5h</span><strong>61<small>%</small></strong></div><meter min="0" max="100" value="61" aria-label="Codex 5-hour usage: 61 percent, sample">61%</meter><div class="quota-week"><span>Weekly</span><meter min="0" max="100" value="34" aria-label="Codex weekly usage: 34 percent, sample">34%</meter><span class="week-value">34%</span></div></section>
+</div><div class="preview-nav"><span class="study-label">Visual study</span><a class="comparison-link" href="/terminal-components.html">Approved study ↗</a><span>Settings</span></div></header>
+<main>
+<div class="workspace-heading"><h1>Terminals</h1><span class="count">3 sessions</span><span class="variant-tag">Variant C · Empty pane as composer</span><div class="view-controls"><div class="arrangement" aria-label="Layout preview"><button type="button" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1"/><path d="M10 4v12"/></svg>Side by side</button><button type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="1"/><path d="M3 10h14"/></svg>Stacked</button></div><span class="control-divider"></span><button class="conversation-control" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 14H8l-4 3V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2Z"/><path d="M7 7h8M7 10h5"/></svg>Agent chat</button></div></div>
+<div class="awareness-row">
+<section class="flow-overview" aria-label="Sample flow visualization"><header class="flow-summary"><h2>UI overhaul</h2><span>Work flow · 2 agents working</span></header><div class="flow-map"><svg class="flow-connections" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><path class="signal lime" d="M10 50H230Q255 50 255 25H360"/><path class="signal ice" d="M10 50H255V75H360"/><path class="complete" d="M10 50H230Q255 50 255 25H360M255 50V75H360"/><path d="M360 25H570Q595 25 595 50H710M360 75H595V50"/></svg><div class="flow-node done"><span class="node-mark">✓</span><span class="node-copy"><strong>Direction</strong><small>Decided</small></span></div><div class="flow-branches"><div class="flow-node working"><span class="node-mark"></span><span class="node-copy"><strong>Components</strong><small>Designing</small></span></div><div class="flow-node working"><span class="node-mark"></span><span class="node-copy"><strong>Visual check</strong><small>Inspecting</small></span></div></div><div class="flow-node waiting"><span class="node-mark"></span><span class="node-copy"><strong>Your review</strong><small>Up next</small></span></div></div></section>
+<details class="agent-window" open><summary><span class="activity-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Visual check<span class="agent-model">Codex</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 12 5-5 5 5"/></svg></summary><div class="agent-output"><div class="tool"><span>Read</span><code>terminal-components.html</code></div><p>Inspecting headers, controls<br>and the spacing between sessions.<span class="agent-cursor" aria-hidden="true"></span></p><div class="agent-footer"><span class="activity-text">Working · 1m 24s</span><span>Sub-agent 2 of 2</span></div></div></details>
+</div>
+<div class="terminal-deck">
+<section class="terminal composer-pane composer" data-composer aria-label="New terminal">
+<div class="session-heading"><span class="session-emblem" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg></span><input class="pane-title-field" type="text" placeholder="Name this session"><span class="new-chip">New</span></div>
+<p class="session-caption">Not started yet · choose an engine and a directory</p>
+<div class="session-context">
+  <span class="engine-choice" role="radiogroup" aria-label="Engine"><button class="engine claude" type="button" role="radio" aria-checked="false"><span class="dot"></span>Claude<small>fable</small></button><button class="engine codex" type="button" role="radio" aria-checked="true"><span class="dot"></span>Codex<small>gpt-6-astra</small></button><button class="engine glm" type="button" role="radio" aria-checked="false"><span class="dot"></span>GLM<small>glm-5</small></button></span>
+  <label class="inline-field"><span class="field-label">Model</span><input type="text" placeholder="engine default"></label>
+  <label class="inline-field"><span class="field-label">Dir</span><input type="text" value="~/kingpinggroup/mission-control" placeholder="~/code/some-repo"></label>
+</div>
+<div class="transcript">
+  <div class="composer-head"><div class="composer-tabs" role="tablist" aria-label="New terminal mode"><button class="composer-tab" type="button" role="tab" aria-selected="true" data-tab="new">New</button><button class="composer-tab" type="button" role="tab" aria-selected="false" data-tab="resume">Resume</button></div><button class="composer-dismiss" type="button" aria-label="Dismiss"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></div>
+  <div class="composer-panel" data-panel="new">
+    <div class="list-label">Recent directories<em>replaces the Directories overlay</em></div>
+    <div class="dir-list">
+      <button class="dir-row is-current" type="button"><span class="dir-name">mission-control</span><span class="dir-path">~/kingpinggroup/mission-control</span><span class="dir-sessions"><em class="ses lime">Terminal layout</em><em class="ses coral">Review pass</em></span></button>
+      <button class="dir-row" type="button"><span class="dir-name">klangtech-api</span><span class="dir-path">~/klangtech/klangtech-api</span><span class="dir-sessions"><em class="ses ice">Scratch shell</em></span></button>
+      <button class="dir-row" type="button"><span class="dir-name">portal-backoffice</span><span class="dir-path">~/klangtech/portal-backoffice</span><span class="dir-sessions"><em class="ses none">No live sessions</em></span></button>
+    </div>
+  </div>
+  <div class="composer-panel" data-panel="resume" hidden>
+    <div class="list-label">Claude history<em>mission-control</em></div>
+    <div class="resume-list">
+      <button class="resume-row" type="button"><span class="resume-title">Workspace composition pass</span><span class="resume-when">14m ago</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">184 KB</span></button>
+      <button class="resume-row" type="button"><span class="resume-title">Quota window reporting</span><span class="resume-when">3h ago</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">96 KB</span></button>
+      <button class="resume-row" type="button"><span class="resume-title">Codex translate cleanup</span><span class="resume-when">yesterday</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">51 KB</span></button>
+      <button class="resume-row" type="button"><span class="resume-title">Segment delete rebase</span><span class="resume-when">2d ago</span><span class="resume-where">~/klangtech/klangtech-api</span><span class="resume-size">28 KB</span></button>
+    </div>
+  </div>
+</div>
+<div class="input-line"><button class="composer-open" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>Open terminal</button><button class="composer-cancel" type="button">Cancel</button><kbd>esc</kbd></div>
+</section>
+<div class="terminal-divider" aria-hidden="true"></div>
+<section class="terminal" aria-label="Review pass preview">
+<div class="session-heading"><span class="session-emblem" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><h2>Review pass</h2><span class="pane-tools"><button class="expand" type="button" aria-label="Focus Review pass"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m6 0h4v-4"/></svg></button><button class="expand quiet-tool is-hovered" type="button" aria-label="Find in Review pass"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5"/><path d="m13 13 4 4"/></svg></button><button class="expand quiet-tool" type="button" aria-label="Reconnect Review pass"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 5v4h-4"/><path d="M15.6 9a6 6 0 1 0-.4 4"/></svg></button></span><span class="new-chip">New</span></div>
+<p class="session-caption">A second perspective on the workspace</p>
+<div class="session-context"><span class="provider">Claude</span><span class="model">fable</span><span class="context-dot">/</span><span class="path" title="~/kingpinggroup/mission-control">mission-control</span></div>
+<div class="transcript"><p class="command"><span class="prompt">›</span>Review the current composition</p><p>The layout gives both sessions equal space.<br>The selected session stays easy to find.</p><p class="result"><span><strong>Three details to refine</strong></span><span>Type and spacing</span><span>Controls and session identity</span><span>Contrast between active and resting states</span></p><p>Waiting for your thoughts.</p></div>
+<div class="input-line"><span class="input-prompt">›</span><span class="cursor" aria-hidden="true"></span><span class="input-placeholder">Continue this session…</span><kbd>↵</kbd></div>
+</section>
+</div>
+<nav class="session-strip" aria-label="Session component preview">
+<button class="session-choice" type="button" aria-pressed="true"><span class="glyph"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><span class="session-copy"><strong>Terminal layout</strong><small>Codex · Waiting for you</small></span></button>
+<button class="session-choice" type="button" aria-pressed="false"><span class="glyph"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><span class="session-copy"><strong>Review pass</strong><small>Claude · Ready</small></span></button>
+<button class="session-choice" type="button" aria-pressed="false"><span class="glyph"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 6 4 4-4 4m7 0h5"/></svg></span><span class="session-copy"><strong>Scratch shell</strong><small>Local · Idle</small></span></button>
+<button class="add-session" type="button" aria-expanded="true"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>New terminal</button>
+</nav>
+<footer class="footnote"><span>C · the composer takes a pane slot, so one live session steps back to the strip · sample data</span><span class="source-note">Real files: server/views/terminals.tsx · client/terminal.ts · client/terminal-view.ts</span></footer>
+</main>
+</section>
+
+<!-- ══ Empty ══ -->
+<section class="screen" data-screen="empty" aria-label="Empty deck comparison">
+<header class="masthead"><div class="brand">Mission Control<span>_</span></div><nav class="primary-nav" aria-label="Workspace"><span>Main</span><span aria-current="page">Terminals</span><span>Usage</span></nav><div class="preview-nav"><span class="study-label">Visual study</span><a class="comparison-link" href="/terminal-components.html">Approved study ↗</a><span>Settings</span></div></header>
+<main>
+<div class="workspace-heading"><h1>Terminals</h1><span class="count">No live sessions</span><span class="variant-tag">Empty deck · A, B and C side by side</span></div>
+<div class="empty-row">
+
+  <div class="crop">
+    <div class="crop-label">A · Sheet in the deck<small>480px crop of the deck area</small></div>
+    <div class="crop-body">
+      <div class="terminal-deck has-sheet">
+        <section class="composer-sheet composer" data-composer aria-label="New terminal">
+          <div class="composer-head"><span class="new-chip">New</span><div class="composer-tabs" role="tablist" aria-label="New terminal mode"><button class="composer-tab" type="button" role="tab" aria-selected="true" data-tab="new">New</button><button class="composer-tab" type="button" role="tab" aria-selected="false" data-tab="resume">Resume</button></div><button class="composer-dismiss" type="button" aria-label="Dismiss"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></div>
+          <div class="composer-panel" data-panel="new"><div class="sheet-grid"><div class="sheet-left">
+            <div class="engine-choice" role="radiogroup" aria-label="Engine"><button class="engine claude" type="button" role="radio" aria-checked="false"><span class="dot"></span>Claude</button><button class="engine codex" type="button" role="radio" aria-checked="true"><span class="dot"></span>Codex</button><button class="engine glm" type="button" role="radio" aria-checked="false"><span class="dot"></span>GLM</button></div>
+            <label class="field"><span class="field-label">Directory</span><input type="text" placeholder="~/code/some-repo"></label>
+            <div class="dir-list"><button class="dir-row" type="button"><span class="dir-name">mission-control</span><span class="dir-path">~/kingpinggroup/mission-control</span><span class="dir-sessions"><em class="ses none">No live sessions</em></span></button><button class="dir-row" type="button"><span class="dir-name">klangtech-api</span><span class="dir-path">~/klangtech/klangtech-api</span><span class="dir-sessions"><em class="ses none">No live sessions</em></span></button></div>
+            <div class="composer-actions"><button class="composer-open" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>Open terminal</button><button class="composer-cancel" type="button">Cancel</button></div>
+          </div></div></div>
+          <div class="composer-panel" data-panel="resume" hidden><div class="list-label">Claude history</div><div class="resume-list"><button class="resume-row" type="button"><span class="resume-title">Workspace composition pass</span><span class="resume-when">14m ago</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">184 KB</span></button><button class="resume-row" type="button"><span class="resume-title">Quota window reporting</span><span class="resume-when">3h ago</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">96 KB</span></button></div></div>
+        </section>
+        <div class="deck-panes"><div class="deck-area welcome"><h2>Start a session</h2><p>The sheet above is already open.<br>Pick a directory, then open a terminal.</p></div></div>
+      </div>
+      <nav class="session-strip"><span class="session-choice" style="border-right:0;color:var(--quiet);font-size:11px">No live sessions</span><button class="add-session" type="button" aria-expanded="true"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>New terminal</button></nav>
+    </div>
+  </div>
+
+  <div class="crop">
+    <div class="crop-label">B · Dock popover<small>480px crop of the deck area</small></div>
+    <div class="crop-body">
+      <div class="terminal-deck"><div class="deck-area welcome"><h2>Start a session</h2><p>Choose a directory and engine,<br>or resume Claude history.</p><button class="composer-open" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>Open a terminal</button></div></div>
+      <nav class="session-strip">
+        <span class="session-choice" style="border-right:0;color:var(--quiet);font-size:11px">No live sessions</span>
+        <button class="add-session" type="button" aria-expanded="true"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>New terminal</button>
+        <div class="composer-popover composer" data-composer aria-label="New terminal">
+          <div class="composer-head"><span class="new-chip">New</span><div class="composer-tabs" role="tablist" aria-label="New terminal mode"><button class="composer-tab" type="button" role="tab" aria-selected="true" data-tab="new">New</button><button class="composer-tab" type="button" role="tab" aria-selected="false" data-tab="resume">Resume</button></div><button class="composer-dismiss" type="button" aria-label="Dismiss"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></div>
+          <div class="composer-panel composer-body" data-panel="new">
+            <div class="engine-choice" role="radiogroup" aria-label="Engine"><button class="engine claude" type="button" role="radio" aria-checked="false"><span class="dot"></span>Claude</button><button class="engine codex" type="button" role="radio" aria-checked="true"><span class="dot"></span>Codex</button><button class="engine glm" type="button" role="radio" aria-checked="false"><span class="dot"></span>GLM</button></div>
+            <label class="field"><span class="field-label">Directory</span><input type="text" placeholder="~/code/some-repo"></label>
+            <div class="dir-list"><button class="dir-row" type="button"><span class="dir-name">mission-control</span><span class="dir-path">~/kingpinggroup/mission-control</span><span class="dir-sessions"><em class="ses none">No live sessions</em></span></button><button class="dir-row" type="button"><span class="dir-name">klangtech-api</span><span class="dir-path">~/klangtech/klangtech-api</span><span class="dir-sessions"><em class="ses none">No live sessions</em></span></button></div>
+            <div class="composer-actions"><button class="composer-open" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>Open terminal</button><button class="composer-cancel" type="button">Cancel</button></div>
+          </div>
+          <div class="composer-panel composer-body" data-panel="resume" hidden><div class="list-label">Claude history</div><div class="resume-list"><button class="resume-row" type="button"><span class="resume-title">Workspace composition pass</span><span class="resume-when">14m ago</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">184 KB</span></button><button class="resume-row" type="button"><span class="resume-title">Quota window reporting</span><span class="resume-when">3h ago</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">96 KB</span></button></div></div>
+        </div>
+      </nav>
+    </div>
+  </div>
+
+  <div class="crop">
+    <div class="crop-label">C · Empty pane as composer<small>480px crop of the deck area</small></div>
+    <div class="crop-body">
+      <div class="terminal-deck">
+        <section class="terminal composer-pane composer" data-composer aria-label="New terminal">
+          <div class="session-heading"><span class="session-emblem" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg></span><input class="pane-title-field" type="text" placeholder="Name this session"><span class="new-chip">New</span></div>
+          <p class="session-caption">Start a session</p>
+          <div class="session-context"><span class="engine-choice" role="radiogroup" aria-label="Engine"><button class="engine claude" type="button" role="radio" aria-checked="false"><span class="dot"></span>Claude</button><button class="engine codex" type="button" role="radio" aria-checked="true"><span class="dot"></span>Codex</button><button class="engine glm" type="button" role="radio" aria-checked="false"><span class="dot"></span>GLM</button></span><label class="inline-field"><span class="field-label">Dir</span><input type="text" placeholder="~/code/some-repo"></label></div>
+          <div class="transcript">
+            <div class="composer-head"><div class="composer-tabs" role="tablist" aria-label="New terminal mode"><button class="composer-tab" type="button" role="tab" aria-selected="true" data-tab="new">New</button><button class="composer-tab" type="button" role="tab" aria-selected="false" data-tab="resume">Resume</button></div></div>
+            <div class="composer-panel" data-panel="new"><div class="dir-list"><button class="dir-row" type="button"><span class="dir-name">mission-control</span><span class="dir-path">~/kingpinggroup/mission-control</span><span class="dir-sessions"><em class="ses none">No live sessions</em></span></button><button class="dir-row" type="button"><span class="dir-name">klangtech-api</span><span class="dir-path">~/klangtech/klangtech-api</span><span class="dir-sessions"><em class="ses none">No live sessions</em></span></button></div></div>
+            <div class="composer-panel" data-panel="resume" hidden><div class="resume-list"><button class="resume-row" type="button"><span class="resume-title">Workspace composition pass</span><span class="resume-when">14m ago</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">184 KB</span></button><button class="resume-row" type="button"><span class="resume-title">Quota window reporting</span><span class="resume-when">3h ago</span><span class="resume-where">~/kingpinggroup/mission-control</span><span class="resume-size">96 KB</span></button></div></div>
+          </div>
+          <div class="input-line"><button class="composer-open" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>Open terminal</button><kbd>esc</kbd></div>
+        </section>
+      </div>
+      <nav class="session-strip"><span class="session-choice" style="border-right:0;color:var(--quiet);font-size:11px">No live sessions</span><button class="add-session" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>New terminal</button></nav>
+    </div>
+  </div>
+
+</div>
+<footer class="footnote"><span>Empty · A keeps a welcome line under an open sheet, B keeps the welcome and floats the popover, C has no separate welcome at all</span><span class="source-note">Real files: server/views/terminals.tsx · client/terminal.ts · client/terminal-view.ts</span></footer>
+</main>
+</section>
+
+<script>(()=>{const $=id=>document.getElementById(id);let userPaused=false;const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+const canvas=$('atmosphere'),ctx=canvas.getContext('2d',{alpha:false});let width=0,height=0,frame=0,lastTime=0,phase=0;const glyphs=' .,:;+=*#';
+function draw(){ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--background');ctx.fillRect(0,0,width,height);ctx.font='12px '+getComputedStyle(document.documentElement).getPropertyValue('--code');ctx.textBaseline='middle';for(let y=0;y<height;y+=13)for(let x=0;x<width;x+=10){const u=x/width,v=(y+55)/Math.min(270,height*.33);const center=.99-.38*u+.12*Math.sin(u*6.4-phase*.38);const distance=(v-center)/(.15+.05*Math.sin(u*4+phase*.22));if(Math.abs(distance)>1.45)continue;const envelope=Math.pow(Math.max(0,1-Math.abs(distance)/1.45),.7);const fold=Math.sin(distance*13+u*9-phase*.65+1.7*Math.sin(u*7+phase*.3));const ridge=Math.pow((fold+1)/2,2),density=envelope*(.16+.84*ridge);if(density<.12)continue;const shade=Math.round(42+density*115);ctx.fillStyle=`rgb(${shade},${shade},${shade+3})`;ctx.fillText(glyphs[Math.min(glyphs.length-1,Math.floor(density*(glyphs.length-1)))],x,y);}}
+function sizeCanvas(){const scale=Math.min(1,1600/innerWidth,1100/innerHeight);width=Math.round(innerWidth*scale);height=Math.round(innerHeight*scale);canvas.width=width;canvas.height=height;draw();}
+function tick(now){frame=0;if(userPaused||reduced.matches||document.hidden)return;if(!lastTime)lastTime=now;const elapsed=now-lastTime;if(elapsed>=1000/30){phase+=Math.min(elapsed,100)/1000;lastTime=now;draw();}frame=requestAnimationFrame(tick);}
+function syncMotion(){cancelAnimationFrame(frame);frame=0;lastTime=0;const paused=userPaused||reduced.matches;document.body.dataset.motion=paused?'paused':'running';$('motion-toggle').textContent=reduced.matches?'Motion off · system preference':userPaused?'Resume motion':'Pause motion';$('motion-toggle').disabled=reduced.matches;if($('settings-motion')){$('settings-motion').textContent=$('motion-toggle').textContent;$('settings-motion').disabled=reduced.matches;}if(paused)document.getAnimations().forEach(a=>a.cancel());else if(!document.hidden)frame=requestAnimationFrame(tick);draw();}
+function toggleMotion(){userPaused=!userPaused;syncMotion();}$('motion-toggle').onclick=toggleMotion;reduced.addEventListener('change',syncMotion);document.addEventListener('visibilitychange',syncMotion);window.addEventListener('resize',sizeCanvas);sizeCanvas();syncMotion();
+})();</script>
+
+<script>(()=>{
+const screens=[...document.querySelectorAll('.screen')],tabs=[...document.querySelectorAll('.state-tabs a')];
+const names=screens.map(screen=>screen.dataset.screen);
+function show(){const name=names.includes(location.hash.slice(1))?location.hash.slice(1):'a';
+for(const screen of screens)screen.classList.toggle('is-active',screen.dataset.screen===name);
+for(const tab of tabs){if(tab.dataset.state===name)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');}
+scrollTo(0,0);}
+addEventListener('hashchange',show);show();
+for(const composer of document.querySelectorAll('[data-composer]')){
+composer.addEventListener('click',event=>{
+const tab=event.target.closest('.composer-tab');
+if(tab){for(const peer of composer.querySelectorAll('.composer-tab'))peer.setAttribute('aria-selected',String(peer===tab));
+for(const panel of composer.querySelectorAll('.composer-panel'))panel.hidden=panel.dataset.panel!==tab.dataset.tab;return;}
+const engine=event.target.closest('.engine');
+if(engine){for(const peer of engine.parentElement.querySelectorAll('.engine'))peer.setAttribute('aria-checked',String(peer===engine));}
+});}
+})();</script>
+</body>
+</html>
