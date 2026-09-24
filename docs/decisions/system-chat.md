@@ -3,7 +3,7 @@
 The quiet-chat landing page becomes a real chat: you talk to whichever AI is connected, there is no
 plan step, and the chat spawns agents on its own when the work needs them. It replaces the old
 "switch a terminal to a chat transcript" feature. Decided in a grilling session on 2026-09-24; the
-visual decisions are in `visualizer/chat-agent-cards/DECISION.md`.
+visual decisions are in `docs/design/chat-agent-cards/DECISION.md`.
 
 ## Engine
 

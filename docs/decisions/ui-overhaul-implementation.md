@@ -1,6 +1,6 @@
 # Implement the approved Mission Control design
 
-The user approved `visualizer/ui-overhaul/terminal-components.html` and now explicitly requests real implementation compatible with existing functions. This is the current implementation brief. It supersedes ui-overhaul-brief.md and ui-overhaul-correction.md visually; do not repeat design research or use their rejected mineral/light composition.
+The user approved `docs/design/ui-overhaul/terminal-components.html` and now explicitly requests real implementation compatible with existing functions. This is the current implementation brief. It supersedes ui-overhaul-brief.md and ui-overhaul-correction.md visually; do not repeat design research or use their rejected mineral/light composition.
 
 ## Visual reference and result
 
@@ -17,7 +17,7 @@ Read the approved HTML and copy its actual component structure/tokens into the r
 
 ## Ownership and limits
 
-Own `server/views/*.tsx`, `client/*.ts`, `public/theme.css`, `public/theme-tokens.css`, `design/theme-tokens.css`, relevant tests, and `scripts/render-ui-preview.ts`. Small `server/index.ts` changes only if needed for frontend rendering/caching. Reuse installed Bun/Elysia/xterm/anime helpers; no new framework or dependency. Backend job, PTY, authentication, write-action and config semantics remain intact. Quota collector extensions, if justified, are a separately scoped step after this frontend pass.
+Own `server/views/*.tsx`, `client/*.ts`, `public/theme.css`, `public/theme-tokens.css`, `assets/theme-tokens.css`, relevant tests, and `scripts/render-ui-preview.ts`. Small `server/index.ts` changes only if needed for frontend rendering/caching. Reuse installed Bun/Elysia/xterm/anime helpers; no new framework or dependency. Backend job, PTY, authentication, write-action and config semantics remain intact. Quota collector extensions, if justified, are a separately scoped step after this frontend pass.
 
 Work in the current main checkout. No new branch, worktree, commit, push, service restart, process kill, real agent/PTY executions for tests, or external messages. Do not modify the approved visualizer, its decision, AGENTS.md, unrelated worktrees, credentials, or this brief. You are not alone in the tree: preserve others' changes. Existing broad app modifications are the unfinished prior attempt; integrate and repair them without resetting the tree. No more design planning or gallery research.
 

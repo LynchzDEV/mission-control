@@ -1,6 +1,6 @@
 # P0 Runtime Spike — Verdicts
 
-Ran for real under Bun on macOS arm64 (Darwin 25.5.0). Reproduce with `bun spike/run.ts`.
+Ran for real under Bun on macOS arm64 (Darwin 25.5.0). Reproduce with `bun docs/spikes/runtime/run.ts`.
 
 ## Verdict table
 
@@ -34,14 +34,14 @@ node-pty is the spec's first choice but does not work under Bun on this machine.
        errno: -6,
         code: "ENXIO"
    ```
-   This is a genuine Bun-vs-Node incompatibility in how node-pty's N-API binding polls the PTY master fd (Bun's I/O layer doesn't drive it the way Node's libuv does) — not a permissions or install issue. It reproduces every time (see `spike/check-node-pty.ts`, run via `spike/run.ts` step 3a).
+   This is a genuine Bun-vs-Node incompatibility in how node-pty's N-API binding polls the PTY master fd (Bun's I/O layer doesn't drive it the way Node's libuv does) — not a permissions or install issue. It reproduces every time (see `docs/spikes/runtime/check-node-pty.ts`, run via `docs/spikes/runtime/run.ts` step 3a).
 4. Per the spec's fallback order, tried `bun-pty@0.4.10` (Rust `portable-pty` + Bun FFI, built specifically for Bun). Both required checks passed cleanly:
    - Non-interactive spawn: `spawn('/bin/echo', ['hello'], ...)` → `onData` captured `"hello\r\n"`.
    - Interactive shell: `spawn('/bin/sh', [], ...)` → `write('echo hi\n')` → `onData` captured `"echo hi\r\n"`, then `kill()` succeeded.
 5. **Decision: use `bun-pty` for `server/terminals.ts`.** Its API (`spawn`, `onData`, `onExit`, `write`, `resize`, `kill`) is a near-drop-in match for node-pty's shape, so the spec's `terminals.ts` design (pty <-> ws bridge) needs no structural changes — only the import source changes from `node-pty` to `bun-pty`.
 6. `script -q /dev/null` fallback was not needed and was not exercised, since `bun-pty` succeeded outright.
 
-node-pty is kept installed in `package.json`/`spike/` only so the failure above stays reproducible for anyone re-running the spike — it must **not** be used by real server code in later phases.
+node-pty is kept installed in `package.json`/`docs/spikes/runtime/` only so the failure above stays reproducible for anyone re-running the spike — it must **not** be used by real server code in later phases.
 
 ## Bun / Elysia quirks later phases must know
 
@@ -59,9 +59,9 @@ node-pty is kept installed in `package.json`/`spike/` only so the failure above 
 
 ## Files
 
-- `spike/run.ts` — runs all checks in order, end to end
-- `spike/check-elysia.ts`, `spike/server-hello.ts` — check 2
-- `spike/check-node-pty.ts` — check 3a (documented failure)
-- `spike/check-bun-pty.ts` — check 3b (chosen path)
-- `spike/check-bun-build.ts`, `spike/fixtures/sample-client.ts` — check 4
-- `spike/server-jsx.tsx`, `spike/fixtures/sample-view.tsx` — check 5
+- `docs/spikes/runtime/run.ts` — runs all checks in order, end to end
+- `docs/spikes/runtime/check-elysia.ts`, `docs/spikes/runtime/server-hello.ts` — check 2
+- `docs/spikes/runtime/check-node-pty.ts` — check 3a (documented failure)
+- `docs/spikes/runtime/check-bun-pty.ts` — check 3b (chosen path)
+- `docs/spikes/runtime/check-bun-build.ts`, `docs/spikes/runtime/fixtures/sample-client.ts` — check 4
+- `docs/spikes/runtime/server-jsx.tsx`, `docs/spikes/runtime/fixtures/sample-view.tsx` — check 5

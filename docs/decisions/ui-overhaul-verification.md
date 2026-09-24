@@ -22,7 +22,7 @@ Browser checks passed at 320, 414, 768, 1000, 1001, 1100, 1264, 1512 and 2560px,
 
 Remaining differences are explicit: the application retains New job and Review, while the design contains Settings and a preview-only Previous sketch link. At 1512px that leaves the corrected usage block 23.48px left of the reference. The wide application also retains the user's requested full-width masthead instead of the mockup's 1512px cap. These differences mean the whole header is not an exact 1:1 copy.
 
-The approved source is `visualizer/ui-overhaul/terminal-components.html`. The current terminal implementation replaces the control, pane-header, session-tab, flow and agent-card composition. `client/terminal-view.ts` upgrades the running server's markup and loads `public/terminal-design.css`; these frontend changes do not require a server restart. Earlier visual-completion claims below were rejected by the user and are superseded by this section.
+The approved source is `docs/design/ui-overhaul/terminal-components.html`. The current terminal implementation replaces the control, pane-header, session-tab, flow and agent-card composition. `client/terminal-view.ts` upgrades the running server's markup and loads `public/terminal-design.css`; these frontend changes do not require a server restart. Earlier visual-completion claims below were rejected by the user and are superseded by this section.
 
 At a 1512px browser viewport, the reference and implementation have matching measurements:
 

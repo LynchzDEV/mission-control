@@ -93,7 +93,7 @@ Bun + Elysia (TypeScript end to end)
 └── JSON state in ~/.config/mission-control — no database
 ```
 
-The application is written in TypeScript and CSS; client bundles are cached until their source changes. Transcripts come straight from the engines' own session logs (`~/.claude/projects` JSONL and `~/.codex/sessions` rollouts) and are parsed once per file change. JetBrains Mono ships with the app under the OFL. Standalone design studies and their capture tools live in `visualizer/ui-overhaul/`.
+The application is written in TypeScript and CSS; client bundles are cached until their source changes. Transcripts come straight from the engines' own session logs (`~/.claude/projects` JSONL and `~/.codex/sessions` rollouts) and are parsed once per file change. JetBrains Mono ships with the app under the OFL. Standalone design studies and their capture tools live in `docs/design/ui-overhaul/`.
 
 ## Security
 
@@ -106,9 +106,11 @@ The application is written in TypeScript and CSS; client bundles are cached unti
 
 - [`docs/SPEC.md`](docs/SPEC.md) — full engineering contract
 - [`docs/decisions/`](docs/decisions/) — recorded runtime decisions (e.g. why bun-pty over node-pty under Bun)
-- [`visualizer/ui-overhaul/terminal-components.html`](visualizer/ui-overhaul/terminal-components.html) — the approved terminal component study
+- [`docs/design/ui-overhaul/terminal-components.html`](docs/design/ui-overhaul/terminal-components.html) — the approved terminal component study
 - [`docs/decisions/ui-overhaul-verification.md`](docs/decisions/ui-overhaul-verification.md) — visual checks, responsive behavior, and known differences from the study
-- [`design/`](design/) — shared theme tokens and earlier design records
+- [`docs/design/`](docs/design/) — design studies: the new quiet design (`quiet-chat`), its chat, launcher and Terminals studies, the earlier overhaul and Studio prototypes
+- [`docs/new-design-port-status.md`](docs/new-design-port-status.md) — every current feature tracked against the new design
+- [`assets/`](assets/) — shared theme tokens and vendored scripts copied into `public/` on install
 
 ## Contributing
 

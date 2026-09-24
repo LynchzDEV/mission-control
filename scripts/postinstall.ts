@@ -45,13 +45,13 @@ const ASSETS: VendorAsset[] = [
   },
   {
     label: 'textmode.js',
-    sources: ['design/vendor/textmode.umd.js', 'node_modules/textmode.js/dist/textmode.umd.js'],
+    sources: ['assets/vendor/textmode.umd.js', 'node_modules/textmode.js/dist/textmode.umd.js'],
     dest: 'textmode.umd.js',
   },
   {
     label: 'textmode.js filters',
     sources: [
-      'design/vendor/textmode.filters.umd.js',
+      'assets/vendor/textmode.filters.umd.js',
       'node_modules/textmode.js/dist/textmode.filters.umd.js',
     ],
     dest: 'textmode.filters.umd.js',
@@ -69,7 +69,7 @@ const ASSETS: VendorAsset[] = [
 const PUBLIC_ASSETS: VendorAsset[] = [
   {
     label: 'theme tokens',
-    sources: ['design/theme-tokens.css'],
+    sources: ['assets/theme-tokens.css'],
     dest: 'theme-tokens.css',
   },
 ]

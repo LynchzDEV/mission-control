@@ -54,7 +54,7 @@ AI creation and editing use the existing job manager and native/ACP connections 
 
 The browser check exercises generation and edits through the actual API with fixture agents, default/custom execution, keyboard entry of acceptance-check arguments, dragging, save/reload, connections, prompt revisions, and mobile layout. It also caught an empty response from the idle draft endpoint that prevented Rules from loading; the endpoint now returns a JSON envelope, with a regression test.
 
-Design explorations and reference screenshots remain local under `visualizer/workflow-studio-ui/`; the browser check reproduces the production interface verification.
+Design explorations and reference screenshots remain local under `docs/design/workflow-studio/`; the browser check reproduces the production interface verification.
 
 Final A verification: 854 tests passed across 62 files, strict Studio TypeScript checking passed, the desktop/mobile browser check passed, and `git diff --check` passed. Live provider accounts were not exercised, and the running MC server was not restarted.
 

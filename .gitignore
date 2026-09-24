@@ -6,4 +6,4 @@ public/ui-preview/
 .worktree
 .playwright-mcp/
 public/quiet-chat/
-visualizer/quiet-chat/screenshots/
+docs/design/quiet-chat/screenshots/
