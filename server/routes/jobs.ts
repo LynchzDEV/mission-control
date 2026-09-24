@@ -203,7 +203,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
         engine: job.engine,
         running: threadIsRunning(chain),
         sessionId: replySessionId(chain),
-        canReply: engineSupportsResume(job.engine) && replySessionId(chain) !== null,
+        canReply: !job.workflowRunId && job.purpose !== 'workflow-design' && (job.resumeSupported ?? engineSupportsResume(job.engine)) && replySessionId(chain) !== null,
         messages,
       }
     })
@@ -220,7 +220,11 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
         set.status = 404
         return { error: 'job not found' }
       }
-      if (!engineSupportsResume(parent.engine)) {
+      if (parent.workflowRunId || parent.purpose === 'workflow-design') {
+        set.status = 409
+        return { error: 'Use Studio to retry this workflow step with its pinned instructions' }
+      }
+      if (!(parent.resumeSupported ?? engineSupportsResume(parent.engine))) {
         set.status = 400
         return { error: 'engine does not support conversation resume' }
       }

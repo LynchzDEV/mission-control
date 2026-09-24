@@ -1,6 +1,6 @@
 /** @jsxImportSource @kitajs/html */
 
-export type Tab = 'lanes' | 'dispatch' | 'terminals' | 'review' | 'settings'
+export type Tab = 'lanes' | 'dispatch' | 'terminals' | 'review' | 'settings' | 'studio'
 
 export type TabLink = {
   tab: Tab
@@ -15,6 +15,7 @@ export const TABS: TabLink[] = [
   { tab: 'terminals', href: '/terminals', label: 'Terminals', key: '3' },
   { tab: 'review', href: '/review', label: 'Review', key: '4' },
   { tab: 'settings', href: '/settings', label: 'Settings', key: '5' },
+  { tab: 'studio', href: '/studio', label: 'Studio', key: '6' },
 ]
 
 export type LayoutProps = {
@@ -62,7 +63,7 @@ export function Layout(props: LayoutProps): string {
     <body data-page={props.page}>
       {!props.embedded ? <div class="top masthead">
         <a class="l" href="/terminals" aria-label="Mission Control home">Mission Control<span class="brand-mark" aria-hidden="true">_</span></a>
-        {chrome ? <><nav class="tabs" id="tabs" aria-label="Workspace">{TABS.filter(entry => entry.tab === 'terminals' || entry.tab === 'lanes').map(entry => <a href={entry.href} data-tab={entry.tab} data-key={entry.key} aria-current={entry.tab === props.tab ? 'page' : undefined} class={entry.tab === props.tab ? 'on' : ''}>{entry.label}</a>)}</nav><div class="usage-summary" id="provider-summary" aria-label="Live provider usage">{['Claude', 'GLM', 'Codex'].map(provider => <section class="provider-usage" data-unavailable="true"><div class="quota-heading"><span class="quota-provider">{provider}</span><span class="quota-period">{provider === 'Codex' ? 'Weekly' : '5h'}</span><strong>—</strong></div><span class="quota-track"></span>{provider === 'Codex' ? '' : <div class="quota-week"><span>Weekly</span><span class="quota-track"></span><span class="week-value">—</span></div>}</section>)}</div><div class="global-actions"><a href="/dispatch">New job</a><a href="/review" id="global-attention">Review <span>—</span></a><a href="/settings">Settings</a></div></> : ''}
+        {chrome ? <><nav class="tabs" id="tabs" aria-label="Workspace">{TABS.filter(entry => entry.tab === 'terminals' || entry.tab === 'lanes').map(entry => <a href={entry.href} data-tab={entry.tab} data-key={entry.key} aria-current={entry.tab === props.tab ? 'page' : undefined} class={entry.tab === props.tab ? 'on' : ''}>{entry.label}</a>)}</nav><div class="usage-summary" id="provider-summary" aria-label="Live provider usage">{['Claude', 'GLM', 'Codex'].map(provider => <section class="provider-usage" data-unavailable="true"><div class="quota-heading"><span class="quota-provider">{provider}</span><span class="quota-period">{provider === 'Codex' ? 'Weekly' : '5h'}</span><strong>—</strong></div><span class="quota-track"></span>{provider === 'Codex' ? '' : <div class="quota-week"><span>Weekly</span><span class="quota-track"></span><span class="week-value">—</span></div>}</section>)}</div><div class="global-actions"><a href="/dispatch">New job</a><a href="/review" id="global-attention">Review <span>—</span></a><a href="/studio">Studio</a><a href="/settings">Settings</a></div></> : ''}
       </div> : ''}
       <div class="body" data-tab={props.tab ?? 'gate'}>
         {props.children ?? ''}

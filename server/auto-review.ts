@@ -4,6 +4,7 @@ import type { QuotaComposite } from './quota'
 import { quotaCache } from './routes/quota'
 import { readRoles } from './routes/roles'
 import { readConfig, type EngineRoles } from './secrets'
+import { BUILTIN_AGENTS, connectionEnvironment, createConnectionStore } from './agent-connections'
 
 export function buildReviewPrompt(source: JobRecord): string {
   return [
@@ -17,6 +18,7 @@ export function buildReviewPrompt(source: JobRecord): string {
 }
 
 export function shouldAutoReview(record: JobRecord, allJobs: readonly JobRecord[], roles: EngineRoles): boolean {
+  if (record.workflowRunId || record.purpose === 'workflow-design') return false
   const { execute } = roles
   if (record.status !== 'done' || record.engine !== execute.engine || record.reviewOf !== null) return false
   if (record.diffStat === null || record.diffStat.trim() === '') return false
@@ -55,7 +57,12 @@ export async function maybeAutoReview(
   if (!shouldAutoReview(record, manager.listJobs(), roles)) return
   const { review } = roles
 
-  const readiness = reviewerReadiness(review.engine, await (deps.probeQuota ?? (() => quotaCache.get()))())
+  let readiness: ReviewerReadiness
+  if (BUILTIN_AGENTS.includes(review.engine as typeof BUILTIN_AGENTS[number])) readiness = reviewerReadiness(review.engine, await (deps.probeQuota ?? (() => quotaCache.get()))())
+  else {
+    try { connectionEnvironment(await createConnectionStore().get(review.engine)); readiness = { ok: true } }
+    catch { readiness = { ok: false, reason: 'reviewer connection is not configured' } }
+  }
   if (!readiness.ok) {
     log(`auto-review: skipped for ${record.label} — ${readiness.reason}`)
     return

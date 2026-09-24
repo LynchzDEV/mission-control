@@ -1,7 +1,7 @@
 import { getJson, readNumber } from './shared'
 
-const ROUTES = new Set(['/lanes', '/dispatch', '/review', '/settings', '/terminals', '/'])
-const TITLES: Record<string, string> = { '/lanes': 'Main', '/dispatch': 'Dispatch', '/review': 'Review', '/settings': 'Settings' }
+const ROUTES = new Set(['/lanes', '/dispatch', '/review', '/settings', '/studio', '/terminals', '/'])
+const TITLES: Record<string, string> = { '/lanes': 'Main', '/dispatch': 'Dispatch', '/review': 'Review', '/settings': 'Settings', '/studio': 'Studio' }
 export function routeUrl(path: string, preview = location.pathname.startsWith('/ui-preview/')): string {
   if (!preview) return path
   const url = new URL(path, location.origin)

@@ -9,6 +9,7 @@ import {
   parseActivity,
   parseJobProgress,
   parseSessionId,
+  reportedJobOutcome,
 } from './activity'
 import { DIR_MODE, FILE_MODE, configDir } from './secrets'
 import { validateWorkspaceCwd } from './workspace'
@@ -53,6 +54,11 @@ export type JobRecord = {
   terminalId: string | null
   reviewOf: string | null
   model: string | null
+  workflowRunId?: string
+  workflowNodeId?: string
+  workflowAttempt?: number
+  purpose?: 'workflow-design'
+  resumeSupported?: boolean
 }
 
 export type CreateJobParams = {
@@ -67,6 +73,13 @@ export type CreateJobParams = {
   terminalId?: string
   reviewOf?: string
   model?: string
+  workflowRunId?: string
+  workflowNodeId?: string
+  workflowAttempt?: number
+  connection?: import('./agent-connections').AgentConnection
+  coreRules?: string
+  mcpServers?: import('./workflows').WorkflowNode['mcpServers']
+  purpose?: 'workflow-design'
 }
 
 export type CreateJobResult =
@@ -84,6 +97,8 @@ export type LandJobResult =
   | { ok: false; status: number; error: string; files?: string[] }
 
 export type JobManager = {
+  claimWorkspace(cwd: string, owner: string): boolean
+  releaseWorkspace(cwd: string, owner: string): void
   landJob(id: string): Promise<LandJobResult>
   createJob(params: CreateJobParams, resolver: EngineResolver): Promise<CreateJobResult>
   killJob(id: string): Promise<KillJobResult>
@@ -256,6 +271,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   const clock = options.now ?? Date.now
   let persistence = Promise.resolve()
   const processes = new Map<string, Bun.Subprocess>()
+  const workspaceOwners = new Map([...jobs.values()].filter(job => job.status === 'running' && job.workflowRunId).map(job => [job.cwd, job.workflowRunId!]))
   const activities = new Map<string, string>()
   const tails = new Map<string, string>()
   const sessionScans = new Map<string, string>()
@@ -285,7 +301,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     sessionScans.delete(id)
     const record = jobs.get(id)
     if (record === undefined || record.sessionId === found) return
-    void persist({ ...record, sessionId: found }).catch(() => {})
+    const capability = combined.split('\n').flatMap(line => { try { const value = JSON.parse(line); return value?.type === 'system' && typeof value.resumeSupported === 'boolean' ? [value.resumeSupported] : [] } catch { return [] } }).at(-1)
+    void persist({ ...record, sessionId: found, ...(capability === undefined ? {} : { resumeSupported: capability }) }).catch(() => {})
   }
 
   function clearPendingActivityTimer(id: string): void {
@@ -423,7 +440,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       const exitCode = await proc.exited
       await stopTail()
       refreshActivity(id)
-      await settleJob(id, record, exitCode, exitCode === 0 ? 'done' : 'failed')
+      const reported = reportedJobOutcome((await readLogTail(logPath(id), SESSION_SCAN_MAX_CHARS)).content)
+      await settleJob(id, record, exitCode, exitCode === 0 && reported !== 'failed' ? 'done' : 'failed')
     } catch {
       await stopTail().catch(() => {})
       await settleFailed(id, record)
@@ -445,7 +463,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const progress = parseJobProgress(log)
     const current = jobs.get(record.id) ?? record
     await persist({ ...current, turns: Math.max(current.turns, progress.turns), lastTool: progress.lastTool ?? current.lastTool })
-    const done = log.includes('"type":"result"')
+    const done = reportedJobOutcome(log) === 'done'
     await settleJob(record.id, record, null, done ? 'done' : 'failed')
   }
 
@@ -473,13 +491,19 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   async function createJob(params: CreateJobParams, resolver: EngineResolver): Promise<CreateJobResult> {
     const cwdCheck = await validateWorkspaceCwd(params.cwd, home)
     if (!cwdCheck.ok) return { ok: false, status: 400, error: cwdCheck.error }
+    const owner = workspaceOwners.get(cwdCheck.path)
+    if (owner && owner !== params.workflowRunId) return { ok: false, status: 409, error: 'Workspace is reserved by a running workflow' }
 
     ensureDirsSync(dir, logsDir)
     let spawnSpec: EngineSpawn
     try {
       spawnSpec = await resolver({
         engine: params.engine,
+        ...(params.purpose === 'workflow-design' ? { readOnly: true } : {}),
         prompt: params.prompt,
+        connection: params.connection,
+        coreRules: params.coreRules,
+        mcpServers: params.mcpServers,
         ...(params.resumeSessionId === undefined ? {} : { resumeSessionId: params.resumeSessionId }),
         ...(typeof params.model === 'string' && params.model !== '' ? { model: params.model } : {}),
       })
@@ -496,6 +520,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       }
     }
     const cwd = workspace.worktree ?? cwdCheck.path
+    const activeOwner = workspaceOwners.get(cwdCheck.path) ?? workspaceOwners.get(cwd)
+    if (activeOwner && activeOwner !== params.workflowRunId) return { ok: false, status: 409, error: 'Workspace is reserved by a running workflow' }
     const id = crypto.randomUUID()
     const path = logPath(id)
 
@@ -506,10 +532,14 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
         proc = Bun.spawn([spawnSpec.cmd, ...spawnSpec.args], {
           cwd,
           env: { ...process.env, ...spawnSpec.env, MC_JOB_ID: id },
-          stdin: 'ignore',
+          stdin: spawnSpec.stdin === undefined ? 'ignore' : 'pipe',
           stdout: logFd,
           stderr: logFd,
         })
+        if (spawnSpec.stdin !== undefined && proc.stdin && typeof proc.stdin !== 'number') {
+          proc.stdin.write(spawnSpec.stdin)
+          proc.stdin.end()
+        }
       } finally {
         closeSync(logFd)
       }
@@ -541,6 +571,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       terminalId: typeof params.terminalId === 'string' && params.terminalId !== '' ? params.terminalId : null,
       reviewOf: typeof params.reviewOf === 'string' && params.reviewOf !== '' ? params.reviewOf : null,
       model: typeof params.model === 'string' && params.model !== '' ? params.model : null,
+      ...(params.purpose ? { purpose: params.purpose } : {}),
+      ...(params.workflowRunId ? { workflowRunId: params.workflowRunId, workflowNodeId: params.workflowNodeId, workflowAttempt: params.workflowAttempt } : {}),
     }
     sessionScans.set(id, '')
     await persist(record)
@@ -598,7 +630,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     if (worktree === null || baseRepo === null || baseBranch === null) {
       return { ok: false, status: 400, error: 'job has no worktree' }
     }
-    if (landingRepos.has(baseRepo) || [...jobs.values()].some((job) => job.cwd === worktree && job.status === 'running')) {
+    if (workspaceOwners.has(baseRepo) || workspaceOwners.has(worktree) || landingRepos.has(baseRepo) || [...jobs.values()].some((job) => job.cwd === worktree && job.status === 'running')) {
       return { ok: false, status: 409, error: 'worktree or base repository is busy' }
     }
     landingRepos.add(baseRepo)
@@ -649,7 +681,16 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     return activities.get(id) ?? null
   }
 
-  return { createJob, killJob, landJob, markReviewed, listJobs, getJob, currentActivity: jobActivity, logPath }
+  function claimWorkspace(cwd: string, owner: string): boolean {
+    const current = workspaceOwners.get(cwd)
+    if ((current && current !== owner) || [...jobs.values()].some(job => job.cwd === cwd && job.status === 'running' && job.workflowRunId !== owner)) return false
+    workspaceOwners.set(cwd, owner)
+    return true
+  }
+  function releaseWorkspace(cwd: string, owner: string): void {
+    if (workspaceOwners.get(cwd) === owner) workspaceOwners.delete(cwd)
+  }
+  return { createJob, killJob, landJob, markReviewed, listJobs, getJob, currentActivity: jobActivity, logPath, claimWorkspace, releaseWorkspace }
 }
 
 export async function readLogFile(path: string): Promise<string> {

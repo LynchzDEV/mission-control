@@ -753,3 +753,12 @@ body.mcd-open { overflow:hidden; } body.mcd-open .mcd-dim { display:block; } bod
 .quota-week .quota-track { height:2px; margin:0; }
 .provider-usage[data-unavailable=true] { opacity:.55; }
 .provider-usage[data-stale=true] { opacity:.7; }
+
+.composer-workflow { display:grid; gap:7px; padding:16px 22px 0; }
+.composer-workflow .field { min-width:0; }
+.composer-workflow select { width:100%; }
+.composer-workflow small { color:var(--mc-fg-dim); font-size:11px; line-height:1.5; }
+.session-workflow { display:flex; flex:none; align-items:center; flex-wrap:wrap; gap:6px 10px; padding:10px 0; border-bottom:1px solid var(--mc-border); color:var(--mc-fg-dim); font:12px var(--mc-font-ui); }
+.session-workflow strong { color:var(--mc-primary); font-weight:500; overflow-wrap:anywhere; }
+.session-workflow small { font-size:10px; }
+.workflow-caption { color:var(--mc-fg-dim); }

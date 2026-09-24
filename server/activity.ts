@@ -293,6 +293,19 @@ export function parseThread(logText: string): ActivityEvent[] {
   return parseStream(logText, FULL_TEXT, THREAD_LIMITS)
 }
 
+export function reportedJobOutcome(logText: string): 'done' | 'failed' | null {
+  let outcome: 'done' | 'failed' | null = null
+  for (const line of logText.split('\n')) {
+    let event: unknown
+    try { event = JSON.parse(line) } catch { continue }
+    if (!isRecord(event)) continue
+    if (event.type === 'result') outcome = event.is_error === true || asString(event.subtype).startsWith('error') ? 'failed' : 'done'
+    if (event.type === 'turn.completed') outcome = 'done'
+    if (event.type === 'turn.failed' || event.type === 'error') outcome = 'failed'
+  }
+  return outcome
+}
+
 const SESSION_ID_HINTS = ['"session_id"', '"thread_id"'] as const
 
 export function parseSessionId(logText: string): string | null {

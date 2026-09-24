@@ -23,6 +23,11 @@ import { createTerminalRegistry } from './terminals'
 import { realEngineResolver } from './jobs-engine-iface'
 import { createPlanRunner } from './plan-runner'
 import { createPlanStore } from './plans'
+import { createWorkflowStore } from './workflows'
+import { createWorkflowBuilder } from './workflow-builder'
+import { createWorkflowRunner } from './workflow-runner'
+import { studioRoutes } from './routes/studio'
+import { StudioPage } from './views/studio'
 import { runsRoutes } from './routes/runs'
 import { jobsRoutes } from './routes/jobs'
 import { metaRoutes } from './routes/meta'
@@ -52,6 +57,7 @@ const MODULE_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/
 type CachedModule = {
   stamp: string
   code: string
+  css: string
 }
 
 const transpileCache = new Map<string, CachedModule>()
@@ -61,26 +67,35 @@ export async function transpileClientModule(requested: string): Promise<string |
   const name = requested.slice(0, -3)
   if (!MODULE_NAME_PATTERN.test(name)) return null
 
-  const path = join(CLIENT_DIR, `${name}.ts`)
+  let path = join(CLIENT_DIR, `${name}.ts`)
   let info
   try {
     info = await stat(path)
   } catch {
-    return null
+    path = join(CLIENT_DIR, `${name}.tsx`)
+    try { info = await stat(path) } catch { return null }
   }
   if (!info.isFile()) return null
 
-  const files = [...new Bun.Glob('*.ts').scanSync(CLIENT_DIR)].sort()
+  const files = [...new Bun.Glob('*.{ts,tsx}').scanSync(CLIENT_DIR)].sort()
   const stamp = (await Promise.all(files.map(async (file) => { const value = await stat(join(CLIENT_DIR, file)); return `${file}:${value.mtimeMs}:${value.size}` }))).join('|')
   const cached = transpileCache.get(name)
   if (cached !== undefined && cached.stamp === stamp) return cached.code
 
-  const built = await Bun.build({ entrypoints: [path], target: 'browser', write: false })
+  const built = await Bun.build({ entrypoints: [path], target: 'browser', write: false, ...(name === 'studio' ? { minify: true, define: { 'process.env.NODE_ENV': '"production"' } } : {}) })
   if (!built.success || built.outputs.length === 0) return null
 
-  const code = await built.outputs[0]!.text()
-  transpileCache.set(name, { stamp, code })
+  const code = await built.outputs.find(output => output.path.endsWith('.js'))!.text()
+  const css = await built.outputs.find(output => output.path.endsWith('.css'))?.text() ?? ''
+  transpileCache.set(name, { stamp, code, css })
   return code
+}
+
+export async function transpileClientStyles(requested: string): Promise<string | null> {
+  if (!requested.endsWith('.css')) return null
+  const name = requested.slice(0, -4)
+  if (!MODULE_NAME_PATTERN.test(name) || await transpileClientModule(`${name}.js`) === null) return null
+  return transpileCache.get(name)?.css || null
 }
 
 function page(markup: string): Response {
@@ -120,6 +135,7 @@ const TAB_PAGES: Record<string, (embedded?: boolean) => string | Promise<string>
   '/terminals': terminalsPage,
   '/review': ReviewPage,
   '/settings': settingsPage,
+  '/studio': (embedded = false) => StudioPage({ embedded }),
 }
 
 function tabPages() {
@@ -194,15 +210,28 @@ export async function createApp(): Promise<Elysia> {
     console.error(`skills: ${describeSkillInstall(skills)} -> ${claudeSkillsDir()}`)
   }
   const planStore = createPlanStore()
+  const workflowStore = createWorkflowStore()
   const jobManager = createJobManager({
     onJobSlow: notifySlowJob,
     onJobSettled: (record) => {
+      if (record.purpose === 'workflow-design') {
+        void workflowBuilder.cleanup(record).catch(error => console.error('Workflow designer cleanup failed', error))
+        return
+      }
+      if (record.workflowRunId) {
+        void workflowRunner.onJobSettled(record).catch(error => console.error('Workflow settlement failed', error))
+        return
+      }
       void planRunner.onJobSettled(record).catch(() => {})
       void maybeAutoReview(record, jobManager, { resolver: realEngineResolver }).catch(() => {})
     },
   })
   const planRunner = createPlanRunner({ manager: jobManager, resolver: realEngineResolver, plans: planStore })
   const terminalRegistry = createTerminalRegistry()
+  const workflowRunner = createWorkflowRunner({ manager: jobManager, resolver: realEngineResolver, store: workflowStore, terminals: terminalRegistry })
+  const workflowBuilder = createWorkflowBuilder({ manager: jobManager, resolver: realEngineResolver, store: workflowStore })
+  await workflowRunner.recover()
+  await workflowBuilder.recover()
 
   const app = new Elysia()
     .use(cookie())
@@ -212,6 +241,11 @@ export async function createApp(): Promise<Elysia> {
       return loginPage()
     })
     .get('/js/:file', async ({ params, set }) => {
+      if (params.file.endsWith('.css')) {
+        const css = await transpileClientStyles(params.file)
+        if (css === null) { set.status = 404; return { error: 'not found' } }
+        return new Response(css, { headers: { 'content-type': 'text/css; charset=utf-8', 'cache-control': 'no-cache' } })
+      }
       const code = await transpileClientModule(params.file)
       if (code === null) {
         set.status = 404
@@ -255,6 +289,7 @@ export async function createApp(): Promise<Elysia> {
     .use(terminalsRoutes(terminalRegistry))
     .use(flowRoutes(jobManager, terminalRegistry, planStore))
     .use(runsRoutes(planRunner))
+    .use(studioRoutes(workflowStore, workflowRunner, workflowBuilder))
     .use(secretsRoutes)
     .use(rolesRoutes)
     .use(modelsRoutes)

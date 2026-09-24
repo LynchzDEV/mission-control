@@ -122,6 +122,7 @@ describe('createPlanRunner', () => {
     expect(jobs).toHaveLength(2)
     expect(new Set(jobs.map((job) => job.worktree)).size).toBe(1)
     expect(jobs.every((job) => job.status === 'done')).toBe(true)
+    await until(() => runner.plans.get('products-v2-army')?.next === 'All 2 tasks committed')
     expect(runner.plans.get('products-v2-army')?.steps.map((step) => step.status)).toEqual(['done', 'done'])
     expect(runner.plans.get('products-v2-army')?.next).toBe('All 2 tasks committed')
   })
@@ -134,6 +135,7 @@ describe('createPlanRunner', () => {
     expect(run.tasks.map((task) => task.status)).toEqual(['failed', 'pending'])
     expect(run.error).toBe('task 1 ended without a commit')
     expect(manager.listJobs()).toHaveLength(1)
+    await until(() => runner.plans.get('products-v2-army')?.next === 'Task 1 failed: task 1 ended without a commit')
     expect(runner.plans.get('products-v2-army')?.next).toBe('Task 1 failed: task 1 ended without a commit')
   })
 

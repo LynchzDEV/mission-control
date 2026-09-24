@@ -16,6 +16,8 @@ import {
   type TerminalRegistry,
 } from '../server/terminals'
 import { initScratchGitRepo } from './support/scratch-git-repo'
+import { createWorkflowStore, defaultWorkflow } from '../server/workflows'
+import { writeConfig } from '../server/secrets'
 
 let configDir: string
 let repo: string
@@ -51,6 +53,31 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void
   }
 }
 
+test('terminals independently pin default or custom workflows and inherit their own service address', async () => {
+  await writeConfig({ bind: '127.0.0.1:7778' })
+  const store = createWorkflowStore()
+  const custom = await store.save({ ...defaultWorkflow(), id: 'research', name: 'Research workflow' })
+  const standard = await registry.createTerminal({ engine: 'claude', cwd: repo })
+  const chosen = await registry.createTerminal({ engine: 'claude', cwd: repo, workflowId: custom.id, revision: custom.revision })
+  if (!standard.ok || !chosen.ok) throw new Error('Could not open fixture terminals')
+  expect(standard.terminal.workflow).toMatchObject({ id: 'default', selectedDefault: true })
+  expect(chosen.terminal.workflow).toMatchObject({ id: custom.id, revision: custom.revision, selectedDefault: false })
+  const changed = await store.save({ ...custom, name: 'Changed research workflow' }, custom.revision)
+  await store.setDefault(changed.id, changed.revision)
+  const nextDefault = await registry.createTerminal({ engine: 'claude', cwd: repo })
+  const originalDefault = await registry.createTerminal({ engine: 'claude', cwd: repo, workflowId: 'default' })
+  if (!nextDefault.ok || !originalDefault.ok) throw new Error('Could not open fixture terminals')
+  expect(nextDefault.terminal.workflow).toMatchObject({ id: changed.id, revision: changed.revision, selectedDefault: true })
+  expect(originalDefault.terminal.workflow?.id).toBe('default')
+  expect(registry.get(chosen.terminal.id)?.workflow?.revision).toBe(custom.revision)
+  expect(registry.get(standard.terminal.id)?.workflow?.id).toBe('default')
+  registry.write(chosen.terminal.id, 'printf "__MC_ENV__%s\\n" "$MC_URL|$MC_WORKFLOW_ID|$MC_WORKFLOW_REVISION|$MISSION_CONTROL_CONFIG_DIR"\r')
+  await waitFor(() => registry.replay(chosen.terminal.id).includes(`__MC_ENV__http://127.0.0.1:7778|research|${custom.revision}|${configDir}`))
+  const count = registry.list().length
+  expect((await registry.createTerminal({ engine: 'claude', cwd: repo, workflowId: 'missing' })).ok).toBe(false)
+  expect(registry.list()).toHaveLength(count)
+})
+
 function processAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
@@ -81,11 +108,14 @@ describe('terminalArgs', () => {
   test('resume flag comes before the model flag', () => {
     expect(terminalArgs('claude', 'opus', 'abc')).toEqual(['--resume', 'abc', '--model', 'opus'])
     expect(terminalArgs('claude', 'opus', 'abc', 'abc')).toEqual(['--resume', 'abc', '--model', 'opus'])
+    expect(terminalArgs('claude', 'opus', 'abc', 'abc', 'Use this terminal’s workflow')).toEqual(['--resume', 'abc', '--model', 'opus', '--append-system-prompt', 'Use this terminal’s workflow'])
   })
 
   test('codex bypasses approvals and sandboxing and keeps its -m form', () => {
     expect(terminalArgs('codex', undefined, undefined)).toEqual(['--dangerously-bypass-approvals-and-sandbox'])
     expect(terminalArgs('codex', 'x', undefined)).toEqual(['--dangerously-bypass-approvals-and-sandbox', '-m', 'x'])
+    const instructions = 'Workflow "Default"\nUse the selected version'
+    expect(terminalArgs('codex', 'x', undefined, undefined, instructions)).toEqual(['--dangerously-bypass-approvals-and-sandbox', '-m', 'x', '-c', `developer_instructions=${JSON.stringify(instructions)}`])
   })
 })
 
@@ -279,4 +309,16 @@ test('terminal cwd does not require a git repository', async () => {
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test('configured agents can open interactive terminals without changing the built-in engines', async () => {
+  const { createConnectionStore } = await import('../server/agent-connections')
+  const store = createConnectionStore(configDir)
+  await store.save({ id: 'custom-shell', name: 'Custom shell', adapter: 'acp', command: '/bin/sh', args: [], terminalArgs: [] })
+  const started = await registry.createTerminal({ engine: 'custom-shell', cwd: plain })
+  expect(started.ok).toBe(true)
+  if (!started.ok) return
+  registry.write(started.terminal.id, 'echo custom-terminal-ready\n')
+  await waitFor(() => registry.replay(started.terminal.id).includes('custom-terminal-ready'))
+  expect(await registry.transcriptPath(started.terminal.id)).toBeNull()
 })

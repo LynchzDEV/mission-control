@@ -29,14 +29,15 @@ function ComposerPopover(props: EnginePageProps): JSX.Element {
         </div>
         <button class="composer-dismiss" type="button" id="term-cancel" aria-label="Dismiss">{CROSS}</button>
       </div>
+      <div class="composer-workflow"><label class="field"><span class="field-label">Workflow</span><select id="term-workflow" name="workflow" aria-describedby="term-workflow-help"><option value="">Default workflow</option></select></label><small id="term-workflow-help">Choose the workflow this terminal will use.</small></div>
       <div class="composer-panel composer-body" data-panel="new" id="term-panel-new">
         <div class="engine-choice" role="radiogroup" aria-label="Engine" id="term-engines">
-          {ENGINES.map((engine) => (
+          {[...ENGINES, ...Object.keys(props.models).filter(id => !ENGINES.some(engine => engine.value === id)).map(id => ({ value: id, label: id }))].map((engine) => (
             <button class={`engine ${engine.value}`} type="button" role="radio" aria-checked={engine.value === props.defaultEngine ? 'true' : 'false'} data-engine={engine.value}><span class="dot"></span>{engine.label}</button>
           ))}
         </div>
         <select id="term-engine" name="engine" hidden aria-hidden="true" tabindex="-1">
-          {ENGINES.map((engine) => (
+          {[...ENGINES, ...Object.keys(props.models).filter(id => !ENGINES.some(engine => engine.value === id)).map(id => ({ value: id, label: id }))].map((engine) => (
             <option value={engine.value} selected={engine.value === props.defaultEngine}>{engine.label}</option>
           ))}
         </select>

@@ -74,11 +74,17 @@ function terminalApi(registry: TerminalRegistry, helpers: TerminalHelpers): Elys
         return { error: 'invalid session id' }
       }
       const title = typeof payload.title === 'string' ? payload.title : undefined
+      if (['workflowId', 'revision'].some(key => payload[key] !== undefined && (typeof payload[key] !== 'string' || payload[key] === ''))) {
+        set.status = 400
+        return { error: 'Workflow and version must be nonempty identifiers' }
+      }
       const result = await registry.createTerminal({
         engine: payload.engine,
         cwd: payload.cwd,
         cols: payload.cols,
         rows: payload.rows,
+        workflowId: payload.workflowId as string | undefined,
+        revision: payload.revision as string | undefined,
         ...(model === undefined ? {} : { model }),
         ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
         ...(title === undefined ? {} : { title }),

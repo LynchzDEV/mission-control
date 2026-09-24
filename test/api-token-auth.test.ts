@@ -114,3 +114,12 @@ describe('bearer token scope', () => {
     expect(response.status).toBe(200)
   })
 })
+
+test('dispatch tokens can read workflow versions but cannot edit policy or connections', async () => {
+  expect((await app.handle(bearer('/api/studio/workflows'))).status).toBe(200)
+  expect((await app.handle(bearer('/api/studio/policy'))).status).toBe(200)
+  expect((await app.handle(bearer('/api/studio/runs'))).status).toBe(200)
+  for (const path of ['/api/studio/workflows', '/api/studio/policy', '/api/studio/connections', '/api/studio/default', '/api/studio/drafts', '/api/studio/drafts/unknown/stop']) {
+    expect((await app.handle(bearer(path, 'POST', {}))).status).toBe(401)
+  }
+})

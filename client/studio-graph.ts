@@ -1,0 +1,30 @@
+import type { Workflow, WorkflowNode } from '../server/workflows'
+export const stepPresets = [
+  { id:'plan', title:'Plan work', description:'Turn a request into a clear plan', kind:'plan', role:'plan', symbol:'plan', instruction:'Inspect the request and project. Outline the changes, constraints, and how to verify the result.' },
+  { id:'verify-plan', title:'Check a plan', description:'Catch gaps before work begins', kind:'verify-plan', role:'review', symbol:'check', instruction:'Check the plan against the request and project. Flag missing steps and unclear requirements.' },
+  { id:'implement', title:'Implement changes', description:'Carry out the approved plan', kind:'implement', role:'execute', symbol:'code', instruction:'Implement the verified plan. Follow project conventions and check that the changes work.' },
+  { id:'review', title:'Review work', description:'Get an independent second opinion', kind:'review', role:'review', symbol:'review', instruction:'Review the changes against the plan. Inspect the actual work and report findings with evidence.' },
+  { id:'research', title:'Research', description:'Explore a question and collect sources', kind:'task', role:'plan', symbol:'research', instruction:'Research the question. Compare sources and provide a concise, evidence-backed answer.' },
+  { id:'test', title:'Run tests', description:'Check that the result works as expected', kind:'task', role:'execute', symbol:'test', instruction:'Run the relevant tests and inspect the result. Report what passed, what failed, and supporting evidence.' },
+  { id:'custom', title:'Custom task', description:'Write your own instructions', kind:'task', role:'execute', symbol:'spark', instruction:'Describe the task, constraints, and evidence required for success.' },
+] as const
+export function taskPreset(id: string): WorkflowNode {
+  const preset=stepPresets.find(item=>item.id===id)??stepPresets.at(-1)!
+  return {id:`step-${crypto.randomUUID().slice(0,8)}`,title:preset.title,instructions:preset.instruction,kind:preset.kind,agent:{role:preset.role},skills:[],mcpServers:[],checks:[],maxVisits:3,position:{x:0,y:100}}
+}
+export function insertWorkflowStep(graph: Workflow, step: WorkflowNode, afterId?: string): Workflow {
+  const after=graph.nodes.find(node=>node.id===afterId)??graph.nodes.at(-1)
+  const next=graph.edges.find(edge=>edge.source===after?.id&&edge.outcome==='pass')
+  const position={x:after?after.position.x+280:0,y:after?after.position.y+(next?220:0):100}
+  return {...graph,entry:graph.entry||step.id,nodes:[...graph.nodes,{...step,position}],edges:[...graph.edges.filter(edge=>edge!==next),...(after?[{source:after.id,target:step.id,outcome:'pass' as const}]:[]),...(next?[{source:step.id,target:next.target,outcome:'pass' as const}]:[])]}
+}
+export function removeWorkflowStep(graph: Workflow, id: string): Workflow {
+  const following=graph.edges.find(edge=>edge.source===id&&edge.outcome==='pass')?.target
+  return {...graph,entry:graph.entry===id?following??graph.nodes.find(node=>node.id!==id)?.id??'':graph.entry,nodes:graph.nodes.filter(node=>node.id!==id),edges:graph.edges.filter(edge=>edge.source!==id&&(edge.target!==id||following)).map(edge=>edge.target===id?{...edge,target:following!}:edge)}
+}
+export function workflowTemplates(defaultFlow: Workflow): Workflow[] {
+  return [defaultFlow,...[{id:'research',name:'Research & summarize',steps:['research','review']},{id:'quality',name:'Test & review',steps:['test','review']}].map(template=>{
+    const nodes=template.steps.map((id,index)=>({...taskPreset(id),id:`${template.id}-${index}`,position:{x:index*280,y:100}}))
+    return {id:`template-${template.id}`,name:template.name,entry:nodes[0]!.id,nodes,edges:[{source:nodes[0]!.id,target:nodes[1]!.id,outcome:'pass' as const}]}
+  })]
+}

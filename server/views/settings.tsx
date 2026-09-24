@@ -1,5 +1,4 @@
 /** @jsxImportSource @kitajs/html */
-import { ENGINE_NAMES } from '../engines'
 import type { ModelLists } from '../models'
 import type { EngineRoles } from '../secrets'
 import { Layout } from './layout'
@@ -23,9 +22,9 @@ function RoleRow(props: SettingsProps & { role: 'plan' | 'execute' | 'review'; t
   return (
     <Row title={props.title} caption={props.caption}>
       <div class="engine-choice" role="radiogroup" aria-label={`${props.title} engine`} data-engine-for={props.role}>
-        {ENGINE_NAMES.map((engine) => <button class={`engine ${engine}`} type="button" role="radio" aria-checked={engine === current.engine ? 'true' : 'false'} data-engine={engine}><span class="dot"></span>{ENGINE_LABEL[engine] ?? engine}</button>)}
+        {Object.keys(props.models).map((engine) => <button class={`engine ${engine}`} type="button" role="radio" aria-checked={engine === current.engine ? 'true' : 'false'} data-engine={engine}><span class="dot"></span>{ENGINE_LABEL[engine] ?? engine}</button>)}
       </div>
-      <select id={props.role} name={props.role} hidden aria-hidden="true" tabindex="-1">{ENGINE_NAMES.map((engine) => <option value={engine} selected={engine === current.engine}>{engine}</option>)}</select>
+      <select id={props.role} name={props.role} hidden aria-hidden="true" tabindex="-1">{Object.keys(props.models).map((engine) => <option value={engine} selected={engine === current.engine}>{engine}</option>)}</select>
       <div class="field-row"><label class="field"><span class="field-label">Model</span><ModelPicker id={`${props.role}_model`} engineSelectId={props.role} value={current.model} models={props.models} engine={current.engine} /></label></div>
     </Row>
   )

@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["bun", "react"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["client/studio.tsx", "client/styles.d.ts", "server/workflows.ts", "server/workflow-runner.ts", "server/agent-connections.ts", "server/agent-bridge.ts", "server/routes/studio.ts"]
+}

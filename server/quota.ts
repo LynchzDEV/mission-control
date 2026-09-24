@@ -385,7 +385,7 @@ export function parsePsOutput(
     if (trimmed === '') continue
     const match = /^(\d+)\s+(\S+)\s+(.*)$/.exec(trimmed)
     if (match === null) continue
-    const [, pidText, etime, command] = match as [string, string, string, string]
+    const [, pidText = '', etime = '', command = ''] = match
     const pid = Number.parseInt(pidText, 10)
     if (!Number.isInteger(pid) || ownedPids.has(pid)) continue
     if (/(^|\/)ps(\s|$)/.test(command) || /\bgrep\b/.test(command)) continue

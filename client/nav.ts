@@ -8,7 +8,7 @@ function isTyping(target: EventTarget | null): boolean {
 
 function destinationFor(key: string): string | null {
   const link = document.querySelector<HTMLAnchorElement>(`#tabs a[data-key="${key}"]`)
-  const routes: Record<string, string> = { '1': '/lanes', '2': '/dispatch', '3': '/terminals', '4': '/review', '5': '/settings' }
+  const routes: Record<string, string> = { '1': '/lanes', '2': '/dispatch', '3': '/terminals', '4': '/review', '5': '/settings', '6': '/studio' }
   return link?.getAttribute('href') ?? routes[key] ?? null
 }
 

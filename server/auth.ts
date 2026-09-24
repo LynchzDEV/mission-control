@@ -8,6 +8,9 @@ const TOKEN_SCOPED_PREFIX = '/api/jobs'
 // The one shared gate for what a Bearer API token may touch — extend this, not requireSession's callers.
 export function allowToken(pathname: string, method: string): boolean {
   const upperMethod = method.toUpperCase()
+  if (pathname === '/api/studio/workflows' || pathname === '/api/studio/policy' || /^\/api\/studio\/workflows\/[^/]+\/revisions$/.test(pathname)) return upperMethod === 'GET'
+  if (pathname === '/api/studio/runs' || /^\/api\/studio\/runs\/[^/]+$/.test(pathname)) return upperMethod === 'GET' || (pathname === '/api/studio/runs' && upperMethod === 'POST')
+  if (/^\/api\/studio\/runs\/[^/]+\/(stop|retry)$/.test(pathname)) return upperMethod === 'POST'
   if (pathname === TOKEN_SCOPED_PREFIX || pathname.startsWith(`${TOKEN_SCOPED_PREFIX}/`)) {
     return upperMethod === 'GET' || upperMethod === 'POST'
   }

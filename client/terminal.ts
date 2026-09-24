@@ -3,13 +3,14 @@ import { installModelPickers } from './model-picker'
 import { icon, ui, providerName, connectionLabel, installTerminalShell } from './terminal-view'
 import { confirmDialog, promptDialog } from './dialog'
 import { STATE_LABEL, createTranscript, type TranscriptHandle } from './transcript-view'
-import { errorText, getJson, pathsFromUriList, postJson, readArray, shellQuote } from './shared'
+import { errorText, getJson, pathsFromUriList, postJson, readArray, readRecord, shellQuote } from './shared'
 
 type TerminalSession = {
   id: string
   engine: string
   cwd: string
   title: string
+  workflow?: { id: string; name: string; revision: string; selectedDefault: boolean }
 }
 
 type XtermInstance = {
@@ -199,7 +200,9 @@ function toSession(raw: Record<string, unknown>): TerminalSession {
   const engine = typeof raw.engine === 'string' ? raw.engine : '?'
   const cwd = typeof raw.cwd === 'string' ? raw.cwd : ''
   const title = typeof raw.title === 'string' ? raw.title : `${engine.toUpperCase()} · ${id}`
-  return { id, engine, cwd, title }
+  const workflow = readRecord(raw.workflow)
+  const selected = typeof workflow.id === 'string' && typeof workflow.name === 'string' && typeof workflow.revision === 'string' ? { id: workflow.id, name: workflow.name, revision: workflow.revision, selectedDefault: workflow.selectedDefault === true } : undefined
+  return { id, engine, cwd, title, workflow: selected }
 }
 
 function renderStrip(): void {
@@ -532,7 +535,13 @@ function attach(id: string): void {
     handle.onpointerdown = (event) => { event.preventDefault(); handle.setPointerCapture(event.pointerId) }
     handle.onpointermove = (event) => { if (!handle.hasPointerCapture(event.pointerId)) return; const bounds = deck.getBoundingClientRect(); resize(layout.axis === 'horizontal' ? (event.clientX - bounds.left) / bounds.width * 100 : (event.clientY - bounds.top) / bounds.height * 100) }
     const transcript = createTranscript(id, (data) => { if (connection.readyState === WebSocket.OPEN) connection.send(new TextEncoder().encode(data)) }, () => renderStrip())
-    root.append(header, transcript.root, host, handle)
+    const workflow = ui('div', 'session-workflow')
+    workflow.append(ui('span', 'workflow-caption', 'Workflow'), ui('strong', '', session.workflow ? `${session.workflow.selectedDefault ? 'Default workflow · ' : ''}${session.workflow.name}` : 'No workflow selected'))
+    if (session.workflow) {
+      workflow.append(ui('small', '', `Version ${session.workflow.revision.slice(0, 6)}`))
+      workflow.title = `${session.workflow.name} · ${session.workflow.revision}. This version stays pinned for this terminal.`
+    }
+    root.append(header, workflow, transcript.root, host, handle)
     deck.append(root)
     const instance = new globals.Terminal({ convertEol: false, cursorBlink: true, fontFamily: "'JetBrains Mono', Menlo, 'SF Mono', monospace", fontSize: 13, macOptionIsMeta: true, scrollback: 10000, theme: THEME })
     const loader = instance as unknown as { loadAddon(addon: unknown): void }
@@ -647,13 +656,55 @@ function showComposerTab(tab: 'new' | 'resume'): void {
   else void loadSessions()
 }
 
+let workflowChoicesReady = false
+let workflowChoicesRequest = 0
+async function loadWorkflowChoices(): Promise<void> {
+  const select = el<HTMLSelectElement>('#term-workflow')
+  const help = el('#term-workflow-help')
+  if (!select) return
+  const request = ++workflowChoicesRequest
+  workflowChoicesReady = false
+  select.disabled = true
+  if (help) help.textContent = 'Loading workflows…'
+  const result = await getJson('/api/studio/workflows')
+  if (request !== workflowChoicesRequest) return
+  const selected = readRecord(result.data.selected)
+  if (!result.ok || typeof selected.id !== 'string' || typeof selected.name !== 'string' || typeof selected.revision !== 'string') {
+    if (help) help.textContent = 'Could not load workflows. Close and reopen this form to retry.'
+    return
+  }
+  const option = document.createElement('option')
+  option.value = ''; option.textContent = `Default workflow · ${selected.name}`
+  select.replaceChildren(option)
+  for (const workflow of readArray(result.data.workflows)) {
+    if (typeof workflow.id !== 'string' || typeof workflow.revision !== 'string' || typeof workflow.name !== 'string') continue
+    if (workflow.id === selected.id && workflow.revision === selected.revision) continue
+    const entry = document.createElement('option')
+    entry.value = `${workflow.id}@${workflow.revision}`
+    entry.textContent = workflow.id === 'default' ? 'MC standard · Plan, verify, execute, review' : workflow.name
+    select.append(entry)
+  }
+  select.value = ''
+  select.disabled = false
+  workflowChoicesReady = true
+  if (help) help.textContent = 'Each terminal keeps the version selected when it opens. Opening it does not start a workflow run.'
+}
+
+function selectedWorkflow(): { workflowId?: string; revision?: string } | null {
+  const select = el<HTMLSelectElement>('#term-workflow')
+  if (!select) return {}
+  if (!workflowChoicesReady) { say('Wait for workflows to load before opening the terminal.'); return null }
+  const [workflowId, revision] = select.value.split('@')
+  return workflowId ? { workflowId, revision } : {}
+}
+
 function toggleForm(open: boolean, tab: 'new' | 'resume' = 'new'): void {
   closeSearchBox()
   const form = el<HTMLFormElement>('#term-form')
   if (form === null) return
   form.hidden = !open
   el('#term-new')?.setAttribute('aria-expanded', String(open))
-  if (open) showComposerTab(tab)
+  if (open) { void loadWorkflowChoices(); showComposerTab(tab) }
 }
 
 function ago(ms: number): string {
@@ -708,12 +759,15 @@ async function resumeSession(id: string, title: string, cwd: string): Promise<vo
   const model = el<HTMLSelectElement>('#term-engine')?.value === engine ? el<HTMLInputElement>('#term-model')?.value.trim() ?? '' : ''
   const dimensions = term as unknown as { cols?: number; rows?: number } | null
   if (creating) return
+  const workflow = selectedWorkflow()
+  if (!workflow) return
   creating = true
   say('Opening terminal…', true)
   el<HTMLButtonElement>('#term-form button[type=submit]')?.setAttribute('disabled', '')
   const result = await postJson('/api/terminals', {
     engine,
     cwd,
+    ...workflow,
     resumeSessionId: id,
     title,
     ...(model !== '' ? { model } : {}),
@@ -746,12 +800,15 @@ async function openTerminal(event: Event): Promise<void> {
   const model = el<HTMLSelectElement>('#term-engine')?.value === engine ? el<HTMLInputElement>('#term-model')?.value.trim() ?? '' : ''
   const dimensions = term as unknown as { cols?: number; rows?: number } | null
   if (creating) return
+  const workflow = selectedWorkflow()
+  if (!workflow) return
   creating = true
   say('Opening terminal…', true)
   el<HTMLButtonElement>('#term-form button[type=submit]')?.setAttribute('disabled', '')
   const result = await postJson('/api/terminals', {
     engine,
     cwd,
+    ...workflow,
     ...(model !== '' ? { model } : {}),
     cols: dimensions?.cols ?? 80,
     rows: dimensions?.rows ?? 24,
@@ -851,14 +908,14 @@ export function installTerminals(): void {
   if (el('#term-strip') === null) return
   installTerminalShell()
   const form = el<HTMLFormElement>('#term-form')
-  el('#term-new')?.addEventListener('click', () => toggleForm(form?.hidden ?? true))
+  el('#term-new')?.addEventListener('click', () => toggleForm(form?.hidden !== false))
   el('#term-new')?.setAttribute('title', 'New terminal · ⌘K')
   if (typeof document.addEventListener === 'function') document.addEventListener('keydown', (event) => {
     if (event.defaultPrevented) return
     if (event.key === 'Escape') { if (form && !form.hidden) { splitNext = false; toggleForm(false) } else closeSearchBox(); return }
     if (!event.metaKey || event.ctrlKey || event.altKey) return
     const key = event.key.toLowerCase()
-    if (key === 'k') { event.preventDefault(); toggleForm(form?.hidden ?? true); return }
+    if (key === 'k') { event.preventDefault(); toggleForm(form?.hidden !== false); return }
     const view = attachedId ? views.get(attachedId) : undefined
     if (key === 'j' && view && attachedId) { event.preventDefault(); setMode(attachedId, view, view.mode === 'shell' ? 'transcript' : 'shell'); return }
     if (key === 'f' && view && attachedId) { event.preventDefault(); if (view.mode !== 'shell') setMode(attachedId, view, 'shell'); openSearchBox(); return }

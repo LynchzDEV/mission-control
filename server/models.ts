@@ -2,11 +2,12 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import { GLM_MODEL, type EngineName } from './engines'
+import { GLM_MODEL } from './engines'
 import { zaiOrigin, type FetchLike } from './quota'
 import { readSecrets, type Secrets } from './secrets'
+import { createConnectionStore } from './agent-connections'
 
-export type ModelLists = Record<EngineName, string[]>
+export type ModelLists = Record<string, string[]>
 
 export const CLAUDE_MODEL_ALIASES = ['fable', 'opus', 'sonnet', 'haiku']
 
@@ -82,5 +83,6 @@ export async function listModels(deps: ModelDeps = {}): Promise<ModelLists> {
     (deps.secrets ?? readSecrets)().then((secrets) => glmModels(secrets, deps.fetchImpl)),
     codexModels(deps.codexCachePath),
   ])
-  return { claude: [...CLAUDE_MODEL_ALIASES], glm, codex }
+  const connections = await createConnectionStore().list()
+  return { claude: [...CLAUDE_MODEL_ALIASES], glm, codex, ...Object.fromEntries(connections.map(connection => [connection.id, connection.models])) }
 }

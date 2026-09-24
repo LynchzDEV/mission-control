@@ -5,9 +5,12 @@
   "scripts": {
     "start": "bun server/index.ts",
     "test": "bun test",
-    "postinstall": "bun scripts/postinstall.ts"
+    "postinstall": "bun scripts/postinstall.ts",
+    "typecheck:studio": "tsc -p tsconfig.studio.json",
+    "check:studio": "bun scripts/check-studio.ts"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "1.5.0",
     "@elysiajs/cookie": "^0.8.0",
     "@elysiajs/html": "^1.4.2",
     "@elysiajs/static": "^1.4.10",
@@ -15,10 +18,21 @@
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
+    "@xyflow/react": "12.11.6",
     "animejs": "^4.5.0",
     "bun-pty": "^0.4.10",
     "elysia": "^1.4.30",
     "node-pty": "^1.1.0",
-    "yaml": "^2.9.0"
+    "react": "19",
+    "react-dom": "19",
+    "yaml": "^2.9.0",
+    "zod": "4"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "playwright": "^1.63.0",
+    "typescript": "^7.0.2"
   }
 }

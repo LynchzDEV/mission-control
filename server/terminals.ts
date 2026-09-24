@@ -6,6 +6,8 @@ import { claudeTranscriptPath, findCodexRollout } from './session-transcript'
 
 import {
   ENGINE_NAMES,
+  pathWithFallbackDirs,
+  PARENT_CLAUDE_SESSION_VARS,
   buildEnv,
   fakeEnginesEnabled,
   modelArgs,
@@ -14,6 +16,9 @@ import {
   type EngineName,
 } from './engines'
 import { validateWorkspaceCwd } from './workspace'
+import { connectionEnvironment, createConnectionStore, type AgentConnection } from './agent-connections'
+import { configDir, parseBind, readConfig } from './secrets'
+import { createWorkflowStore } from './workflows'
 
 export const RING_BUFFER_BYTES = 64 * 1024
 export const DEFAULT_COLS = 80
@@ -27,12 +32,13 @@ const FAKE_TERMINAL_CMD = '/bin/sh'
 
 export type TerminalRecord = {
   id: string
-  engine: EngineName
+  engine: string
   cwd: string
   pid: number
   createdAt: number
   title: string
   sessionId: string | null
+  workflow?: { id: string; revision: string; name: string; selectedDefault: boolean }
 }
 
 export type CreateTerminalParams = {
@@ -43,6 +49,8 @@ export type CreateTerminalParams = {
   model?: string
   resumeSessionId?: string
   title?: string
+  workflowId?: string
+  revision?: string
 }
 
 export type CreateTerminalResult =
@@ -100,11 +108,13 @@ export function terminalArgs(
   model: string | undefined,
   resumeSessionId: string | undefined,
   sessionId?: string,
+  instructions?: string,
 ): string[] {
   return [
     ...(engine === 'codex' ? ['--dangerously-bypass-approvals-and-sandbox'] : []),
     ...(resumeSessionId === undefined ? (engine === 'codex' || sessionId === undefined ? [] : ['--session-id', sessionId]) : ['--resume', resumeSessionId]),
     ...modelArgs(engine, model),
+    ...(instructions ? engine === 'codex' ? ['-c', `developer_instructions=${JSON.stringify(instructions)}`] : ['--append-system-prompt', instructions] : []),
   ]
 }
 
@@ -154,19 +164,36 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
   }
 
   async function createTerminal(params: CreateTerminalParams): Promise<CreateTerminalResult> {
-    if (typeof params.engine !== 'string' || !isEngineName(params.engine)) {
+    if (typeof params.engine !== 'string') {
       return { ok: false, status: 400, error: 'unknown engine' }
     }
     const engine = params.engine
+    let connection: AgentConnection | undefined
+    if (!isEngineName(engine)) {
+      try { connection = await createConnectionStore().get(engine) }
+      catch { return { ok: false, status: 400, error: 'unknown engine' } }
+      if (!connection.terminalArgs) return { ok: false, status: 400, error: 'Configure interactive terminal arguments for this connection in Studio' }
+      if (params.resumeSessionId) return { ok: false, status: 400, error: 'Interactive resume is not configured for this connection' }
+      if (params.model && !connection.terminalArgs.some(arg => arg.includes('{{model}}'))) return { ok: false, status: 400, error: 'Interactive arguments need a {{model}} slot to select a model' }
+    }
     if (params.resumeSessionId !== undefined && engine === 'codex') {
       return { ok: false, status: 400, error: 'resume is only supported for claude and glm' }
     }
     const cwdCheck = await validateWorkspaceCwd(params.cwd, home, { requireGit: false })
     if (!cwdCheck.ok) return { ok: false, status: 400, error: cwdCheck.error }
 
+    let workflow: NonNullable<TerminalRecord['workflow']>
+    try {
+      if (params.revision && !params.workflowId) throw new Error('Choose a workflow for this version')
+      const store = createWorkflowStore()
+      const selected = params.workflowId ? await store.get(params.workflowId, params.revision) : await store.selected()
+      workflow = { id: selected.id, revision: selected.revision, name: selected.name, selectedDefault: !params.workflowId }
+    } catch (error) { return { ok: false, status: 400, error: (error as Error).message } }
+
     let env: Record<string, string>
     try {
-      env = await buildEnv(engine)
+      env = connection ? { ...process.env, ...connectionEnvironment(connection), PATH: pathWithFallbackDirs(process.env.PATH) } as Record<string, string> : await buildEnv(engine as EngineName)
+      if (connection) for (const key of PARENT_CLAUDE_SESSION_VARS) delete env[key]
     } catch {
       return { ok: false, status: 400, error: 'engine environment is not configured' }
     }
@@ -175,15 +202,20 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     const rows = clampDimension(params.rows, DEFAULT_ROWS)
 
     const id = crypto.randomUUID()
-    const sessionId = engine === 'codex' ? null : (params.resumeSessionId ?? crypto.randomUUID())
+    const target = parseBind((await readConfig()).bind)
+    const mcUrl = `http://${target.hostname === '0.0.0.0' ? '127.0.0.1' : target.hostname}:${target.port}`
+    const instructions = `This is a Mission Control terminal. Its pinned workflow is ${JSON.stringify(workflow)}. For a user-requested workflow task, start POST ${mcUrl}/api/studio/runs with terminalId ${JSON.stringify(id)}, cwd ${JSON.stringify(cwdCheck.path)}, label, and the complete user request. Mission Control owns the workflow steps; do not also execute those steps yourself. Read the Bearer apiToken from secrets.json in MISSION_CONTROL_CONFIG_DIR without printing it. Use MC_URL for all cockpit calls, never a hardcoded port. Follow the mc-dispatch skill when available, preserving this terminal's workflow and service address. Answer ordinary questions directly. Opening this terminal does not authorize starting any work; wait for the user. MC_WORKFLOW_ID and MC_WORKFLOW_REVISION identify the pinned version.`
+    const sessionId = connection || engine === 'codex' ? null : (params.resumeSessionId ?? crypto.randomUUID())
     let pty: IPty
     try {
-      pty = spawn(terminalCommand(engine), fakeEnginesEnabled() ? [] : terminalArgs(engine, params.model, params.resumeSessionId, sessionId ?? undefined), {
+      const command = connection ? resolveBinary(connection.command) : terminalCommand(engine as EngineName)
+      const args = connection ? connection.terminalArgs!.map(arg => arg.replaceAll('{{model}}', params.model ?? '').replaceAll('{{instructions}}', instructions)) : fakeEnginesEnabled() ? [] : terminalArgs(engine as EngineName, params.model, params.resumeSessionId, sessionId ?? undefined, instructions)
+      pty = spawn(command, args, {
         name: 'xterm-256color',
         cols,
         rows,
         cwd: cwdCheck.path,
-        env: { ...env, TERM: 'xterm-256color', MC_TERMINAL_ID: id },
+        env: { ...env, TERM: 'xterm-256color', MC_TERMINAL_ID: id, MC_URL: mcUrl, MISSION_CONTROL_CONFIG_DIR: configDir(), MC_WORKFLOW_ID: workflow.id, MC_WORKFLOW_REVISION: workflow.revision },
       })
     } catch {
       return { ok: false, status: 500, error: 'failed to spawn terminal process' }
@@ -196,6 +228,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       createdAt: Date.now(),
       title: normalizeTitle(params.title) ?? `${engine.toUpperCase()} · ${basename(cwdCheck.path)}`,
       sessionId,
+      workflow,
     }
     const session: Session = { record, pty, buffer: createRingBuffer(), listeners: new Set(), transcript: sessionId === null ? null : claudeTranscriptPath(env.CLAUDE_CONFIG_DIR, cwdCheck.path, sessionId) }
     sessions.set(id, session)
