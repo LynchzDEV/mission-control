@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>New chat · terminal and chat settings</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./cards.css">
+  <style>
+    .split { display: inline-flex; align-items: stretch; border-radius: 40px; box-shadow: var(--raised); }
+    .split .pill { box-shadow: none; border-radius: 40px 0 0 40px; padding-right: 12px; }
+    .split .caret { min-height: 34px; width: 32px; display: grid; place-items: center; border-radius: 0 40px 40px 0; border-left: 1px solid var(--line); color: #606d82; }
+    .split .caret[aria-expanded="true"] { box-shadow: var(--inset); color: var(--accent); }
+    .split .caret svg { width: 14px; height: 14px; }
+    .popover { position: absolute; padding: 6px; border: 1px solid #ffffff88; border-radius: 14px; background: var(--paper); box-shadow: 6px 8px 22px #b4c1d677, -3px -3px 12px #ffffff99; display: grid; z-index: 5; }
+    .new-menu { top: 58px; left: 66px; width: 250px; }
+    .row { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 9px; text-align: left; font-size: 13px; width: 100%; }
+    .row:hover, .row.current { background: #e0e5f1; transform: none; }
+    .row > svg:first-child, .row > img { width: 18px; height: 18px; color: var(--accent); flex: 0 0 18px; }
+    .row > span { flex: 1; min-width: 0; }
+    .row small { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .check { width: 16px; height: 16px; color: var(--accent); }
+    .group-label { padding: 10px 12px 4px; font-size: 11px; color: var(--muted); letter-spacing: .02em; }
+    .divider { height: 1px; background: var(--line); margin: 6px 8px; }
+    .switch { width: 34px; height: 20px; flex: 0 0 34px; border-radius: 20px; box-shadow: var(--inset); position: relative; }
+    .switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--paper); box-shadow: var(--raised); }
+    .composer-area { position: relative; }
+    .chip-menu-a { bottom: 112px; left: 8px; width: 320px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 14px; box-shadow: var(--raised); font-size: 12px; color: var(--accent); white-space: nowrap; }
+    .chip svg, .chip img { width: 14px; height: 14px; }
+    .chip .caret-sm { width: 11px; height: 11px; }
+    .chip[aria-expanded="true"] { box-shadow: var(--inset); }
+    .chip.off { color: var(--muted); }
+    .chip-menu-b { bottom: 112px; left: 8px; width: 300px; }
+    .model-menu { left: 150px; width: 220px; max-height: 360px; overflow: auto; }
+    .engine-head { display: flex; align-items: center; gap: 8px; }
+    .engine-head img { width: 14px; height: 14px; }
+    .row.muted { color: var(--muted); }
+    .chip-group { display: inline-flex; align-items: center; gap: 8px; }
+    .chip-extra { display: inline-flex; align-items: center; gap: 8px; max-width: 0; opacity: 0; overflow: hidden; padding: 4px 0; margin: -4px 0; transition: max-width 260ms cubic-bezier(.22, 1, .36, 1), opacity 180ms; }
+    .chip-group[data-expanded="true"] .chip-extra { max-width: 240px; opacity: 1; padding-inline: 2px; }
+    .chip-group .chip { border: 0; }
+    .chip.off[aria-pressed="true"] { color: var(--accent); box-shadow: var(--inset); }
+    .composer.tall { flex-wrap: wrap; border-radius: 26px; padding: 10px 12px; }
+    .composer.tall textarea { flex-basis: calc(100% - 60px); }
+    .tray { flex-basis: 100%; display: grid; gap: 10px; padding: 6px 6px 12px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+    .tray-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+    .tray-row > b { width: 64px; font-weight: 400; color: var(--muted); }
+    .seg { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 14px; font-size: 12px; box-shadow: var(--raised); }
+    .seg img, .seg svg { width: 13px; height: 13px; }
+    .seg[aria-pressed="true"] { box-shadow: var(--inset); color: var(--accent); }
+    .dialog-open { position: fixed; inset: 0; background: #41485218; backdrop-filter: blur(3px); display: grid; place-items: center; z-index: 6; }
+    .dialog-open > .access-dialog { position: static; opacity: 1; transform: none; display: block; }
+    .launcher-list button { width: calc(100% - 10px); }
+    .flat { box-shadow: 0 24px 60px #737ea32e; }
+    .flat .field-stack label { gap: 6px; font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+    .flat .field-stack :is(input, select) { box-shadow: none; background: #e2e6f0; border: 1px solid transparent; border-radius: 10px; padding: 10px 12px; color: #505e75; }
+    .flat .field-stack :is(input, select):hover { border-color: #d3d9e6; }
+    .flat .field-stack :is(input, select):focus-visible { background: #dde2ee; border-color: #c9c0e3; }
+    .flat .pill { width: 100%; margin-top: 8px; min-height: 42px; color: var(--accent); }
+    .screen-tag { position: fixed; bottom: 34px; right: 16px; max-width: 360px; padding: 10px 14px; border-radius: 12px; font-size: 12px; line-height: 1.6; color: var(--muted); background: var(--paper); box-shadow: var(--raised); z-index: 7; }
+  </style>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="search-icon" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.7"/><path d="m13 13 4 4"/></symbol>
+    <symbol id="plus-icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+    <symbol id="arrow-icon" viewBox="0 0 20 20"><path d="M10 16V4M5 9l5-5 5 5"/></symbol>
+    <symbol id="agents-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M11 4v12M6 8h2M6 11h2"/></symbol>
+    <symbol id="flow-icon" viewBox="0 0 20 20"><rect x="2" y="7" width="5" height="6" rx="1.5"/><rect x="13" y="2" width="5" height="6" rx="1.5"/><rect x="13" y="12" width="5" height="6" rx="1.5"/><path d="M7 10h3V5h3M10 10v5h3"/></symbol>
+    <symbol id="lock-icon" viewBox="0 0 20 20"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M7 8V6a3 3 0 0 1 6 0v2M10 11v3"/></symbol>
+    <symbol id="folder-icon" viewBox="0 0 20 20"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H8l1.5 2h6A1.5 1.5 0 0 1 17 8.5v6a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5Z"/></symbol>
+    <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
+    <symbol id="spark-icon" viewBox="0 0 24 24"><path d="m14 3 2.4 6.6L23 12l-6.6 2.4L14 21l-2.4-6.6L5 12l6.6-2.4L14 3ZM5 3l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z"/></symbol>
+    <symbol id="terminal-icon" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="2"/><path d="m6 8 2.5 2L6 12M10.5 12H14"/></symbol>
+    <symbol id="close-icon" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+    <symbol id="check-icon" viewBox="0 0 20 20"><path d="m5 10.5 3.2 3L15 6.5"/></symbol>
+    <symbol id="pencil-icon" viewBox="0 0 20 20"><path d="M12.5 4.5 15.5 7.5 7.5 15.5H4.5v-3Z"/></symbol>
+    <symbol id="auto-icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.5"/><path d="M10 6.5V10l2.5 1.5"/></symbol>
+  </svg>
+
+  <nav class="variant-switch" aria-label="Screens">
+    <a href="#terminal-menu">Terminal menu</a><a href="#terminal">Terminal launcher</a><a href="#a">A · Menu rows</a><a href="#b">B · Separate chips</a><a href="#c">C · Inline tray</a>
+  </nav>
+
+  <main class="canvas">
+    <header class="toolbar" style="position:relative">
+      <nav aria-label="Chats">
+        <button class="round" aria-label="Search and history"><svg><use href="#search-icon"/></svg></button>
+        <span class="split"><button class="pill"><svg><use href="#plus-icon"/></svg>New chat</button><button class="caret" id="caret" aria-label="More ways to start" aria-expanded="false"><svg><use href="#chevron-icon"/></svg></button></span>
+      </nav>
+      <div class="popover new-menu screen" data-screen="terminal-menu" role="menu">
+        <a class="row" role="menuitem" href="#terminal" style="text-decoration:none;color:inherit"><svg><use href="#terminal-icon"/></svg><span>Terminal<small>Live session with any connected AI</small></span></a>
+      </div>
+      <nav aria-label="Session activity">
+        <button class="pill">Studio</button>
+        <button class="round quiet-control" aria-label="Agents"><svg><use href="#agents-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Flow"><svg><use href="#flow-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Access"><svg><use href="#lock-icon"/></svg></button>
+      </nav>
+    </header>
+
+    <div class="stage">
+      <section class="welcome">
+        <span class="welcome-mark"><svg><use href="#spark-icon"/></svg></span>
+        <h1>A little space to build.</h1>
+        <p>What would you like to work on?</p>
+      </section>
+    </div>
+
+    <div class="composer-area content-width">
+      <div class="popover chip-menu-a screen" data-screen="a" role="menu">
+        <div class="group-label">Project</div>
+        <button class="row current"><svg><use href="#folder-icon"/></svg><span>mission-control<small>~/Desktop/kingpinggroup/mission-control · detected</small></span><svg class="check"><use href="#check-icon"/></svg></button>
+        <button class="row"><svg><use href="#folder-icon"/></svg><span>api<small>~/code/klangtech/api</small></span></button>
+        <button class="row"><svg><use href="#auto-icon"/></svg><span>Detect from my message</span></button>
+        <div class="divider"></div>
+        <div class="group-label">AI for this chat</div>
+        <button class="row current"><img src="./vendor/providers/claude.svg" alt=""><span>Claude · sonnet<small>Chat default</small></span><svg class="check"><use href="#check-icon"/></svg></button>
+        <button class="row"><img src="./vendor/providers/glm.svg" alt=""><span>GLM · glm-5.3</span></button>
+        <button class="row"><img src="./vendor/providers/codex.svg" alt=""><span>Codex · gpt-5.5</span></button>
+        <div class="divider"></div>
+        <button class="row"><svg><use href="#pencil-icon"/></svg><span>Let the chat edit directly<small>Only inside this project · shows Undo</small></span><span class="switch" aria-hidden="true"></span></button>
+      </div>
+
+      <div class="popover chip-menu-b" id="project-menu" role="menu" hidden>
+        <button class="row current"><svg><use href="#folder-icon"/></svg><span>mission-control<small>detected from your message</small></span><svg class="check"><use href="#check-icon"/></svg></button>
+        <button class="row"><svg><use href="#folder-icon"/></svg><span>api<small>~/code/klangtech/api</small></span></button>
+        <button class="row"><svg><use href="#auto-icon"/></svg><span>Detect from my message</span></button>
+      </div>
+      <div class="popover chip-menu-b model-menu" id="model-menu" role="menu" hidden>
+        <div class="group-label engine-head"><img src="./vendor/providers/claude.svg" alt="">Claude</div>
+        <button class="row">opus</button>
+        <button class="row current">sonnet<svg class="check"><use href="#check-icon"/></svg></button>
+        <button class="row">haiku</button>
+        <div class="group-label engine-head"><img src="./vendor/providers/glm.svg" alt="">GLM</div>
+        <button class="row">glm-5.3</button>
+        <div class="group-label engine-head"><img src="./vendor/providers/codex.svg" alt="">Codex</div>
+        <button class="row">gpt-5.5</button>
+        <div class="divider"></div>
+        <button class="row muted">Custom model…</button>
+      </div>
+
+      <form class="composer nui-neuromorphic-inset" onsubmit="return false">
+        <div class="tray screen" data-screen="c">
+          <div class="tray-row"><b>Project</b><button class="seg" aria-pressed="true"><svg><use href="#folder-icon"/></svg>mission-control</button><button class="seg"><svg><use href="#folder-icon"/></svg>api</button><button class="seg"><svg><use href="#auto-icon"/></svg>Auto</button></div>
+          <div class="tray-row"><b>AI</b><button class="seg" aria-pressed="true"><img src="./vendor/providers/claude.svg" alt="">Claude</button><button class="seg"><img src="./vendor/providers/glm.svg" alt="">GLM</button><button class="seg"><img src="./vendor/providers/codex.svg" alt="">Codex</button></div>
+          <div class="tray-row"><b>Editing</b><button class="seg"><svg><use href="#pencil-icon"/></svg>Let the chat edit directly</button></div>
+        </div>
+        <span class="chip screen" data-screen="terminal terminal-menu a c"><svg><use href="#folder-icon"/></svg>mission-control<svg class="caret-sm"><use href="#chevron-icon"/></svg></span>
+        <span class="chip-group screen" data-screen="b" id="chip-group" data-expanded="false">
+          <button type="button" class="chip" id="project-chip" aria-expanded="false"><svg><use href="#folder-icon"/></svg>mission-control</button>
+          <span class="chip-extra" id="chip-extra">
+            <button type="button" class="chip" id="model-chip" aria-expanded="false"><img src="./vendor/providers/claude.svg" alt="">sonnet<svg class="caret-sm"><use href="#chevron-icon"/></svg></button>
+            <button type="button" class="chip off" id="edit-chip" aria-pressed="false" title="Let the chat edit directly"><svg><use href="#pencil-icon"/></svg></button>
+          </span>
+        </span>
+        <textarea rows="1" placeholder="Write a message here…" aria-label="Message"></textarea>
+        <button type="submit" class="round send" aria-label="Send message"><svg><use href="#arrow-icon"/></svg></button>
+      </form>
+    </div>
+  </main>
+
+  <div class="dialog-open screen" data-screen="terminal">
+    <dialog open class="access-dialog flat" aria-labelledby="launch-title">
+      <header class="dialog-heading"><h2 id="launch-title">Open terminal</h2><a class="round" href="#terminal-menu" aria-label="Close terminal launcher"><svg><use href="#close-icon"/></svg></a></header>
+      <form class="field-stack" onsubmit="return false">
+        <label>Workflow<select><option>Default · Plan, verify, build, review</option></select></label>
+        <div class="launcher-fields"><label>Engine<select><option>Claude</option></select></label><label>Model<input placeholder="Engine default"></label></div>
+        <label>Working directory<input value="~/Desktop/kingpinggroup/mission-control"></label>
+        <button class="pill">Open terminal</button>
+      </form>
+    </dialog>
+  </div>
+
+  <p class="screen-tag" id="tag"></p>
+  <footer class="preview-footer">Static preview · sample data</footer>
+
+  <script>
+    const tags = {
+      'terminal-menu': 'Arrow next to New chat: one item, Terminal. Click it to see the launcher.',
+      terminal: 'After clicking Terminal: the existing quiet-chat launcher (index.html:159-167), unchanged. Open terminal starts a live session and switches to the terminal view.',
+      a: 'A · One chip, menu of rows. Same row style as the New chat menu: projects, AIs with logos, and an editing switch.',
+      b: 'B · Collapsible. Only the project chip shows. Click it: the AI chip and the pencil slide out to its right inside the message box, and the project menu opens. Click the AI chip for engines and models. Click the project chip again to fold them away.',
+      c: 'C · Inline tray. Clicking the chip unfolds the choices inside the message box as pills; no floating menu.',
+    }
+    const show = () => {
+      const id = (location.hash || '#terminal-menu').slice(1)
+      document.querySelectorAll('.screen').forEach(el => el.hidden = !el.dataset.screen.split(' ').includes(id))
+      document.getElementById('caret').setAttribute('aria-expanded', String(id === 'terminal-menu'))
+      document.querySelector('.composer').classList.toggle('tall', id === 'c')
+      document.querySelectorAll('.variant-switch a').forEach(a => a.setAttribute('aria-current', a.hash === '#' + id ? 'page' : 'false'))
+      document.getElementById('tag').textContent = tags[id] ?? ''
+    }
+    document.getElementById('caret').onclick = () => { location.hash = location.hash === '#terminal-menu' ? '#a' : '#terminal-menu' }
+    const $ = id => document.getElementById(id)
+    const openMenu = (menu, chip) => {
+      for (const [m, c] of [['project-menu', 'project-chip'], ['model-menu', 'model-chip']]) {
+        const on = m === menu && $(m).hidden
+        $(m).hidden = !on
+        $(c).setAttribute('aria-expanded', String(on))
+      }
+    }
+    $('project-chip').onclick = () => {
+      const expand = $('chip-group').dataset.expanded !== 'true'
+      $('chip-group').dataset.expanded = String(expand)
+      openMenu(expand ? 'project-menu' : null)
+    }
+    $('model-chip').onclick = () => openMenu('model-menu')
+    $('edit-chip').onclick = () => $('edit-chip').setAttribute('aria-pressed', String($('edit-chip').getAttribute('aria-pressed') !== 'true'))
+    addEventListener('hashchange', () => { $('chip-group').dataset.expanded = 'false'; openMenu(null) })
+    addEventListener('hashchange', show); show()
+  </script>
+</body>
+</html>

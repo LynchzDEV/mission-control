@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Terminals · rename</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./terminals.css">
+  <style>
+    .name-edit { font: inherit; font-weight: 500; width: 100%; min-width: 0; padding: 3px 8px; margin: -3px 0; border-radius: 8px; box-shadow: none; background: #e2e6f0; border: 1px solid #c9c0e3; color: #505e75; outline: none; }
+    .edit-hint { font-size: 10px; color: var(--muted); }
+    .session-card.editing { box-shadow: var(--raised); color: inherit; }
+    .card-pencil { width: 22px; min-height: 22px; flex: 0 0 22px; margin-left: 4px; }
+    .card-pencil svg { width: 12px; height: 12px; }
+    .session-card header .dot { margin-left: auto; }
+    .title-edit { font-size: 15px; font-weight: 500; width: 320px; padding: 4px 10px; margin: -4px 0 4px -10px; border-radius: 10px; box-shadow: var(--inset); color: #505e75; }
+    .title-hover { padding: 2px 8px; margin-left: -8px; border-radius: 8px; background: #e0e5f1; display: inline-flex; align-items: center; gap: 8px; }
+    .title-hover svg { width: 13px; height: 13px; color: var(--accent); }
+  </style>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="search-icon" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.7"/><path d="m13 13 4 4"/></symbol>
+    <symbol id="plus-icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+    <symbol id="agents-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M11 4v12M6 8h2M6 11h2"/></symbol>
+    <symbol id="flow-icon" viewBox="0 0 20 20"><rect x="2" y="7" width="5" height="6" rx="1.5"/><rect x="13" y="2" width="5" height="6" rx="1.5"/><rect x="13" y="12" width="5" height="6" rx="1.5"/><path d="M7 10h3V5h3M10 10v5h3"/></symbol>
+    <symbol id="lock-icon" viewBox="0 0 20 20"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M7 8V6a3 3 0 0 1 6 0v2M10 11v3"/></symbol>
+    <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
+    <symbol id="pencil-icon" viewBox="0 0 20 20"><path d="M12.5 4.5 15.5 7.5 7.5 15.5H4.5v-3Z"/></symbol>
+  </svg>
+
+  <nav class="variant-switch" aria-label="Screens">
+    <a href="#now">Now · rail</a><a href="#a">A · Double-click the card</a><a href="#b">B · Pencil on hover</a><a href="#c">C · Edit the title</a>
+  </nav>
+
+  <main class="canvas">
+    <header class="toolbar">
+      <nav aria-label="Chats">
+        <button class="round" aria-label="Search and history"><svg><use href="#search-icon"/></svg></button>
+        <button class="pill"><svg><use href="#plus-icon"/></svg>New chat <svg class="chevron"><use href="#chevron-icon"/></svg></button>
+      </nav>
+      <nav aria-label="Session activity">
+        <button class="pill">Studio</button>
+        <button class="round quiet-control" aria-label="Agents"><svg><use href="#agents-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Flow"><svg><use href="#flow-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Access"><svg><use href="#lock-icon"/></svg></button>
+      </nav>
+    </header>
+
+    <div class="workspace"><div class="chat-container"><section class="live-workspace">
+      <div class="with-rail">
+        <aside class="rail" aria-label="Terminals">
+          <div class="rail-head"><span>Terminals · 3</span><button class="round" aria-label="New terminal"><svg><use href="#plus-icon"/></svg></button></div>
+
+          <button class="session-card screen" data-screen="now c" aria-current="true"><header><img class="logo" src="./vendor/providers/claude.svg" alt="">mission-control<span class="dot run"></span></header><small>Claude · sonnet · working</small><code>Editing terminals.tsx</code></button>
+          <div class="session-card editing screen new-badge" data-screen="a" aria-current="true"><header><img class="logo" src="./vendor/providers/claude.svg" alt=""><input class="name-edit" value="terminal redesign" aria-label="Terminal name"></header><span class="edit-hint">Enter to save · Esc to cancel · empty keeps the old name</span><code>Editing terminals.tsx</code></div>
+          <button class="session-card screen new-badge" data-screen="b" aria-current="true"><header><img class="logo" src="./vendor/providers/claude.svg" alt="">mission-control<span class="round card-pencil" aria-label="Rename"><svg><use href="#pencil-icon"/></svg></span><span class="dot run"></span></header><small>Claude · sonnet · working</small><code>Editing terminals.tsx</code></button>
+
+          <button class="session-card"><header><img class="logo" src="./vendor/providers/codex.svg" alt="">api<span class="dot wait"></span></header><small>Codex · gpt-5.5 · waiting for you</small><code>Allow edit to routes.rb?</code></button>
+          <button class="session-card"><header><img class="logo" src="./vendor/providers/glm.svg" alt="">website<span class="dot"></span></header><small>GLM · glm-5.3 · idle</small><code>&gt;</code></button>
+        </aside>
+
+        <div class="live-main">
+          <header class="live-heading"><div>
+            <h1 class="screen" data-screen="now a b">mission-control</h1>
+            <div class="screen new-badge" data-screen="c"><input class="title-edit" value="terminal redesign" aria-label="Terminal name"><p class="muted">Enter to save · Esc to cancel · empty keeps the old name</p></div>
+            <p class="muted screen" data-screen="now a b">Claude · sonnet · ~/Desktop/kingpinggroup/mission-control</p>
+          </div><div class="live-actions"><span>Connected</span></div></header>
+          <pre class="term" data-term></pre>
+        </div>
+      </div>
+    </section></div></div>
+  </main>
+
+  <template id="term-content"><span class="acc">╭─ Claude Code ─────────────────────────────────╮</span>
+<span class="acc">│</span> cwd: ~/Desktop/kingpinggroup/mission-control   <span class="acc">│</span>
+<span class="acc">╰───────────────────────────────────────────────╯</span>
+
+<span class="dim">&gt;</span> make the terminal page support several sessions
+
+<span class="acc">●</span> Reading <span class="dim">server/views/terminals.tsx</span>
+<span class="ok">✓</span> Found the session strip and split controls
+
+<span class="dim">&gt;</span> <span class="cursor"></span></template>
+
+  <p class="screen-tag" id="tag"></p>
+  <footer class="preview-footer">Terminals · item 3 of 7: rename · a new terminal is named after its folder until you rename it · static preview</footer>
+
+  <script>
+    const tags = {
+      now: 'Starting point: a new terminal is named after its folder ("mission-control").',
+      a: 'A · Double-click the name on its rail card: it turns into a field right there. Enter saves, Esc cancels, an empty name keeps the old one (max 60 characters, as today).',
+      b: 'B · Pencil on hover: hovering a card shows a small pencil beside the name (drawn visible). Click it to edit inline, same keys as A.',
+      c: 'C · Edit the title: click the terminal name in the heading above the terminal to edit it there. The rail card updates to match.',
+    }
+    document.querySelectorAll('[data-term]').forEach(el => el.append(document.getElementById('term-content').content.cloneNode(true)))
+    const show = () => {
+      const id = (location.hash || '#now').slice(1)
+      document.querySelectorAll('.screen').forEach(el => el.hidden = !el.dataset.screen.split(' ').includes(id))
+      document.querySelectorAll('.variant-switch a').forEach(a => a.setAttribute('aria-current', a.hash === '#' + id ? 'page' : 'false'))
+      document.getElementById('tag').textContent = tags[id] ?? ''
+    }
+    addEventListener('hashchange', show); show()
+  </script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Terminals · end session</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./terminals.css">
+  <style>
+    .name-edit { font: inherit; font-weight: 500; width: 100%; min-width: 0; padding: 3px 8px; margin: -3px 0; border-radius: 8px; box-shadow: none; background: #e2e6f0; border: 1px solid #c9c0e3; color: #505e75; outline: none; }
+    .edit-hint { font-size: 10px; color: var(--muted); }
+    .session-card.editing { box-shadow: var(--raised); color: inherit; }
+    .card-pencil { width: 22px; min-height: 22px; flex: 0 0 22px; margin-left: 4px; }
+    .card-pencil svg { width: 12px; height: 12px; }
+    .session-card header .dot { margin-left: auto; }
+    .title-edit { font-size: 15px; font-weight: 500; width: 320px; padding: 4px 10px; margin: -4px 0 4px -10px; border-radius: 10px; box-shadow: var(--inset); color: #505e75; }
+    .title-hover { padding: 2px 8px; margin-left: -8px; border-radius: 8px; background: #e0e5f1; display: inline-flex; align-items: center; gap: 8px; }
+    .title-hover svg { width: 13px; height: 13px; color: var(--accent); }
+    .card-x { position: absolute; top: 8px; right: 8px; width: 22px; min-height: 22px; flex-basis: 22px; }
+    .card-x svg { width: 11px; height: 11px; }
+    .rel { position: relative; }
+    .confirm-inline { display: grid; gap: 8px; padding-top: 4px; font-size: 12px; line-height: 1.5; }
+    .confirm-inline div { display: flex; gap: 8px; }
+    .confirm-inline .pill { min-height: 28px; font-size: 12px; padding-inline: 12px; }
+    .danger { color: #b0556a; }
+    .card-menu { position: absolute; top: 34px; right: 6px; width: 190px; padding: 6px; border: 1px solid #ffffff88; border-radius: 14px; background: var(--paper); box-shadow: 6px 8px 22px #b4c1d677, -3px -3px 12px #ffffff99; display: grid; z-index: 5; }
+    .card-menu .row { padding: 9px 10px; }
+    .end-btn { min-height: 30px; font-size: 12px; padding-inline: 12px; }
+    .confirm-scrim { position: fixed; inset: 0; background: #41485218; backdrop-filter: blur(3px); display: grid; place-items: center; z-index: 8; }
+    .confirm-scrim > dialog { position: static; display: block; opacity: 1; transform: none; width: 380px; }
+    .confirm-scrim p { font-size: 14px; line-height: 1.6; margin-bottom: 22px; }
+    .confirm-scrim .editor-actions { justify-content: flex-end; gap: 12px; }
+  </style>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="search-icon" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.7"/><path d="m13 13 4 4"/></symbol>
+    <symbol id="plus-icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+    <symbol id="agents-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M11 4v12M6 8h2M6 11h2"/></symbol>
+    <symbol id="flow-icon" viewBox="0 0 20 20"><rect x="2" y="7" width="5" height="6" rx="1.5"/><rect x="13" y="2" width="5" height="6" rx="1.5"/><rect x="13" y="12" width="5" height="6" rx="1.5"/><path d="M7 10h3V5h3M10 10v5h3"/></symbol>
+    <symbol id="lock-icon" viewBox="0 0 20 20"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M7 8V6a3 3 0 0 1 6 0v2M10 11v3"/></symbol>
+    <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
+    <symbol id="close-icon" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+    <symbol id="more-icon" viewBox="0 0 20 20"><circle cx="5" cy="10" r="1"/><circle cx="10" cy="10" r="1"/><circle cx="15" cy="10" r="1"/></symbol>
+    <symbol id="pencil-icon" viewBox="0 0 20 20"><path d="M12.5 4.5 15.5 7.5 7.5 15.5H4.5v-3Z"/></symbol>
+  </svg>
+
+  <nav class="variant-switch" aria-label="Screens">
+    <a href="#now">Now · rail</a><a href="#a">A · × on the card</a><a href="#b">B · Card menu</a><a href="#c">C · End in the heading</a>
+  </nav>
+
+  <main class="canvas">
+    <header class="toolbar">
+      <nav aria-label="Chats">
+        <button class="round" aria-label="Search and history"><svg><use href="#search-icon"/></svg></button>
+        <button class="pill"><svg><use href="#plus-icon"/></svg>New chat <svg class="chevron"><use href="#chevron-icon"/></svg></button>
+      </nav>
+      <nav aria-label="Session activity">
+        <button class="pill">Studio</button>
+        <button class="round quiet-control" aria-label="Agents"><svg><use href="#agents-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Flow"><svg><use href="#flow-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Access"><svg><use href="#lock-icon"/></svg></button>
+      </nav>
+    </header>
+
+    <div class="workspace"><div class="chat-container"><section class="live-workspace">
+      <div class="with-rail">
+        <aside class="rail" aria-label="Terminals">
+          <div class="rail-head"><span>Terminals · 3</span><button class="round" aria-label="New terminal"><svg><use href="#plus-icon"/></svg></button></div>
+
+          <button class="session-card" aria-current="true"><header><img class="logo" src="./vendor/providers/claude.svg" alt="">mission-control<span class="dot run"></span></header><small>Claude · sonnet · working</small><code>Editing terminals.tsx</code></button>
+          <div class="rel">
+            <button class="session-card screen" data-screen="now c" style="width:100%"><header><img class="logo" src="./vendor/providers/codex.svg" alt="">api<span class="dot wait"></span></header><small>Codex · gpt-5.5 · waiting for you</small><code>Allow edit to routes.rb?</code></button>
+            <button class="session-card screen" data-screen="a" style="width:100%"><header><img class="logo" src="./vendor/providers/codex.svg" alt="">api<span class="dot wait" style="margin-right:26px"></span></header><small>Codex · gpt-5.5 · waiting for you</small><code>Allow edit to routes.rb?</code></button>
+            <span class="round card-x screen new-badge" data-screen="a" aria-label="End api"><svg><use href="#close-icon"/></svg></span>
+            <button class="session-card screen" data-screen="b" style="width:100%"><header><img class="logo" src="./vendor/providers/codex.svg" alt="">api<span class="dot wait" style="margin-right:26px"></span></header><small>Codex · gpt-5.5 · waiting for you</small><code>Allow edit to routes.rb?</code></button>
+            <span class="round card-more card-x screen new-badge" data-screen="b" aria-label="More for api" aria-expanded="true" style="box-shadow:var(--inset)"><svg><use href="#more-icon"/></svg></span>
+            <div class="card-menu screen" data-screen="b" role="menu"><button class="row"><svg><use href="#pencil-icon"/></svg><span>Rename</span></button><button class="row danger"><svg><use href="#close-icon"/></svg><span>End session…</span></button></div>
+          </div>
+          <button class="session-card"><header><img class="logo" src="./vendor/providers/glm.svg" alt="">website<span class="dot"></span></header><small>GLM · glm-5.3 · idle</small><code>&gt;</code></button>
+        </aside>
+
+        <div class="live-main">
+          <header class="live-heading"><div>
+            <h1>mission-control</h1>
+            <p class="muted">Claude · sonnet · ~/Desktop/kingpinggroup/mission-control</p>
+          </div><div class="live-actions"><span>Connected</span><button class="pill end-btn danger screen new-badge" data-screen="c">End session</button></div></header>
+          <pre class="term" data-term></pre>
+        </div>
+      </div>
+    </section></div></div>
+  </main>
+
+  <template id="term-content"><span class="acc">╭─ Claude Code ─────────────────────────────────╮</span>
+<span class="acc">│</span> cwd: ~/Desktop/kingpinggroup/mission-control   <span class="acc">│</span>
+<span class="acc">╰───────────────────────────────────────────────╯</span>
+
+<span class="dim">&gt;</span> make the terminal page support several sessions
+
+<span class="acc">●</span> Reading <span class="dim">server/views/terminals.tsx</span>
+<span class="ok">✓</span> Found the session strip and split controls
+
+<span class="dim">&gt;</span> <span class="cursor"></span></template>
+
+  <div class="confirm-scrim screen" data-screen="a c"><dialog open aria-labelledby="end-title"><header class="dialog-heading"><h2 id="end-title" data-end-name>End api?</h2></header><p>This stops its running process. Its history stays in History.</p><div class="editor-actions"><button class="pill">Cancel</button><button class="pill danger">End session</button></div></dialog></div>
+
+  <p class="screen-tag" id="tag"></p>
+  <footer class="preview-footer">Terminals · item 4 of 7: end a session · the split-pane × only hides a pane; ending stops the process · static preview</footer>
+
+  <script>
+    const tags = {
+      now: 'Starting point: the rail. Today, End session is a quiet icon in the terminal toolbar with a confirm dialog.',
+      a: 'A (chosen) · × on the card: hovering a card shows a small ×. Clicking it opens the confirm dialog: "End api? This stops its running process."',
+      b: 'B · Card menu: a … on hover opens Rename and End session…; End asks for confirmation. Rename also stays on double-click.',
+      c: 'C · End in the heading: an End session button next to "Connected" above the terminal, with the confirm dialog, as today.',
+    }
+    document.querySelectorAll('[data-term]').forEach(el => el.append(document.getElementById('term-content').content.cloneNode(true)))
+    const show = () => {
+      const id = (location.hash || '#now').slice(1)
+      document.querySelectorAll('.screen').forEach(el => el.hidden = !el.dataset.screen.split(' ').includes(id))
+      document.querySelectorAll('.variant-switch a').forEach(a => a.setAttribute('aria-current', a.hash === '#' + id ? 'page' : 'false'))
+      document.getElementById('tag').textContent = tags[id] ?? ''
+    }
+    addEventListener('hashchange', show); show()
+  </script>
+</body>
+</html>

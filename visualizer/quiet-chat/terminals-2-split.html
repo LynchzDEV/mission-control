@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Terminals · split views</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./terminals.css">
+  <style>
+    .panes { flex: 1; min-height: 0; display: grid; gap: 14px; }
+    .panes.beside { grid-template-columns: 1fr 1fr; }
+    .panes.below { grid-template-rows: 1fr 1fr; }
+    .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; gap: 8px; }
+    .pane-head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; padding: 0 4px; }
+    .pane-head small { font-weight: 400; color: var(--muted); font-size: 11px; }
+    .pane-head .close-split { margin-left: auto; width: 24px; min-height: 24px; flex-basis: 24px; }
+    .pane-head .close-split svg { width: 12px; height: 12px; }
+    .pane.focused .term { box-shadow: var(--inset), 0 0 0 1.5px #8062bd55; }
+    .pane .term { font-size: 12px; }
+    .in-view { font-size: 10px; color: var(--accent); }
+
+    .drop-stage { position: relative; flex: 1; min-height: 0; display: flex; }
+    .drop-zone { position: absolute; display: grid; place-items: center; border-radius: 14px; font-size: 13px; color: var(--accent); background: #8062bd14; border: 1.5px dashed #8062bd66; }
+    .drop-zone.right { top: 0; bottom: 0; right: 0; width: 48%; background: #8062bd24; border-style: solid; }
+    .drop-zone.bottom { left: 0; right: 0; bottom: 0; height: 40%; width: 50%; }
+    .ghost { position: fixed; top: 300px; left: 520px; width: 210px; transform: rotate(-2deg); opacity: .92; box-shadow: 12px 16px 30px #737ea340, var(--raised); z-index: 6; pointer-events: none; }
+
+    .layout-toggle { display: inline-flex; padding: 3px; border-radius: 12px; box-shadow: var(--inset); gap: 2px; }
+    .layout-toggle button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 9px; font-size: 12px; color: var(--muted); }
+    .layout-toggle button[aria-pressed="true"] { box-shadow: var(--raised); color: var(--accent); }
+    .layout-toggle svg { width: 14px; height: 14px; }
+
+    .card-wrap { position: relative; }
+    .card-more { position: absolute; top: 8px; right: 8px; width: 24px; min-height: 24px; flex-basis: 24px; }
+    .card-more svg { width: 14px; height: 14px; }
+    .card-menu { position: absolute; top: 36px; left: 150px; width: 200px; padding: 6px; border: 1px solid #ffffff88; border-radius: 14px; background: var(--paper); box-shadow: 6px 8px 22px #b4c1d677, -3px -3px 12px #ffffff99; display: grid; z-index: 5; }
+    .card-menu .row { padding: 9px 10px; }
+  </style>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="search-icon" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.7"/><path d="m13 13 4 4"/></symbol>
+    <symbol id="plus-icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+    <symbol id="agents-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M11 4v12M6 8h2M6 11h2"/></symbol>
+    <symbol id="flow-icon" viewBox="0 0 20 20"><rect x="2" y="7" width="5" height="6" rx="1.5"/><rect x="13" y="2" width="5" height="6" rx="1.5"/><rect x="13" y="12" width="5" height="6" rx="1.5"/><path d="M7 10h3V5h3M10 10v5h3"/></symbol>
+    <symbol id="lock-icon" viewBox="0 0 20 20"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M7 8V6a3 3 0 0 1 6 0v2M10 11v3"/></symbol>
+    <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
+    <symbol id="close-icon" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+    <symbol id="more-icon" viewBox="0 0 20 20"><circle cx="5" cy="10" r="1"/><circle cx="10" cy="10" r="1"/><circle cx="15" cy="10" r="1"/></symbol>
+    <symbol id="single-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/></symbol>
+    <symbol id="beside-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M10 4v12"/></symbol>
+    <symbol id="below-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M3 10h14"/></symbol>
+  </svg>
+
+  <nav class="variant-switch" aria-label="Screens">
+    <a href="#now">Now · rail</a><a href="#a">A · Drag to an edge</a><a href="#b">B · Layout buttons</a><a href="#c">C · Card menu</a>
+  </nav>
+
+  <main class="canvas">
+    <header class="toolbar">
+      <nav aria-label="Chats">
+        <button class="round" aria-label="Search and history"><svg><use href="#search-icon"/></svg></button>
+        <button class="pill"><svg><use href="#plus-icon"/></svg>New chat <svg class="chevron"><use href="#chevron-icon"/></svg></button>
+      </nav>
+      <nav aria-label="Session activity">
+        <button class="pill">Studio</button>
+        <button class="round quiet-control" aria-label="Agents"><svg><use href="#agents-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Flow"><svg><use href="#flow-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Access"><svg><use href="#lock-icon"/></svg></button>
+      </nav>
+    </header>
+
+    <div class="workspace"><div class="chat-container"><section class="live-workspace">
+      <div class="with-rail">
+        <aside class="rail" aria-label="Terminals">
+          <div class="rail-head"><span>Terminals · 3</span><button class="round" aria-label="New terminal"><svg><use href="#plus-icon"/></svg></button></div>
+          <button class="session-card" aria-current="true"><header><img class="logo" src="./vendor/providers/claude.svg" alt="">mission-control<span class="dot run"></span></header><small>Claude · sonnet · working</small><code>Editing terminals.tsx</code><span class="in-view split-only">In view · left</span></button>
+          <div class="card-wrap">
+            <button class="session-card"><header><img class="logo" src="./vendor/providers/codex.svg" alt="">api<span class="dot wait"></span></header><small>Codex · gpt-5.5 · waiting for you</small><code>Allow edit to routes.rb?</code><span class="in-view split-only">In view · right</span></button>
+            <button class="round card-more screen new-badge" data-screen="c" aria-label="More for api" aria-expanded="true"><svg><use href="#more-icon"/></svg></button>
+            <div class="card-menu screen" data-screen="c" role="menu">
+              <button class="row"><svg><use href="#beside-icon"/></svg><span>Open beside</span></button>
+              <button class="row current"><svg><use href="#below-icon"/></svg><span>Open below</span></button>
+            </div>
+          </div>
+          <button class="session-card"><header><img class="logo" src="./vendor/providers/glm.svg" alt="">website<span class="dot"></span></header><small>GLM · glm-5.3 · idle</small><code>&gt;</code></button>
+        </aside>
+
+        <div class="live-main">
+          <!-- NOW -->
+          <div class="screen live-main" data-screen="now">
+            <header class="live-heading"><div><h1>mission-control</h1><p class="muted">Claude · sonnet · ~/Desktop/kingpinggroup/mission-control</p></div><div class="live-actions"><span>Connected</span></div></header>
+            <pre class="term" data-term></pre>
+          </div>
+
+          <!-- A · drag a card to an edge -->
+          <div class="screen live-main" data-screen="a">
+            <header class="live-heading"><div><h1>mission-control</h1><p class="muted">Claude · sonnet · ~/Desktop/kingpinggroup/mission-control</p></div><div class="live-actions"><span>Connected</span></div></header>
+            <div class="drop-stage new-badge"><pre class="term" data-term></pre><div class="drop-zone right">Drop to open beside</div><div class="drop-zone bottom">Drop to open below</div></div>
+          </div>
+
+          <!-- B · layout buttons -->
+          <div class="screen live-main" data-screen="b">
+            <header class="live-heading"><div><h1>2 terminals side by side</h1><p class="muted">Click a card to fill the focused pane</p></div><div class="live-actions new-badge"><div class="layout-toggle" role="group" aria-label="Layout"><button aria-pressed="false"><svg><use href="#single-icon"/></svg>Single</button><button aria-pressed="true"><svg><use href="#beside-icon"/></svg>Side by side</button><button aria-pressed="false"><svg><use href="#below-icon"/></svg>Stacked</button></div></div></header>
+            <div class="panes beside" data-panes></div>
+          </div>
+
+          <!-- C · card menu -->
+          <div class="screen live-main" data-screen="c">
+            <header class="live-heading"><div><h1>2 terminals stacked</h1><p class="muted">From the api card's menu: Open below</p></div><div class="live-actions"><span>Connected</span></div></header>
+            <div class="panes below" data-panes></div>
+          </div>
+        </div>
+      </div>
+    </section></div></div>
+  </main>
+
+  <div class="session-card ghost screen" data-screen="a"><header><img class="logo" src="./vendor/providers/codex.svg" alt="">api<span class="dot wait"></span></header><small>Codex · gpt-5.5 · waiting for you</small></div>
+
+  <template id="term-content"><span class="acc">╭─ Claude Code ─────────────────────────────────╮</span>
+<span class="acc">│</span> cwd: ~/Desktop/kingpinggroup/mission-control   <span class="acc">│</span>
+<span class="acc">╰───────────────────────────────────────────────╯</span>
+
+<span class="dim">&gt;</span> make the terminal page support several sessions
+
+<span class="acc">●</span> Reading <span class="dim">server/views/terminals.tsx</span>
+<span class="ok">✓</span> Found the session strip and split controls
+
+<span class="dim">&gt;</span> <span class="cursor"></span></template>
+  <template id="term-content-2"><span class="acc">╭─ Codex ───────────────────────────────╮</span>
+<span class="acc">│</span> cwd: ~/code/klangtech/api             <span class="acc">│</span>
+<span class="acc">╰───────────────────────────────────────╯</span>
+
+<span class="dim">&gt;</span> add the CSV export route
+
+<span class="acc">●</span> Edit <span class="dim">config/routes.rb</span>
+  Allow this edit? <span class="acc">[y/n]</span> <span class="cursor"></span></template>
+  <template id="pane-pair">
+    <div class="pane focused"><div class="pane-head"><img class="logo" src="./vendor/providers/claude.svg" alt="">mission-control<small>Claude · sonnet</small><button class="round close-split" aria-label="Close this pane"><svg><use href="#close-icon"/></svg></button></div><pre class="term" data-term="1"></pre></div>
+    <div class="pane"><div class="pane-head"><img class="logo" src="./vendor/providers/codex.svg" alt="">api<small>Codex · gpt-5.5 · waiting for you</small><button class="round close-split" aria-label="Close this pane"><svg><use href="#close-icon"/></svg></button></div><pre class="term" data-term="2"></pre></div>
+  </template>
+
+  <p class="screen-tag" id="tag"></p>
+  <footer class="preview-footer">Terminals · item 2 of 7: split views · built on the chosen session rail · static preview</footer>
+
+  <script>
+    const tags = {
+      now: 'Starting point: the chosen session rail with one terminal in view.',
+      a: 'A · Drag to an edge: drag a session card onto the terminal. Drop on the right half to open it beside, on the bottom to open it below. Drawn mid-drag.',
+      b: 'B · Layout buttons: Single / Side by side / Stacked in the terminal heading. Pick a layout, then click a card to fill the focused pane. Cards say which pane they are in.',
+      c: 'C · Card menu: each card gets a … menu with Open beside and Open below. Result drawn: api opened below.',
+    }
+    document.querySelectorAll('[data-panes]').forEach(el => el.append(document.getElementById('pane-pair').content.cloneNode(true)))
+    document.querySelectorAll('[data-term]').forEach(el => el.append(document.getElementById(el.dataset.term === '2' ? 'term-content-2' : 'term-content').content.cloneNode(true)))
+    const show = () => {
+      const id = (location.hash || '#now').slice(1)
+      document.querySelectorAll('.screen').forEach(el => el.hidden = el.dataset.screen !== id)
+      document.querySelectorAll('.split-only').forEach(el => el.hidden = !['b', 'c'].includes(id))
+      document.querySelectorAll('.variant-switch a').forEach(a => a.setAttribute('aria-current', a.hash === '#' + id ? 'page' : 'false'))
+      document.getElementById('tag').textContent = tags[id] ?? ''
+    }
+    addEventListener('hashchange', show); show()
+  </script>
+</body>
+</html>

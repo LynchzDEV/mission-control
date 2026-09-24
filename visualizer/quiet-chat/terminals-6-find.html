@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Terminals · find and links</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./terminals.css">
+  <style>
+    .term-host { position: relative; flex: 1; min-height: 0; display: flex; }
+    .find { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+    .find input { width: 220px; padding: 7px 10px; border-radius: 10px; background: #e2e6f0; border: 1px solid #c9c0e3; box-shadow: none; font-size: 13px; color: #505e75; outline: none; }
+    .find .round { width: 26px; min-height: 26px; flex-basis: 26px; }
+    .find .round svg { width: 13px; height: 13px; }
+    .find-float { position: absolute; top: 10px; right: 12px; padding: 6px 8px; border-radius: 14px; background: var(--paper); box-shadow: 6px 8px 22px #b4c1d677, -3px -3px 12px #ffffff99; }
+    .find-bottom { padding-top: 10px; }
+    mark.hit { background: #8062bd33; color: inherit; border-radius: 3px; }
+    mark.hit.now { background: #8062bd88; color: #fff; }
+    .link { color: #8062bd; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+    .link-tip { position: absolute; padding: 4px 8px; border-radius: 8px; font: 11px 'Helvetica Neue', sans-serif; color: #fff; background: #505e75; white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="search-icon" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.7"/><path d="m13 13 4 4"/></symbol>
+    <symbol id="plus-icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+    <symbol id="agents-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M11 4v12M6 8h2M6 11h2"/></symbol>
+    <symbol id="flow-icon" viewBox="0 0 20 20"><rect x="2" y="7" width="5" height="6" rx="1.5"/><rect x="13" y="2" width="5" height="6" rx="1.5"/><rect x="13" y="12" width="5" height="6" rx="1.5"/><path d="M7 10h3V5h3M10 10v5h3"/></symbol>
+    <symbol id="lock-icon" viewBox="0 0 20 20"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M7 8V6a3 3 0 0 1 6 0v2M10 11v3"/></symbol>
+    <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
+    <symbol id="up-icon" viewBox="0 0 20 20"><path d="m5 12 5-5 5 5"/></symbol>
+    <symbol id="down-icon" viewBox="0 0 20 20"><path d="m5 8 5 5 5-5"/></symbol>
+    <symbol id="close-icon" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+    <symbol id="file-icon" viewBox="0 0 20 20"><path d="M5 2.5h6.5L15 6v11.5H5Z"/><path d="M11.5 2.5V6H15"/></symbol>
+    <symbol id="pencil-icon" viewBox="0 0 20 20"><path d="M12.5 4.5 15.5 7.5 7.5 15.5H4.5v-3Z"/></symbol>
+  </svg>
+
+  <nav class="variant-switch" aria-label="Screens">
+    <a href="#now">Links</a><a href="#a">A · Floating find bar</a><a href="#b">B · Find in the heading</a><a href="#c">C · Find under the terminal</a>
+  </nav>
+
+  <main class="canvas">
+    <header class="toolbar">
+      <nav aria-label="Chats">
+        <button class="round" aria-label="Search and history"><svg><use href="#search-icon"/></svg></button>
+        <button class="pill"><svg><use href="#plus-icon"/></svg>New chat <svg class="chevron"><use href="#chevron-icon"/></svg></button>
+      </nav>
+      <nav aria-label="Session activity">
+        <button class="pill">Studio</button>
+        <button class="round quiet-control" aria-label="Agents"><svg><use href="#agents-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Flow"><svg><use href="#flow-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Access"><svg><use href="#lock-icon"/></svg></button>
+      </nav>
+    </header>
+
+    <div class="workspace"><div class="chat-container"><section class="live-workspace">
+      <div class="with-rail">
+        <aside class="rail" aria-label="Terminals">
+          <div class="rail-head"><span>Terminals · 3</span><button class="round" aria-label="New terminal"><svg><use href="#plus-icon"/></svg></button></div>
+
+          <button class="session-card" aria-current="true"><header><img class="logo" src="./vendor/providers/claude.svg" alt="">mission-control<span class="dot run"></span></header><small>Claude · sonnet · working</small><code>Editing terminals.tsx</code></button>
+          <button class="session-card"><header><img class="logo" src="./vendor/providers/codex.svg" alt="">api<span class="dot wait"></span></header><small>Codex · gpt-5.5 · waiting for you</small><code>Allow edit to routes.rb?</code></button>
+          <button class="session-card"><header><img class="logo" src="./vendor/providers/glm.svg" alt="">website<span class="dot"></span></header><small>GLM · glm-5.3 · idle</small><code>&gt;</code></button>
+        </aside>
+
+        <div class="live-main">
+          <header class="live-heading"><div><h1>mission-control</h1><p class="muted">Claude · sonnet · ~/Desktop/kingpinggroup/mission-control</p></div><div class="live-actions"><span class="screen" data-screen="now a c">Connected</span><button class="pill screen new-badge" data-screen="now" style="min-height:30px;font-size:12px;padding-inline:12px"><svg style="width:14px;height:14px"><use href="#search-icon"/></svg>Find <kbd style="font:11px Menlo,monospace;color:var(--muted)">⌘F</kbd></button><div class="screen new-badge" data-screen="b"><div class="find"><input value="redirect" aria-label="Find in this terminal"><span>2 of 3</span><button class="round" aria-label="Previous match"><svg><use href="#up-icon"/></svg></button><button class="round" aria-label="Next match"><svg><use href="#down-icon"/></svg></button><button class="round" aria-label="Close find"><svg><use href="#close-icon"/></svg></button></div></div></div></header>
+          <div class="term-host">
+            <pre class="term" data-term></pre>
+            <div class="find-float screen new-badge" data-screen="a"><div class="find"><input value="redirect" aria-label="Find in this terminal"><span>2 of 3</span><button class="round" aria-label="Previous match"><svg><use href="#up-icon"/></svg></button><button class="round" aria-label="Next match"><svg><use href="#down-icon"/></svg></button><button class="round" aria-label="Close find"><svg><use href="#close-icon"/></svg></button></div></div>
+            <span class="link-tip screen" data-screen="now" style="left:330px;top:150px">Open in a new tab</span>
+          </div>
+          <div class="find-bottom screen new-badge" data-screen="c"><div class="find"><input value="redirect" aria-label="Find in this terminal"><span>2 of 3</span><button class="round" aria-label="Previous match"><svg><use href="#up-icon"/></svg></button><button class="round" aria-label="Next match"><svg><use href="#down-icon"/></svg></button><button class="round" aria-label="Close find"><svg><use href="#close-icon"/></svg></button></div></div>
+        </div>
+      </div>
+    </section></div></div>
+  </main>
+
+  <template id="term-content"><span class="acc">╭─ Claude Code ─────────────────────────────────╮</span>
+<span class="acc">│</span> cwd: ~/Desktop/kingpinggroup/mission-control   <span class="acc">│</span>
+<span class="acc">╰───────────────────────────────────────────────╯</span>
+
+<span class="dim">&gt;</span> why does login fail after the <mark class="hit">redirect</mark>?
+
+<span class="acc">●</span> Reading <span class="dim">server/auth.ts</span>
+The session cookie is dropped on the <mark class="hit now">redirect</mark> because SameSite=Strict
+blocks it on the cross-site hop. Details: <span class="link">https://developer.mozilla.org/docs/Web/HTTP/Cookies</span>
+
+<span class="acc">●</span> Proposed fix: keep Strict, but <mark class="hit">redirect</mark> through a same-site page first.
+
+<span class="dim">&gt;</span> <span class="cursor"></span></template>
+
+    <p class="screen-tag" id="tag"></p>
+  <footer class="preview-footer">Terminals · item 6 of 7: find (⌘F) and clickable links · xterm search + web-links add-ons, as today · static preview</footer>
+
+  <script>
+    const tags = {
+      now: 'Links: web addresses in the output are lavender and underlined on hover, with a small "Open in a new tab" hint. Click opens them, as today.',
+      a: 'A · Floating find bar: ⌘F opens a small card at the top right inside the terminal: flat field, "2 of 3", previous / next, close. Matches highlighted, current one stronger.',
+      b: 'B · Find in the heading: the field takes the place of "Connected" above the terminal, so nothing covers the output.',
+      c: 'C · Find under the terminal: a bar below the terminal, like a browser find bar.',
+    }
+    document.querySelectorAll('[data-term]').forEach(el => el.append(document.getElementById('term-content').content.cloneNode(true)))
+    const show = () => {
+      const id = (location.hash || '#now').slice(1)
+      document.querySelectorAll('.screen').forEach(el => el.hidden = !el.dataset.screen.split(' ').includes(id))
+      document.querySelectorAll('.variant-switch a').forEach(a => a.setAttribute('aria-current', a.hash === '#' + id ? 'page' : 'false'))
+      document.getElementById('tag').textContent = tags[id] ?? ''
+    }
+    addEventListener('hashchange', show); show()
+  </script>
+</body>
+</html>

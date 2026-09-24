@@ -1,0 +1,103 @@
+.variant-switch { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 4px; padding: 4px; border-radius: 30px; background: var(--paper); box-shadow: var(--raised); font-size: 12px; }
+.variant-switch a { padding: 7px 12px; border-radius: 20px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+.variant-switch a[aria-current="page"] { color: var(--accent); box-shadow: var(--inset); }
+.screen-note { margin-top: 40px; padding: 12px 16px; border-radius: 14px; font-size: 12px; line-height: 1.6; color: var(--muted); box-shadow: var(--inset); }
+.new { position: relative; }
+.new::after { content: 'NEW'; position: absolute; top: -8px; right: 14px; padding: 1px 7px; border-radius: 8px; font-size: 9px; letter-spacing: .08em; color: #fff; background: var(--accent); }
+
+.engine-disc { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%; box-shadow: var(--raised); font-size: 12px; font-weight: 600; color: var(--accent); }
+.engine-disc.small { width: 22px; height: 22px; flex-basis: 22px; font-size: 10px; }
+.state { font-size: 12px; color: var(--accent); white-space: nowrap; }
+.state.done { color: #5b8a6a; }
+[data-state="queued"] .state, [data-state="queued"] strong { color: var(--muted); }
+.pulse { display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: var(--accent); vertical-align: 1px; animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+.latest { margin: 0; font-size: 13px; line-height: 1.6; color: #505e75; }
+.card-actions { display: flex; gap: 10px; }
+.card-actions .pill { min-height: 32px; font-size: 13px; padding-inline: 14px; }
+.pill.primary { color: var(--accent); }
+.text-button { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.text-button svg { width: 15px; height: 15px; }
+.text-button.accent { color: var(--accent); }
+
+.agent-card { margin: -8px 0 28px; padding: 16px 18px; border-radius: 20px; box-shadow: var(--raised); display: grid; gap: 12px; line-height: 1.4; }
+.agent-card header { display: flex; align-items: center; gap: 12px; }
+.agent-card header > div { flex: 1; min-width: 0; }
+.agent-card strong { display: block; font-size: 14px; font-weight: 500; }
+.agent-card small { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+.agent-card .latest { padding: 10px 12px; border-radius: 12px; box-shadow: var(--inset); }
+.agent-card footer { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+.agent-card[data-state="queued"] { opacity: .75; }
+
+.team-card { margin: -8px 0 28px; padding: 16px 18px; border-radius: 20px; box-shadow: var(--raised); line-height: 1.4; }
+.team-card header, .team-card footer { display: flex; align-items: center; gap: 12px; font-size: 12px; }
+.team-card header strong { font-size: 14px; font-weight: 500; }
+.team-card header .text-button { margin-left: auto; }
+.team-card footer { justify-content: space-between; margin-top: 14px; }
+.team-card ol { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 4px; }
+.team-card li { display: flex; align-items: flex-start; gap: 12px; padding: 10px 4px; border-top: 1px solid var(--line); }
+.team-card li > div { flex: 1; min-width: 0; }
+.team-card li strong { display: block; font-size: 13px; font-weight: 500; }
+.team-card li small { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+.team-card li .latest { margin-top: 6px; font-size: 12px; }
+.team-card li .engine-disc { width: 26px; height: 26px; flex-basis: 26px; font-size: 11px; }
+.team-progress { height: 4px; margin-top: 12px; border-radius: 4px; box-shadow: var(--inset); overflow: hidden; }
+.team-progress span { display: block; height: 100%; background: var(--accent); opacity: .6; }
+
+.spawn-marker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -16px 0 22px; font-size: 13px; color: var(--muted); }
+.spawn-marker strong { color: #505e75; font-weight: 500; }
+.spawn-marker .text-button { padding: 0; }
+
+.agent-tray { display: flex; gap: 12px; margin-bottom: 14px; overflow-x: auto; padding: 6px 4px 8px; }
+.agent-tray.new::after { top: -4px; }
+.tray-card { display: flex; align-items: center; gap: 10px; min-width: 230px; padding: 10px 14px; border-radius: 16px; box-shadow: var(--raised); font-size: 12px; line-height: 1.4; }
+.tray-card > div { flex: 1; min-width: 0; }
+.tray-card strong { display: block; font-weight: 500; font-size: 13px; }
+.tray-card small { display: block; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.project-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 14px; box-shadow: var(--raised); font-size: 12px; color: var(--accent); white-space: nowrap; }
+.project-chip svg { width: 14px; height: 14px; }
+.conversation { padding-top: 56px; }
+
+.engine-disc[data-engine="claude"], :is(.agent-card, .team-card li, .tray-card, .spawn-marker):has(> header .engine-disc[data-engine="claude"], > .engine-disc[data-engine="claude"]) { --engine: #d4a091; }
+.engine-disc[data-engine="glm"], :is(.agent-card, .team-card li, .tray-card, .spawn-marker):has(> header .engine-disc[data-engine="glm"], > .engine-disc[data-engine="glm"]) { --engine: #91b0dc; }
+.engine-disc[data-engine="codex"], :is(.agent-card, .team-card li, .tray-card, .spawn-marker):has(> header .engine-disc[data-engine="codex"], > .engine-disc[data-engine="codex"]) { --engine: #bfd38b; }
+.engine-disc[data-engine] { background: var(--engine); color: color-mix(in srgb, var(--engine) 35%, #2b3342); box-shadow: var(--raised); }
+.agent-card, .tray-card { box-shadow: var(--raised); background: linear-gradient(90deg, color-mix(in srgb, var(--engine) 14%, var(--paper)), var(--paper) 45%); }
+.team-card li { padding-left: 10px; border-radius: 4px; background: linear-gradient(90deg, color-mix(in srgb, var(--engine) 12%, var(--paper)), transparent 50%); }
+:is(.agent-card, .team-card li) small, .tray-card strong { color: color-mix(in srgb, var(--engine) 45%, #505e75); }
+:is(.agent-card, .team-card li, .tray-card) .pulse { background: color-mix(in srgb, var(--engine) 70%, #505e75); }
+.spawn-marker strong { color: color-mix(in srgb, var(--engine) 40%, #505e75); }
+.engine-legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin: 0 0 28px; }
+.engine-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.engine-legend i { width: 10px; height: 10px; border-radius: 50%; background: var(--engine); }
+.engine-disc[data-engine] { background: var(--paper); }
+.engine-disc img { width: 58%; height: 58%; display: block; }
+.inline-icon { width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; }
+.engine-legend img { width: 14px; height: 14px; }
+.inline-icon { display: inline-block; }
+:has(> .inline-icon) { white-space: nowrap; display: inline-flex; align-items: center; }
+
+.chat { display: grid; gap: 28px; padding-top: 64px; }
+.chat .msg.user { display: flex; justify-content: flex-end; }
+.chat .user-message { margin: 0; font-size: 15px; line-height: 1.6; }
+.chat .msg.assistant { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; align-items: start; }
+.avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 12px; color: var(--accent); box-shadow: var(--raised); }
+.avatar svg { width: 17px; height: 17px; }
+.msg-body { min-width: 0; }
+.msg-meta { display: flex; align-items: baseline; gap: 10px; min-height: 34px; padding-top: 7px; font-size: 13px; }
+.msg-meta strong { font-weight: 500; color: inherit; }
+.msg-meta time { font-size: 12px; }
+.chat .team-card { margin: 18px 0 0; }
+
+.md { font-size: 15px; line-height: 1.7; color: inherit; }
+.md > * { margin: 0 0 12px; }
+.md > :last-child { margin-bottom: 0; }
+.md strong { font-weight: 600; }
+.md ol, .md ul { padding-left: 22px; }
+.md li { margin-bottom: 6px; padding-left: 4px; }
+.md li::marker { color: var(--accent); }
+.md code { font-family: Menlo, monospace; font-size: 13px; padding: 2px 7px; border-radius: 7px; background: #e2e6f0; color: var(--accent); }
+.md pre { padding: 14px 16px; border-radius: 14px; box-shadow: var(--inset); overflow-x: auto; }
+.md pre code { padding: 0; background: none; font-size: 12.5px; line-height: 1.65; color: inherit; }
+.md blockquote { padding: 2px 0 2px 14px; border-left: 2px solid #c9c0e3; color: var(--muted); }

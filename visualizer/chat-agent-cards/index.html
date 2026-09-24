@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat agent cards · variants</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./cards.css">
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="search-icon" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.7"/><path d="m13 13 4 4"/></symbol>
+    <symbol id="plus-icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+    <symbol id="history-icon" viewBox="0 0 20 20"><path d="M3 7a7 7 0 1 1-1 5M3 3v4h4M10 6v4l3 2"/></symbol>
+    <symbol id="arrow-icon" viewBox="0 0 20 20"><path d="M10 16V4M5 9l5-5 5 5"/></symbol>
+    <symbol id="agents-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M11 4v12M6 8h2M6 11h2"/></symbol>
+    <symbol id="flow-icon" viewBox="0 0 20 20"><rect x="2" y="7" width="5" height="6" rx="1.5"/><rect x="13" y="2" width="5" height="6" rx="1.5"/><rect x="13" y="12" width="5" height="6" rx="1.5"/><path d="M7 10h3V5h3M10 10v5h3"/></symbol>
+    <symbol id="lock-icon" viewBox="0 0 20 20"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M7 8V6a3 3 0 0 1 6 0v2M10 11v3"/></symbol>
+    <symbol id="spark-icon" viewBox="0 0 24 24"><path d="m14 3 2.4 6.6L23 12l-6.6 2.4L14 21l-2.4-6.6L5 12l6.6-2.4L14 3ZM5 3l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z"/></symbol>
+    <symbol id="folder-icon" viewBox="0 0 20 20"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H8l1.5 2h6A1.5 1.5 0 0 1 17 8.5v6a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5Z"/></symbol>
+    <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
+    <symbol id="open-icon" viewBox="0 0 20 20"><path d="M11 4h5v5M16 4l-7 7M14 12v3.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5H8"/></symbol>
+  </svg>
+
+  <nav class="variant-switch" aria-label="Variants">
+    <a href="#now">Now</a><a href="#b">B · One team card</a>
+  </nav>
+
+  <main class="canvas">
+    <header class="toolbar">
+      <nav aria-label="Chats">
+        <button class="round" aria-label="Search chats"><svg><use href="#search-icon"/></svg></button>
+        <button class="pill"><svg><use href="#plus-icon"/></svg>New chat <svg class="chevron"><use href="#chevron-icon"/></svg></button>
+      </nav>
+      <nav aria-label="Session activity">
+        <button class="pill">Studio</button>
+        <button class="round quiet-control" aria-label="Agents"><svg><use href="#agents-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Flow"><svg><use href="#flow-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Access"><svg><use href="#lock-icon"/></svg></button>
+      </nav>
+    </header>
+
+    <div class="stage">
+      <!-- NOW -->
+      <section class="conversation content-width screen" data-screen="now">
+        <p class="conversation-project">Mission Control</p>
+        <div class="user-message">Add a CSV export to the call log, and get it reviewed before I land it.</div>
+        <div class="assistant-message">This is a design preview. In a working chat, Mission Control would reply here.</div>
+        <p class="screen-note">NOW — the quiet-chat conversation today: canned reply, no agents, nothing spawned.</p>
+      </section>
+
+      <!-- A -->
+      <section class="conversation content-width screen" data-screen="a">
+        <p class="conversation-project">Mission Control</p><p class="engine-legend"><span style="--engine:#d4a091"><img src="./vendor/providers/claude.svg" alt="">Claude</span><span style="--engine:#91b0dc"><img src="./vendor/providers/glm.svg" alt="">GLM</span><span style="--engine:#bfd38b"><img src="./vendor/providers/codex.svg" alt="">Codex</span></p>
+        <div class="user-message">Add a CSV export to the call log, and get it reviewed before I land it.</div>
+        <div class="assistant-message">I found the call log in <code>api/app/moni</code>. I'm splitting this into a build and an independent review.</div>
+
+        <article class="agent-card new" data-state="running">
+          <header><span class="engine-disc" data-engine="glm"><img src="./vendor/providers/glm.svg" alt=""></span><div><strong>Build CSV export</strong><small>GLM · glm-5.3 — many small, well-defined edits</small></div><span class="state">Running · 4m</span></header>
+          <p class="latest"><span class="pulse"></span>Editing <code>call_logs_controller.rb</code> — adding the export action</p>
+          <footer><span class="muted"><svg class="inline-icon"><use href="#folder-icon"/></svg>api · isolated worktree</span><button class="text-button">Open <svg><use href="#open-icon"/></svg></button></footer>
+        </article>
+
+        <article class="agent-card new" data-state="queued">
+          <header><span class="engine-disc" data-engine="codex"><img src="./vendor/providers/codex.svg" alt=""></span><div><strong>Review the export</strong><small>Codex · gpt-5.5 — a different family checks GLM's work</small></div><span class="state">Waiting for build</span></header>
+          <footer><span class="muted">Starts when the build finishes</span><button class="text-button">Open <svg><use href="#open-icon"/></svg></button></footer>
+        </article>
+
+        <div class="assistant-message">I'll post a summary here when both finish. You can keep chatting meanwhile.</div>
+
+        <article class="agent-card new" data-state="done">
+          <header><span class="engine-disc" data-engine="claude"><img src="./vendor/providers/claude.svg" alt=""></span><div><strong>Fix date filter on call log</strong><small>Claude · sonnet — earlier today</small></div><span class="state done">Done · reviewed</span></header>
+          <p class="latest">3 files changed, 12 tests pass. Codex review: no issues.</p>
+          <footer><span class="muted"><svg class="inline-icon"><use href="#folder-icon"/></svg>api · +48 −9</span><span class="card-actions"><button class="pill">Review</button><button class="pill primary">Land</button></span></footer>
+        </article>
+        <p class="screen-note">A — each spawned agent is its own raised card, placed right where the chat started it. Live line updates in place; Done cards grow Land / Review.</p>
+      </section>
+
+      <!-- B -->
+      <section class="conversation content-width screen chat" data-screen="b">
+        <div class="msg user"><div class="user-message">Add a CSV export to the call log, and get it reviewed before I land it.</div></div>
+
+        <div class="msg assistant">
+          <span class="avatar"><svg><use href="#spark-icon"/></svg></span>
+          <div class="msg-body">
+            <div class="msg-meta"><strong>Mission Control</strong><time>3:02 PM</time></div>
+            <div class="md">
+              <p>I found the call log in <code>api/app/moni/call_logs_controller.rb</code>. It already filters by date, so the export can reuse that <strong>same query</strong>.</p>
+              <p>Here's the split:</p>
+              <ol>
+                <li><strong>Build</strong> an <code>export</code> action that streams CSV with the current filters</li>
+                <li><strong>Review</strong> by a different AI family before anything lands</li>
+              </ol>
+            </div>
+            <article class="team-card new">
+              <header><strong>Team for this task</strong><span class="muted">2 agents · <svg class="inline-icon"><use href="#folder-icon"/></svg>api</span><button class="text-button">Open in Agents <svg><use href="#open-icon"/></svg></button></header>
+              <ol>
+                <li data-state="running"><span class="engine-disc" data-engine="glm"><img src="./vendor/providers/glm.svg" alt=""></span><div><strong>Build CSV export</strong><small>GLM · glm-5.3 — many small edits</small><p class="latest"><span class="pulse"></span>Editing <code>call_logs_controller.rb</code></p></div><span class="state">Running · 4m</span></li>
+                <li data-state="queued"><span class="engine-disc" data-engine="codex"><img src="./vendor/providers/codex.svg" alt=""></span><div><strong>Review the export</strong><small>Codex · gpt-5.5 — different family reviews</small></div><span class="state">Next</span></li>
+              </ol>
+              <div class="team-progress"><span style="width:40%"></span></div>
+            </article>
+          </div>
+        </div>
+
+        <div class="msg user"><div class="user-message">Also, what did the date filter fix change?</div></div>
+
+        <div class="msg assistant">
+          <span class="avatar"><svg><use href="#spark-icon"/></svg></span>
+          <div class="msg-body">
+            <div class="msg-meta"><strong>Mission Control</strong><time>3:04 PM</time></div>
+            <div class="md">
+              <p>It switched the filter to the <em>caller's</em> time zone, so a call at 11 PM no longer lands on the next day:</p>
+              <pre><code>scope :on_day, -&gt;(day, zone) {
+  where(started_at: day.in_time_zone(zone).all_day)
+}</code></pre>
+              <blockquote>Codex reviewed it and found no issues. It's ready to land.</blockquote>
+            </div>
+            <article class="team-card new" data-state="done">
+              <header><strong>Fix date filter</strong><span class="muted">2 agents · <svg class="inline-icon"><use href="#folder-icon"/></svg>api · earlier today</span></header>
+              <ol>
+                <li data-state="done"><span class="engine-disc" data-engine="claude"><img src="./vendor/providers/claude.svg" alt=""></span><div><strong>Fix</strong><small>Claude · sonnet</small></div><span class="state done">Done</span></li>
+                <li data-state="done"><span class="engine-disc" data-engine="codex"><img src="./vendor/providers/codex.svg" alt=""></span><div><strong>Review</strong><small>Codex · gpt-5.5 — no issues</small></div><span class="state done">Passed</span></li>
+              </ol>
+              <footer><span class="muted">+48 −9 · 12 tests pass</span><span class="card-actions"><button class="pill">Review</button><button class="pill primary">Land</button></span></footer>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="conversation content-width screen" data-screen="c">
+        <p class="conversation-project">Mission Control</p><p class="engine-legend"><span style="--engine:#d4a091"><img src="./vendor/providers/claude.svg" alt="">Claude</span><span style="--engine:#91b0dc"><img src="./vendor/providers/glm.svg" alt="">GLM</span><span style="--engine:#bfd38b"><img src="./vendor/providers/codex.svg" alt="">Codex</span></p>
+        <div class="user-message">Add a CSV export to the call log, and get it reviewed before I land it.</div>
+        <div class="assistant-message">I found the call log in <code>api/app/moni</code>. I'm splitting this into a build and an independent review.</div>
+        <p class="spawn-marker new"><span class="engine-disc small" data-engine="glm"><img src="./vendor/providers/glm.svg" alt=""></span>Started <strong>Build CSV export</strong> on GLM · glm-5.3 — many small edits</p>
+        <p class="spawn-marker new"><span class="engine-disc small" data-engine="codex"><img src="./vendor/providers/codex.svg" alt=""></span>Queued <strong>Review the export</strong> on Codex — different family reviews</p>
+        <div class="assistant-message">I'll post a summary here when both finish.</div>
+        <p class="spawn-marker new done"><span class="engine-disc small" data-engine="claude"><img src="./vendor/providers/claude.svg" alt=""></span><strong>Fix date filter</strong> finished and passed review · <button class="text-button">Review</button> · <button class="text-button accent">Land</button></p>
+        <p class="screen-note">C — the transcript keeps one-line markers; the live cards sit in a tray docked above the composer, always visible while you scroll.</p>
+      </section>
+    </div>
+
+    <div class="composer-area content-width">
+      <div class="agent-tray new screen" data-screen="c">
+        <article class="tray-card" data-state="running"><span class="engine-disc small" data-engine="glm"><img src="./vendor/providers/glm.svg" alt=""></span><div><strong>Build CSV export</strong><small><span class="pulse"></span>Editing call_logs_controller.rb</small></div><span class="state">4m</span></article>
+        <article class="tray-card" data-state="queued"><span class="engine-disc small" data-engine="codex"><img src="./vendor/providers/codex.svg" alt=""></span><div><strong>Review the export</strong><small>Waiting for build</small></div><span class="state">Next</span></article>
+      </div>
+      <form class="composer nui-neuromorphic-inset" onsubmit="return false">
+        <button type="button" class="round" aria-label="Session settings"><svg><use href="#plus-icon"/></svg></button>
+        <span class="project-chip"><svg><use href="#folder-icon"/></svg>api</span>
+        <textarea rows="1" placeholder="Write a message here…" aria-label="Message"></textarea>
+        <button type="submit" class="round send" aria-label="Send message"><svg><use href="#arrow-icon"/></svg></button>
+      </form>
+    </div>
+  </main>
+
+  <footer class="preview-footer">Design preview · sample data · sources: visualizer/quiet-chat/index.html, style.css · server/threads.ts · /api/jobs</footer>
+
+  <script>
+    const show = () => {
+      const id = (location.hash || "#b").slice(1)
+      document.querySelectorAll('.screen').forEach(el => el.hidden = el.dataset.screen !== id)
+      document.querySelectorAll('.variant-switch a').forEach(a => a.setAttribute('aria-current', a.hash === '#' + id ? 'page' : 'false'))
+      document.querySelector('.project-chip').hidden = id === 'now'
+    }
+    addEventListener('hashchange', show); show()
+  </script>
+</body>
+</html>

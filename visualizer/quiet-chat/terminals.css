@@ -1,0 +1,43 @@
+.variant-switch { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 4px; padding: 4px; border-radius: 30px; background: var(--paper); box-shadow: var(--raised); font-size: 12px; }
+.variant-switch a { padding: 7px 12px; border-radius: 20px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+.variant-switch a[aria-current="page"] { color: var(--accent); box-shadow: var(--inset); }
+.screen-tag { position: fixed; bottom: 34px; right: 16px; max-width: 360px; padding: 10px 14px; border-radius: 12px; font-size: 12px; line-height: 1.6; color: var(--muted); background: var(--paper); box-shadow: var(--raised); z-index: 7; }
+.toolbar { padding-top: 58px; }
+.term { flex: 1; min-height: 100px; margin: 0; padding: 14px 16px; border-radius: 16px; box-shadow: var(--inset); overflow: hidden; font: 13px/1.55 Menlo, monospace; color: #344155; white-space: pre-wrap; }
+.term .dim { color: #8a93a6; } .term .acc { color: #8062bd; } .term .ok { color: #4f8a63; }
+.term .cursor { display: inline-block; width: 8px; height: 15px; background: #8062bd; vertical-align: -2px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; background: #9aa3b5; }
+.dot.run { background: #5b8a6a; } .dot.wait { background: #c49a4a; }
+.logo { width: 14px; height: 14px; flex: 0 0 14px; }
+.new-badge { position: relative; }
+.new-badge::after { content: 'NEW'; position: absolute; top: -8px; right: 10px; padding: 1px 7px; border-radius: 8px; font-size: 9px; letter-spacing: .08em; color: #fff; background: var(--accent); }
+
+.tabs { display: flex; align-items: center; gap: 10px; padding: 0 0 12px; overflow-x: auto; }
+.tab { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 14px; border-radius: 40px; box-shadow: var(--raised); font-size: 13px; white-space: nowrap; }
+.tab[aria-selected="true"] { box-shadow: var(--inset); color: var(--accent); }
+.tab small { color: var(--muted); font-size: 11px; }
+
+.switcher { position: relative; }
+.switcher-button { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; margin-left: -10px; border-radius: 14px; font-size: 15px; font-weight: 500; }
+.switcher-button[aria-expanded="true"] { box-shadow: var(--inset); }
+.switcher-button .chevron { width: 14px; height: 14px; }
+.switcher-button small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.menu { position: absolute; top: 44px; left: -10px; width: 340px; padding: 6px; border: 1px solid #ffffff88; border-radius: 14px; background: var(--paper); box-shadow: 6px 8px 22px #b4c1d677, -3px -3px 12px #ffffff99; display: grid; z-index: 5; }
+.row { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 9px; font-size: 13px; text-align: left; width: 100%; }
+.row.current { background: #e0e5f1; }
+.row > span:not(.dot) { flex: 1; min-width: 0; }
+.row small { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row svg { width: 16px; height: 16px; color: var(--accent); }
+.divider { height: 1px; background: var(--line); margin: 6px 8px; }
+
+.with-rail { flex: 1; min-height: 0; display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 20px; }
+.rail { display: grid; align-content: start; gap: 12px; padding: 4px 4px 0 0; }
+.rail-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); padding: 0 4px; }
+.rail-head .round { width: 28px; min-height: 28px; flex-basis: 28px; }
+.session-card { display: grid; gap: 6px; padding: 12px 14px; border-radius: 16px; box-shadow: var(--raised); text-align: left; font-size: 13px; }
+.session-card[aria-current="true"] { box-shadow: var(--inset); color: var(--accent); }
+.session-card header { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.session-card header .dot { margin-left: auto; }
+.session-card small { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-card code { font: 11px Menlo, monospace; color: #505e75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live-main { display: flex; flex-direction: column; min-height: 0; }

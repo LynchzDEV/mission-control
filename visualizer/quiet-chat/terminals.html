@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Terminals · background</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./terminals.css">
+  <style>
+    body { background: var(--paper); }
+    .canvas { background: transparent; position: relative; z-index: 1; }
+    .canvas .toolbar, .canvas .workspace { position: relative; }
+    .term { background: var(--paper); position: relative; }
+    .bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; }
+    .bg canvas { width: 100%; height: 100%; display: block; }
+    .cells { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(auto-fill, 56px); grid-auto-rows: 56px; }
+    .cells i { border-right: 1px solid #dce2ee88; border-bottom: 1px solid #dce2ee88; transition: background 300ms; }
+    .cells i:hover { background: #8062bd14; }
+    .cells i.ripple { animation: ripple 700ms ease-out both; }
+    @keyframes ripple { 0% { background: #8062bd33; } 100% { background: transparent; } }
+    .blobs { position: absolute; inset: -20%; filter: blur(70px); opacity: .55; }
+    .blobs span { position: absolute; width: 42vw; height: 42vw; border-radius: 50%; }
+    .blobs .b1 { background: #b9a8e8; left: 5%; top: 10%; animation: drift1 22s ease-in-out infinite alternate; }
+    .blobs .b2 { background: #a9c3ec; right: 5%; top: 30%; animation: drift2 26s ease-in-out infinite alternate; }
+    .blobs .b3 { background: #e8c3b6; left: 30%; bottom: 0; animation: drift1 30s ease-in-out infinite alternate-reverse; }
+    .blobs .follow { background: #c7b8f0; width: 26vw; height: 26vw; transform: translate(-50%, -50%); transition: left 600ms ease-out, top 600ms ease-out; }
+    @keyframes drift1 { to { transform: translate(12vw, 8vh) scale(1.1); } }
+    @keyframes drift2 { to { transform: translate(-10vw, -6vh) scale(.9); } }
+    .paused .blobs span, .paused .cells i { animation-play-state: paused !important; }
+    .motion-toggle { position: fixed; left: 24px; bottom: 36px; z-index: 3; min-height: 30px; font-size: 12px; padding-inline: 12px; }
+  </style>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="search-icon" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.7"/><path d="m13 13 4 4"/></symbol>
+    <symbol id="plus-icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+    <symbol id="agents-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M11 4v12M6 8h2M6 11h2"/></symbol>
+    <symbol id="flow-icon" viewBox="0 0 20 20"><rect x="2" y="7" width="5" height="6" rx="1.5"/><rect x="13" y="2" width="5" height="6" rx="1.5"/><rect x="13" y="12" width="5" height="6" rx="1.5"/><path d="M7 10h3V5h3M10 10v5h3"/></symbol>
+    <symbol id="lock-icon" viewBox="0 0 20 20"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M7 8V6a3 3 0 0 1 6 0v2M10 11v3"/></symbol>
+    <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
+    <symbol id="up-icon" viewBox="0 0 20 20"><path d="m5 12 5-5 5 5"/></symbol>
+    <symbol id="down-icon" viewBox="0 0 20 20"><path d="m5 8 5 5 5-5"/></symbol>
+    <symbol id="close-icon" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+    <symbol id="file-icon" viewBox="0 0 20 20"><path d="M5 2.5h6.5L15 6v11.5H5Z"/><path d="M11.5 2.5V6H15"/></symbol>
+    <symbol id="pencil-icon" viewBox="0 0 20 20"><path d="M12.5 4.5 15.5 7.5 7.5 15.5H4.5v-3Z"/></symbol>
+  </svg>
+
+  <nav class="variant-switch" aria-label="Screens">
+    <a href="#a">A · Dotted glow</a><a href="#b">B · Ripple grid</a><a href="#c">C · Drifting gradient</a>
+  </nav>
+
+  <div class="bg" aria-hidden="true">
+    <canvas class="screen" data-screen="a" id="dots"></canvas>
+    <div class="cells screen" data-screen="b" id="cells"></div>
+    <div class="blobs screen" data-screen="c"><span class="b1"></span><span class="b2"></span><span class="b3"></span><span class="follow" id="follow"></span></div>
+  </div>
+  <main class="canvas">
+    <header class="toolbar">
+      <nav aria-label="Chats">
+        <button class="round" aria-label="Search and history"><svg><use href="#search-icon"/></svg></button>
+        <button class="pill"><svg><use href="#plus-icon"/></svg>New chat <svg class="chevron"><use href="#chevron-icon"/></svg></button>
+      </nav>
+      <nav aria-label="Session activity">
+        <button class="pill">Studio</button>
+        <button class="round quiet-control" aria-label="Agents"><svg><use href="#agents-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Flow"><svg><use href="#flow-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Access"><svg><use href="#lock-icon"/></svg></button>
+      </nav>
+    </header>
+
+    <div class="workspace"><div class="chat-container"><section class="live-workspace">
+      <div class="with-rail">
+        <aside class="rail" aria-label="Terminals">
+          <div class="rail-head"><span>Terminals · 3</span><button class="round" aria-label="New terminal"><svg><use href="#plus-icon"/></svg></button></div>
+
+          <button class="session-card" aria-current="true"><header><img class="logo" src="./vendor/providers/claude.svg" alt="">mission-control<span class="dot run"></span></header><small>Claude · sonnet · working</small><code>Editing terminals.tsx</code></button>
+          <button class="session-card"><header><img class="logo" src="./vendor/providers/codex.svg" alt="">api<span class="dot wait"></span></header><small>Codex · gpt-5.5 · waiting for you</small><code>Allow edit to routes.rb?</code></button>
+          <button class="session-card"><header><img class="logo" src="./vendor/providers/glm.svg" alt="">website<span class="dot"></span></header><small>GLM · glm-5.3 · idle</small><code>&gt;</code></button>
+        </aside>
+
+        <div class="live-main">
+          <header class="live-heading"><div><h1>mission-control</h1><p class="muted">Claude · sonnet · ~/Desktop/kingpinggroup/mission-control</p></div><div class="live-actions"><span>Connected</span><button class="pill" style="min-height:30px;font-size:12px;padding-inline:12px"><svg style="width:14px;height:14px"><use href="#search-icon"/></svg>Find <kbd style="font:11px Menlo,monospace;color:var(--muted)">⌘F</kbd></button></div></header>
+          <div class="term-host">
+            <pre class="term" data-term></pre>
+            
+            
+          </div>
+          
+        </div>
+      </div>
+    </section></div></div>
+  </main>
+
+  <template id="term-content"><span class="acc">╭─ Claude Code ─────────────────────────────────╮</span>
+<span class="acc">│</span> cwd: ~/Desktop/kingpinggroup/mission-control   <span class="acc">│</span>
+<span class="acc">╰───────────────────────────────────────────────╯</span>
+
+<span class="dim">&gt;</span> why does login fail after the redirect?
+
+<span class="acc">●</span> Reading <span class="dim">server/auth.ts</span>
+The session cookie is dropped on the redirect because SameSite=Strict
+blocks it on the cross-site hop. Details: <span class="link">https://developer.mozilla.org/docs/Web/HTTP/Cookies</span>
+
+<span class="acc">●</span> Proposed fix: keep Strict, but redirect through a same-site page first.
+
+<span class="dim">&gt;</span> <span class="cursor"></span></template>
+
+    <button class="pill motion-toggle" id="motion" aria-pressed="false">Pause motion</button>
+  <p class="screen-tag" id="tag"></p>
+  <footer class="preview-footer">Terminals · item 7 of 7: background · ideas from Aceternity, re-built in plain CSS/JS · live, try moving and clicking · static preview</footer>
+
+  <script>
+    const tags = {
+      a: 'A (chosen) · Dotted glow: faint near-white dots that slowly twinkle toward lavender. Click empty space for a ripple. Around your mouse (150px) dots brighten, grow and ease slightly away from the cursor.',
+      b: 'B · Ripple grid (Aceternity Background Ripple Effect): hover lights a cell; click sends a ripple outwards through the grid. Only where the page is uncovered.',
+      c: 'C · Drifting gradient (Aceternity Background Gradient Animation): soft lavender, blue and peach blobs drift; one follows your mouse.',
+    }
+    document.querySelectorAll('[data-term]').forEach(el => el.append(document.getElementById('term-content').content.cloneNode(true)))
+    const show = () => {
+      const id = (location.hash || '#a').slice(1)
+      document.querySelectorAll('.screen').forEach(el => el.hidden = !el.dataset.screen.split(' ').includes(id))
+      document.querySelectorAll('.variant-switch a').forEach(a => a.setAttribute('aria-current', a.hash === '#' + id ? 'page' : 'false'))
+      document.getElementById('tag').textContent = tags[id] ?? ''
+    }
+    addEventListener('hashchange', show); show()
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+    let paused = reduced
+    const motion = document.getElementById('motion')
+    const syncMotion = () => { document.body.classList.toggle('paused', paused); motion.setAttribute('aria-pressed', String(paused)); motion.textContent = paused ? 'Play motion' : 'Pause motion' }
+    motion.onclick = () => { paused = !paused; syncMotion() }
+    syncMotion()
+
+    const dots = document.getElementById('dots'), ctx = dots.getContext('2d'), GAP = 22
+    let points = []
+    const sizeDots = () => { dots.width = innerWidth; dots.height = innerHeight; points = []; for (let y = GAP; y < innerHeight; y += GAP) for (let x = GAP; x < innerWidth; x += GAP) points.push({ x, y, phase: Math.random() * Math.PI * 2, speed: .3 + Math.random() * .7 }) }
+    const mouse = { x: -1e4, y: -1e4 }
+    addEventListener('pointermove', event => { mouse.x = event.clientX; mouse.y = event.clientY })
+    document.addEventListener('pointerleave', () => { mouse.x = mouse.y = -1e4 })
+    const REACH = 150, FOLLOW = .12, FADE = .08, DOT_ALPHA = .6
+    const RIPPLE_SPEED = .45, RIPPLE_BAND = 36, RIPPLE_LIFE = 1100
+    const ripples = []
+    addEventListener('click', event => {
+      if (paused || location.hash !== '#a' && location.hash !== '') return
+      if (event.target.closest('button, a, input, textarea, select, pre, .session-card, dialog, nav, header')) return
+      ripples.push({ x: event.clientX, y: event.clientY, start: performance.now() })
+    })
+    const lens = { x: -1e4, y: -1e4 }
+    const drawDots = time => {
+      ctx.clearRect(0, 0, dots.width, dots.height)
+      if (mouse.x < -1e3 || lens.x < -1e3) { lens.x = mouse.x; lens.y = mouse.y } else { lens.x += (mouse.x - lens.x) * FOLLOW; lens.y += (mouse.y - lens.y) * FOLLOW }
+      while (ripples.length && time - ripples[0].start > RIPPLE_LIFE) ripples.shift()
+      ctx.globalAlpha = DOT_ALPHA
+      for (const p of points) {
+        let wave = 0
+        for (const r of ripples) { const age = time - r.start, d = Math.hypot(p.x - r.x, p.y - r.y), off = Math.abs(d - age * RIPPLE_SPEED); if (off < RIPPLE_BAND) wave = Math.max(wave, (1 - off / RIPPLE_BAND) * (1 - age / RIPPLE_LIFE)) }
+        const twinkle = paused ? .2 : Math.max(0, Math.sin(time / 1000 * p.speed + p.phase)) ** 6
+        const target = paused ? 0 : Math.max(0, 1 - Math.hypot(p.x - lens.x, p.y - lens.y) / REACH) ** 2
+        p.near = (p.near ?? 0) + (target - (p.near ?? 0)) * FADE
+        const near = p.near
+        const push = near * 4 + wave * 5, angle = Math.atan2(p.y - lens.y, p.x - lens.x)
+        const mix = Math.min(1, twinkle * .35 + near * .7 + wave * .8)
+        ctx.fillStyle = `rgb(${250 - mix * 122}, ${251 - mix * 153}, ${255 - mix * 66})`
+        ctx.beginPath()
+        ctx.arc(p.x + Math.cos(angle) * push, p.y + Math.sin(angle) * push, 1.4 + twinkle * .8 + near * 1.8 + wave * 1.6, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      requestAnimationFrame(drawDots)
+    }
+    sizeDots(); addEventListener('resize', sizeDots); requestAnimationFrame(drawDots)
+
+    const cells = document.getElementById('cells')
+    const cols = Math.ceil(innerWidth / 56), rows = Math.ceil(innerHeight / 56)
+    for (let i = 0; i < cols * rows; i++) cells.append(document.createElement('i'))
+    addEventListener('click', event => {
+      if (location.hash !== '#b' || paused) return
+      const cx = Math.floor(event.clientX / 56), cy = Math.floor(event.clientY / 56)
+      ;[...cells.children].forEach((cell, index) => { const d = Math.hypot(index % cols - cx, Math.floor(index / cols) - cy); if (d > 9) return; cell.classList.remove('ripple'); void cell.offsetWidth; cell.style.animationDelay = `${d * 55}ms`; cell.classList.add('ripple') })
+    })
+    const follow = document.getElementById('follow')
+    addEventListener('pointermove', event => { if (paused) return; follow.style.left = event.clientX / innerWidth * 140 - 20 + '%'; follow.style.top = event.clientY / innerHeight * 140 - 20 + '%' })
+  </script>
+</body>
+</html>

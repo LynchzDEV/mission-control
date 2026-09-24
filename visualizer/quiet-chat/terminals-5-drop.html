@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Terminals · drop files</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./terminals.css">
+  <style>
+    .drop-host { position: relative; flex: 1; min-height: 0; display: flex; }
+    .drop-over { position: absolute; inset: 0; border-radius: 16px; display: grid; place-items: center; align-content: center; gap: 10px; text-align: center; font-size: 14px; color: var(--accent); background: #eaedf6d9; border: 1.5px dashed #8062bd88; backdrop-filter: blur(1px); }
+    .drop-over small { color: var(--muted); font-size: 12px; }
+    .drop-over .file-chips { display: flex; gap: 8px; justify-content: center; }
+    .file-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 12px; box-shadow: var(--raised); font-size: 12px; color: #505e75; background: var(--paper); }
+    .file-chip svg { width: 13px; height: 13px; color: var(--accent); }
+    .progress { width: 220px; height: 4px; border-radius: 4px; box-shadow: var(--inset); overflow: hidden; }
+    .progress span { display: block; height: 100%; width: 62%; background: var(--accent); opacity: .7; }
+    .ring { position: absolute; inset: 0; border-radius: 16px; box-shadow: 0 0 0 2px #8062bd99; pointer-events: none; }
+    .cursor-tag { position: absolute; left: 58%; top: 46%; padding: 5px 10px; border-radius: 10px; font-size: 12px; color: #fff; background: var(--accent); box-shadow: 4px 6px 14px #8062bd44; }
+    .prompt-strip { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; background: #8062bd1a; border: 1.5px dashed #8062bd88; font-size: 13px; color: var(--accent); }
+    .toast { position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%); padding: 10px 16px; border-radius: 12px; font-size: 13px; background: var(--paper); box-shadow: var(--raised); z-index: 6; }
+  </style>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="search-icon" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.7"/><path d="m13 13 4 4"/></symbol>
+    <symbol id="plus-icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+    <symbol id="agents-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M11 4v12M6 8h2M6 11h2"/></symbol>
+    <symbol id="flow-icon" viewBox="0 0 20 20"><rect x="2" y="7" width="5" height="6" rx="1.5"/><rect x="13" y="2" width="5" height="6" rx="1.5"/><rect x="13" y="12" width="5" height="6" rx="1.5"/><path d="M7 10h3V5h3M10 10v5h3"/></symbol>
+    <symbol id="lock-icon" viewBox="0 0 20 20"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M7 8V6a3 3 0 0 1 6 0v2M10 11v3"/></symbol>
+    <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
+    <symbol id="file-icon" viewBox="0 0 20 20"><path d="M5 2.5h6.5L15 6v11.5H5Z"/><path d="M11.5 2.5V6H15"/></symbol>
+    <symbol id="pencil-icon" viewBox="0 0 20 20"><path d="M12.5 4.5 15.5 7.5 7.5 15.5H4.5v-3Z"/></symbol>
+  </svg>
+
+  <nav class="variant-switch" aria-label="Screens">
+    <a href="#now">Result · paths typed</a><a href="#a">A · Full overlay</a><a href="#b">B · Prompt strip</a><a href="#c">C · Just a ring</a>
+  </nav>
+
+  <main class="canvas">
+    <header class="toolbar">
+      <nav aria-label="Chats">
+        <button class="round" aria-label="Search and history"><svg><use href="#search-icon"/></svg></button>
+        <button class="pill"><svg><use href="#plus-icon"/></svg>New chat <svg class="chevron"><use href="#chevron-icon"/></svg></button>
+      </nav>
+      <nav aria-label="Session activity">
+        <button class="pill">Studio</button>
+        <button class="round quiet-control" aria-label="Agents"><svg><use href="#agents-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Flow"><svg><use href="#flow-icon"/></svg></button>
+        <button class="round quiet-control" aria-label="Access"><svg><use href="#lock-icon"/></svg></button>
+      </nav>
+    </header>
+
+    <div class="workspace"><div class="chat-container"><section class="live-workspace">
+      <div class="with-rail">
+        <aside class="rail" aria-label="Terminals">
+          <div class="rail-head"><span>Terminals · 3</span><button class="round" aria-label="New terminal"><svg><use href="#plus-icon"/></svg></button></div>
+
+          <button class="session-card" aria-current="true"><header><img class="logo" src="./vendor/providers/claude.svg" alt="">mission-control<span class="dot run"></span></header><small>Claude · sonnet · working</small><code>Editing terminals.tsx</code></button>
+          <button class="session-card"><header><img class="logo" src="./vendor/providers/codex.svg" alt="">api<span class="dot wait"></span></header><small>Codex · gpt-5.5 · waiting for you</small><code>Allow edit to routes.rb?</code></button>
+          <button class="session-card"><header><img class="logo" src="./vendor/providers/glm.svg" alt="">website<span class="dot"></span></header><small>GLM · glm-5.3 · idle</small><code>&gt;</code></button>
+        </aside>
+
+        <div class="live-main">
+          <header class="live-heading"><div><h1>mission-control</h1><p class="muted">Claude · sonnet · ~/Desktop/kingpinggroup/mission-control</p></div><div class="live-actions"><span>Connected</span></div></header>
+          <div class="drop-host">
+            <pre class="term" data-term></pre>
+            <div class="drop-over screen" data-screen="a"><svg style="width:28px;height:28px"><use href="#file-icon"/></svg><strong>Drop to add 2 files</strong><div class="file-chips"><span class="file-chip"><svg><use href="#file-icon"/></svg>login-bug.png</span><span class="file-chip"><svg><use href="#file-icon"/></svg>error.log</span></div><small>Their paths are typed at the prompt · up to 100 MB each</small></div>
+            <div class="prompt-strip screen" data-screen="b"><svg style="width:16px;height:16px"><use href="#file-icon"/></svg>Drop 2 files here · their paths are typed at the prompt</div>
+            <div class="screen" data-screen="c"><div class="ring"></div><span class="cursor-tag">+ 2 files</span></div>
+          </div>
+        </div>
+      </div>
+    </section></div></div>
+  </main>
+
+  <template id="term-content"><span class="acc">╭─ Claude Code ─────────────────────────────────╮</span>
+<span class="acc">│</span> cwd: ~/Desktop/kingpinggroup/mission-control   <span class="acc">│</span>
+<span class="acc">╰───────────────────────────────────────────────╯</span>
+
+<span class="dim">&gt;</span> why does login fail after the redirect? <span class="result-only">'/Users/you/Desktop/login-bug.png' '/Users/you/Downloads/error.log' </span><span class="cursor"></span></template>
+
+  <div class="toast screen" data-screen="now">Added 2 files</div>
+  <p class="screen-tag" id="tag"></p>
+  <footer class="preview-footer">Terminals · item 5 of 7: drop files · dragging a rail card still shows the split zones; dragging files shows this instead · static preview</footer>
+
+  <script>
+    const tags = {
+      now: 'Result (all variants): the quoted paths are typed at the prompt after your text, and a short "Added 2 files" notice appears.',
+      a: 'A · Full overlay: while files hover, the terminal dims behind a dashed lavender frame naming the files, with the 100 MB limit. Clear, but covers the terminal.',
+      b: 'B · Prompt strip: a dashed strip at the bottom of the terminal, where the paths will land. The terminal stays readable.',
+      c: 'C · Just a ring: a lavender ring around the terminal and a small "+ 2 files" tag at the cursor. The lightest.',
+    }
+    document.querySelectorAll('[data-term]').forEach(el => el.append(document.getElementById('term-content').content.cloneNode(true)))
+    const show = () => {
+      const id = (location.hash || '#now').slice(1)
+      document.querySelectorAll('.screen').forEach(el => el.hidden = !el.dataset.screen.split(' ').includes(id))
+      document.querySelectorAll('.result-only').forEach(el => el.hidden = id !== 'now')
+      document.querySelectorAll('.variant-switch a').forEach(a => a.setAttribute('aria-current', a.hash === '#' + id ? 'page' : 'false'))
+      document.getElementById('tag').textContent = tags[id] ?? ''
+    }
+    addEventListener('hashchange', show); show()
+  </script>
+</body>
+</html>
