@@ -43,7 +43,7 @@ export const MIN_PASSWORD_LENGTH = 10
 export const MAX_FAILED_ATTEMPTS = 5
 export const LOCKOUT_MS = 60_000
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
-export const SESSION_COOKIE = 'mc_session'
+export const SESSION_COOKIE = process.env.MISSION_CONTROL_SESSION_COOKIE || 'mc_session'
 
 export type Clock = () => number
 

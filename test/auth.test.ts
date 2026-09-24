@@ -97,6 +97,21 @@ describe('cookie header parsing', () => {
   })
 })
 
+test('an isolated service accepts only its configured session cookie', async () => {
+  const proc = Bun.spawn([process.execPath, '-e', `
+    import { completeSetup, SESSION_COOKIE, verifyCookieHeader } from './server/auth'
+    const setup = await completeSetup('isolated-service-password')
+    if (!setup.ok) throw new Error('Setup failed')
+    console.log(JSON.stringify({
+      cookie: SESSION_COOKIE,
+      isolated: await verifyCookieHeader('mc_session_7778=' + setup.token),
+      original: await verifyCookieHeader('mc_session=' + setup.token),
+    }))
+  `], { cwd: join(import.meta.dir, '..'), env: { ...process.env, MISSION_CONTROL_SESSION_COOKIE: 'mc_session_7778' }, stdout: 'pipe', stderr: 'pipe' })
+  expect(await proc.exited).toBe(0)
+  expect(await new Response(proc.stdout).json()).toEqual({ cookie: 'mc_session_7778', isolated: true, original: false })
+})
+
 describe('rate limiter', () => {
   test('locks after the configured failures and releases after the window', () => {
     let clock = 1_000_000
