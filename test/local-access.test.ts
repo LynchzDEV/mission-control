@@ -31,6 +31,24 @@ describe('localRequestAllowed', () => {
     expect(localRequestAllowed(new Request('http://localhost/api/jobs'))).toBe(true)
     expect(localRequestAllowed(new Request('http://rebind.example/api/jobs'))).toBe(false)
   })
+  test('rejects a malformed Origin', () => {
+    expect(localRequestAllowed(req({ host: '127.0.0.1:7777', origin: 'not a url' }))).toBe(false)
+  })
+  test('rejects an empty Host', () => {
+    expect(localRequestAllowed(req({ host: '' }, 'http://localhost/x'))).toBe(false)
+  })
+  test('rejects an Origin on another local port', () => {
+    expect(localRequestAllowed(req({ host: '127.0.0.1:7777', origin: 'http://127.0.0.1:5173' }))).toBe(false)
+  })
+  test('accepts an Origin that matches the Host exactly', () => {
+    expect(localRequestAllowed(req({ host: '[::1]:7777', origin: 'http://[::1]:7777', 'sec-fetch-site': 'same-origin' }))).toBe(true)
+  })
+  test('a cross-site top-level navigation is refused under /api and /ws but allowed elsewhere', () => {
+    const navigation = { host: '127.0.0.1:7777', 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' }
+    expect(localRequestAllowed(req(navigation, 'http://127.0.0.1:7777/api/jobs'))).toBe(false)
+    expect(localRequestAllowed(req(navigation, 'http://127.0.0.1:7777/ws/terminal/1'))).toBe(false)
+    expect(localRequestAllowed(req(navigation, 'http://127.0.0.1:7777/'))).toBe(true)
+  })
   test('ignores leftover session cookies', () => {
     expect(localRequestAllowed(req({ host: '127.0.0.1:7777', cookie: 'mc_session=1.2.3' }))).toBe(true)
   })
@@ -39,6 +57,9 @@ describe('localRequestAllowed', () => {
 describe('sameOrigin', () => {
   test('sameOrigin accepts the app\'s own origin', () => {
     expect(sameOrigin(req({ host: '127.0.0.1:7777', origin: 'http://127.0.0.1:7777' }))).toBe(true)
+  })
+  test('sameOrigin accepts [::1]', () => {
+    expect(sameOrigin(req({ host: '[::1]:7777', origin: 'http://[::1]:7777' }))).toBe(true)
   })
   test('sameOrigin rejects another local port and a missing Origin', () => {
     expect(sameOrigin(req({ host: '127.0.0.1:7777', origin: 'http://127.0.0.1:5173' }))).toBe(false)

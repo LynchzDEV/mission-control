@@ -55,6 +55,10 @@ describe('local access', () => {
     expect((await app.handle(new Request('http://rebind.example/api/jobs', { headers: { host: 'rebind.example:7777' } }))).status).toBe(403)
     expect((await app.handle(new Request('http://rebind.example/api/health', { headers: { host: 'rebind.example:7777' } }))).status).toBe(200)
   })
+  test('GET / answers a cross-site top-level navigation', async () => {
+    const response = await app.handle(new Request('http://127.0.0.1:7777/', { headers: { host: '127.0.0.1:7777', 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' } }))
+    expect(response.status).toBe(200)
+  })
   test('login, setup and logout endpoints no longer exist', async () => {
     for (const path of ['/api/setup', '/api/login', '/api/logout']) {
       const response = await app.handle(new Request(`http://localhost${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }))
