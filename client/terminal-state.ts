@@ -70,3 +70,12 @@ export function restoreTarget(urlId: string | null, storedId: string | null, ids
   for (const candidate of [urlId, storedId]) if (candidate && ids.includes(candidate)) return candidate
   return ids[0] ?? null
 }
+
+export type StatusPill = { kind: 'live' | 'muted' | 'down'; text: string }
+
+export function statusPill(status: string): StatusPill {
+  if (status.startsWith('Connected')) return { kind: 'live', text: 'Live' }
+  if (status === 'Connecting…' || status === 'Reconnecting…') return { kind: 'muted', text: status }
+  if (status === 'Session ended.') return { kind: 'muted', text: 'Ended' }
+  return { kind: 'down', text: 'Disconnected · Reconnect' }
+}

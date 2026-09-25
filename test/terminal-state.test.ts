@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { dragKind, dropCopy, findCount, findKeys, latestLine, nextActive, renameValue, restoreTarget, sessionState, splitPlan } from '../client/terminal-state'
+import { dragKind, dropCopy, findCount, findKeys, latestLine, nextActive, renameValue, restoreTarget, sessionState, splitPlan, statusPill } from '../client/terminal-state'
 
 describe('sessionState', () => {
   test('working within 5 s of output, idle after, ended wins', () => {
@@ -103,5 +103,15 @@ describe('restoreTarget', () => {
     expect(restoreTarget('gone', 'a', ['c', 'a'])).toBe('a')
     expect(restoreTarget('gone', 'gone', ['c', 'a'])).toBe('c')
     expect(restoreTarget(null, null, [])).toBeNull()
+  })
+})
+
+describe('statusPill', () => {
+  test('connected is Live, connecting and ended stay muted, a disconnect offers Reconnect', () => {
+    expect(statusPill('Connected · live Claude Code')).toEqual({ kind: 'live', text: 'Live' })
+    expect(statusPill('Connecting…')).toEqual({ kind: 'muted', text: 'Connecting…' })
+    expect(statusPill('Reconnecting…')).toEqual({ kind: 'muted', text: 'Reconnecting…' })
+    expect(statusPill('Disconnected. Reconnect to try again.')).toEqual({ kind: 'down', text: 'Disconnected · Reconnect' })
+    expect(statusPill('Session ended.')).toEqual({ kind: 'muted', text: 'Ended' })
   })
 })

@@ -4,7 +4,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { errorText, getJson, pathsFromUriList, postJson, providerName, readArray, readRecord, shellQuote } from './shared'
 import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
-import { dragKind, dropCopy, findCount, findKeys, restoreTarget, nextActive, sessionState, splitPlan, type Session, type SessionState } from './terminal-state'
+import { dragKind, dropCopy, findCount, findKeys, restoreTarget, nextActive, sessionState, splitPlan, statusPill, type Session, type SessionState } from './terminal-state'
 import { createPanes, type PaneHeader } from './terminal-panes'
 
 type Provider = { id: string; name: string; models: string[] }
@@ -19,7 +19,6 @@ const modelInput = $('live-model') as HTMLInputElement
 const cwdInput = $('live-cwd') as HTMLInputElement
 const workflowSelect = $('live-workflow') as HTMLSelectElement
 const submit = $('live-submit') as HTMLButtonElement
-const reconnectButton = $('live-reconnect') as HTMLButtonElement
 const stage = $('live-stage')
 const park = $('term-park')
 const dropStage = $('drop-stage')
@@ -33,11 +32,19 @@ let workflowsReady = false
 const engineName = (engine: string | undefined): string => engine === 'claude' ? 'Claude Code' : providerName(engine ?? '')
 cwdInput.value = (window as { MC_WORKSPACE_DIR?: string }).MC_WORKSPACE_DIR ?? ''
 
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform)
+const barTemplate = ($('term-bar') as HTMLTemplateElement).content
+const findBar = barTemplate.querySelector('#find') as HTMLElement
+findBar.remove()
+const findPart = (id: string): HTMLElement => findBar.querySelector(`#${id}`) as HTMLElement
+const findInput = findPart('find-input') as HTMLInputElement
+
 const stored = (key: string): string | null => { try { return localStorage.getItem(key) } catch { return null } }
 const store = (key: string, value: string | null): void => { try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key) } catch {} }
 
 export class TerminalView {
   readonly host = document.createElement('div')
+  readonly bar = (barTemplate.firstElementChild as HTMLElement).cloneNode(true) as HTMLElement
   readonly terminal: Terminal
   readonly fit = new FitAddon()
   readonly search = new SearchAddon()
@@ -52,16 +59,40 @@ export class TerminalView {
   constructor(public session: Session) {
     this.host.className = 'term-host'
     this.host.dataset.id = session.id
+    this.host.append(this.bar)
+    this.paintBar()
+    const find = this.bar.querySelector('.term-bar-find') as HTMLButtonElement
+    find.title = `Find · ${MAC ? '⌘F' : 'Ctrl+F'}`
+    find.onclick = () => { if (activeId !== this.session.id) activate(this.session.id); openFind() }
+    ;(this.bar.querySelector('.term-bar-status') as HTMLButtonElement).onclick = () => void reconnect(this.session.id)
     this.terminal = new Terminal({ allowProposedApi: true, fontFamily: 'Menlo, monospace', fontSize: 13, cursorBlink: !matchMedia('(prefers-reduced-motion: reduce)').matches, scrollback: 10000, macOptionIsMeta: true, theme: { background: '#eaedf6', foreground: '#344155', cursor: '#8062bd', selectionBackground: '#b5a5d866' } })
     this.terminal.loadAddon(this.fit)
     this.terminal.loadAddon(this.search)
     this.terminal.loadAddon(new WebLinksAddon())
     this.terminal.attachCustomKeyEventHandler(event => { if (findKeys(event, false, MAC) !== 'open') return true; if (event.type === 'keydown') openFind(); return false })
-    this.search.onDidChangeResults(({ resultIndex, resultCount }) => { if (activeId === session.id) $('find-count').textContent = findCount(resultIndex, resultCount, findInput.value) })
+    this.search.onDidChangeResults(({ resultIndex, resultCount }) => { if (activeId === session.id) findPart('find-count').textContent = findCount(resultIndex, resultCount, findInput.value) })
     this.terminal.open(this.host)
     this.terminal.onData(data => { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(new TextEncoder().encode(data)) })
     this.observer = new ResizeObserver(() => { cancelAnimationFrame(this.resizeFrame); this.resizeFrame = requestAnimationFrame(() => this.resize()) })
     this.observer.observe(this.host)
+  }
+
+  paintBar(): void {
+    const logo = this.bar.querySelector('.term-bar-logo') as HTMLElement
+    logo.dataset.engine = this.session.engine
+    ;(logo.firstElementChild as HTMLImageElement).src = `/providers/${this.session.engine}.svg`
+    const name = this.bar.querySelector('.term-bar-name') as HTMLElement
+    name.textContent = this.session.title
+    name.title = this.session.cwd
+  }
+
+  setStatus(text: string): void {
+    const pill = statusPill(text)
+    const button = this.bar.querySelector('.term-bar-status') as HTMLButtonElement
+    button.dataset.kind = pill.kind
+    button.disabled = pill.kind !== 'down'
+    button.title = text
+    ;(button.lastElementChild as HTMLElement).textContent = pill.text
   }
 
   get state(): SessionState { return sessionState(this.lastOutputAt, this.ended, Date.now()) }
@@ -77,7 +108,7 @@ export class TerminalView {
     this.terminal.reset()
     this.terminal.options.disableStdin = true
     this.ended = false
-    if (activeId === this.session.id) setStatus('Connecting…', false)
+    this.setStatus('Connecting…')
     const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const connection = new WebSocket(`${scheme}//${location.host}/ws/terminal/${encodeURIComponent(this.session.id)}`)
     this.socket = connection
@@ -85,7 +116,8 @@ export class TerminalView {
     connection.onopen = () => {
       if (this.socket !== connection) return
       this.terminal.options.disableStdin = false
-      if (activeId === this.session.id) { setStatus(`Connected · live ${engineName(this.session.engine)}`, false); this.resize(); this.terminal.focus() }
+      this.setStatus(`Connected · live ${engineName(this.session.engine)}`)
+      if (activeId === this.session.id) { this.resize(); this.terminal.focus() }
     }
     connection.onmessage = (event) => {
       if (this.socket !== connection) return
@@ -94,12 +126,12 @@ export class TerminalView {
       this.lastOutputAt = Date.now()
       this.buffer = (this.buffer + text).slice(-BUFFER_CHARS)
     }
-    connection.onerror = () => { if (this.socket === connection && activeId === this.session.id) setStatus('Connection failed. Reconnect to try again.', true) }
+    connection.onerror = () => { if (this.socket === connection) this.setStatus('Connection failed. Reconnect to try again.') }
     connection.onclose = (event) => {
       if (this.socket !== connection) return
       this.terminal.options.disableStdin = true
       this.ended = event.code === 4404 || event.code === 4410
-      if (activeId === this.session.id) setStatus(this.ended ? 'Session ended.' : 'Disconnected. Reconnect to try again.', !this.ended)
+      this.setStatus(this.ended ? 'Session ended.' : 'Disconnected. Reconnect to try again.')
     }
   }
 
@@ -110,12 +142,6 @@ export class TerminalView {
     this.terminal.dispose()
     this.host.remove()
   }
-}
-
-function setStatus(text: string, canReconnect: boolean): void {
-  $('live-status').textContent = text
-  reconnectButton.hidden = !canReconnect
-  reconnectButton.disabled = !canReconnect
 }
 
 function visible(on: boolean): void {
@@ -145,7 +171,7 @@ function ensureView(session: Session): TerminalView {
   } else if (view.session.title !== session.title || view.session.model !== session.model) {
     view.session = session
     panes.retitle(session.id, paneHeader(session))
-    if (activeId === session.id) $('live-name').textContent = session.title
+    view.paintBar()
   } else view.session = session
   return view
 }
@@ -160,18 +186,12 @@ function setActiveState(id: string): void {
   if (!findBar.hidden && activeId !== null && activeId !== id) views.get(activeId)?.search.clearDecorations()
   activeId = id
   store(savedKey, id)
-  if (!findBar.hidden) findStep('next')
+  if (!findBar.hidden) { view.bar.append(findBar); findStep('next') }
   if (canvas.dataset.live === 'true') {
     const url = new URL(location.href); url.searchParams.set('terminal', id); url.hash = 'terminal'; history.replaceState(null, '', url)
     dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: view.session }))
   }
-  $('live-name').textContent = view.session.title
-  $('live-directory').textContent = `${engineName(view.session.engine)}${view.session.model ? ` · ${view.session.model}` : ''} · ${view.session.cwd}`
   $('live').setAttribute('aria-label', `Live ${engineName(view.session.engine)} terminal`)
-  const state = view.socket?.readyState
-  if (view.ended) setStatus('Session ended.', false)
-  else if (state === WebSocket.OPEN) setStatus(`Connected · live ${engineName(view.session.engine)}`, false)
-  else if (state === WebSocket.CLOSED) setStatus('Disconnected. Reconnect to try again.', true)
   publishSessions()
 }
 
@@ -196,42 +216,36 @@ function paintZones(zone: 'right' | 'bottom' | null, show: boolean): void {
   dropStage.dataset.dragging = String(show)
   for (const name of ['right', 'bottom'] as const) $(`drop-${name}`).dataset.hot = String(show && zone === name)
 }
-const MAC = /Mac|iPhone|iPad/.test(navigator.platform)
-const findBar = $('find')
-const findInput = $('find-input') as HTMLInputElement
 const MATCH_DECORATIONS = { matchBackground: '#8062bd33', activeMatchBackground: '#8062bd88', matchOverviewRuler: '#8062bd88', activeMatchColorOverviewRuler: '#8062bd' }
 function findStep(direction: 'next' | 'prev'): void {
   const view = activeId ? views.get(activeId) : null
   if (!view) return
-  if (findInput.value === '') { view.search.clearDecorations(); $('find-count').textContent = ''; return }
+  if (findInput.value === '') { view.search.clearDecorations(); findPart('find-count').textContent = ''; return }
   const options = { decorations: MATCH_DECORATIONS, incremental: direction === 'next' }
   if (direction === 'next') view.search.findNext(findInput.value, options)
   else view.search.findPrevious(findInput.value, options)
 }
 function openFind(): boolean {
-  if (!activeId || document.querySelector('dialog[open]')) return false
-  if (!findBar.hidden) { findInput.focus(); findInput.select(); return true }
-  $('find-open').hidden = true
-  $('live-status').hidden = true
+  const view = activeId ? views.get(activeId) : null
+  if (!view || document.querySelector('dialog[open]')) return false
+  const opened = findBar.hidden
+  view.bar.append(findBar)
   findBar.hidden = false
   findInput.focus()
   findInput.select()
-  findStep('next')
+  if (opened) findStep('next')
   return true
 }
 function closeFind(): void {
   const view = activeId ? views.get(activeId) : null
   view?.search.clearDecorations()
   findBar.hidden = true
-  $('find-open').hidden = false
-  $('live-status').hidden = false
-  $('find-count').textContent = ''
+  findPart('find-count').textContent = ''
   view?.terminal.focus()
 }
-$('find-open').onclick = () => void openFind()
-$('find-prev').onclick = () => findStep('prev')
-$('find-next').onclick = () => findStep('next')
-$('find-close').onclick = closeFind
+findPart('find-prev').onclick = () => findStep('prev')
+findPart('find-next').onclick = () => findStep('next')
+findPart('find-close').onclick = closeFind
 findInput.oninput = () => findStep('next')
 findInput.onkeydown = (event) => {
   event.stopPropagation()
@@ -243,7 +257,6 @@ findInput.onkeydown = (event) => {
   else findStep('next')
 }
 document.addEventListener('keydown', (event) => { if (canvas.dataset.live === 'true' && findKeys(event, false, MAC) === 'open' && openFind()) event.preventDefault() })
-$('find-key').textContent = MAC ? '⌘F' : 'Ctrl+F'
 for (const type of ['dragover', 'drop'] as const) document.addEventListener(type, (event) => { if (dragKind(event.dataTransfer?.types ?? []) === 'files' && !dropStage.contains(event.target as Node | null)) event.preventDefault() })
 
 const dropOver = $('drop-over')
@@ -344,8 +357,7 @@ async function rename(id: string, title: string): Promise<void> {
   if (!ok) { toast('Could not rename this terminal'); return }
   sessions = sessions.map(session => session.id === id ? { ...session, title } : session)
   const view = views.get(id)
-  if (view) { view.session = { ...view.session, title }; panes.retitle(id, paneHeader(view.session)) }
-  if (activeId === id) $('live-name').textContent = title
+  if (view) { view.session = { ...view.session, title }; panes.retitle(id, paneHeader(view.session)); view.paintBar() }
   publishSessions()
 }
 
@@ -462,17 +474,15 @@ addEventListener('quiet:open-terminal', (event) => {
   if (detail.resume) { void resumeSession(detail.resume); return }
   void openTerminal(detail.restore === true, detail.cwd)
 })
-reconnectButton.onclick = async () => {
-  if (opening || !activeId) return
-  const id = activeId
+async function reconnect(id: string): Promise<void> {
+  if (opening) return
   opening = true
-  reconnectButton.disabled = true
+  views.get(id)?.setStatus('Reconnecting…')
   await refreshSessions()
   opening = false
-  if (activeId !== id) return
   const view = views.get(id)
   if (view && !view.ended) view.connect()
-  else setStatus('Session ended.', false)
+  else view?.setStatus('Session ended.')
 }
 setInterval(() => { if (!document.hidden) void refreshSessions() }, POLL_MS)
 if (restoreRequested(location)) void openTerminal(true)
