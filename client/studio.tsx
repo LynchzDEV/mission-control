@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { ReactFlow, Background, BackgroundVariant, Controls, Handle, Position, MarkerType, useNodesState, useEdgesState, type Node, type NodeProps, type Edge, type ReactFlowInstance } from '@xyflow/react'
+import { ReactFlow, Background, BackgroundVariant, BaseEdge, Controls, Handle, Position, MarkerType, getBezierPath, useNodesState, useEdgesState, type Node, type NodeProps, type Edge, type EdgeProps, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { Workflow, WorkflowNode, WorkflowRevision, PolicyRevision, Outcome } from '../server/workflows'
 import type { WorkflowRun } from '../server/workflow-runner'
@@ -36,9 +36,21 @@ const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>)
   </div>
 })
 const nodeTypes = { task: TaskCard }
+function FlowEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, sourceHandleId, markerEnd, label, style }: EdgeProps) {
+  const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition })
+  return <>
+    <BaseEdge path={path} markerEnd={markerEnd} style={style} label={label} labelX={labelX} labelY={labelY} labelBgPadding={[8, 3]} labelBgBorderRadius={10} />
+    {sourceHandleId === 'pass' && <BaseEdge path={path} className="edge-flow" interactionWidth={0} />}
+  </>
+}
+const edgeTypes = { flow: FlowEdge }
+const motionPaused = () => { try { return localStorage.getItem('mc.motion.paused') === 'true' } catch { return false } }
+const syncMotion = () => document.documentElement.toggleAttribute('data-motion-paused', motionPaused())
+syncMotion()
+document.getElementById('motion')?.addEventListener('click', () => setTimeout(syncMotion))
 
 const navHost = document.getElementById('studio-nav')
-function graphEdges(graph: Workflow): Edge[] { return graph.edges.map(edge => ({ id: `${edge.source}-${edge.outcome}`, source: edge.source, target: edge.target, sourceHandle: edge.outcome, label: edge.outcome === 'pass' ? undefined : outcomeLabels[edge.outcome], markerEnd: { type: MarkerType.ArrowClosed }, className: `outcome-${edge.outcome}` })) }
+function graphEdges(graph: Workflow): Edge[] { return graph.edges.map(edge => ({ id: `${edge.source}-${edge.outcome}`, source: edge.source, target: edge.target, sourceHandle: edge.outcome, label: edge.outcome === 'pass' ? undefined : outcomeLabels[edge.outcome], type: 'flow', markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: '#8a93a8' }, className: `outcome-${edge.outcome}` })) }
 function fresh(graph: Workflow): WorkflowRevision { return { ...graph, id: `workflow-${crypto.randomUUID().slice(0, 8)}`, revision: '', createdAt: 0 } }
 function dateLabel(time: number): string { return time ? new Date(time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Built-in version' }
 
@@ -163,7 +175,7 @@ function Studio() {
         <div className="workflow-canvas">
           <div className="flow-host">
             <div className="canvas-tools"><button type="button" className="pill" disabled={disabled} onClick={() => { setQuery(''); setPanel('picker') }}><Icon id="plus-icon" />Add step</button>{aiSummary && <span className="draft-notice"><strong>AI draft</strong> {aiSummary} <button type="button" className="round" aria-label="Dismiss draft message" onClick={() => setAiSummary('')}><Icon id="close-icon" /></button></span>}<button type="button" className="text-button" aria-pressed={panel === 'assistant'} onClick={() => setPanel(panel === 'assistant' ? null : 'assistant')}><Icon id="spark-icon" />Ask AI</button></div>
-            <ReactFlow<TaskNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onInit={instance => { flow.current = instance; fit() }} onNodesChange={changes => { onNodesChange(changes); if (changes.some(change => change.type === 'position' && change.dragging)) markDirty() }} onEdgesChange={changes => { onEdgesChange(changes); if (changes.some(change => change.type === 'remove')) markDirty() }} onNodeClick={(_, node) => { setSelected(node.id); setPanel('step') }} onSelectionChange={({ nodes: picked }) => { const id = picked[0]?.id; if (id && id !== selected) { setSelected(id); setPanel('step') } }} onConnect={connection => { if (connection.source && connection.target) wire(connection.source, (connection.sourceHandle ?? 'pass') as Outcome, connection.target) }} nodesDraggable={!disabled} nodesConnectable={!disabled} deleteKeyCode={null} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1 }} minZoom={0.25} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cfd5e3" /><Controls showInteractive={false} /></ReactFlow>
+            <ReactFlow<TaskNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onInit={instance => { flow.current = instance; fit() }} onNodesChange={changes => { onNodesChange(changes); if (changes.some(change => change.type === 'position' && change.dragging)) markDirty() }} onEdgesChange={changes => { onEdgesChange(changes); if (changes.some(change => change.type === 'remove')) markDirty() }} onNodeClick={(_, node) => { setSelected(node.id); setPanel('step') }} onSelectionChange={({ nodes: picked }) => { const id = picked[0]?.id; if (id && id !== selected) { setSelected(id); setPanel('step') } }} onConnect={connection => { if (connection.source && connection.target) wire(connection.source, (connection.sourceHandle ?? 'pass') as Outcome, connection.target) }} nodesDraggable={!disabled} nodesConnectable={!disabled} deleteKeyCode={null} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1 }} minZoom={0.25} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cfd5e3" /><Controls showInteractive={false} /></ReactFlow>
             {!nodes.length && <div className="empty-canvas"><span className="welcome-mark"><Icon id="plus-icon" /></span><h3>Your workflow starts here</h3><p className="muted">Add a step, or describe the whole workflow to AI.</p><div><button type="button" className="pill" onClick={() => setPanel('picker')}>Add first step</button><button type="button" className="pill" onClick={() => setPanel('assistant')}><Icon id="spark-icon" />Build with AI</button></div></div>}
             <p className="canvas-note">Drag to arrange · connect to set the order. <button type="button" className="text-button" onClick={() => setModal('rules')}><Icon id="lock-icon" />Core rules always apply</button></p>
           </div>
