@@ -53,9 +53,9 @@ describe('quiet shell', () => {
     }
   })
 
-  test('the old tab pages link home to the shell and never to a gate', async () => {
-    const markup = await (await app.handle(new Request('http://localhost/settings'))).text()
-    expect(markup).toContain('href="/" aria-label="Mission Control home"')
-    expect(markup).not.toContain('/api/login')
+  test('the old tab pages redirect home to the shell and never to a gate', async () => {
+    const response = await app.handle(new Request('http://localhost/settings'))
+    expect(response.status).toBe(302)
+    expect(response.headers.get('location')).toBe('/')
   })
 })

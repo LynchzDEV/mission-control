@@ -23,14 +23,6 @@ import {
   type ThreadModel,
   type ThreadRow,
 } from '../client/thread-view'
-import {
-  NO_SESSION_NOTE,
-  SINGLE_TURN_NOTE,
-  headerStats,
-  optimisticRow,
-  replyNote,
-  statusLabel,
-} from '../client/thread-drawer'
 
 function row(overrides: Partial<ThreadRow> = {}): ThreadRow {
   return {
@@ -341,43 +333,8 @@ describe('fullRows', () => {
   })
 })
 
-describe('thread counts', () => {
-  test('counts tool calls and thoughts for the drawer header', () => {
-    expect(threadCounts(model(EXCHANGE))).toEqual({ tools: 2, thoughts: 1 })
-    expect(headerStats(model(EXCHANGE))).toBe('2 tools · 1 thoughts')
-    expect(headerStats(null)).toBe('')
-  })
-
-  test('reports the live status word', () => {
-    expect(statusLabel(model([], true))).toBe('Running')
-    expect(statusLabel(model([]))).toBe('Done')
-    expect(statusLabel(null)).toBe('…')
-  })
-})
-
-describe('reply gating', () => {
-  test('says nothing while the thread can be replied to', () => {
-    expect(replyNote({ rows: [], running: false, canReply: true, engine: 'claude' })).toBe('')
-  })
-
-  test('explains a resumable engine that has not reported a session id yet', () => {
-    expect(replyNote({ rows: [], running: true, canReply: false, engine: 'claude' })).toBe(NO_SESSION_NOTE)
-    expect(replyNote({ rows: [], running: true, canReply: false, engine: 'codex' })).toBe(NO_SESSION_NOTE)
-  })
-
-  test('calls out an engine with no resume path at all', () => {
-    expect(replyNote({ rows: [], running: false, canReply: false, engine: 'mystery' })).toBe(SINGLE_TURN_NOTE)
-  })
-
-  test('an unloaded thread offers no note and no reply', () => {
-    expect(replyNote(null)).toBe('')
-  })
-
-  test('an optimistic row renders as the user turn it will become', () => {
-    const pending = optimisticRow('a', 'what word did you say?', 1)
-    expect(pending).toMatchObject({ key: 'pending#1', jobId: 'a', role: 'user', kind: 'prompt' })
-    expect(pending.text).toBe('what word did you say?')
-  })
+test('counts tool calls and thoughts in a thread', () => {
+  expect(threadCounts(model(EXCHANGE))).toEqual({ tools: 2, thoughts: 1 })
 })
 
 function member(overrides: Partial<ThreadMember> = {}): ThreadMember {

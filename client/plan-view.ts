@@ -1,5 +1,4 @@
-import { clamp } from './resize-layout'
-import { readArray, readRecord, type JsonRecord } from './shared'
+import { clamp, readArray, readRecord, type JsonRecord } from './shared'
 
 export type PlanStep = { title: string; assignee: string; status: string }
 export type Plan = { steps: PlanStep[]; next: string }

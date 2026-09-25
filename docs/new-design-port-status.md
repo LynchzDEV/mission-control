@@ -24,6 +24,7 @@ All 7 Terminals items decided. Screens: `docs/design/quiet-chat/terminals-1-swit
 The dev proxy only allows reads; every write above gets 405 until the design is wired to the real API.
 
 ## 3. Main page (work list) — REMOVED
+Code removed in the Phase 5 cleanup commit `chore(ui): remove the pre-2.0 pages, islands, stylesheets and preview tooling`; the old URL now redirects to `/`.
 Rule (user): "never use every feature under main page, get rid of everything that doesn't affect other pages' features".
 Removed: work list, filters, search, detail panel, "Archived plans" filter, Land / Mark reviewed buttons, Usage page.
 Kept (no UI): `/land`, `/reviewed`, plan `/run`, `/run/stop`, `/archive` endpoints — mc-dispatch uses them (`skills/mc-dispatch/SKILL.md:256,360,432`); quota data for the usage card.
@@ -34,9 +35,11 @@ Its APIs stay (mc-dispatch still posts plans and starts runs via `/api/flow/:lab
 - Usage: keep, as the usage card at the top right of the new design (see 6).
 
 ## 4. New job (Dispatch) — REMOVED
+Code removed in the Phase 5 cleanup commit `chore(ui): remove the pre-2.0 pages, islands, stylesheets and preview tooling`; the old URL now redirects to `/`.
 Decided: the manual New job form is dropped; the system chat and mc-dispatch start jobs. `POST /api/jobs` stays (both use it).
 
 ## 5. Review — REMOVED
+Code removed in the Phase 5 cleanup commit `chore(ui): remove the pre-2.0 pages, islands, stylesheets and preview tooling`; the old URL now redirects to `/`.
 Decided: the Review page and its header count are dropped; "needs you" in History and on the Agents button replace them. `/reviewed` stays for mc-dispatch.
 - Decided: no manual review/land step. The chat (like mc-dispatch) lands automatically once the cross-family review passes; team cards show "Landed", History dots and the Agents count flag "needs you" and "landed".
 

@@ -1,8 +1,7 @@
-import { getJson, postJson, readArray, readRecord, errorText } from './shared'
+import { getJson, postJson, readArray, readRecord, errorText, icon, providerName } from './shared'
 import { buildWork, reviewable, type WorkItem, type WorkJob } from './work'
 import { createMiniFeed, groupByThread, type MiniFeed } from './thread-view'
 import { STAGES, templateNodeSpecs } from './plan-view'
-import { icon, providerName } from './terminal-view'
 function belongsToTerminal(job: WorkJob, id: string | null, cwd: string | null): boolean {
   const terminalId = readRecord(job).terminalId
   return terminalId ? terminalId === id : !!cwd && (job.cwd === cwd || job.cwd.startsWith(`${cwd}/`))

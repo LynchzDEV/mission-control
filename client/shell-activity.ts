@@ -1,7 +1,6 @@
 import { activeAgents, awarenessFlows, flowColumns, scopedWork, selectFlow } from './awareness'
 import { buildWork, type WorkItem, type WorkJob } from './work'
-import { errorText, getJson, postJson, readArray, readRecord } from './shared'
-import { providerName } from './terminal-view'
+import { errorText, getJson, postJson, providerName, readArray, readRecord } from './shared'
 
 type Session = { id: string; cwd: string }
 type Scope = { kind: 'session'; session: Session } | { kind: 'chat'; chat: string }

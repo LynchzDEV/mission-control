@@ -71,14 +71,6 @@ const ASSETS: VendorAsset[] = [
   },
 ]
 
-const PUBLIC_ASSETS: VendorAsset[] = [
-  {
-    label: 'theme tokens',
-    sources: ['assets/theme-tokens.css'],
-    dest: 'theme-tokens.css',
-  },
-]
-
 export type PostinstallResult = {
   copied: string[]
   skipped: string[]
@@ -143,7 +135,6 @@ async function copyGroup(
 export async function runPostinstall(): Promise<PostinstallResult> {
   const result: PostinstallResult = { copied: [], skipped: [], linked: [], movedAside: [] }
   await copyGroup(ASSETS, VENDOR_OUT, result)
-  await copyGroup(PUBLIC_ASSETS, PUBLIC_OUT, result)
   mergeSkillInstall(result, await installSkills())
   const assets = await syncEngineAssets()
   console.log(`postinstall: codex assets — linked ${assets.linked.length}, written ${assets.written.length}, moved aside ${assets.movedAside.length}, skipped ${assets.skipped.length}`)

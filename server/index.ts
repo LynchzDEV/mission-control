@@ -10,7 +10,7 @@ import { localRequestAllowed } from './local-access'
 import { quotaRoutes } from './routes/quota'
 import { historyRoutes } from './routes/history'
 import { createExternalSessionsCache, ownedPids } from './history'
-import { listenTarget, readConfig } from './secrets'
+import { listenTarget } from './secrets'
 import { createJobManager } from './jobs'
 import { notifyChat, notifySlowJob } from './notify'
 import { createReportPoster } from './chat-reports'
@@ -27,20 +27,15 @@ import { runsRoutes } from './routes/runs'
 import { jobsRoutes } from './routes/jobs'
 import { chatRoutes } from './routes/chat'
 import { metaRoutes } from './routes/meta'
-import { modelsCache, modelsRoutes } from './routes/models'
+import { modelsRoutes } from './routes/models'
 import { providersRoutes } from './routes/providers'
 import { terminalsRoutes } from './routes/terminals'
 import { flowRoutes } from './routes/flow'
-import { currentView, secretsRoutes } from './routes/secrets'
-import { readRoles, rolesRoutes } from './routes/roles'
+import { secretsRoutes } from './routes/secrets'
+import { rolesRoutes } from './routes/roles'
 import { claudeSkillsDir, describeSkillInstall, installSkills } from './skill-install'
 import { syncEngineAssets } from './engine-assets'
-import { DispatchPage } from './views/dispatch'
-import { LanesPage } from './views/lanes'
-import { ReviewPage } from './views/review'
-import { SettingsPage } from './views/settings'
 import { ShellPage } from './views/shell'
-import { TerminalsPage } from './views/terminals'
 
 const ROOT = resolve(import.meta.dir, '..')
 const CLIENT_DIR = join(ROOT, 'client')
@@ -103,41 +98,23 @@ function appShellPage(): Response {
   return page(ShellPage({ workspaceDir: homedir() }))
 }
 
-async function settingsPage(embedded = false): Promise<string> {
-  const [view, config, models] = await Promise.all([currentView(), readConfig(), modelsCache.get()])
-  return SettingsPage({ ...view, embedded, roles: config.roles, autoReview: config.autoReview, models })
+const RETIRED_PAGES: Record<string, string> = {
+  '/lanes': '/',
+  '/dispatch': '/',
+  '/terminals': '/',
+  '/review': '/',
+  '/settings': '/',
+  '/studio': '/?screen=studio',
 }
 
-async function dispatchPage(embedded = false): Promise<string> {
-  const [roles, models] = await Promise.all([readRoles(), modelsCache.get()])
-  return DispatchPage({ embedded, defaultEngine: roles.execute.engine, defaultModel: roles.execute.model, models })
-}
-
-async function terminalsPage(): Promise<string> {
-  const [roles, models] = await Promise.all([readRoles(), modelsCache.get()])
-  return TerminalsPage({ defaultEngine: roles.plan.engine, defaultModel: roles.plan.model, models })
-}
-
-const TAB_PAGES: Record<string, (embedded?: boolean) => string | Promise<string>> = {
-  '/lanes': LanesPage,
-  '/dispatch': dispatchPage,
-  '/terminals': terminalsPage,
-  '/review': ReviewPage,
-  '/settings': settingsPage,
-}
-
-function tabPages() {
-  const instance = new Elysia().get('/studio', ({ request, set }) => {
-    if (!localRequestAllowed(request)) { set.status = 403; return 'local access only' }
-    set.status = 302
-    set.headers['location'] = '/?screen=studio'
-    return ''
-  })
-  for (const [path, view] of Object.entries(TAB_PAGES)) {
-    instance.get(path, async ({ request, set }) => {
+function retiredPageRedirects() {
+  const instance = new Elysia()
+  for (const [path, location] of Object.entries(RETIRED_PAGES)) {
+    instance.get(path, ({ request, set }) => {
       if (!localRequestAllowed(request)) { set.status = 403; return 'local access only' }
-      const embedded = new URL(request.url).searchParams.get('embed') === '1'
-      return page(await (embedded || path === '/terminals' ? view(embedded) : terminalsPage()))
+      set.status = 302
+      set.headers['location'] = location
+      return ''
     })
   }
   return instance
@@ -220,7 +197,7 @@ export async function createApp(): Promise<Elysia> {
       }
       return new Response(code, { headers: JS_HEADERS })
     })
-    .use(tabPages())
+    .use(retiredPageRedirects())
     .use(healthApi())
     .use(quotaRoutes({ externalSessions: () => externalSessionsCache.get() }))
     .use(metaRoutes(jobManager))

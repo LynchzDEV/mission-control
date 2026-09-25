@@ -21,251 +21,28 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-async function render(path: string): Promise<{ status: number; html: string }> {
-  const response = await app.handle(new Request(`http://localhost${path}?embed=1`))
-  return { status: response.status, html: await response.text() }
-}
+const RETIRED_PAGES = ['/lanes', '/dispatch', '/terminals', '/review', '/settings']
 
-const PAGES: [string, string[]][] = [
-  ['/lanes', ['id="work-view"', 'id="work-list"', 'id="work-selected"', 'id="work-filter"', 'id="usage-view"']],
-  ['/settings', ['Connections', 'Work defaults', 'Access', 'id="s-api-token"']],
-  ['/dispatch', ['id="dispatch-form"', 'id="prompt"', 'Isolated worktree', 'id="work-list"']],
-  ['/terminals', ['id="term-pane"', 'id="term-strip"', 'id="term-form"', 'id="agent-sidebar"', 'id="ascii-horizon"']],
-  ['/review', ['id="work-view"', 'data-mode="review"']],
-]
-
-const ISLAND_MARKERS: [string, string[]][] = [
-  [
-    'agents.js',
-    ['mc-drawer', '/thread', '/reply', 'Reply to this agent'],
-  ],
-  ['awareness.js', ['"mini"', 'waiting for response', '/thread', 'mc:agent-open']],
-  ['dispatch.js', ['work-selected', '/thread', '/reply', '/land', 'worktree']],
-  ['flow.js', ['/thread', 'activity-feed', 'mcd-tx']],
-]
-
-describe('transcript islands', () => {
-  for (const [file, markers] of ISLAND_MARKERS) {
-    test(`/js/${file} ships the shared transcript renderer`, async () => {
-      const response = await app.handle(new Request(`http://localhost/js/${file}`))
-      expect(response.status).toBe(200)
-      const code = await response.text()
-      for (const marker of markers) {
-        expect(code).toContain(marker)
-      }
-    })
-  }
-
-  test('the lanes mount carries no reply box and no drawer chrome', async () => {
-    const lanes = await (
-      await app.handle(new Request('http://localhost/js/flow.js'))
-    ).text()
-    expect(lanes).not.toContain('Reply to this agent')
-    expect(lanes).not.toContain('/reply')
-    expect(lanes).not.toContain('mc-drawer')
-  })
-
-  test('the agents island carries only the drawer, never the retired activity panel', async () => {
-    const agents = await (
-      await app.handle(new Request('http://localhost/js/agents.js'))
-    ).text()
-    expect(agents).toContain('\u21e7\u21b5 newline')
-    expect(agents).not.toContain('"mini"')
-    expect(agents).not.toContain('agents-panel')
+describe('awareness island', () => {
+  test('/js/awareness.js ships the mini transcript feed', async () => {
+    const response = await app.handle(new Request('http://localhost/js/awareness.js'))
+    expect(response.status).toBe(200)
+    const code = await response.text()
+    for (const marker of ['"mini"', 'waiting for response', '/thread', 'mc:agent-open']) expect(code).toContain(marker)
   })
 })
 
-describe('tab views', () => {
-  for (const [path, markers] of PAGES) {
-    test(`${path} renders with its markers`, async () => {
-      const { status, html } = await render(path)
-      expect(status).toBe(200)
-      expect(html.startsWith('<!doctype html>')).toBe(true)
-      for (const marker of markers) expect(html).toContain(marker)
-    })
-  }
-
-  test('every tab links the theme and carries the tab nav', async () => {
-    for (const [path] of PAGES) {
-      const { html } = await render(path)
-      expect(html).toContain('href="/theme-tokens.css"')
-      expect(html).toContain('href="/theme.css"')
-      if (path === '/terminals') {
-        expect(html).toContain('data-key="1"')
-        expect(html).toContain('href="/settings"')
-      } else {
-        expect(html).not.toContain('id="tabs"')
-        expect(html).toContain('class="embedded-view"')
+describe('retired page routes', () => {
+  test('each old tab page redirects to the shell, embedded or not', async () => {
+    for (const path of RETIRED_PAGES) {
+      for (const url of [path, `${path}?embed=1`]) {
+        const response = await app.handle(new Request(`http://localhost${url}`))
+        expect(response.status).toBe(302)
+        expect(response.headers.get('location')).toBe('/')
       }
-      expect(html).toContain('/js/nav.js')
     }
   })
 
-  test('lanes ships no hard-coded station rows or invented counters', async () => {
-    const { html } = await render('/lanes')
-    expect(html).not.toContain('class="task"')
-    expect(html).not.toContain('orders-export')
-    expect(html).not.toContain('moni-audio')
-    expect(html).toContain('id="work-status"')
-  })
-
-  test('overview serves local motion assets without mascot or CDN scripts', async () => {
-    const { html } = await render('/lanes')
-    expect(html).not.toContain('/vendor/textmode.umd.js')
-    expect(html).not.toContain('/vendor/textmode.filters.umd.js')
-    expect(html).toContain('/js/work.js')
-    expect(html).not.toContain('cdn.jsdelivr.net')
-    expect(html).not.toContain('fonts.googleapis.com')
-  })
-
-  test('settings renders the role selects with stored engines preselected', async () => {
-    await app.handle(
-      new Request('http://localhost/api/roles', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ plan: 'codex', execute: 'claude', review: 'glm' }),
-      }),
-    )
-    const { html } = await render('/settings')
-    expect(html).toContain('Work defaults')
-    expect(html).toContain('data-post="/api/roles"')
-    expect(html).toMatch(/<select id="plan"[^>]*>(?:(?!<\/select>).)*<option value="codex" selected/s)
-    expect(html).toMatch(/<select id="execute"[^>]*>(?:(?!<\/select>).)*<option value="claude" selected/s)
-    expect(html).toMatch(/<select id="review"[^>]*>(?:(?!<\/select>).)*<option value="glm" selected/s)
-
-    const terminals = await render('/terminals')
-    expect(terminals.html).toMatch(/<option value="codex" selected/)
-    const dispatch = await render('/dispatch')
-    expect(dispatch.html).toMatch(/<option value="claude" selected/)
-  })
-
-  test('settings renders per-role model pickers with stored values, the lists script, and the extended save fields', async () => {
-    await app.handle(
-      new Request('http://localhost/api/roles', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          plan: { engine: 'claude', model: 'opus' },
-          execute: 'glm',
-          review: { engine: 'codex', model: 'gpt-z-custom' },
-        }),
-      }),
-    )
-    const { html } = await render('/settings')
-    expect(html).toContain('<select class="model-pick" id="plan_model_pick"')
-    expect(html).toContain('<option value="opus" selected')
-    expect(html).toContain('>custom…</option>')
-    expect(html).toContain('<script type="application/json" id="model-lists">')
-    expect(html).toMatch(/<input id="plan_model" name="plan_model"[^>]*value="opus"[^>]*hidden\/>/)
-    expect(html).toMatch(/<input id="review_model" name="review_model"[^>]*value="gpt-z-custom"/)
-    expect(html).not.toMatch(/<input id="review_model" name="review_model"[^>]*hidden/)
-    expect(html).toContain('data-fields="plan,execute,review,plan_model,execute_model,review_model,autoReview"')
-    expect(html).toContain('blank model uses the engine default')
-  })
-
-  test('settings renders the auto-review opt-in with config-selected state', async () => {
-    const before = await render('/settings')
-    expect(before.html).toContain('Automatic review')
-    expect(before.html).toContain('id="autoReview"')
-    expect(before.html).toContain('Work defaults')
-    expect(before.html).toMatch(/<option value="off" selected/)
-    expect(before.html).not.toMatch(/<option value="on" selected/)
-
-    const post = await app.handle(
-      new Request('http://localhost/api/roles', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ plan: 'claude', execute: 'glm', review: 'codex', autoReview: 'on' }),
-      }),
-    )
-    expect(post.status).toBe(200)
-
-    const after = await render('/settings')
-    expect(after.html).toMatch(/<option value="on" selected/)
-    expect(after.html).not.toMatch(/<option value="off" selected/)
-  })
-
-  test('settings offers no bind address to widen the listener', async () => {
-    const { html } = await render('/settings')
-    expect(html).not.toContain('id="bind"')
-    expect(html).not.toContain('data-fields="bind"')
-  })
-
-  test('settings has no password row now that there is no login', async () => {
-    const { html } = await render('/settings')
-    expect(html).not.toContain('Password')
-  })
-
-  test('dispatch and terminals render the model input preloaded with the role default', async () => {
-    await app.handle(
-      new Request('http://localhost/api/roles', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          plan: { engine: 'claude', model: 'haiku' },
-          execute: { engine: 'glm', model: 'glm-5.3-flash' },
-          review: 'codex',
-        }),
-      }),
-    )
-    const dispatch = await render('/dispatch')
-    expect(dispatch.html).toMatch(/<input id="model" name="model" [^>]*value="glm-5.3-flash"/)
-    expect(dispatch.html).toContain('<select class="model-pick" id="model_pick"')
-    expect(dispatch.html).toContain('id="model-lists"')
-
-    const terminals = await render('/terminals')
-    expect(terminals.html).toMatch(/<input id="term-model" name="term-model"[^>]*value="haiku"/)
-    expect(terminals.html).toContain('id="model-lists"')
-  })
-
-  test('terminals serves the vendored xterm assets and its island', async () => {
-    const { html } = await render('/terminals')
-    expect(html).toContain('/vendor/xterm.js')
-    expect(html).toContain('/vendor/addon-fit.js')
-    expect(html).toContain('href="/vendor/xterm.css"')
-    expect(html).toContain('/js/terminal.js')
-    expect(html).toContain('/js/agents.js')
-    expect(html).not.toContain('cdn.jsdelivr.net')
-  })
-
-  test('the terminals page ships the composer with its resume tab and recent directories', async () => {
-    const { html } = await render('/terminals')
-    expect(html).toContain('id="term-tab-resume"')
-    expect(html).toContain('id="term-sessions-list"')
-    expect(html).toContain('id="term-directories"')
-    expect(html).not.toContain('id="term-resume"')
-    expect(html).not.toContain('Directories and sessions')
-  })
-
-  test('the agents panel ships empty and only on the terminals tab', async () => {
-    const { html } = await render('/terminals')
-    expect(html).not.toContain('class="agent"')
-    expect(html).not.toContain('class="arec"')
-
-    for (const [path] of PAGES.filter(([entry]) => entry !== '/terminals')) {
-      expect((await render(path)).html).not.toContain('id="agent-sidebar"')
-    }
-  })
-
-  test('direct routes have one accessible navigation while embedded views omit duplicate chrome', async () => {
-    for (const [path] of PAGES) {
-      const response = await app.handle(new Request(`http://localhost${path}`))
-      const html = await response.text()
-      expect(html.match(/aria-current="page"/g)?.length).toBe(1)
-      expect(html).toContain('aria-label="Workspace"')
-    }
-  })
-
-  test('tab requests with a rebinding host are refused', async () => {
-    for (const path of ['/', ...PAGES.map(([entry]) => entry)]) {
-      const response = await app.handle(new Request(`http://rebind.example${path}`, { headers: { host: 'rebind.example:7777' } }))
-      expect(response.status).toBe(403)
-      expect(response.headers.get('location')).toBeNull()
-    }
-  })
-})
-
-describe('studio route', () => {
   test('/studio opens the Studio screen in the shell, embedded or not', async () => {
     for (const path of ['/studio', '/studio?embed=1']) {
       const response = await app.handle(new Request(`http://localhost${path}`))
@@ -274,40 +51,21 @@ describe('studio route', () => {
     }
   })
 
-  test('/studio refuses a rebinding host without redirecting', async () => {
-    const response = await app.handle(new Request('http://rebind.example/studio', { headers: { host: 'rebind.example:7777' } }))
-    expect(response.status).toBe(403)
-    expect(response.headers.get('location')).toBeNull()
-  })
-})
-
-describe('persistent workspace routes', () => {
-  test('every direct secondary route still carries the persistent terminal shell', async () => {
-    for (const path of ['/terminals', '/lanes', '/dispatch', '/review', '/settings']) {
-      const response = await app.handle(new Request(`http://localhost${path}`))
-      const html = await response.text()
-      expect(response.status).toBe(200)
-      expect(html).toContain('id="termgrid"')
-      expect(html).toContain('id="ascii-horizon"')
-      expect(html).toContain('/js/workspace.js')
-      expect(html).toContain('id="term-directories"')
+  test('a rebinding host is refused without a redirect', async () => {
+    for (const path of ['/', '/studio', ...RETIRED_PAGES]) {
+      const response = await app.handle(new Request(`http://rebind.example${path}`, { headers: { host: 'rebind.example:7777' } }))
+      expect(response.status).toBe(403)
+      expect(response.headers.get('location')).toBeNull()
     }
   })
 })
 
-describe('client islands', () => {
-  const ISLANDS = ['work', 'nav', 'forms', 'sprites', 'flow', 'lanes', 'resize', 'dispatch', 'terminal', 'agents']
-
-  for (const island of ISLANDS) {
-    test(`/js/${island}.js transpiles to browser javascript`, async () => {
-      const response = await app.handle(new Request(`http://localhost/js/${island}.js`))
-      expect(response.status).toBe(200)
-      const code = await response.text()
-      expect(code.length).toBeGreaterThan(200)
-      expect(code).not.toContain('import {')
-      expect(code).not.toContain(': string')
-    })
-  }
+describe('retired islands', () => {
+  test('the removed pre-2.0 islands are no longer served', async () => {
+    for (const island of ['nav', 'forms', 'sprites', 'flow', 'lanes', 'resize', 'dispatch', 'terminal', 'agents', 'workspace']) {
+      expect((await app.handle(new Request(`http://localhost/js/${island}.js`))).status).toBe(404)
+    }
+  })
 })
 
 describe('flow route', () => {
@@ -329,14 +87,4 @@ describe('flow route', () => {
     expect(body.reviewCount).toBe(0)
     expect(body.mergedToday).toBe(0)
   })
-})
-
-test('work views replace inherited racks and tables', async () => {
-  for (const path of ['/lanes', '/dispatch', '/review']) {
-    const { html } = await render(path)
-    expect(html).not.toContain('<table')
-    expect(html).not.toContain('class="racks"')
-    expect(html).not.toContain('id="fsvg"')
-    expect(html).toContain('id="work-status"')
-  }
 })

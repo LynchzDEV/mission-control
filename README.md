@@ -43,9 +43,9 @@ The header shows every provider's usage in the same position: a five-hour window
 
 Missing or unsupported windows draw an empty track instead of a number. Claude cost and token estimates remain separate from reported quota limits.
 
-### Work, dispatch, and review
+### One screen: chat, terminals, Studio, History
 
-Search and filter conversations and plans in Main. Dispatch background `claude -p` or `codex exec` jobs, optionally in isolated worktrees; follow streamed output, reply with follow-up work, or stop a running job. Review completed changes, mark them reviewed, and land finished worktrees through the existing landing action.
+Since 2.0 Mission Control is a single screen. The chat is where work starts: describe the task and the chat plans it, dispatches agents, and reports back when the cross-family review has passed. Live terminals sit beside it: a rail of session cards, a split view (drag a card beside or below the current terminal), find (⌘F) in the terminal heading, and dropping files types their quoted paths at the prompt. Studio builds and runs saved workflows and manages the AIs they use; History lists chats, terminals, Claude Code history and outside sessions in one feed. The old Main, Dispatch, Review, Terminals and Settings addresses redirect to this screen. The app answers only on this machine.
 
 ### Settings
 
@@ -67,14 +67,14 @@ Open [Mission Control](http://127.0.0.1:7777). Then:
 | Engine | Setup |
 |---|---|
 | Claude Code | Works out of the box if `claude` is installed and logged in |
-| GLM | Settings → paste your z.ai coding-plan API key (or any Anthropic-compatible endpoint + token) |
+| GLM | Studio → Manage AIs → paste your z.ai coding-plan API key (or any Anthropic-compatible endpoint + token) |
 | Codex | `codex login` once in any terminal |
 
 ```sh
 bun test
 ```
 
-The test suite runs offline without engine CLIs. To regenerate the static development preview on the existing server, run `bun scripts/render-ui-preview.ts` and open `/ui-preview/terminals.html`. Generated preview files are ignored by Git; the preview uses the server's work data, with Settings writes disabled.
+The test suite runs offline without engine CLIs.
 
 ## Claude Code skill
 
@@ -109,7 +109,7 @@ The application is written in TypeScript and CSS; client bundles are cached unti
 - [`docs/decisions/ui-overhaul-verification.md`](docs/decisions/ui-overhaul-verification.md) — visual checks, responsive behavior, and known differences from the study
 - [`docs/design/`](docs/design/) — design studies: the new quiet design (`quiet-chat`), its chat, launcher and Terminals studies, the earlier overhaul and Studio prototypes
 - [`docs/new-design-port-status.md`](docs/new-design-port-status.md) — every current feature tracked against the new design
-- [`assets/`](assets/) — shared theme tokens and vendored scripts copied into `public/` on install
+- [`assets/`](assets/) — theme tokens used by the design studies, and vendored scripts copied into `public/vendor/` on install
 
 ## Contributing
 
