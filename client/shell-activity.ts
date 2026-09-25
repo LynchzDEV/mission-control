@@ -4,7 +4,11 @@ import { errorText, getJson, postJson, providerName, readArray, readRecord } fro
 
 type Session = { id: string; cwd: string }
 type Scope = { kind: 'session'; session: Session } | { kind: 'chat'; chat: string }
-type ChatAgent = { id: string; label: string; engine: string; model: string | null; reason?: string; status: string; reviewedAt: number | null; currentActivity?: string | null; purpose?: string }
+type ChatAgent = { id: string; label: string; engine: string; model: string | null; reason?: string; status: string; reviewedAt: number | null; currentActivity?: string | null; purpose?: string; startedAt?: number; endedAt?: number | null }
+type AgentRow = { id: string; label: string; engine: string; pill: string; pillState: string; line: string; lineState: 'live' | 'still' | 'none'; startedAt?: number; endedAt?: number | null }
+
+const PLAIN_STEPS: Record<string, string> = { Read: 'Reading', Edit: 'Editing', Write: 'Writing', Bash: 'Running', Grep: 'Searching', Glob: 'Searching' }
+const FADE_MS = 300
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 let scope: Scope | null = null
@@ -34,6 +38,7 @@ function setActivityScope(next: Scope | null): void {
   document.querySelectorAll<HTMLElement>('#agents .activity-empty').forEach(node => { node.hidden = !!next })
   $('agent-reply').hidden = true
   $('live-agents-list').replaceChildren()
+  $('agents-summary').textContent = ''
   $('live-flow-steps').replaceChildren()
   $('live-flow-select').hidden = true
   $('live-agents-status').textContent = next?.kind === 'chat' ? 'Loading the chat’s agents…' : 'Loading session activity…'
@@ -55,40 +60,105 @@ function pickReply(job: ChatAgent): void {
   $('agent-reply').hidden = false
 }
 
+function plainActivity(text: string): string {
+  const match = /^(Read|Edit|Write|Bash|Grep|Glob) (.*)$/s.exec(text)
+  return match ? `${PLAIN_STEPS[match[1]]} ${match[2]}` : text
+}
+
+function elapsed(row: { startedAt?: number; endedAt?: number | null }): string {
+  if (!row.startedAt) return ''
+  const seconds = Math.max(0, Math.floor(((row.endedAt ?? Date.now()) - row.startedAt) / 1000))
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+function tickTimes(): void {
+  $('live-agents-list').querySelectorAll<HTMLElement>('time[data-job]').forEach(time => { time.textContent = elapsed({ startedAt: Number(time.dataset.start), endedAt: time.dataset.end ? Number(time.dataset.end) : null }) })
+}
+
+function fadeTo(tick: HTMLElement, text: string): void {
+  void tick.offsetWidth
+  tick.classList.add('out')
+  setTimeout(() => { tick.textContent = text; tick.classList.remove('out') }, FADE_MS)
+}
+
+function paintRows(rows: AgentRow[], detail: (row: AgentRow) => HTMLElement): void {
+  const list = $('live-agents-list')
+  const open = new Set([...list.querySelectorAll<HTMLElement>('details[open]')].map(item => item.dataset.job))
+  const shown = new Map([...list.querySelectorAll<HTMLElement>('.ag-tick')].map(tick => [tick.dataset.job, tick.textContent ?? '']))
+  list.replaceChildren()
+  for (const row of rows) {
+    const item = node('details', '', 'ag-item') as HTMLDetailsElement
+    item.dataset.job = row.id
+    item.dataset.engine = row.engine
+    item.open = open.has(row.id)
+    const summary = node('summary')
+    const line = node('div', '', 'ag-row')
+    const disc = node('span', '', 'ag-disc')
+    const logo = document.createElement('img')
+    logo.src = `/providers/${row.engine}.svg`
+    logo.alt = ''
+    disc.append(logo)
+    const time = node('time', elapsed(row))
+    if (row.startedAt) Object.assign(time.dataset, { job: row.id, start: String(row.startedAt), end: row.endedAt ? String(row.endedAt) : '' })
+    const pill = node('span', row.pill, 'pill-state')
+    pill.dataset.s = row.pillState
+    line.append(disc, node('span', row.label, 'l'), time, pill)
+    summary.append(line)
+    const before = shown.get(row.id)
+    const tick = row.lineState === 'none' ? null : node('p', row.lineState === 'live' && before ? before : row.line, row.lineState === 'still' ? 'ag-tick still' : 'ag-tick')
+    if (tick) { tick.dataset.job = row.id; summary.append(tick) }
+    item.append(summary, detail(row))
+    list.append(item)
+    if (tick && row.lineState === 'live' && before && before !== row.line) fadeTo(tick, row.line)
+  }
+}
+
+function lastLine(text: string | null | undefined): string {
+  return (text ?? '').split('\n').map(line => line.trim()).filter(Boolean).pop() ?? ''
+}
+
+function chatRow(job: ChatAgent, all: ChatAgent[]): AgentRow {
+  const { text, state } = agentState(job, all)
+  const pill = state === 'landed' ? 'Done' : text
+  const pillState = state === 'needs-you' ? 'needs' : state === 'running' || state === 'reviewing' ? 'running' : 'done'
+  const base = { id: job.id, label: job.label, engine: job.engine, pill, pillState, startedAt: job.startedAt, endedAt: job.endedAt }
+  if (state === 'running') return { ...base, line: plainActivity(job.currentActivity || 'Starting…'), lineState: 'live' }
+  if (state === 'needs-you') return { ...base, line: lastLine(job.currentActivity) || 'Needs you', lineState: 'still' }
+  return { ...base, line: '', lineState: 'none' }
+}
+
+function summarize(working: number, total: number): void {
+  $('agents-summary').textContent = total ? `${working} working · ${total} total` : ''
+}
+
 function paintChatAgents(agents: ChatAgent[]): void {
-  $('live-agents-status').textContent = agents.length ? `${agents.length} agent${agents.length === 1 ? '' : 's'} in this chat` : 'No agents in this chat yet.'
+  $('live-agents-status').textContent = agents.length ? '' : 'No agents in this chat yet.'
+  summarize(agents.filter(job => job.status === 'running').length, agents.length)
+  tickTimes()
   const signature = JSON.stringify(agents.map(item => [item.id, item.label, item.status, item.currentActivity, item.reviewedAt]))
   if (signature === agentSignature) return
   agentSignature = signature
-  const open = new Set([...$('live-agents-list').querySelectorAll<HTMLElement>('details[open]')].map(detail => detail.dataset.job))
-  $('live-agents-list').replaceChildren()
-  for (const job of agents) {
-    const card = node('details', '', 'agent') as HTMLDetailsElement
-    card.dataset.job = job.id
-    card.open = open.has(job.id)
-    const { text, state } = agentState(job, agents)
-    const summary = node('summary')
-    const status = node('span', text, 'status')
-    status.dataset.state = state
-    summary.append(node('span', job.label), status)
-    const body = node('div', '', 'agent-body')
-    body.append(node('p', `${providerName(job.engine)}${job.model ? ` · ${job.model}` : ''}${job.reason ? ` — ${job.reason}` : ''}`, 'muted'), node('p', job.currentActivity || (job.status === 'running' ? 'No activity reported yet.' : text)))
-    const actions = node('div', '', 'agent-actions')
-    if (job.status === 'running') {
-      const stop = node('button', 'Stop', 'text-button') as HTMLButtonElement
-      stop.type = 'button'
-      stop.onclick = async () => { stop.disabled = true; const result = await postJson(`/api/jobs/${encodeURIComponent(job.id)}/kill`, {}); if (!result.ok) $('live-agents-status').textContent = `Could not stop: ${errorText(result)}`; agentSignature = ''; void refresh() }
-      actions.append(stop)
-    }
-    const message = node('button', 'Reply', 'text-button') as HTMLButtonElement
-    message.type = 'button'
-    message.onclick = () => { pickReply(job); ($('reply') as HTMLTextAreaElement).focus() }
-    actions.append(message)
-    body.append(actions)
-    card.append(summary, body)
-    $('live-agents-list').append(card)
-  }
+  const byId = new Map(agents.map(job => [job.id, job]))
+  paintRows(agents.map(job => chatRow(job, agents)), row => chatDetail(byId.get(row.id) as ChatAgent))
   if (replyTarget && !agents.some(job => job.id === replyTarget)) { replyTarget = null; $('agent-reply').hidden = true }
+}
+
+function chatDetail(job: ChatAgent): HTMLElement {
+  const body = node('div', '', 'ag-detail')
+  body.append(node('p', `${providerName(job.engine)}${job.model ? ` · ${job.model}` : ''}${job.reason ? ` — ${job.reason}` : ''}`, 'ag-why'))
+  const actions = node('div', '', 'ag-actions0')
+  const message = node('button', 'Reply', 'ag-btn') as HTMLButtonElement
+  message.type = 'button'
+  message.onclick = () => { pickReply(job); ($('reply') as HTMLTextAreaElement).focus() }
+  actions.append(message)
+  if (job.status === 'running') {
+    const stop = node('button', 'Stop', 'ag-btn danger') as HTMLButtonElement
+    stop.type = 'button'
+    stop.onclick = async () => { stop.disabled = true; const result = await postJson(`/api/jobs/${encodeURIComponent(job.id)}/kill`, {}); if (!result.ok) $('live-agents-status').textContent = `Could not stop: ${errorText(result)}`; agentSignature = ''; void refresh() }
+    actions.append(stop)
+  }
+  body.append(actions)
+  return body
 }
 
 async function refreshChat(chat: string, request: number): Promise<void> {
@@ -117,23 +187,18 @@ function paintFlow(): void {
 }
 
 function paintAgents(agents: WorkItem[]): void {
-  $('live-agents-status').textContent = agents.length ? `${agents.length} active agent${agents.length === 1 ? '' : 's'}` : 'No active agents linked to this session.'
+  $('live-agents-status').textContent = agents.length ? '' : 'No active agents linked to this session.'
+  summarize(agents.filter(item => item.state === 'running').length, agents.length)
+  tickTimes()
   const signature = JSON.stringify(agents.map(item => [item.id, item.label, item.provider, item.state, item.activity]))
   if (signature === agentSignature) return
   agentSignature = signature
-  const open = new Set([...$('live-agents-list').querySelectorAll<HTMLElement>('details[open]')].map(detail => detail.dataset.thread))
-  $('live-agents-list').replaceChildren()
-  for (const item of agents) {
-    const card = node('details', '', 'agent') as HTMLDetailsElement
-    card.dataset.thread = item.id
-    card.open = open.has(item.id)
-    const summary = node('summary')
-    summary.append(node('span', item.label), node('span', item.state === 'running' ? 'Working' : 'Queued', 'status'))
-    const body = node('div', '', 'live-agent-body')
-    body.append(node('p', providerName(item.provider), 'muted'), node('p', item.activity || 'No activity reported yet.'))
-    card.append(summary, body)
-    $('live-agents-list').append(card)
-  }
+  paintRows(agents.map(item => ({
+    id: item.id, label: item.label, engine: item.provider,
+    pill: item.state === 'running' ? 'Working' : 'Queued', pillState: item.state === 'running' ? 'running' : 'queued',
+    line: plainActivity(item.activity || 'Starting…'), lineState: item.state === 'running' ? 'live' : 'none',
+    startedAt: item.job?.startedAt, endedAt: item.job?.endedAt,
+  })), row => { const body = node('div', '', 'ag-detail'); body.append(node('p', providerName(row.engine), 'ag-why')); return body })
 }
 
 async function refresh(): Promise<void> {
@@ -185,4 +250,4 @@ if (document.body.dataset.chat) setActivityScope({ kind: 'chat', chat: document.
 }
 setInterval(() => void refresh(), 3000)
 
-export {}
+export { plainActivity }

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 
+let plainActivity: (text: string) => string
 const requested: string[] = []
 const realFetch = globalThis.fetch
 const realInterval = globalThis.setInterval
@@ -12,7 +13,7 @@ beforeAll(async () => {
   element('agents').open = true
   ;(globalThis as any).setInterval = () => 0
   globalThis.fetch = (async (url: string) => { requested.push(url); return Response.json({ jobs: [] }) }) as typeof fetch
-  await import('../client/shell-activity')
+  ;({ plainActivity } = await import('../client/shell-activity'))
 })
 
 afterAll(() => {
@@ -37,4 +38,10 @@ test('clearing the scope empties the drawer and stops chat requests', () => {
   dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null }))
   expect(requested).toEqual([])
   expect(element('live-agents').hidden).toBe(true)
+})
+
+test('an agent step reads in plain words', () => {
+  expect(plainActivity('Read client/chat.ts')).toBe('Reading client/chat.ts')
+  expect(plainActivity('Bash bun test')).toBe('Running bun test')
+  expect(plainActivity('Thinking')).toBe('Thinking')
 })

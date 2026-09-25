@@ -109,7 +109,7 @@ const BODY = `
     </div>
 
   <dialog id="agents" class="drawer" aria-labelledby="agents-title">
-    <header class="dialog-heading"><h2 id="agents-title">Agents</h2><form method="dialog"><button class="round" aria-label="Close agents" autofocus><svg><use href="#close-icon"/></svg></button></form></header>
+    <header class="ag-header"><h2 id="agents-title">Agents</h2><span id="agents-summary" class="ag-count"></span><form method="dialog"><button class="round ag-x" aria-label="Close agents" autofocus><svg><use href="#close-icon"/></svg></button></form></header>
     <div id="live-agents" hidden><p id="live-agents-status" class="muted" role="status"></p><div id="live-agents-list"></div></div>
     <div class="activity-empty"><p>No agents yet.</p><p class="muted">They’ll appear here when a session starts.</p></div>
     <form id="agent-reply" class="agent-reply" hidden><label for="reply" id="agent-reply-label">Message</label><div class="reply-line"><textarea id="reply" rows="2" placeholder="Add a direction…" required></textarea><button class="round" type="submit" aria-label="Send to this agent"><svg><use href="#arrow-icon"/></svg></button></div></form>
