@@ -277,10 +277,10 @@ function startRename(card: HTMLButtonElement): void {
   input.maxLength = 60
   input.setAttribute('aria-label', 'Terminal name')
   head.append(logo, input)
-  const hint = document.createElement('small')
+  const hint = document.createElement('span')
   hint.className = 'edit-hint'
   hint.textContent = 'Enter to save · Esc to cancel · empty keeps the old name'
-  editor.append(head, hint)
+  editor.append(head, hint, card.querySelector('code')?.cloneNode(true) ?? document.createElement('code'))
   card.replaceWith(editor)
   let settled = false
   const finish = (save: boolean): void => {
@@ -310,7 +310,7 @@ async function rename(id: string, title: string): Promise<void> {
     const response = await fetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title }) })
     ok = response.ok
   } catch {}
-  if (!ok) { if (activeId === id) $('live-status').textContent = 'Could not rename this terminal.'; return }
+  if (!ok) { setStatus('Could not rename this terminal.', false); renderRail(); return }
   sessions = sessions.map(session => session.id === id ? { ...session, title } : session)
   const view = views.get(id)
   if (view) { view.session = { ...view.session, title }; panes.retitle(id, paneHeader(view.session)) }
