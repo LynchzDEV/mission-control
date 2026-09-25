@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { scrollPlan, usageItems } from '../client/usage-card'
+import { cycleMs, scrollPlan, usageItems } from '../client/usage-card'
 import { normalizeUsage } from '../client/provider-usage'
 
 describe('usageItems', () => {
@@ -16,6 +16,12 @@ describe('usageItems', () => {
   })
 })
 
+describe('cycleMs', () => {
+  test('is two legs at the scroll speed plus two 5s pauses', () => {
+    expect(cycleMs(140, 14)).toBe(30000)
+  })
+})
+
 describe('scrollPlan', () => {
   test('goes out, pauses 5s, comes back, pauses 5s', () => {
     const frames = scrollPlan(140, 14)
@@ -23,5 +29,7 @@ describe('scrollPlan', () => {
     const total = (140 / 14) * 1000 * 2 + 10000
     expect(frames[1]!.offset).toBeCloseTo(10000 / total)
     expect(frames[2]!.offset).toBeCloseTo(15000 / total)
+    expect(frames[3]!.offset).toBeCloseTo(25000 / total)
+    expect(frames[4]!.offset).toBe(1)
   })
 })

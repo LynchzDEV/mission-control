@@ -23,8 +23,12 @@ export function usageItems(values: ProviderUsage[]): UsageItem[] {
   })
 }
 
+export function cycleMs(distance: number, pps = PIXELS_PER_SECOND): number {
+  return (distance / pps) * 1000 * 2 + PAUSE_MS * 2
+}
+
 export function scrollPlan(distance: number, pps = PIXELS_PER_SECOND): Keyframe[] {
-  const travel = (distance / pps) * 1000, total = travel * 2 + PAUSE_MS * 2, at = (ms: number) => ms / total
+  const travel = (distance / pps) * 1000, total = cycleMs(distance, pps), at = (ms: number) => ms / total
   return [
     { transform: 'translateX(0)', offset: 0, easing: 'ease-in-out' },
     { transform: `translateX(${-distance}px)`, offset: at(travel) },
@@ -58,14 +62,18 @@ export function renderUsageCard(track: HTMLElement, values: ProviderUsage[]): vo
   }))
 }
 
-type Scroll = { animation: Animation | null }
+type Scroll = { animation: Animation | null; key: string }
 
 function startScroll(track: HTMLElement, viewport: HTMLElement, current: Scroll): void {
-  current.animation?.cancel(); current.animation = null
   const { paddingLeft, paddingRight } = getComputedStyle(viewport)
   const distance = track.scrollWidth - (viewport.clientWidth - parseFloat(paddingLeft) - parseFloat(paddingRight))
-  if (track.children.length <= VISIBLE || distance <= 0 || matchMedia('(prefers-reduced-motion: reduce)').matches) return
-  current.animation = track.animate(scrollPlan(distance), { duration: (distance / PIXELS_PER_SECOND) * 1000 * 2 + PAUSE_MS * 2, iterations: Infinity })
+  const wanted = viewport.clientWidth > 0 && track.children.length > VISIBLE && distance > 0 && !matchMedia('(prefers-reduced-motion: reduce)').matches
+  const key = wanted ? `${track.children.length}:${Math.round(distance)}` : ''
+  if (key === current.key && (current.animation !== null || !wanted)) return
+  current.animation?.cancel(); current.animation = null; current.key = key
+  if (!wanted) return
+  current.animation = track.animate(scrollPlan(distance), { duration: cycleMs(distance), iterations: Infinity })
+  if (viewport.matches(':hover, :focus-within')) current.animation.pause()
 }
 
 async function refresh(track: HTMLElement, viewport: HTMLElement, current: Scroll): Promise<void> {
@@ -80,7 +88,7 @@ async function refresh(track: HTMLElement, viewport: HTMLElement, current: Scrol
 const track = typeof document === 'undefined' ? null : document.getElementById('usage-track')
 if (track) {
   const viewport = track.parentElement as HTMLElement
-  const current: Scroll = { animation: null }
+  const current: Scroll = { animation: null, key: '' }
   viewport.addEventListener('mouseenter', () => current.animation?.pause())
   viewport.addEventListener('mouseleave', () => current.animation?.play())
   viewport.addEventListener('focusin', () => current.animation?.pause())
