@@ -557,7 +557,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     if (params.chatId && !params.reviewOf && !params.workflowRunId && params.threadRoot === undefined && stepAttempts(params.chatId, params.label) >= CHAT_STEP_ATTEMPTS) {
       return { ok: false, status: 409, error: 'retry cap reached for this step' }
     }
-    const owner = workspaceOwners.get(cwdCheck.path)
+    const owner = params.purpose === 'chat' ? undefined : workspaceOwners.get(cwdCheck.path)
     if (owner && owner !== params.workflowRunId) return { ok: false, status: 409, error: 'Workspace is reserved by a running workflow' }
 
     ensureDirsSync(dir, logsDir)
@@ -589,7 +589,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       }
     }
     const cwd = workspace.worktree ?? cwdCheck.path
-    const activeOwner = workspaceOwners.get(cwdCheck.path) ?? workspaceOwners.get(cwd)
+    const activeOwner = params.purpose === 'chat' ? undefined : workspaceOwners.get(cwdCheck.path) ?? workspaceOwners.get(cwd)
     if (activeOwner && activeOwner !== params.workflowRunId) return { ok: false, status: 409, error: 'Workspace is reserved by a running workflow' }
     const path = logPath(id)
     const chatEnv = await chatSpawnEnv(params, id)
@@ -768,7 +768,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
 
   function claimWorkspace(cwd: string, owner: string): boolean {
     const current = workspaceOwners.get(cwd)
-    if ((current && current !== owner) || [...jobs.values()].some(job => job.cwd === cwd && job.status === 'running' && job.workflowRunId !== owner)) return false
+    if ((current && current !== owner) || [...jobs.values()].some(job => job.cwd === cwd && job.status === 'running' && job.purpose !== 'chat' && job.workflowRunId !== owner)) return false
     workspaceOwners.set(cwd, owner)
     return true
   }

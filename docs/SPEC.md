@@ -356,6 +356,7 @@ way under `policies/`. The one built-in `default` workflow is plan → verify-pl
   one from `{terminalId?, workflowId?, revision?, cwd, request, label, chat?, chatTurn?, engine?,
   model?}`; `GET /api/studio/runs` lists summaries, `GET .../:id` the full run (agents, attempts,
   checks, status); `.../:id/stop` and `.../:id/retry` control it.
+- **One run per folder.** A run claims its folder; while it runs, other jobs in that folder are refused (409). Chat turns are exempt both ways: a chat turn neither blocks a run from starting nor is blocked by one, so a chat can run a workflow in its own project.
 - **Designing one in English** (`createWorkflowBuilder`): `POST /api/studio/drafts` spawns a
   throwaway, read-only job (a separate temp git-free worktree under `~/.cache/mission-control/
   workflow-designer/`, killed after 180s) whose only job is to emit a JSON workflow draft; the

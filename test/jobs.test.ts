@@ -973,3 +973,26 @@ async function gitOutput(cwd: string, ...args: string[]): Promise<string> {
   if (code !== 0) throw new Error(error)
   return output.trim()
 }
+
+describe('chat turns and workflow workspaces', () => {
+  test('a running chat turn does not stop a workflow run from claiming its folder', async () => {
+    const project = join(home, 'project')
+    await mkdir(project)
+    const manager = createJobManager({ home })
+    const turn = await manager.createJob({ engine: 'claude', cwd: project, prompt: 'hi', label: 'Chat', purpose: 'chat' }, sleepResolver)
+    expect(turn.ok).toBe(true)
+    expect(manager.claimWorkspace(await realpath(project), 'run-1')).toBe(true)
+    if (turn.ok) await manager.killJob(turn.job.id)
+  })
+
+  test('a chat turn can start in a folder a workflow run holds; other jobs still cannot', async () => {
+    const project = join(home, 'project')
+    await mkdir(project)
+    const manager = createJobManager({ home })
+    expect(manager.claimWorkspace(await realpath(project), 'run-1')).toBe(true)
+    const turn = await manager.createJob({ engine: 'claude', cwd: project, prompt: 'hi', label: 'Chat', purpose: 'chat' }, echoResolver)
+    expect(turn.ok).toBe(true)
+    const worker = await manager.createJob({ engine: 'claude', cwd: project, prompt: 'hi', label: 'Work' }, echoResolver)
+    expect(worker.ok).toBe(false)
+  })
+})

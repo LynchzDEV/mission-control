@@ -112,7 +112,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     await finish(run, 'blocked', error)
   }
   function workspaceBusy(cwd: string, except?: string): boolean {
-    return [...runs.values()].some(run => run.id !== except && run.cwd === cwd && run.status === 'running') || deps.manager.listJobs().some(job => job.cwd === cwd && job.status === 'running' && job.workflowRunId !== except)
+    return [...runs.values()].some(run => run.id !== except && run.cwd === cwd && run.status === 'running') || deps.manager.listJobs().some(job => job.cwd === cwd && job.status === 'running' && job.purpose !== 'chat' && job.workflowRunId !== except)
   }
   async function agentsFor(workflow: WorkflowRevision, chatDefault?: ChatDefault): Promise<Record<string, ResolvedAgent>> {
     const roles = (await readConfig()).roles
