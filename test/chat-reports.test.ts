@@ -6,11 +6,13 @@ import { join } from 'node:path'
 import type { JobManager, JobRecord } from '../server/jobs'
 import { createJobManager, JOBS_FILE, LOGS_DIR, readLogFile } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
-import { agentReport, createChatFlusher, projectMemory, RESTART_CATCH_UP } from '../server/chat-reports'
+import { agentReport, createChatFlusher, projectMemory, RESTART_CATCH_UP, workflowReport } from '../server/chat-reports'
 import type { ChatFlusherOptions } from '../server/chat-reports'
 import { createChatQueue } from '../server/chat-queue'
 import type { ChatQueue } from '../server/chat-queue'
 import { initScratchGitRepo } from './support/scratch-git-repo'
+import type { WorkflowAttempt, WorkflowRun } from '../server/workflow-runner'
+import { defaultWorkflow } from '../server/workflows'
 
 const base: JobRecord = { id: 'j1', engine: 'codex', cwd: '/p', worktree: null, baseRepo: null, baseBranch: null, label: 'Build it', prompt: 'x', pid: 1, status: 'done', startedAt: 1, turns: 3, slowAt: null, lastTool: null, endedAt: 2, exitCode: 0, diffStat: ' 2 files changed', reviewedAt: null, sessionId: null, parentJobId: null, threadRoot: 'j1', terminalId: null, reviewOf: null, model: null, chatId: 'root' }
 const textEvent = (text: string) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text }] } })
@@ -43,6 +45,33 @@ describe('agentReport', () => {
     expect(report.message.startsWith('[agent Build it · codex] done\n')).toBe(true)
     expect(report.message.length).toBeLessThan(1300)
     expect(report.message).not.toContain('Diff:')
+  })
+})
+
+const attempt = (nodeId: string, outcome: 'pass' | 'fail' | 'blocked' | null, summary = ''): WorkflowAttempt => ({ nodeId, number: 0, jobId: null, status: outcome ? 'settled' : 'running', prompt: '', startedAt: 1, endedAt: outcome ? 2 : null, result: outcome ? { outcome, summary, evidence: [] } : null, checks: [], output: '', workspace: null })
+const runFixture = (fields: Partial<WorkflowRun> = {}): WorkflowRun => ({
+  id: 'run-1', label: 'ship', cwd: '/p', request: 'Ship it',
+  workflow: { ...defaultWorkflow(), name: 'Shipping', revision: 'r1' } as unknown as WorkflowRun['workflow'],
+  policy: {} as WorkflowRun['policy'], agents: {}, skills: {},
+  status: 'done', error: null, currentNodeId: 'review',
+  attempts: [attempt('plan', 'pass', 'Planned the change'), attempt('review', 'pass', 'No findings')],
+  createdAt: 1, updatedAt: 2, chatId: 'root', reportedAt: null, ...fields,
+})
+
+describe('workflowReport', () => {
+  test('a finished run reports its name, status and one line per attempt', () => {
+    const report = workflowReport(runFixture())
+    expect(report.message).toBe('[workflow Shipping · done]\nPlan · pass · Planned the change\nCross-family review · pass · No findings')
+    expect(report.needsYou).toBe(false)
+  })
+  test('a failed or blocked run needs you and names its reason; a stopped run does not need you', () => {
+    const failed = workflowReport(runFixture({ status: 'failed', error: 'Acceptance check failed: bun', attempts: [attempt('execute', 'fail', 'Tests\nfailed')] }))
+    expect(failed.message).toBe('[workflow Shipping · failed]\nExecute · fail · Tests failed\nReason: Acceptance check failed: bun')
+    expect(failed.needsYou).toBe(true)
+    expect(workflowReport(runFixture({ status: 'blocked', error: 'limit' })).needsYou).toBe(true)
+    const stopped = workflowReport(runFixture({ status: 'stopped', error: 'Stopped by user', attempts: [attempt('execute', null)] }))
+    expect(stopped.message).toBe('[workflow Shipping · stopped]\nExecute · unfinished\nReason: Stopped by user')
+    expect(stopped.needsYou).toBe(false)
   })
 })
 
@@ -131,7 +160,7 @@ describe('createChatFlusher', () => {
   const queueFile = () => join(configDir, 'chat-queue.json')
 
   function flusherFor(manager: JobManager, opts: Partial<ChatFlusherOptions> = {}, queue: ChatQueue = createChatQueue(queueFile())) {
-    return createChatFlusher(manager, sessionResolver, { logReader: logReader(manager), queue, ...opts })
+    return createChatFlusher(manager, sessionResolver, { logReader: logReader(manager), queue, bootAt: 0, ...opts })
   }
 
   async function waitForSession(manager: JobManager, id: string): Promise<void> {
@@ -186,6 +215,19 @@ describe('createChatFlusher', () => {
     expect(turns[0]?.prompt).toContain('Second done.')
     expect(turns[0]?.prompt).toContain('\n\n[agent Build it · codex] done')
     expect(turns[0]?.prompt).not.toContain(RESTART_CATCH_UP)
+    await settled(manager, turns[0]!.id)
+  })
+
+  test('an agent started before this server run reads as a restart catch-up even when it settles now', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const root = await chatRoot(manager, sessionResolver)
+    await waitForSession(manager, root.id)
+    await settled(manager, root.id)
+    const worker = await agent(manager, root.id, 'Done while the server was down.')
+    const flusher = flusherFor(manager, { bootAt: Date.now() + 1 })
+    await flusher.onAgentSettled(worker)
+    const turns = chatTurnsAfterRoot(manager, root.id)
+    expect(turns[0]?.prompt.startsWith(RESTART_CATCH_UP)).toBe(true)
     await settled(manager, turns[0]!.id)
   })
 
@@ -327,7 +369,7 @@ describe('createChatFlusher', () => {
     ].join('\n'))
     await writeFile(join(configDir, LOGS_DIR, 'agent-1.log'), `${textEvent('Finished while you were away.')}\n`)
     const manager = createJobManager({ home: homedir() })
-    const flusher = flusherFor(manager)
+    const flusher = flusherFor(manager, { bootAt: Date.now() })
     await flusher.recoverAll()
     const turns = chatTurnsAfterRoot(manager, rootId)
     expect(turns).toHaveLength(1)
@@ -374,5 +416,65 @@ describe('createChatFlusher', () => {
     await flusher.onAgentSettled(done)
     await flusher.recoverAll()
     expect(agentTurns(manager)).toHaveLength(0)
+  })
+
+  function runSource(runs: WorkflowRun[]) {
+    return {
+      list: () => runs.map((run) => structuredClone(run)),
+      markReported: async (id: string, at: number) => { const run = runs.find((candidate) => candidate.id === id); if (run) run.reportedAt = at },
+    }
+  }
+
+  test('a settled chat workflow run reports once as one turn and is marked reported', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const root = await settled(manager, (await chatRoot(manager)).id)
+    const runs = [runFixture({ chatId: root.id })]
+    const flusher = flusherFor(manager, { runs: runSource(runs) })
+    await flusher.onRunSettled(runs[0]!)
+    const turns = agentTurns(manager)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.prompt.startsWith('[workflow Shipping · done]\nPlan · pass')).toBe(true)
+    expect(typeof runs[0]!.reportedAt).toBe('number')
+    await settled(manager, turns[0]!.id)
+    await flusher.kick(root.id)
+    expect(agentTurns(manager)).toHaveLength(1)
+  })
+
+  test('an agent report and a workflow run report fold into one turn', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const root = await settled(manager, (await chatRoot(manager)).id)
+    const worker = await agent(manager, root.id, 'Agent finished.')
+    const runs = [runFixture({ chatId: root.id })]
+    const flusher = flusherFor(manager, { runs: runSource(runs), schedule: () => {} })
+    await Promise.all([flusher.onAgentSettled(worker), flusher.onRunSettled(runs[0]!)])
+    const turns = agentTurns(manager)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.prompt).toContain('Agent finished.')
+    expect(turns[0]?.prompt).toContain('\n\n[workflow Shipping · done]')
+    await settled(manager, turns[0]!.id)
+  })
+
+  test('recovery catches up a workflow run started before this server run and leaves legacy and running runs alone', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const root = await settled(manager, (await chatRoot(manager)).id)
+    const legacy = runFixture({ id: 'legacy', chatId: root.id, workflow: { ...runFixture().workflow, name: 'Old flow' } })
+    delete legacy.reportedAt
+    const runs = [
+      runFixture({ chatId: root.id, status: 'failed', error: 'Tests failed', attempts: [attempt('execute', 'fail', 'Tests failed')] }),
+      legacy,
+      runFixture({ id: 'running', chatId: root.id, status: 'running', workflow: { ...runFixture().workflow, name: 'Still going' } }),
+      runFixture({ id: 'other', chatId: undefined, workflow: { ...runFixture().workflow, name: 'No chat' } }),
+    ]
+    const notes: string[] = []
+    const flusher = flusherFor(manager, { runs: runSource(runs), bootAt: Date.now(), notify: async (title, body) => { notes.push(`${title}|${body}`) } })
+    await flusher.recoverAll()
+    const turns = chatTurnsAfterRoot(manager, root.id)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.prompt.startsWith(`${RESTART_CATCH_UP}\n[workflow Shipping · failed]\nExecute · fail · Tests failed`)).toBe(true)
+    for (const name of ['Old flow', 'Still going', 'No chat']) expect(turns[0]?.prompt).not.toContain(name)
+    expect(notes).toEqual(['Needs you|Login fix · workflow Shipping'])
+    expect(typeof runs[0]!.reportedAt).toBe('number')
+    expect(runs[1]!.reportedAt).toBeUndefined()
+    await settled(manager, turns[0]!.id)
   })
 })

@@ -166,9 +166,18 @@ export async function createApp(): Promise<Elysia> {
       void maybeAutoReview(record, jobManager, { resolver: realEngineResolver }).catch(() => {})
     },
   })
+  const terminalRegistry = createTerminalRegistry()
+  const workflowRunner = createWorkflowRunner({
+    manager: jobManager,
+    resolver: realEngineResolver,
+    store: workflowStore,
+    terminals: terminalRegistry,
+    onRunSettled: run => { void chatFlusher.onRunSettled(run).catch(error => console.error('Workflow chat report failed', error)) },
+  })
   const chatQueue = createChatQueue(chatQueuePath())
   const chatFlusher = createChatFlusher(jobManager, realEngineResolver, {
     queue: chatQueue,
+    runs: workflowRunner,
     notify: notifyChat,
     logReader: async () => {
       const read = await redactedTailReader()
@@ -176,8 +185,6 @@ export async function createApp(): Promise<Elysia> {
     },
   })
   const planRunner = createPlanRunner({ manager: jobManager, resolver: realEngineResolver, plans: planStore })
-  const terminalRegistry = createTerminalRegistry()
-  const workflowRunner = createWorkflowRunner({ manager: jobManager, resolver: realEngineResolver, store: workflowStore, terminals: terminalRegistry })
   const workflowBuilder = createWorkflowBuilder({ manager: jobManager, resolver: realEngineResolver, store: workflowStore })
   await workflowRunner.recover()
   await workflowBuilder.recover()

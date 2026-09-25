@@ -71,3 +71,9 @@ test('a saved connection can be removed while built-ins stay', async () => {
   expect((await builtin.json()).error).toContain('built-in')
   expect((await remove('/connections/qwen', 'http://rebind.example')).status).toBe(403)
 })
+
+test('starting a run for a chat that does not exist is refused', async () => {
+  const response = await request('/runs', { cwd: dir, request: 'Ship it', label: 'ship', chat: 'no-such-chat', chatTurn: 'no-such-turn', engine: 'claude' })
+  expect(response.status).toBe(400)
+  expect((await response.json()).error).toContain('Chat not found')
+})

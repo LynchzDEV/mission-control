@@ -5,11 +5,11 @@ import { join } from 'node:path'
 import { createJobManager, type JobManager } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
 import { createWorkflowStore, defaultWorkflow } from '../server/workflows'
-import { createWorkflowRunner, type WorkflowRunner } from '../server/workflow-runner'
+import { createWorkflowRunner, type WorkflowRun, type WorkflowRunner } from '../server/workflow-runner'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 import type { TerminalRecord } from '../server/terminals'
 
-let dir: string, repo: string, manager: JobManager, runner: WorkflowRunner
+let dir: string, repo: string, manager: JobManager, runner: WorkflowRunner, settledRuns: WorkflowRun[]
 const report = (outcome = 'pass') => JSON.stringify({ type: 'result', result: `MC_RESULT ${JSON.stringify({ outcome, summary: 'Completed fixture', evidence: ['fixture assertion'] })}` })
 const resolver: EngineResolver = () => ({ cmd: '/bin/echo', args: [report()], env: {} })
 beforeEach(async () => {
@@ -33,8 +33,10 @@ afterEach(async () => {
 })
 function build(agent: EngineResolver = resolver) {
   const store = createWorkflowStore(dir)
+  const settled: WorkflowRun[] = []
+  settledRuns = settled
   manager = createJobManager({ onJobSettled: job => { void runner.onJobSettled(job) } })
-  runner = createWorkflowRunner({ manager, resolver: agent, store, base: dir })
+  runner = createWorkflowRunner({ manager, resolver: agent, store, base: dir, onRunSettled: run => { settled.push(run) } })
   return store
 }
 async function finished(id: string) {
@@ -186,4 +188,91 @@ test('stop during dispatch also terminates the job that finishes launching after
   for (let i = 0; i < 100 && manager.listJobs().some(job => job.status === 'running'); i++) await Bun.sleep(20)
   expect(runner.get(id)?.status).toBe('stopped')
   expect(manager.listJobs().some(job => job.status === 'running')).toBe(false)
+})
+
+async function chatRoot(engine = 'claude', model?: string) {
+  const created = await manager.createJob({ engine, ...(model ? { model } : {}), cwd: repo, prompt: 'Run the shipping workflow', label: 'Shipping chat', purpose: 'chat' }, () => ({ cmd: '/bin/echo', args: ['hi'], env: {} }))
+  if (!created.ok) throw new Error(created.error)
+  for (let i = 0; i < 200 && manager.getJob(created.job.id)?.status === 'running'; i++) await Bun.sleep(20)
+  return created.job
+}
+async function settledStatuses() {
+  for (let i = 0; i < 200 && settledRuns.length === 0; i++) await Bun.sleep(10)
+  return settledRuns.map(settled => settled.status)
+}
+const stepJobs = () => manager.listJobs().filter(job => job.workflowRunId).sort((a, b) => a.workflowAttempt! - b.workflowAttempt!)
+
+test('a chat run puts Chat decides steps on the chat AI, keeps pinned steps, and files its jobs under the chat', async () => {
+  const store = build()
+  const graph = defaultWorkflow()
+  graph.id = 'shipping'; graph.name = 'Shipping'
+  graph.nodes[0]!.agent = { role: 'plan', engine: 'codex' }
+  await store.save(graph)
+  const root = await chatRoot()
+  const run = await runner.start({ workflowId: 'shipping', cwd: repo, request: 'Ship it', label: 'ship', chat: root.id, chatTurn: root.id, engine: 'claude', model: 'claude-opus-4' })
+  expect(run.chatId).toBe(root.id)
+  expect(run.chatTurn).toBe(root.id)
+  expect(run.agents.plan).toMatchObject({ engine: 'codex', model: null })
+  expect(run.agents['verify-plan']).toMatchObject({ engine: 'claude', model: 'claude-opus-4', family: 'claude' })
+  expect(run.agents.execute).toMatchObject({ engine: 'claude', model: 'claude-opus-4', family: 'claude' })
+  expect(run.agents.review).toMatchObject({ engine: 'codex', family: 'gpt' })
+  const done = await finished(run.id)
+  expect(done.status).toBe('done')
+  expect(done.reportedAt).toBeNull()
+  expect(stepJobs().map(job => job.label)).toEqual(['Plan', 'Verify plan', 'Execute', 'Cross-family review'])
+  for (const job of stepJobs()) {
+    expect(job).toMatchObject({ chatId: root.id, chatTurn: root.id, reason: `Studio · Shipping · ${job.label}` })
+    expect(job.reportedAt).toBeUndefined()
+  }
+  expect(await settledStatuses()).toEqual(['done'])
+})
+
+test('a chat run without an engine uses the chat root AI for Chat decides steps', async () => {
+  build()
+  const root = await chatRoot('glm')
+  const run = await runner.start({ cwd: repo, request: 'Ship it', label: 'ship', chat: root.id })
+  expect(run.agents.plan).toMatchObject({ engine: 'glm' })
+  expect(run.agents.execute).toMatchObject({ engine: 'glm' })
+  expect(run.agents.review).toMatchObject({ engine: 'codex' })
+  expect((await finished(run.id)).status).toBe('done')
+})
+
+test('a run outside a chat keeps the stored roles and plain labels', async () => {
+  build(() => ({ cmd: '/bin/echo', args: ['All done'], env: {} }))
+  const run = await runner.start({ cwd: repo, request: 'Inspect', label: 'plain' })
+  expect(run.agents.plan).toMatchObject({ engine: 'claude' })
+  expect(run.agents.execute).toMatchObject({ engine: 'glm' })
+  expect(run.chatId).toBeUndefined()
+  const done = await finished(run.id)
+  expect(done.reportedAt).toBeUndefined()
+  expect(stepJobs().every(job => job.label === 'plain' && job.chatId === undefined && job.reason === undefined)).toBe(true)
+  expect(await settledStatuses()).toEqual(['blocked'])
+})
+
+test('a chat run rejects an unknown chat or a turn from another chat', async () => {
+  build()
+  const root = await chatRoot()
+  await expect(runner.start({ cwd: repo, request: 'Ship it', label: 'ship', chat: 'no-such-chat' })).rejects.toThrow('Chat not found')
+  await expect(runner.start({ cwd: repo, request: 'Ship it', label: 'ship', chat: root.id, chatTurn: 'no-such-turn' })).rejects.toThrow('Chat turn not found')
+  expect(runner.list()).toHaveLength(0)
+})
+
+test('a chat run loops past the chat retry cap up to its own visit limit', async () => {
+  const store = build(() => ({ cmd: '/bin/echo', args: [report('fail')], env: {} }))
+  await store.save({ ...defaultWorkflow(), id: 'chat-loop', entry: 'test', nodes: [{ id: 'test', title: 'Test', instructions: 'Check', maxVisits: 4 }], edges: [{ source: 'test', target: 'test', outcome: 'fail' }] })
+  const root = await chatRoot()
+  const run = await runner.start({ workflowId: 'chat-loop', cwd: repo, request: 'Test', label: 'loop', chat: root.id })
+  const done = await finished(run.id)
+  expect(done.attempts).toHaveLength(4)
+  expect(done.error).toContain('visit limit')
+})
+
+test('stopping a chat run settles it once, and a report mark survives a restart', async () => {
+  const store = build(() => ({ cmd: '/bin/sleep', args: ['20'], env: {} }))
+  const root = await chatRoot()
+  const run = await runner.start({ cwd: repo, request: 'Ship it', label: 'ship', chat: root.id })
+  await runner.stop(run.id)
+  expect(await settledStatuses()).toEqual(['stopped'])
+  await runner.markReported(run.id, 1234)
+  expect(createWorkflowRunner({ manager, resolver, store, base: dir }).get(run.id)?.reportedAt).toBe(1234)
 })

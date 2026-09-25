@@ -25,6 +25,15 @@ describe('chat rules', () => {
     expect(text).toContain('Recent: fixed login')
     expect(chatRules({ chatId: 'r', home: '/h', project: null, edit: true, memory: '' })).toContain('may edit files directly')
   })
+  test('explain how a named Studio workflow runs from the chat, and that naming one is optional', () => {
+    for (const phrase of ['GET $MC_URL/api/studio/workflows', 'POST $MC_URL/api/studio/runs', '"chat":"$MC_CHAT_ID"', '"chatTurn":"$MC_JOB_ID"', 'case-insensitively', '"[workflow', 'Without a named workflow, keep choosing agents yourself']) expect(CHAT_RULES).toContain(phrase)
+    expect(CHAT_RULES).not.toContain('Naming a Studio workflow makes you follow it instead.')
+  })
+  test('state the chat\'s own engine and model', () => {
+    expect(chatRules({ chatId: 'r', home: '/h', project: null, edit: false, memory: '', engine: 'claude', model: 'claude-opus-4' })).toContain('Your AI: engine claude, model claude-opus-4.')
+    expect(chatRules({ chatId: 'r', home: '/h', project: null, edit: false, memory: '', engine: 'glm', model: null })).toContain('Your AI: engine glm, default model.')
+    expect(chatRules({ chatId: 'r', home: '/h', project: null, edit: false, memory: '' })).not.toContain('Your AI:')
+  })
   test('tell a Codex chat that direct edits are unavailable', () => {
     for (const edit of [true, false]) {
       const text = chatRules({ chatId: 'r', home: '/h', project: null, edit, memory: '', engine: 'codex' })

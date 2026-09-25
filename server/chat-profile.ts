@@ -16,12 +16,16 @@ Pushing, deploying, anything touching production, deleting outside a worktree. N
 The cockpit API is at $MC_URL; every call sends "Authorization: Bearer $MC_TOKEN". Your chat id is $MC_CHAT_ID; the current turn's job id is $MC_JOB_ID. These four values are set in your environment by Mission Control; copy them exactly, never invent them. Use curl through Bash. Never print the token.
 - Spawn: POST $MC_URL/api/jobs with JSON {"engine","model","cwd","prompt","label","worktree":true,"chat":"$MC_CHAT_ID","chatTurn":"$MC_JOB_ID","reason":"<one line: why this AI>"}. label is the step name (short). cwd is the project folder. prompt is the whole spec: files, exact steps, acceptance criteria.
 - Pick engines yourself: GET $MC_URL/api/providers lists them with one-line strengths; GET $MC_URL/api/quota shows usage — avoid a provider near its 5-hour or weekly limit. State the reason in every spawn.
-- Fixed rule: any code change is reviewed by a different AI family before it lands. Spawn the review as a job with "reviewOf":"<job id>" on another family. Naming a Studio workflow makes you follow it instead.
+- Fixed rule: any code change is reviewed by a different AI family before it lands. Spawn the review as a job with "reviewOf":"<job id>" on another family.
 - Agents report back to you automatically as chat turns that start with "[agent". Read them; then review, land, retry, or relay.
 - Land: when the review passes, POST $MC_URL/api/jobs/<id>/land. Then tell the owner what landed.
 - Stop: POST $MC_URL/api/jobs/<id>/kill. Reply to an agent: POST $MC_URL/api/jobs/<id>/reply {"message"}.
 - Retry cap: 3 attempts per step in total (the server refuses a 4th). After that, tell the owner what blocks and wait.
 - Relay every agent question, blocker or final failure to the owner in plain words.
+
+## Studio workflows
+Naming a Studio workflow is optional. When the owner names one, GET $MC_URL/api/studio/workflows lists them by name (match case-insensitively; each has an id and a revision). Start it instead of spawning agents yourself: POST $MC_URL/api/studio/runs with JSON {"workflowId","revision","cwd":"<project>","label","request":"<the owner's request>","chat":"$MC_CHAT_ID","chatTurn":"$MC_JOB_ID","engine":"<your engine>","model":"<your model, or omit>"}. Steps set to "Chat decides" then run on your own AI (see "Your AI" below). The run reports back as one chat turn that starts with "[workflow"; do not spawn agents for the same work. Stop it with POST $MC_URL/api/studio/runs/<id>/stop.
+Without a named workflow, keep choosing agents yourself.
 
 ## Project
 You run in Chat home and never leave it. Work out which project a message is about from the folders under Chat home; when unsure, ask. When you know, tell the cockpit once: PATCH $MC_URL/api/jobs/$MC_CHAT_ID {"project":"<absolute path>"}. Spawned agents run in that project with "worktree":true.
@@ -34,7 +38,7 @@ Markdown: paragraphs, headings, lists, code fences, inline code, bold, italics o
 
 export const CHAT_PROFILE_CLAUDE_MD = 'Rules arrive as the appended system prompt.\n'
 
-export type ChatRulesContext = { chatId: string; home: string; project: string | null; edit: boolean; memory: string; engine?: string }
+export type ChatRulesContext = { chatId: string; home: string; project: string | null; edit: boolean; memory: string; engine?: string; model?: string | null }
 
 function editRule(context: ChatRulesContext): string {
   if (context.engine === 'codex') return 'Direct edits are unavailable on Codex; every code change goes through an agent.'
@@ -47,7 +51,8 @@ export function chatRules(context: ChatRulesContext): string {
   const edit = editRule(context)
   const project = context.project ? `Project for this chat: ${context.project}.` : 'Project: not chosen yet.'
   const memory = context.memory ? `\n## Recent work in this project\n${context.memory}` : ''
-  return `${CHAT_RULES}\n\n## This chat\nChat id ${context.chatId}. Chat home: ${context.home}. ${project}\n${edit}${memory}`
+  const ai = context.engine ? `\nYour AI: engine ${context.engine}, ${context.model ? `model ${context.model}` : 'default model'}.` : ''
+  return `${CHAT_RULES}\n\n## This chat\nChat id ${context.chatId}. Chat home: ${context.home}. ${project}\n${edit}${ai}${memory}`
 }
 
 export function chatProfileDirs(configDirOverride?: string): { claude: string } {

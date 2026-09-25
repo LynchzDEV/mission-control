@@ -514,7 +514,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   }
 
   function stepAttempts(chatId: string, label: string): number {
-    return [...jobs.values()].filter(job => job.chatId === chatId && job.label === label && !job.reviewOf && job.threadRoot === job.id).length
+    return [...jobs.values()].filter(job => job.chatId === chatId && job.label === label && !job.reviewOf && !job.workflowRunId && job.threadRoot === job.id).length
   }
 
   function chatSpawnContext(params: CreateJobParams, id: string, chatHomePath: string): Partial<EngineResolverParams> {
@@ -525,7 +525,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     return {
       purpose: 'chat',
       edit,
-      coreRules: chatRules({ chatId: params.threadRoot ?? id, home: chatHomePath, project, edit, memory: params.memory ?? '', engine: params.engine }),
+      coreRules: chatRules({ chatId: params.threadRoot ?? id, home: chatHomePath, project, edit, memory: params.memory ?? '', engine: params.engine, model: typeof params.model === 'string' && params.model !== '' ? params.model : null }),
     }
   }
 
@@ -554,7 +554,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   async function createJob(params: CreateJobParams, resolver: EngineResolver): Promise<CreateJobResult> {
     const cwdCheck = await validateWorkspaceCwd(params.cwd, home, { requireGit: params.purpose !== 'chat' })
     if (!cwdCheck.ok) return { ok: false, status: 400, error: cwdCheck.error }
-    if (params.chatId && !params.reviewOf && params.threadRoot === undefined && stepAttempts(params.chatId, params.label) >= CHAT_STEP_ATTEMPTS) {
+    if (params.chatId && !params.reviewOf && !params.workflowRunId && params.threadRoot === undefined && stepAttempts(params.chatId, params.label) >= CHAT_STEP_ATTEMPTS) {
       return { ok: false, status: 409, error: 'retry cap reached for this step' }
     }
     const owner = workspaceOwners.get(cwdCheck.path)
