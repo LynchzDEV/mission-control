@@ -78,8 +78,7 @@ function showConversation(prompt: string): void {
   stage.scrollTop = stage.scrollHeight
 }
 
-$('new-conversation').onclick = () => {
-  $('new-chat-menu').hidePopover()
+$('new-chat').onclick = () => {
   $('messages').replaceChildren()
   composer.reset()
   message.style.height = ''
@@ -95,7 +94,7 @@ function showHistory(): void {
   $('chat-search').focus()
 }
 $('search').onclick = showHistory
-$('show-history').onclick = showHistory
+$('new-chat-menu').addEventListener('toggle', (event) => $('new-chat-more').setAttribute('aria-expanded', String((event as ToggleEvent).newState === 'open')))
 
 $('chat-search').oninput = () => {
   const query = ($('chat-search') as HTMLInputElement).value.trim().toLowerCase()
@@ -147,11 +146,6 @@ message.oninput = () => {
   $('sent-reply').hidden = false
   ;($('reply') as HTMLTextAreaElement).value = ''
 }
-$('session').addEventListener('close', () => {
-  const project = ($('project') as HTMLSelectElement).value
-  $('project-chip').lastElementChild!.textContent = project
-  message.setAttribute('aria-label', `Message ${($('engine') as HTMLSelectElement).value} in ${project}`)
-})
 
 document.querySelectorAll<HTMLElement>('[data-live]').forEach(button => {
   button.onclick = () => { $('new-chat-menu').hidePopover(); dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { restore: false } })) }

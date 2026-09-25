@@ -2,7 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { providerName } from './terminal-view'
 import { errorText, getJson, postJson, readArray, readRecord } from './shared'
-import { launchChoice, restoreRequested } from './shell-launch'
+import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
 
 type Session = { id: string; engine: string; cwd: string }
 type Provider = { id: string; name: string; models: string[] }
@@ -126,23 +126,8 @@ function attach(record: Session): void {
   connect()
 }
 
-function recentDirectories(): string[] {
-  try {
-    const parsed: unknown = JSON.parse(stored(recentKey) ?? '[]')
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
-  } catch { return [] }
-}
-
 function rememberDirectory(cwd: string): void {
-  store(recentKey, JSON.stringify([cwd, ...recentDirectories().filter(item => item !== cwd)].slice(0, 12)))
-}
-
-function listButton(label: string, action: () => void): HTMLButtonElement {
-  const button = document.createElement('button')
-  button.type = 'button'
-  button.textContent = label
-  button.onclick = action
-  return button
+  store(recentKey, JSON.stringify([cwd, ...readRecentDirectories(stored(recentKey)).filter(item => item !== cwd)].slice(0, 12)))
 }
 
 function updateModelChoices(): void {
@@ -160,8 +145,6 @@ async function load(restore = false): Promise<void> {
   const available = readArray(result.data.sessions) as Session[]
   const existing = available.find(item => item.id === rememberedId())
   if (restore && existing) { attach(existing); return }
-  $('live-directories').replaceChildren(...[...new Set([...recentDirectories(), ...available.map(item => item.cwd)])].map(cwd => listButton(cwd, () => { cwdInput.value = cwd })))
-  $('live-recents').hidden = !$('live-directories').children.length
   const [providerResult, workflowResult] = await Promise.all([getJson('/api/providers'), getJson('/api/studio/workflows')])
   const failed = [providerResult, workflowResult].find(item => !item.ok)
   if (failed) { $('live-error').textContent = `Could not load launch options: ${errorText(failed)}. Close and reopen to retry.`; return }

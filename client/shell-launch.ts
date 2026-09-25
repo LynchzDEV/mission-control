@@ -7,6 +7,13 @@ export function launchChoice(providers: LaunchProvider[], lastEngine: string | n
   return { engine, model: remembered ? lastModel ?? '' : '' }
 }
 
+export function readRecentDirectories(raw: string | null): string[] {
+  try {
+    const parsed: unknown = JSON.parse(raw ?? '[]')
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item !== '') : []
+  } catch { return [] }
+}
+
 export function restoreRequested(location: { hash: string; search: string }): boolean {
   return location.hash === '#terminal' || new URLSearchParams(location.search).has('terminal')
 }

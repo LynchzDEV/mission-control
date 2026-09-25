@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { launchChoice, restoreRequested } from '../client/shell-launch'
+import { launchChoice, readRecentDirectories, restoreRequested } from '../client/shell-launch'
 
 const providers = [
   { id: 'claude', name: 'Claude', models: ['opus', 'sonnet'] },
@@ -29,5 +29,16 @@ describe('restoreRequested', () => {
   test('is false for a plain visit', () => {
     expect(restoreRequested({ hash: '', search: '' })).toBe(false)
     expect(restoreRequested({ hash: '#flow', search: '?embed=1' })).toBe(false)
+  })
+})
+
+describe('readRecentDirectories', () => {
+  test('keeps non-empty strings in order and drops junk', () => {
+    expect(readRecentDirectories('["/a","", 3, "/b"]')).toEqual(['/a', '/b'])
+  })
+  test('is empty for missing or malformed storage', () => {
+    expect(readRecentDirectories(null)).toEqual([])
+    expect(readRecentDirectories('{not json')).toEqual([])
+    expect(readRecentDirectories('"/a"')).toEqual([])
   })
 })

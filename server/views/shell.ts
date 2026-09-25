@@ -13,14 +13,19 @@ const BODY = `
     <symbol id="lock-icon" viewBox="0 0 20 20"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M7 8V6a3 3 0 0 1 6 0v2M10 11v3"/></symbol>
     <symbol id="back-icon" viewBox="0 0 20 20"><path d="M16 10H4m5-5-5 5 5 5"/></symbol>
     <symbol id="folder-icon" viewBox="0 0 20 20"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H8l1.5 2h6A1.5 1.5 0 0 1 17 8.5v6a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5Z"/></symbol>
+    <symbol id="check-icon" viewBox="0 0 20 20"><path d="m5 10.5 3.2 3L15 6.5"/></symbol>
+    <symbol id="pencil-icon" viewBox="0 0 20 20"><path d="M12.5 4.5 15.5 7.5 7.5 15.5H4.5v-3Z"/></symbol>
+    <symbol id="auto-icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.5"/><path d="M10 6.5V10l2.5 1.5"/></symbol>
+    <symbol id="terminal-icon" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="2"/><path d="m6 8 2.5 2L6 12M10.5 12H14"/></symbol>
+    <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
     <symbol id="open-icon" viewBox="0 0 20 20"><path d="M11 4h5v5M16 4l-7 7M14 12v3.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5H8"/></symbol>
   </svg>
   <main class="canvas">
     <header class="toolbar">
       <nav aria-label="Chats">
         <button id="search" class="round" aria-label="Search chats" title="Search chats"><svg><use href="#search-icon"/></svg></button>
-        <button id="new-chat" class="pill" popovertarget="new-chat-menu"><svg><use href="#plus-icon"/></svg>New chat <svg class="chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m6 8 4 4 4-4"/></svg></button>
-        <div id="new-chat-menu" popover aria-label="New chat options"><button id="new-conversation">Chat <small>Sample</small></button><button data-live>Terminal <small>Live session</small></button></div>
+        <span class="split"><button id="new-chat" class="pill"><svg><use href="#plus-icon"/></svg>New chat</button><button id="new-chat-more" class="caret" popovertarget="new-chat-menu" aria-label="More ways to start" aria-expanded="false"><svg><use href="#chevron-icon"/></svg></button></span>
+        <div id="new-chat-menu" popover aria-label="More ways to start"><button class="row" data-live><svg><use href="#terminal-icon"/></svg><span>Terminal<small>Live session with any connected AI</small></span></button></div>
       </nav>
       <nav aria-label="Session activity">
         <section class="usage-card" aria-label="Provider usage">
@@ -84,10 +89,16 @@ const BODY = `
     </div>
 
     <div class="composer-area content-width">
+      <div class="popover chip-menu" id="project-menu" role="menu" hidden></div>
+      <div class="popover chip-menu model-menu" id="model-menu" role="menu" hidden></div>
       <form id="composer" class="composer nui-neuromorphic-inset">
-        <button type="button" class="round" data-dialog="session" aria-label="Session settings" title="Session settings"><svg><use href="#plus-icon"/></svg></button>
-        <button type="button" id="show-history" class="round" aria-label="Chat history" title="Chat history"><svg><use href="#history-icon"/></svg></button>
-        <span id="project-chip" class="project-chip" title="Project for this chat"><svg><use href="#folder-icon"/></svg><span>Mission Control</span></span>
+        <span class="chip-group" id="chip-group" data-expanded="false">
+          <button type="button" class="chip" id="project-chip" aria-expanded="false" aria-controls="project-menu" title="Project for this chat"><svg><use href="#folder-icon"/></svg><span id="project-name">Project</span></button>
+          <span class="chip-extra" id="chip-extra">
+            <button type="button" class="chip" id="model-chip" aria-expanded="false" aria-controls="model-menu" title="AI for this chat"><img id="model-logo" src="/providers/claude.svg" alt=""><span id="model-name">Chat default</span><svg class="caret-sm"><use href="#chevron-icon"/></svg></button>
+            <button type="button" class="chip off" id="edit-chip" aria-pressed="false" title="Let the chat edit directly"><svg><use href="#pencil-icon"/></svg></button>
+          </span>
+        </span>
         <textarea id="message" rows="1" placeholder="Write a message here…" aria-label="Message" required></textarea>
         <button type="submit" class="round send" aria-label="Send message" title="Send message"><svg><use href="#arrow-icon"/></svg></button>
       </form>
@@ -112,23 +123,18 @@ const BODY = `
 
   <dialog id="access" class="access-dialog" aria-labelledby="access-title"><header class="dialog-heading"><h2 id="access-title">Access</h2><form method="dialog"><button class="round" aria-label="Close access" autofocus><svg><use href="#close-icon"/></svg></button></form></header><p class="muted">This app answers only on this machine.</p><div class="field-stack"><label>Address<input id="access-host" value="" readonly></label><p class="muted">The API token for scripts and the dispatch skill lives in <a href="/settings">Settings</a>.</p></div></dialog>
 
-  <dialog id="live-launch" class="access-dialog" aria-labelledby="live-launch-title">
+  <dialog id="live-launch" class="access-dialog flat" aria-labelledby="live-launch-title">
     <header class="dialog-heading"><h2 id="live-launch-title">Open terminal</h2><form method="dialog"><button class="round" aria-label="Close terminal launcher"><svg><use href="#close-icon"/></svg></button></form></header>
     <p id="live-error" role="status"></p>
     <form id="live-create" class="field-stack" hidden>
       <label>Workflow<select id="live-workflow" disabled></select></label>
       <div id="live-engine-fields" class="launcher-fields"><label>Engine<select id="live-engine"></select></label><label>Model<input id="live-model" list="live-models" placeholder="Engine default" maxlength="100" autocomplete="off"><datalist id="live-models"></datalist></label></div>
       <label>Working directory<input id="live-cwd" placeholder="/path/to/your/project" required autocomplete="off"></label>
-      <details id="live-recents"><summary>Recent directories</summary><div id="live-directories" class="launcher-list"></div></details>
       <button id="live-submit" class="pill">Open terminal</button>
     </form>
 
   </dialog>
 
-  <dialog id="session" class="session-dialog" aria-labelledby="session-title">
-    <header class="dialog-heading"><h2 id="session-title">Session</h2><form method="dialog"><button class="round" aria-label="Close session settings"><svg><use href="#close-icon"/></svg></button></form></header>
-    <form method="dialog" class="session-form"><label>Project<select id="project"><option>Mission Control</option><option>Website</option></select></label><label>Engine<select id="engine"><option>Codex</option><option>Claude</option><option>GLM</option></select></label><button class="pill done">Done</button></form>
-  </dialog>
 
   <template id="assistant-row">
     <div class="msg assistant"><span class="avatar"><svg><use href="#spark-icon"/></svg></span><div class="msg-body"><div class="msg-meta"><strong>Mission Control</strong><time>now</time></div></div></div>
@@ -179,6 +185,7 @@ export function ShellPage(props: ShellProps): string {
   <link rel="stylesheet" href="/quiet.css">
   <script>window.MC_WORKSPACE_DIR=${JSON.stringify(props.workspaceDir)}</script>
   <script src="/js/shell.js" type="module" defer></script>
+  <script src="/js/shell-composer.js" type="module" defer></script>
   <script src="/js/shell-terminal.js" type="module" defer></script>
   <script src="/js/shell-activity.js" type="module" defer></script>
   <script src="/js/usage-card.js" type="module" defer></script>
