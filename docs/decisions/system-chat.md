@@ -29,7 +29,7 @@ visual decisions are in `docs/design/chat-agent-cards/DECISION.md`.
 ## Autonomy
 
 - **Without asking:** read, search, answer, spawn agents, reply to and stop its own agents, and
-  retry a failed agent up to 3 times, each time on a different AI.
+  retry a failed step, each time on a different AI — 3 attempts per step in total (the server refuses a 4th).
 - **Landing is automatic:** once the cross-family review passes, the chat cherry-picks the work onto
   the branch itself (`POST /api/jobs/:id/land`), exactly as mc-dispatch does from a terminal.
 - **Always your click:** pushing, deploying, anything touching production, deleting outside a

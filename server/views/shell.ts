@@ -38,7 +38,7 @@ const BODY = `
           <div class="usage-track" id="usage-track"></div>
         </section>
         <a id="open-studio" class="pill" href="/studio">Studio</a>
-        <button id="open-agents" class="round quiet-control" aria-expanded="false" aria-controls="agents" aria-label="Agents" title="Agents"><svg><use href="#agents-icon"/></svg></button>
+        <button id="open-agents" class="round quiet-control" aria-expanded="false" aria-controls="agents" aria-label="Agents" title="Agents"><svg><use href="#agents-icon"/></svg><span id="agents-count" class="count" hidden></span></button>
         <button id="toggle-flow" class="round quiet-control" aria-label="Flow" title="Flow" aria-expanded="false" aria-controls="flow"><svg><use href="#flow-icon"/></svg></button>
         <button id="motion" class="round quiet-control" type="button" aria-pressed="false" aria-label="Pause motion" title="Pause motion"><svg><use id="motion-icon" href="#pause-icon"/></svg></button>
         <button class="round quiet-control" data-dialog="access" aria-label="Access" title="Access"><svg><use href="#lock-icon"/></svg></button>
@@ -76,24 +76,8 @@ const BODY = `
       </section>
 
       <section id="history" class="history content-width" aria-labelledby="history-title" hidden>
-        <header class="history-heading"><h1 id="history-title">Chats <span>(3)</span></h1><label class="search-field"><svg aria-hidden="true"><use href="#search-icon"/></svg><input id="chat-search" type="search" placeholder="Search for chats" aria-label="Search chat history"></label></header>
-        <div class="history-list">
-          <details class="history-item" open>
-            <summary><span>Simplify the terminal page</span><time datetime="2026-09-24">Today</time></summary>
-            <p>A quieter place to work. One conversation, a simple composer, and agents and flow when you need them.</p>
-            <footer><span>Mission Control</span><button class="text-button" data-chat="Simplify the terminal page">Continue chat <span aria-hidden="true">↗</span></button></footer>
-          </details>
-          <details class="history-item">
-            <summary><span>Fix the session reconnect</span><time datetime="2026-09-23">Yesterday</time></summary>
-            <p>Keep the conversation in place when the terminal reconnects.</p>
-            <footer><span>Mission Control</span><button class="text-button" data-chat="Fix the session reconnect">Continue chat <span aria-hidden="true">↗</span></button></footer>
-          </details>
-          <details class="history-item">
-            <summary><span>Review the workflow builder</span><time datetime="2026-09-22">Sep 22</time></summary>
-            <p>Walk through the builder and simplify the first-run experience.</p>
-            <footer><span>Mission Control</span><button class="text-button" data-chat="Review the workflow builder">Continue chat <span aria-hidden="true">↗</span></button></footer>
-          </details>
-        </div>
+        <header class="history-heading"><h1 id="history-title">Chats <span id="history-count"></span></h1><label class="search-field"><svg aria-hidden="true"><use href="#search-icon"/></svg><input id="chat-search" type="search" placeholder="Search for chats" aria-label="Search chat history"></label></header>
+        <div class="history-list" id="history-list"></div>
         <p id="no-results" class="muted" hidden>No chats found. Try another search.</p>
       </section>
 
@@ -123,13 +107,7 @@ const BODY = `
     <header class="dialog-heading"><h2 id="agents-title">Agents</h2><form method="dialog"><button class="round" aria-label="Close agents" autofocus><svg><use href="#close-icon"/></svg></button></form></header>
     <div id="live-agents" hidden><p id="live-agents-status" class="muted" role="status"></p><div id="live-agents-list"></div></div>
     <div class="activity-empty"><p>No agents yet.</p><p class="muted">They’ll appear here when a session starts.</p></div>
-    <div class="activity-filled" hidden>
-      <p class="muted">Simplify the terminal page</p>
-      <details class="agent" open><summary><span>Builder</span><span class="status">Working</span></summary><div class="agent-body"><p class="muted">Codex</p><p>I’m checking the terminal page and the existing conversation view before making changes.</p><div class="file-activity">Reading <code>client/terminal.ts</code></div></div></details>
-      <details class="agent"><summary><span>Reviewer</span><span class="muted">Waiting</span></summary><div class="agent-body"><p>I’ll review the changes when the first pass is ready.</p></div></details>
-      <form id="agent-reply" class="agent-reply"><label for="reply">Message Builder</label><div class="reply-line"><textarea id="reply" rows="2" placeholder="Add a direction…" required></textarea><button class="round" aria-label="Send to Builder"><svg><use href="#arrow-icon"/></svg></button></div></form>
-      <p id="sent-reply" class="user-message" hidden></p>
-    </div>
+    <form id="agent-reply" class="agent-reply" hidden><label for="reply" id="agent-reply-label">Message</label><div class="reply-line"><textarea id="reply" rows="2" placeholder="Add a direction…" required></textarea><button class="round" type="submit" aria-label="Send to this agent"><svg><use href="#arrow-icon"/></svg></button></div></form>
   </dialog>
 
     </div>

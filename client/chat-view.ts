@@ -56,3 +56,11 @@ export function titleFrom(prompt: string): string {
   const line = prompt.split('\n').map(part => part.trim()).find(Boolean) ?? ''
   return line === '' ? 'New chat' : line.slice(0, TITLE_MAX)
 }
+
+export function historyDay(at: number, now: number): string {
+  const day = (value: number): number => Math.floor((value - new Date(value).getTimezoneOffset() * 60_000) / 86_400_000)
+  const days = day(now) - day(at)
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  return new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' })
+}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
+import { historyDay, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
 
 const thread = [
   { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Fix login' },
@@ -53,5 +53,14 @@ describe('titleFrom', () => {
     expect(titleFrom('Fix the login bug\nplease')).toBe('Fix the login bug')
     expect(titleFrom('x'.repeat(80))).toHaveLength(60)
     expect(titleFrom('   ')).toBe('New chat')
+  })
+})
+
+describe('historyDay', () => {
+  test('today, yesterday, then a short date', () => {
+    const now = new Date(2026, 8, 24, 15).getTime()
+    expect(historyDay(new Date(2026, 8, 24, 1).getTime(), now)).toBe('Today')
+    expect(historyDay(new Date(2026, 8, 23, 23).getTime(), now)).toBe('Yesterday')
+    expect(historyDay(new Date(2026, 8, 20, 9).getTime(), now)).toBe(new Date(2026, 8, 20).toLocaleDateString([], { month: 'short', day: 'numeric' }))
   })
 })

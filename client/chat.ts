@@ -1,7 +1,7 @@
 import { renderMarkdown } from './markdown'
 import { errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
-import { teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { historyDay, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const RUNNING_POLL_MS = 2000
@@ -227,6 +227,61 @@ async function sendMessage(prompt: string): Promise<void> {
   await refresh()
 }
 
+type ListedJob = AgentJob & TurnJob & { threadRoot: string; purpose?: string; project?: string | null; chatId?: string; label: string }
+
+function paintHistory(jobs: ListedJob[]): void {
+  const roots = jobs.filter(job => job.purpose === 'chat' && job.threadRoot === job.id)
+  const latest = (rootId: string): ListedJob => jobs.filter(job => job.threadRoot === rootId).sort((a, b) => b.startedAt - a.startedAt)[0]!
+  roots.sort((a, b) => latest(b.id).startedAt - latest(a.id).startedAt)
+  $('history-count').textContent = roots.length ? `(${roots.length})` : ''
+  const list = $('history-list')
+  if (!roots.length) { list.replaceChildren(Object.assign(document.createElement('p'), { className: 'history-empty', textContent: 'No chats yet. Write a message to start one.' })); historySignature = ''; return }
+  const signature = JSON.stringify(roots.map(chat => [chat.id, chat.label, latest(chat.id).id, latest(chat.id).status, latest(chat.id).currentActivity, jobs.filter(job => job.chatId === chat.id).map(job => job.status)]))
+  if (signature === historySignature) return
+  historySignature = signature
+  const openIds = new Set([...list.querySelectorAll<HTMLElement>('details[open]')].map(item => item.dataset.chat))
+  list.replaceChildren(...roots.map((chat, index) => {
+    const agentsOf = jobs.filter(job => job.chatId === chat.id)
+    const state = jobs.some(job => job.threadRoot === chat.id && job.status === 'running') || agentsOf.some(job => job.status === 'running') ? 'running' : agentsOf.some(job => job.status === 'failed') ? 'needs-you' : null
+    const item = document.createElement('details'); item.className = 'history-item'; item.dataset.chat = chat.id; item.open = openIds.size ? openIds.has(chat.id) : index === 0
+    const summary = document.createElement('summary')
+    const title = document.createElement('span')
+    if (state) { const dot = document.createElement('span'); dot.className = 'live-dot'; dot.dataset.state = state; title.append(dot) }
+    title.append(chat.label)
+    const time = document.createElement('time'); time.textContent = historyDay(latest(chat.id).startedAt, Date.now())
+    summary.append(title, time)
+    const line = document.createElement('p'); line.textContent = latest(chat.id).currentActivity || (state === 'running' ? 'Working…' : 'Open to continue.')
+    const footer = document.createElement('footer')
+    const where = document.createElement('span'); where.textContent = chat.project ? chat.project.split('/').pop() ?? '' : 'Chat home'
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'text-button'; open.textContent = 'Continue chat'; open.onclick = () => openChat(chat.id)
+    footer.append(where, open)
+    item.append(summary, line, footer)
+    return item
+  }))
+}
+
+function paintAgentsCount(jobs: ListedJob[]): void {
+  const running = jobs.filter(job => job.chatId && job.status === 'running').length
+  const badge = $('agents-count')
+  badge.textContent = String(running)
+  badge.hidden = running === 0
+}
+
+let jobsTimer = 0
+let historySignature = ''
+async function pollJobs(): Promise<void> {
+  clearTimeout(jobsTimer)
+  if (document.visibilityState === 'visible') {
+    const result = await getJson('/api/jobs')
+    if (result.ok) {
+      const jobs = readArray(result.data.jobs) as unknown as ListedJob[]
+      paintAgentsCount(jobs)
+      if (!$('history').hidden) paintHistory(jobs)
+    }
+  }
+  jobsTimer = window.setTimeout(() => void pollJobs(), IDLE_POLL_MS)
+}
+
 export function openChat(id: string): void {
   root = id
   agents = []
@@ -254,5 +309,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 void getJson('/api/providers').then(result => {
   if (result.ok) providers = (readArray(result.data.providers) as unknown as LaunchProvider[]).filter(item => typeof item.id === 'string')
 })
+addEventListener('quiet:screen', (event) => { if ((event as CustomEvent<string>).detail === 'history') void pollJobs() })
+void pollJobs()
 const initial = new URLSearchParams(location.search).get('chat')
 if (initial) openChat(initial)

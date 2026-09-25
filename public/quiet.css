@@ -536,3 +536,14 @@ a.pill:hover { color: var(--accent); }
 .home-candidates { display: flex; flex-wrap: wrap; gap: 8px; }
 .home-candidates button { padding: 6px 12px; border-radius: 12px; font-size: 12px; box-shadow: var(--raised); }
 .chat-error { font-size: 13px; color: #b0556a; margin: 0 0 24px; }
+.count { position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; font-size: 10px; line-height: 16px; text-align: center; color: #fff; background: var(--accent); }
+.count[hidden] { display: none; }
+#open-agents { position: relative; }
+.agent-actions { display: flex; gap: 14px; align-items: center; margin-top: 8px; font-size: 12px; }
+.agent summary .status[data-state="needs-you"] { color: #b0556a; }
+.agent summary .status[data-state="needs-you"]::before { background: #b0556a; }
+.agent summary .status[data-state="done"], .agent summary .status[data-state="landed"] { color: #5b8a6a; }
+.agent summary .status[data-state="done"]::before, .agent summary .status[data-state="landed"]::before { background: #5b8a6a; }
+.history-item summary .live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 8px; vertical-align: 2px; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+.history-item summary .live-dot[data-state="needs-you"] { background: #b0556a; animation: none; }
+.history-empty { color: var(--muted); font-size: 14px; }

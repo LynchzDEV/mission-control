@@ -8,6 +8,7 @@ const composer = $('composer') as HTMLFormElement
 function showScreen(name: (typeof screens)[number]): void {
   if (name !== 'history') { beforeHistory = null; $('search').setAttribute('aria-pressed', 'false') }
   dispatchEvent(new Event('quiet:design'))
+  dispatchEvent(new CustomEvent('quiet:screen', { detail: name }))
   for (const screen of screens) $(screen).hidden = screen !== name
   ;(document.querySelector('.canvas') as HTMLElement).dataset.screen = name
   ;(document.querySelector('.stage') as HTMLElement).scrollTop = 0
