@@ -67,11 +67,13 @@ export type JobRecord = {
   titleLocked?: boolean
   source?: 'user' | 'agent'
   edit?: boolean
+  stoppedAt?: number
+  landedAt?: number
 }
 
 export type JobPurpose = 'workflow-design' | 'chat'
 
-export type ChatJobPatch = Partial<Pick<JobRecord, 'label' | 'project' | 'titleLocked'>>
+export type ChatJobPatch = Partial<Pick<JobRecord, 'label' | 'project' | 'titleLocked' | 'landedAt' | 'stoppedAt'>>
 
 export type CreateJobParams = {
   worktree?: boolean
@@ -511,7 +513,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   }
 
   function stepAttempts(chatId: string, label: string): number {
-    return [...jobs.values()].filter(job => job.chatId === chatId && job.label === label && !job.reviewOf).length
+    return [...jobs.values()].filter(job => job.chatId === chatId && job.label === label && !job.reviewOf && job.threadRoot === job.id).length
   }
 
   function chatSpawnContext(params: CreateJobParams, id: string, chatHomePath: string): Partial<EngineResolverParams> {
@@ -550,7 +552,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   async function createJob(params: CreateJobParams, resolver: EngineResolver): Promise<CreateJobResult> {
     const cwdCheck = await validateWorkspaceCwd(params.cwd, home, { requireGit: params.purpose !== 'chat' })
     if (!cwdCheck.ok) return { ok: false, status: 400, error: cwdCheck.error }
-    if (params.chatId && !params.reviewOf && stepAttempts(params.chatId, params.label) >= CHAT_STEP_ATTEMPTS) {
+    if (params.chatId && !params.reviewOf && params.threadRoot === undefined && stepAttempts(params.chatId, params.label) >= CHAT_STEP_ATTEMPTS) {
       return { ok: false, status: 409, error: 'retry cap reached for this step' }
     }
     const owner = workspaceOwners.get(cwdCheck.path)
@@ -648,9 +650,15 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     return { ok: true, job: record }
   }
 
+  async function markStopped(id: string): Promise<void> {
+    const record = jobs.get(id)
+    if (record !== undefined) await persist({ ...record, stoppedAt: clock() })
+  }
+
   async function killJob(id: string): Promise<KillJobResult> {
     const proc = processes.get(id)
     if (proc !== undefined) {
+      await markStopped(id)
       proc.kill('SIGTERM')
       setTimeout(() => {
         if (proc.exitCode === null) proc.kill('SIGKILL')
@@ -661,6 +669,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     if (record === undefined || record.status !== 'running' || !pidAlive(record.pid)) {
       return { ok: false, status: 404, error: 'job is not running' }
     }
+    await markStopped(id)
     try {
       process.kill(record.pid, 'SIGTERM')
       setTimeout(() => {

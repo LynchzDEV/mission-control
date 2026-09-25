@@ -9,7 +9,7 @@ import { parseActivity } from '../activity'
 import type { ChatJobPatch, CreateJobParams, JobManager, JobRecord } from '../jobs'
 import { readLogSince, readLogTail } from '../jobs'
 import { readConfig } from '../secrets'
-import { createSecretsRedactor, logSecrets, readRedactedLog, redactedTailReader } from '../log-redaction'
+import { activityRedactor, createSecretsRedactor, logSecrets, readRedactedLog, redactedTailReader } from '../log-redaction'
 import { projectMemory } from '../chat-reports'
 import { notifyChat } from '../notify'
 import { chatHome } from '../chat-home'
@@ -91,8 +91,8 @@ async function chatRootFields(payload: Record<string, unknown>): Promise<Pick<Cr
 function chatPatch(body: Record<string, unknown>, root: JobRecord): ChatJobPatch | Failure {
   const patch: ChatJobPatch = {}
   if (body.titleLocked !== undefined) {
-    if (typeof body.titleLocked !== 'boolean') return { status: 400, error: 'titleLocked must be a boolean' }
-    patch.titleLocked = body.titleLocked
+    if (body.titleLocked !== true) return { status: 400, error: 'titleLocked can only be set to true' }
+    patch.titleLocked = true
   }
   if (body.label !== undefined) {
     const label = typeof body.label === 'string' ? body.label.trim() : ''
@@ -256,10 +256,11 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       }
       return result.job
     })
-    .get('/api/jobs', ({ query }) => {
+    .get('/api/jobs', async ({ query }) => {
       const chat = typeof query.chat === 'string' && query.chat !== '' ? query.chat : null
       const jobs = chat === null ? manager.listJobs() : manager.listJobs().filter((job) => job.chatId === chat || job.threadRoot === chat)
-      return { jobs: jobs.map((job) => ({ ...job, currentActivity: manager.currentActivity(job.id) })) }
+      const redact = await activityRedactor()
+      return { jobs: jobs.map((job) => ({ ...job, currentActivity: redact(manager.currentActivity(job.id)) })) }
     })
     .patch('/api/jobs/:id', async ({ params, body, set }) => {
       const root = manager.getJob(params.id)
@@ -291,7 +292,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         return { error: 'job not found' }
       }
       const events = parseActivity(await readRedactedLog(manager.logPath(params.id)), ACTIVITY_FEED_MAX)
-      return { status: job.status, currentActivity: manager.currentActivity(params.id), events }
+      return { status: job.status, currentActivity: (await activityRedactor())(manager.currentActivity(params.id)), events }
     })
     .get('/api/jobs/:id/log', async ({ params, set }) => {
       const job = manager.getJob(params.id)
@@ -329,7 +330,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       }
     })
     .post('/api/jobs/:id/reply', async ({ params, body, set }) => {
-      const payload = body as { message?: unknown; source?: unknown } | null
+      const payload = body as { message?: unknown } | null
       const message = typeof payload?.message === 'string' ? payload.message.trim() : ''
       if (message === '') {
         set.status = 400
@@ -358,12 +359,17 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         return { error: 'job has no session id to resume yet' }
       }
 
-      const chatRoot = parent.purpose === 'chat' ? manager.getJob(rootId) : undefined
+      const threadHead = manager.getJob(rootId)
+      const isChat = parent.purpose === 'chat' || threadHead?.purpose === 'chat'
+      if (isChat && threadIsRunning(chain)) {
+        set.status = 409
+        return { error: 'The chat is still replying' }
+      }
+      const chatRoot = isChat ? threadHead : undefined
       const result = await manager.createJob(
         {
-          ...(parent.purpose === 'chat' ? {
+          ...(isChat ? {
             purpose: 'chat' as const,
-            source: payload?.source === 'agent' ? 'agent' as const : 'user' as const,
             edit: chatRoot?.edit ?? parent.edit ?? false,
             project: chatRoot?.project ?? null,
             ...await chatMemory(manager, chatRoot?.project, rootId),
@@ -377,6 +383,9 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
           resumeSessionId: sessionId,
           ...(parent.terminalId === null ? {} : { terminalId: parent.terminalId }),
           ...(parent.model === null ? {} : { model: parent.model }),
+          ...(parent.chatId ? { chatId: parent.chatId } : {}),
+          ...(parent.chatTurn ? { chatTurn: parent.chatTurn } : {}),
+          ...(parent.reason ? { reason: parent.reason } : {}),
         },
         resolver,
       )
@@ -392,7 +401,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         set.status = result.status
         return { error: result.error, ...(result.files === undefined ? {} : { files: result.files }) }
       }
-      const landed = manager.getJob(params.id)
+      const landed = await manager.updateJob(params.id, { landedAt: Date.now() })
       if (landed?.chatId) void notify('Landed', `${landed.label} · ${result.landed.length} commit${result.landed.length === 1 ? '' : 's'}`).catch(() => {})
       return { landed: result.landed, base: result.base }
     })

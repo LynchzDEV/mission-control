@@ -10,6 +10,7 @@ const MEMORY_ITEMS = 8
 const DAY_MS = 86_400_000
 export const REPORT_RETRY_MS = 3_000
 export const REPORT_RETRY_LIMIT = 400
+export const AGENT_ROUNDS_MAX = 12
 
 export type AgentReport = { message: string; needsYou: boolean }
 
@@ -29,6 +30,7 @@ function lastText(log: string): string {
 }
 
 function outcome(job: JobRecord, failed: boolean): string {
+  if (job.stoppedAt !== undefined) return 'stopped'
   if (!failed) return 'done'
   return job.exitCode !== null && job.exitCode !== 0 ? `failed (exit ${job.exitCode})` : 'failed'
 }
@@ -39,13 +41,19 @@ export function agentReport(job: JobRecord, log: string): AgentReport {
   const head = `[agent ${oneLine(job.label, LABEL_MAX)} · ${job.engine}] ${outcome(job, failed)}`
   const body = text.length > REPORT_TEXT_MAX ? `${text.slice(0, REPORT_TEXT_MAX - 1)}…` : text
   const diff = job.diffStat ? `\nDiff:${job.diffStat}` : ''
-  return { message: `${head}\n${body}${diff}`.trim(), needsYou: failed || text.endsWith('?') }
+  return { message: `${head}\n${body}${diff}`.trim(), needsYou: job.stoppedAt === undefined && (failed || text.endsWith('?')) }
 }
 
 function relativeDay(at: number, now: number): string {
   const days = Math.floor((now - at) / DAY_MS)
   if (days <= 0) return 'today'
   return days === 1 ? 'yesterday' : `${days} days ago`
+}
+
+function agentRoundsSinceUser(chain: readonly JobRecord[]): number {
+  let rounds = 0
+  for (let index = chain.length - 1; index >= 0 && chain[index]?.source === 'agent'; index -= 1) rounds += 1
+  return rounds
 }
 
 const newestFirst = (left: JobRecord, right: JobRecord): number => right.startedAt - left.startedAt
@@ -111,6 +119,12 @@ export function createReportPoster(manager: JobManager, resolver: EngineResolver
     await needsYouNotice(root, await Promise.all(records.map(async (record) => ({ record, report: agentReport(record, await readLog(record.id)) }))))
   }
 
+  const holdForUser = async (root: JobRecord, records: readonly JobRecord[]): Promise<void> => {
+    take(root.id, records)
+    console.error(`chat report held: chat ${root.id} reached ${AGENT_ROUNDS_MAX} agent rounds without a user turn (${records.map((record) => record.label).join(', ')})`)
+    await opts.notify?.('Needs you', `${root.label} · waiting for you after ${AGENT_ROUNDS_MAX} agent rounds`)
+  }
+
   const wait = async (root: JobRecord, records: readonly JobRecord[]): Promise<void> => {
     const attempt = attempts.get(root.id) ?? 0
     if (attempt >= retryLimit) return drop(root, records, 'chat stayed busy')
@@ -136,6 +150,7 @@ export function createReportPoster(manager: JobManager, resolver: EngineResolver
     const sessionId = replySessionId(chain)
     const last = chain[chain.length - 1]
     if (sessionId === null || last === undefined) return drop(root, records, 'chat has no session to resume')
+    if (agentRoundsSinceUser(chain) >= AGENT_ROUNDS_MAX) return holdForUser(root, records)
     take(chatId, records)
     const created = await manager.createJob({
       engine: root.engine,

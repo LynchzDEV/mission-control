@@ -54,11 +54,11 @@ async function pollUntilDone(
   app: Elysia,
   id: string,
   timeoutMs = 3000,
-): Promise<{ id: string; status: string; diffStat: string | null }> {
+): Promise<{ id: string; status: string; diffStat: string | null; stoppedAt?: number }> {
   const deadline = Date.now() + timeoutMs
   for (;;) {
     const response = await app.handle(get('/api/jobs'))
-    const { jobs } = (await response.json()) as { jobs: Array<{ id: string; status: string; diffStat: string | null }> }
+    const { jobs } = (await response.json()) as { jobs: Array<{ id: string; status: string; diffStat: string | null; stoppedAt?: number }> }
     const job = jobs.find((entry) => entry.id === id)
     if (job !== undefined && job.status !== 'running') return job
     if (Date.now() > deadline) throw new Error(`job ${id} did not settle within ${timeoutMs}ms`)
@@ -262,6 +262,8 @@ describe('POST /api/jobs/:id/kill', () => {
 
     const finished = await pollUntilDone(app, job.id)
     expect(finished.status).toBe('failed')
+    expect(finished.stoppedAt).toBeNumber()
+    expect(createJobManager().getJob(job.id)?.stoppedAt).toBeNumber()
   })
 })
 
@@ -649,6 +651,8 @@ describe('POST /api/jobs/:id/land', () => {
     expect(await branch.exited).not.toBe(0)
     expect(manager.getJob(job.id)?.reviewedAt).toBeNumber()
     expect(createJobManager().getJob(job.id)?.reviewedAt).toBeNumber()
+    expect(manager.getJob(job.id)?.landedAt).toBeNumber()
+    expect(createJobManager().getJob(job.id)?.landedAt).toBeNumber()
   })
 
   test('auto-commits dirty changes before landing', async () => {
@@ -880,7 +884,7 @@ describe('chat jobs', () => {
     expect((await app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${worker.id}`, { method: 'PATCH', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body: '{"label":"y"}' }))).status).toBe(404)
   })
 
-  test('a reply to a chat is a chat turn with a source', async () => {
+  test('a reply to a chat is a user chat turn whatever source the body names', async () => {
     const calls: EngineResolverParams[] = []
     const manager = createJobManager({ home: homedir() })
     const app = buildApp(manager, capturingResolver(calls))
@@ -890,7 +894,7 @@ describe('chat jobs', () => {
     expect(reply.status).toBe(200)
     const turn = await reply.json()
     expect(turn.purpose).toBe('chat')
-    expect(turn.source).toBe('agent')
+    expect(turn.source).toBe('user')
     expect(turn.edit).toBe(true)
     expect(turn.threadRoot).toBe(root.id)
     expect(calls[1]?.purpose).toBe('chat')
@@ -899,5 +903,78 @@ describe('chat jobs', () => {
     await pollUntilDone(app, turn.id)
     const user = await (await app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${turn.id}/reply`, { method: 'POST', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body: JSON.stringify({ message: 'thanks', source: 'bogus' }) }))).json()
     expect(user.source).toBe('user')
+  })
+
+  const replyTo = (app: Elysia, id: string, message: string) => app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${id}/reply`, { method: 'POST', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body: JSON.stringify({ message }) }))
+
+  test('a reply while the chat is still replying is refused', async () => {
+    const resolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `echo '${SESSION_LINE}'; sleep 30`], env: {} })
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, resolver)
+    const root = await (await post(app, chatBody())).json()
+    const deadline = Date.now() + 5000
+    while (manager.getJob(root.id)?.sessionId === null) {
+      if (Date.now() > deadline) throw new Error('no session id')
+      await new Promise((resolveWait) => setTimeout(resolveWait, 20))
+    }
+    const reply = await replyTo(app, root.id, 'hurry up')
+    expect(reply.status).toBe(409)
+    expect(await reply.json()).toEqual({ error: 'The chat is still replying' })
+    await manager.killJob(root.id)
+    await pollUntilDone(app, root.id)
+  })
+
+  test('a follow-up to a chat-spawned agent stays in the chat and is not a new attempt', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, capturingResolver([]))
+    const root = await (await post(app, chatBody())).json()
+    const step = () => post(app, JSON.stringify({ engine: 'codex', cwd: repo, prompt: executionPlan('Build it'), label: 'Build it', chat: root.id, chatTurn: root.id, reason: 'Codex · edits' }))
+    const agent = await (await step()).json()
+    for (let attempt = 0; attempt < 2; attempt += 1) expect((await step()).status).toBe(200)
+    await pollUntilDone(app, agent.id)
+    const reply = await replyTo(app, agent.id, 'also add a test')
+    expect(reply.status).toBe(200)
+    const followUp = await reply.json()
+    expect(followUp.chatId).toBe(root.id)
+    expect(followUp.chatTurn).toBe(root.id)
+    expect(followUp.reason).toBe('Codex · edits')
+    expect(followUp.threadRoot).toBe(agent.id)
+    const listed = await (await app.handle(new Request(`http://127.0.0.1:7777/api/jobs?chat=${root.id}`, { headers: { host: '127.0.0.1:7777' } }))).json()
+    expect(listed.jobs.map((job: { id: string }) => job.id)).toContain(followUp.id)
+    expect((await step()).status).toBe(409)
+    for (const job of listed.jobs as Array<{ id: string }>) await pollUntilDone(app, job.id)
+  })
+
+  test('titleLocked can only be switched on', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, echoResolver)
+    const root = await (await post(app, chatBody())).json()
+    const patch = (body: Record<string, unknown>) => app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${root.id}`, { method: 'PATCH', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body: JSON.stringify(body) }))
+    expect((await patch({ titleLocked: false })).status).toBe(400)
+    expect((await patch({ label: 'Mine', titleLocked: true })).status).toBe(200)
+    expect((await patch({ titleLocked: false, label: 'Theirs' })).status).toBe(400)
+    expect((await (await patch({ label: 'Theirs' })).json()).label).toBe('Mine')
+    expect(manager.getJob(root.id)?.titleLocked).toBe(true)
+  })
+
+  test('the listed current activity never shows the API token', async () => {
+    const token = await readApiToken()
+    const line = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: `token=${token}` }] } })
+    const app = buildApp(createJobManager({ home: homedir(), activityIntervalMs: 0 }), () => ({ cmd: '/bin/sh', args: ['-c', `echo '${line}'; sleep 30`], env: {} }))
+    const job = await (await post(app, JSON.stringify({ engine: 'claude', cwd: repo, prompt: 'p', label: 'leaky' }))).json()
+    const deadline = Date.now() + 5000
+    let activity: string | null = null
+    while (activity === null) {
+      if (Date.now() > deadline) throw new Error('no activity')
+      await new Promise((resolveWait) => setTimeout(resolveWait, 50))
+      const listed = await (await app.handle(new Request('http://127.0.0.1:7777/api/jobs', { headers: { host: '127.0.0.1:7777' } }))).json()
+      activity = listed.jobs.find((entry: { id: string }) => entry.id === job.id)?.currentActivity ?? null
+    }
+    expect(activity).toContain('[REDACTED]')
+    expect(activity).not.toContain(token.slice(0, 12))
+    const feed = await (await app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${job.id}/activity`, { headers: { host: '127.0.0.1:7777' } }))).json()
+    expect(feed.currentActivity).not.toContain(token.slice(0, 12))
+    await app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${job.id}/kill`, { method: 'POST', headers: { host: '127.0.0.1:7777' } }))
+    await pollUntilDone(app, job.id)
   })
 })

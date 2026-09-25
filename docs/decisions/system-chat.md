@@ -37,6 +37,7 @@ visual decisions are in `docs/design/chat-agent-cards/DECISION.md`.
 - **Direct edits:** read-only by default. A per-chat toggle (pencil chip) lets the chat edit
   directly, only inside the chosen project, never elsewhere in Chat home. Each edit appears as an
   "Edited directly" card with its diff and Undo. These edits skip review and landing by design.
+  Direct-edit off is enforced by the tool deny list on Claude and GLM and by the rules text only on Codex and shell writes.
 - **No spawn limit.** The chat still avoids providers close to their 5-hour or weekly limit
   (`/api/quota`).
 

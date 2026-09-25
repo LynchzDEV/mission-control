@@ -30,6 +30,11 @@ describe('agentReport', () => {
     expect(reportedFailure.needsYou).toBe(true)
     expect(reportedFailure.message).toContain('] failed')
   })
+  test('a stopped agent reports stopped and does not need you', () => {
+    const report = agentReport({ ...base, status: 'failed', exitCode: 143, stoppedAt: 5 }, `${textEvent('Should I go on?')}\n`)
+    expect(report.message.startsWith('[agent Build it · codex] stopped')).toBe(true)
+    expect(report.needsYou).toBe(false)
+  })
   test('long last words are clipped and a multi-line label stays on one line', () => {
     const report = agentReport({ ...base, label: 'Build\nit', diffStat: null }, `${textEvent('y'.repeat(5000))}\n`)
     expect(report.message.startsWith('[agent Build it · codex] done\n')).toBe(true)
@@ -223,6 +228,23 @@ describe('createReportPoster', () => {
     await createReportPoster(manager, sessionResolver, { logReader: logReader(manager), notify: async (title, body) => { notes.push(`${title}|${body}`) } })(worker)
     expect(agentTurns(manager)).toHaveLength(0)
     expect(notes).toEqual(['Needs you|Login fix · Build it'])
+    expect(errors.mock.calls.some((call) => String(call[0]).includes(root.id))).toBe(true)
+  })
+
+  test('after twelve agent rounds in a row the chat waits for you instead of replying', async () => {
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    const manager = createJobManager({ home: homedir() })
+    const root = await settled(manager, (await chatRoot(manager)).id)
+    for (let round = 0; round < 12; round += 1) {
+      const turn = await manager.createJob({ engine: 'claude', cwd: repo, prompt: `[agent round ${round}]`, label: root.label, threadRoot: root.id, parentJobId: root.id, resumeSessionId: 'sess-1', purpose: 'chat', source: 'agent' }, sessionResolver)
+      if (!turn.ok) throw new Error(turn.error)
+      await settled(manager, turn.job.id)
+    }
+    const worker = await agent(manager, root.id, 'Done again.')
+    const notes: string[] = []
+    await createReportPoster(manager, sessionResolver, { logReader: logReader(manager), notify: async (title, body) => { notes.push(`${title}|${body}`) } })(worker)
+    expect(agentTurns(manager)).toHaveLength(12)
+    expect(notes).toEqual(['Needs you|Login fix · waiting for you after 12 agent rounds'])
     expect(errors.mock.calls.some((call) => String(call[0]).includes(root.id))).toBe(true)
   })
 

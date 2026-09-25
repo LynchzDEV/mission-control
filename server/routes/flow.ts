@@ -9,6 +9,7 @@ import {
 import { requireLocal } from '../auth'
 import { deriveFlow, isSessionFinished, effectivePlan, jobsForSession, planOnlySession, sessionKey, type SessionFlow } from '../flow'
 import type { JobManager, JobRecord } from '../jobs'
+import { activityRedactor } from '../log-redaction'
 import { createPlanStore, isStepStatus, parsePlanInput, type Plan, type PlanStore } from '../plans'
 import type { TerminalRegistry } from '../terminals'
 
@@ -76,6 +77,7 @@ export async function flowSnapshot(
   )
   for (const label of due) await archives.archive(label, now)
 
+  const redact = await activityRedactor()
   const sessions: Record<string, FlowSession> = {}
   for (const label of labels) {
     const archived = archives.isArchived(label)
@@ -85,7 +87,7 @@ export async function flowSnapshot(
     sessions[label] = {
       ...(derived.sessions[label] ?? planOnlySession()),
       plan,
-      currentActivity: job === null ? null : manager.currentActivity(job.id),
+      currentActivity: job === null ? null : redact(manager.currentActivity(job.id)),
       activityJobId: job?.id ?? null,
       archived,
       finished: isSessionFinished(plan, jobsForSession(jobs, label)),
