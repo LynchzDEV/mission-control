@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["client/shell.ts", "client/shell-composer.ts", "client/terminals.ts", "client/terminal-state.ts", "client/shell-activity.ts", "client/shell-launch.ts", "client/usage-card.ts", "server/views/shell.ts"]
+  "include": ["client/shell.ts", "client/styles.d.ts", "client/shell-composer.ts", "client/terminals.ts", "client/terminal-panes.ts", "client/terminal-state.ts", "client/shell-activity.ts", "client/shell-launch.ts", "client/usage-card.ts", "server/views/shell.ts"]
 }

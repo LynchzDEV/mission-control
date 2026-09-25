@@ -460,9 +460,31 @@ a.pill:hover { color: var(--accent); }
 .logo { width: 14px; height: 14px; flex: 0 0 14px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; background: #9aa3b5; margin-left: auto; }
 .dot[data-state="working"] { background: #5b8a6a; }
-.dot[data-state="ended"] { background: #b0556a; }
+.rail-empty { font-size: 12px; padding: 4px; margin: 0; }
 .live-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .live-stage { flex: 1; min-height: 100px; min-width: 0; position: relative; display: flex; }
 .term-host { flex: 1; min-width: 0; min-height: 0; padding: 12px; border-radius: 16px; box-shadow: var(--inset); overflow: hidden; }
 .term-host .xterm { height: 100%; }
 @media (max-width: 900px) { .with-rail { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .rail { grid-template-rows: auto; } .rail-cards { grid-auto-flow: column; grid-auto-columns: 200px; overflow-x: auto; overflow-y: hidden; } }
+
+.drop-stage { position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; }
+.live-stage { flex: 1; min-height: 100px; min-width: 0; }
+.drop-zone { position: absolute; display: grid; place-items: center; border-radius: 14px; font-size: 13px; color: var(--accent); background: #8062bd14; border: 1.5px dashed #8062bd66; pointer-events: none; opacity: 0; transition: opacity 120ms, background 120ms; }
+.drop-zone.right { top: 0; bottom: 0; right: 0; width: 48%; }
+.drop-zone.bottom { left: 0; right: 0; bottom: 0; height: 40%; width: 50%; }
+.drop-stage[data-dragging="true"] .drop-zone { opacity: 1; }
+.drop-zone[data-hot="true"] { background: #8062bd24; border-style: solid; }
+.session-card[draggable="true"] { cursor: grab; }
+.mc-panes { height: 100%; width: 100%; --dv-group-view-background-color: transparent; --dv-tabs-and-actions-container-background-color: transparent; --dv-tabs-and-actions-container-height: 30px; --dv-activegroup-visiblepanel-tab-background-color: transparent; --dv-inactivegroup-visiblepanel-tab-background-color: transparent; --dv-separator-border: transparent; --dv-sash-color: transparent; --dv-paneview-active-outline-color: transparent; --dv-tab-divider-color: transparent; --dv-background-color: transparent; --dv-active-sash-color: #8062bd33; }
+.mc-panes .dv-tabs-and-actions-container { padding: 0 4px; }
+.mc-panes .dv-tab { padding: 0; }
+.pane-head { display: flex; align-items: center; gap: 8px; height: 30px; font-size: 13px; font-weight: 500; color: #505e75; }
+.pane-head small { font-weight: 400; color: var(--muted); font-size: 11px; }
+.pane-head .pane-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pane-head .close-split { margin-left: auto; width: 24px; min-height: 24px; flex-basis: 24px; }
+.pane-head .close-split svg { width: 12px; height: 12px; }
+.pane-content { height: 100%; display: flex; padding: 0 2px 2px 0; overflow: hidden; }
+.pane-content .term-host { height: 100%; }
+.mc-panes .dv-active-group .term-host { box-shadow: var(--inset), 0 0 0 1.5px #8062bd44; }
+.mc-panes:has(.dv-groupview:only-child) .term-host { box-shadow: var(--inset); }
+.mc-panes .dv-sash { z-index: 2; }

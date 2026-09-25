@@ -51,10 +51,11 @@ const BODY = `
 
     <section id="live" class="live-workspace" aria-label="Live terminals" hidden>
       <div class="with-rail">
-        <aside class="rail" aria-label="Terminals"><div class="rail-head"><span id="rail-count">Terminals</span><button type="button" class="round" id="rail-new" aria-label="New terminal" title="New terminal"><svg><use href="#plus-icon"/></svg></button></div><div id="rail-cards" class="rail-cards"></div></aside>
+        <aside class="rail" id="rail" aria-label="Terminals"><div class="rail-head"><span id="rail-count">Terminals</span><button type="button" class="round" id="rail-new" aria-label="New terminal" title="New terminal"><svg><use href="#plus-icon"/></svg></button></div><div id="rail-cards" class="rail-cards"></div><p id="rail-empty" class="muted rail-empty">No terminals yet. Open one with +.</p></aside>
         <div class="live-main" id="live-main">
           <header class="live-heading"><div><h1 id="live-name">Terminal</h1><p id="live-directory" class="muted"></p></div><div class="live-actions"><span id="live-status" role="status">Connecting…</span><button id="live-reconnect" class="text-button" hidden disabled>Reconnect</button></div></header>
-          <div id="live-stage" class="live-stage"></div>
+          <div class="drop-stage" id="drop-stage" data-dragging="false"><div id="live-stage" class="live-stage"></div><div class="drop-zone right" id="drop-right" data-hot="false">Drop to open beside</div><div class="drop-zone bottom" id="drop-bottom" data-hot="false">Drop to open below</div></div>
+          <div id="term-park" hidden></div>
         </div>
       </div>
     </section>

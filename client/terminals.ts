@@ -3,7 +3,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import { providerName } from './terminal-view'
 import { errorText, getJson, postJson, readArray, readRecord } from './shared'
 import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
-import { latestLine, nextActive, sessionState, type Session, type SessionState } from './terminal-state'
+import { dragKind, latestLine, nextActive, sessionState, splitPlan, type Session, type SessionState } from './terminal-state'
+import { createPanes, type PaneHeader } from './terminal-panes'
 
 type Provider = { id: string; name: string; models: string[] }
 
@@ -19,7 +20,10 @@ const workflowSelect = $('live-workflow') as HTMLSelectElement
 const submit = $('live-submit') as HTMLButtonElement
 const reconnectButton = $('live-reconnect') as HTMLButtonElement
 const stage = $('live-stage')
+const park = $('term-park')
+const dropStage = $('drop-stage')
 const cards = $('rail-cards')
+const panes = createPanes(stage)
 const views = new Map<string, TerminalView>()
 let sessions: Session[] = []
 let activeId: string | null = null
@@ -32,7 +36,6 @@ cwdInput.value = (window as { MC_WORKSPACE_DIR?: string }).MC_WORKSPACE_DIR ?? '
 const stored = (key: string): string | null => { try { return localStorage.getItem(key) } catch { return null } }
 const store = (key: string, value: string | null): void => { try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key) } catch {} }
 const rememberedId = (): string | null => new URLSearchParams(location.search).get('terminal') ?? stored(savedKey)
-const decoder = new TextDecoder()
 
 export class TerminalView {
   readonly host = document.createElement('div')
@@ -43,6 +46,8 @@ export class TerminalView {
   ended = false
   buffer = ''
   private resizeFrame = 0
+  private readonly observer: ResizeObserver
+  private readonly decoder = new TextDecoder()
 
   constructor(public session: Session) {
     this.host.className = 'term-host'
@@ -51,7 +56,8 @@ export class TerminalView {
     this.terminal.loadAddon(this.fit)
     this.terminal.open(this.host)
     this.terminal.onData(data => { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(new TextEncoder().encode(data)) })
-    new ResizeObserver(() => { cancelAnimationFrame(this.resizeFrame); this.resizeFrame = requestAnimationFrame(() => this.resize()) }).observe(this.host)
+    this.observer = new ResizeObserver(() => { cancelAnimationFrame(this.resizeFrame); this.resizeFrame = requestAnimationFrame(() => this.resize()) })
+    this.observer.observe(this.host)
   }
 
   get state(): SessionState { return sessionState(this.lastOutputAt, this.ended, Date.now()) }
@@ -79,7 +85,7 @@ export class TerminalView {
     }
     connection.onmessage = (event) => {
       if (this.socket !== connection) return
-      const text = typeof event.data === 'string' ? event.data : decoder.decode(new Uint8Array(event.data as ArrayBuffer))
+      const text = typeof event.data === 'string' ? event.data : this.decoder.decode(new Uint8Array(event.data as ArrayBuffer), { stream: true })
       this.terminal.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data as ArrayBuffer))
       this.lastOutputAt = Date.now()
       this.buffer = (this.buffer + text).slice(-BUFFER_CHARS)
@@ -95,6 +101,7 @@ export class TerminalView {
   }
 
   dispose(): void {
+    this.observer.disconnect()
     this.socket?.close()
     this.socket = null
     this.terminal.dispose()
@@ -128,20 +135,22 @@ function ensureView(session: Session): TerminalView {
   let view = views.get(session.id)
   if (!view) {
     view = new TerminalView(session)
-    view.host.hidden = true
     views.set(session.id, view)
-    stage.append(view.host)
+    park.append(view.host)
     view.connect()
   } else view.session = session
   return view
 }
 
-export function activate(id: string): void {
+function paneHeader(session: Session): PaneHeader {
+  return { logo: `/providers/${session.engine}.svg`, title: session.title, caption: `${providerName(session.engine)}${session.model ? ` · ${session.model}` : ''}` }
+}
+
+function setActiveState(id: string): void {
   const view = views.get(id)
   if (!view) return
   activeId = id
   store(savedKey, id)
-  for (const other of views.values()) other.host.hidden = other !== view
   $('live-name').textContent = view.session.title
   $('live-directory').textContent = `${engineName(view.session.engine)}${view.session.model ? ` · ${view.session.model}` : ''} · ${view.session.cwd}`
   $('live').setAttribute('aria-label', `Live ${engineName(view.session.engine)} terminal`)
@@ -149,37 +158,93 @@ export function activate(id: string): void {
   if (view.ended) setStatus('Session ended.', false)
   else if (state === WebSocket.OPEN) setStatus(`Connected · live ${engineName(view.session.engine)}`, false)
   else if (state === WebSocket.CLOSED) setStatus('Disconnected. Reconnect to try again.', true)
-  visible(true)
   renderRail()
 }
+
+export function activate(id: string): void {
+  const view = views.get(id)
+  if (!view) return
+  panes.show(id, view.host, paneHeader(view.session))
+  setActiveState(id)
+  visible(true)
+}
+
+panes.onActive(id => { if (id !== activeId) setActiveState(id) })
+panes.onHide(id => {
+  const view = views.get(id)
+  if (view) park.append(view.host)
+  if (id === activeId) { const next = panes.active() ?? panes.shown()[0] ?? null; if (next) setActiveState(next) }
+})
+
+let dragZone: 'right' | 'bottom' | null = null
+function paintZones(zone: 'right' | 'bottom' | null, show: boolean): void {
+  dragZone = zone
+  dropStage.dataset.dragging = String(show)
+  for (const name of ['right', 'bottom'] as const) $(`drop-${name}`).dataset.hot = String(show && zone === name)
+}
+dropStage.addEventListener('dragover', (event) => {
+  if (dragKind(event.dataTransfer?.types ?? []) !== 'card') return
+  event.preventDefault()
+  const box = dropStage.getBoundingClientRect()
+  const zone = event.clientX > box.left + box.width * 0.52 ? 'right' : event.clientY > box.top + box.height * 0.6 ? 'bottom' : null
+  paintZones(zone, true)
+})
+dropStage.addEventListener('dragleave', (event) => { if (!dropStage.contains(event.relatedTarget as Node | null)) paintZones(null, false) })
+dropStage.addEventListener('drop', (event) => {
+  if (dragKind(event.dataTransfer?.types ?? []) !== 'card') return
+  event.preventDefault()
+  const id = event.dataTransfer?.getData('text/x-mc-terminal') ?? ''
+  const plan = splitPlan(id, panes.shown(), dragZone)
+  paintZones(null, false)
+  const view = views.get(id)
+  if (!plan || !view) return
+  panes.split(id, view.host, paneHeader(view.session), plan.direction)
+  setActiveState(id)
+})
 
 function stateLabel(state: SessionState): string {
   return state === 'working' ? 'working' : state === 'ended' ? 'ended' : 'idle'
 }
 
+function buildCard(session: Session): HTMLButtonElement {
+  const card = document.createElement('button')
+  card.type = 'button'
+  card.className = 'session-card'
+  card.dataset.id = session.id
+  const head = document.createElement('header')
+  const logo = document.createElement('img'); logo.className = 'logo'; logo.alt = ''
+  const title = document.createElement('span'); title.className = 'card-title'
+  const dot = document.createElement('span'); dot.className = 'dot'
+  head.append(logo, title, dot)
+  card.append(head, document.createElement('small'), document.createElement('code'))
+  card.draggable = true
+  card.ondragstart = (event) => { event.dataTransfer?.setData('text/x-mc-terminal', session.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move' }
+  card.onclick = () => activate(session.id)
+  return card
+}
+
+function paintCard(card: HTMLButtonElement, session: Session): void {
+  const view = views.get(session.id)
+  const state = view?.state ?? 'idle'
+  card.setAttribute('aria-current', String(session.id === activeId))
+  const logo = card.querySelector('img') as HTMLImageElement
+  const src = `/providers/${session.engine}.svg`
+  if (logo.getAttribute('src') !== src) logo.src = src
+  card.querySelector('.card-title')!.textContent = session.title
+  ;(card.querySelector('.dot') as HTMLElement).dataset.state = state
+  card.querySelector('small')!.textContent = `${providerName(session.engine)}${session.model ? ` · ${session.model}` : ''} · ${stateLabel(state)}`
+  card.querySelector('code')!.textContent = view ? latestLine(view.buffer) || '>' : '>'
+}
+
 export function renderRail(): void {
   $('rail-count').textContent = sessions.length ? `Terminals · ${sessions.length}` : 'Terminals'
-  const known = new Set(sessions.map(session => session.id))
-  cards.replaceChildren(...sessions.map(session => {
-    const view = views.get(session.id)
-    const state = view?.state ?? 'idle'
-    const card = document.createElement('button')
-    card.type = 'button'
-    card.className = 'session-card'
-    card.dataset.id = session.id
-    card.setAttribute('aria-current', String(session.id === activeId))
-    const head = document.createElement('header')
-    const logo = document.createElement('img'); logo.className = 'logo'; logo.src = `/providers/${session.engine}.svg`; logo.alt = ''
-    const title = document.createElement('span'); title.className = 'card-title'; title.textContent = session.title
-    const dot = document.createElement('span'); dot.className = 'dot'; dot.dataset.state = state
-    head.append(logo, title, dot)
-    const small = document.createElement('small'); small.textContent = `${providerName(session.engine)}${session.model ? ` · ${session.model}` : ''} · ${stateLabel(state)}`
-    const line = document.createElement('code'); line.textContent = view ? latestLine(view.buffer) || '>' : '>'
-    card.append(head, small, line)
-    card.onclick = () => activate(session.id)
-    return card
-  }))
-  for (const [id, view] of views) if (!known.has(id) && !view.ended) { view.ended = true }
+  const existing = new Map([...cards.querySelectorAll<HTMLButtonElement>('.session-card')].map(card => [card.dataset.id ?? '', card]))
+  const wanted = sessions.map(session => session.id)
+  for (const [id, card] of existing) if (!wanted.includes(id)) card.remove()
+  const ordered = sessions.map(session => { const card = existing.get(session.id) ?? buildCard(session); paintCard(card, session); return card })
+  const current = [...cards.children].map(card => (card as HTMLElement).dataset.id)
+  if (current.join() !== wanted.join()) cards.replaceChildren(...ordered)
+  $('rail-empty').hidden = sessions.length > 0
 }
 
 async function refreshSessions(): Promise<void> {
@@ -187,13 +252,14 @@ async function refreshSessions(): Promise<void> {
   if (!result.ok) return
   sessions = (readArray(result.data.sessions) as Session[]).filter(item => typeof item.id === 'string')
   for (const session of sessions) ensureView(session)
-  for (const [id, view] of views) if (!sessions.some(session => session.id === id)) {
-    view.dispose()
-    views.delete(id)
-    if (activeId === id) {
-      const next = nextActive([...views.keys(), id], id, id)
-      if (next) activate(next); else { activeId = null; store(savedKey, null); if (canvas.dataset.live === 'true') visible(false) }
-    }
+  const order = [...views.keys()]
+  const removed = order.filter(id => !sessions.some(session => session.id === id))
+  for (const id of removed) { panes.hide(id); views.get(id)?.dispose(); views.delete(id) }
+  if (activeId !== null && removed.includes(activeId)) {
+    const survivors = order.filter(id => !removed.includes(id) || id === activeId)
+    const next = nextActive(survivors, activeId, activeId)
+    if (next) { if (canvas.dataset.live === 'true') activate(next); else setActiveState(next) }
+    else { activeId = null; store(savedKey, null); if (canvas.dataset.live === 'true') visible(false) }
   }
   renderRail()
 }
@@ -277,6 +343,7 @@ reconnectButton.onclick = async () => {
   reconnectButton.disabled = true
   await refreshSessions()
   opening = false
+  if (activeId !== id) return
   const view = views.get(id)
   if (view && !view.ended) view.connect()
   else setStatus('Session ended.', false)

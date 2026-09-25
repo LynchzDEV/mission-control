@@ -21,6 +21,7 @@
     "@xyflow/react": "12.11.6",
     "animejs": "^4.5.0",
     "bun-pty": "^0.4.10",
+    "dockview-core": "8.3.1",
     "elysia": "^1.4.30",
     "node-pty": "^1.1.0",
     "react": "19",
