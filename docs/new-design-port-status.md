@@ -1,5 +1,7 @@
 # Left to port: current app → new quiet design
 
+**2.0 complete (2026-09-25).** Every section below is ported or removed; open follow-ups live in `docs/decisions/v2-deferred.md`.
+
 Updated 2026-09-24 after the system-chat grilling (`docs/decisions/system-chat.md`). Section 1 (Terminals page) is the current task.
 
 ## 1. Terminals page — DESIGNED
