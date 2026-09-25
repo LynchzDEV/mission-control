@@ -7,7 +7,7 @@ const RIPPLE_SPEED = 0.45
 const RIPPLE_BAND = 36
 const RIPPLE_LIFE = 1100
 const PAUSED_KEY = 'mc.motion.paused'
-const INTERACTIVE = 'button, a, input, textarea, select, pre, .session-card, dialog, nav, header, .term-host, .composer'
+const INTERACTIVE = 'button, a, input, textarea, select, pre, .session-card, dialog, nav, header, .term-host, .composer, .mc-panes, .md'
 
 type Dot = { x: number; y: number; phase: number; speed: number; near: number }
 type Ripple = { x: number; y: number; start: number }
@@ -30,7 +30,7 @@ if (canvas && motion && context) {
     motion.setAttribute('aria-pressed', String(paused))
     motion.textContent = paused ? 'Play motion' : 'Pause motion'
   }
-  motion.onclick = () => { paused = !paused; try { localStorage.setItem(PAUSED_KEY, String(paused)) } catch {} syncMotion() }
+  motion.onclick = () => { paused = !paused; try { localStorage.setItem(PAUSED_KEY, String(paused)) } catch {} syncMotion(); settledFrames = 0; if (!drawing) requestAnimationFrame(draw) }
   syncMotion()
   const size = (): void => {
     canvas.width = innerWidth
@@ -44,7 +44,10 @@ if (canvas && motion && context) {
     if (paused || (event.target as Element | null)?.closest(INTERACTIVE)) return
     ripples.push({ x: event.clientX, y: event.clientY, start: performance.now() })
   })
+  let drawing = false
+  let settledFrames = 0
   const draw = (time: number): void => {
+    drawing = true
     context.clearRect(0, 0, canvas.width, canvas.height)
     if (mouse.x < -1e3 || lens.x < -1e3) { lens.x = mouse.x; lens.y = mouse.y } else { lens.x += (mouse.x - lens.x) * FOLLOW; lens.y += (mouse.y - lens.y) * FOLLOW }
     while (ripples.length && time - ripples[0].start > RIPPLE_LIFE) ripples.shift()
@@ -67,9 +70,11 @@ if (canvas && motion && context) {
       context.arc(dot.x + Math.cos(angle) * push, dot.y + Math.sin(angle) * push, 1.4 + twinkle * 0.8 + dot.near * 1.8 + wave * 1.6, 0, Math.PI * 2)
       context.fill()
     }
+    settledFrames = paused && ripples.length === 0 ? settledFrames + 1 : 0
+    if (settledFrames > 90) { drawing = false; return }
     requestAnimationFrame(draw)
   }
   size()
-  addEventListener('resize', size)
+  addEventListener('resize', () => { size(); settledFrames = 0; if (!drawing) requestAnimationFrame(draw) })
   requestAnimationFrame(draw)
 }
