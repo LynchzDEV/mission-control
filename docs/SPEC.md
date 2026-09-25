@@ -24,7 +24,7 @@ read this for mechanics).
   under `client/*.ts`/`.tsx`, transpiled on request by `GET /js/:file` (`Bun.build`, in-memory,
   cached by a hash of every `client/*.{ts,tsx}` file's mtime+size — no `dist/` on disk, no `.js`
   files committed to the repo).
-- Tests: `bun test` (71 files under `test/`, see **Tests**).
+- Tests: `bun test` (68 files under `test/`, see **Tests**).
 
 ## Directory layout
 
@@ -77,13 +77,15 @@ from:
   `Authorization: Bearer <token>` matching the token in `secrets.json` (`verifyBearerToken`, constant-time
   compare). Otherwise `403 { error: 'local access only' }`.
 - `allowToken(pathname, method)` scopes what a script (the mc-dispatch skill, a chat agent's `curl`)
-  may reach with only the token, no browser origin: all of `/api/jobs*` (GET+POST — this is how a
-  chat's own spawned agents and the chat itself call back into the cockpit), GET-only on
+  may reach with only the token, no browser origin: GET or POST anywhere under `/api/jobs*` (not
+  PATCH/DELETE — this is how a chat's own spawned agents and the chat itself call back into the
+  cockpit for everything except renaming itself or deleting a queued message), GET-only on
   `/api/flow`, `/api/quota`, `/api/meta`, `/api/roles`, `/api/models`, `/api/providers`,
-  `/api/studio/workflows`, `/api/studio/policy` and their revisions, GET+POST on `/api/studio/runs`
-  and `/api/studio/runs/:id`, POST on `/api/studio/runs/:id/(stop|retry)`, and POST/PATCH/GET on the
-  `/api/flow/:label/plan`, `/run`, `/archive`, `/unarchive` family. Nothing else accepts a token —
-  secrets, terminals, and history stay browser-origin only.
+  `/api/studio/workflows` (and its `.../revisions`), and `/api/studio/policy` (but *not*
+  `/api/studio/policy/revisions`, which the allowlist doesn't cover), GET+POST on `/api/studio/runs`
+  and GET on `/api/studio/runs/:id`, POST on `/api/studio/runs/:id/(stop|retry)`, and POST/PATCH/GET on
+  the `/api/flow/:label/plan`, `/run`, `/archive`, `/unarchive` family. Nothing else accepts a token —
+  secrets, terminals, Studio connections/drafts, and history stay browser-origin only.
 - The terminal WebSocket (`WS /ws/terminal/:id`) has its own guard: `localRequestAllowed(request) &&
   sameOrigin(request)`, no token bypass at all.
 - `GET /`, `GET /api/health`, and the retired-page redirects check `localRequestAllowed` directly
@@ -144,6 +146,37 @@ translated `SKILL.md`/agent `.toml` files for anything not too Claude-specific (
 threshold skips the rest), and moves aside anything it would overwrite under
 `~/.codex/backup/*.pre-mission-control-<timestamp>`. Failures are logged, never thrown.
 
+### Skill install (`server/skill-install.ts`)
+
+Every server start also symlinks each directory under the repo's `skills/` (currently just
+`mc-dispatch`) into `~/.claude/skills/`, so the orchestration skill updates with a plain `git pull` —
+no separate install step. An existing non-symlink at the target is moved aside to
+`~/.claude/skills-backup/<name>.pre-mission-control-<timestamp>` first, and an already-correct symlink
+is left alone.
+
+## Quota, models, and providers
+
+- **Quota** (`server/quota.ts`, `GET /api/quota`): **Claude** reads `~/.cache/ccstatusline/usage.json`
+  when it's under 12h old, else falls back to `npx ccusage@latest blocks --json --breakdown` (then
+  `daily --json --breakdown`), memoized 15 minutes; **GLM** calls `{zaiBaseUrl origin}/api/monitor/
+  usage/quota/limit` with the z.ai token to read a `TOKENS_LIMIT` percentage (five-hour) and a
+  `TIME_LIMIT`/credit-row percentage (monthly); **Codex** runs `codex login status` for `authed` plus
+  `server/codex-limits.ts` (`readCodexLimits`) for its own weekly-only usage window (no five-hour
+  limit exists for Codex). `glmPeak(now)` flags GLM's Mon–Fri 14:00–18:00 UTC+8 peak-credit window and
+  how many minutes until it changes. `GET /api/sessions/external` (`fetchExternalSessions`) scans
+  `ps -axo pid,etime,command` for `claude`/`codex` processes this server didn't spawn, with a
+  best-effort `lsof` cwd hint. Both are cached 60s server-side (`createQuotaCache`); `server/meta.ts`
+  derives the toolbar's block-progress clock from Claude's `resetsAt` and a linear-regression
+  tokens-per-minute estimate (`GET /api/meta`).
+- **Models** (`server/models.ts`, `GET /api/models`, cached 5 min): `claude` = the fixed tier aliases
+  (`fable|opus|sonnet|haiku`); `codex` = slugs read from `~/.codex/models_cache.json` (the Codex CLI
+  refreshes this itself; a static list is the fallback); `glm` = `GET {zai origin}/api/anthropic/v1/
+  models` with the z.ai token (5s timeout, `GLM_MODEL` pinned first, static fallback without a token or
+  on failure); plus each custom connection's own configured model list.
+- **Providers** (`server/providers.ts`, `GET /api/providers`): the three built-ins plus every custom
+  connection, each `{id, name, builtin, models, resumable, family}` — `resumable` is true for every
+  built-in and for a `cli` connection whose args include a `{{session}}` slot.
+
 ## Jobs (`server/jobs.ts`) — headless dispatch, the substrate everything else is built on
 
 A `JobRecord` is the unit of work: an id, `engine`, `cwd`, `label`, `prompt`, `pid`, `status`
@@ -165,10 +198,18 @@ report has gone into a chat turn; see **The chat**).
   `jobs.jsonl`, compacted back to one line per id once the file passes 5000 lines).
 - Every process gets `MC_JOB_ID`; chat processes additionally get `MC_URL`, `MC_TOKEN` (the API
   token), `MC_CHAT_ID` (`threadRoot`), `MISSION_CONTROL_CONFIG_DIR`.
+- A non-chat `POST /api/jobs` prompt targeting the configured **execute** role's engine is checked by
+  `server/spec-lint.ts` (`lintSpec`): it must have `## Decisions`/`## Preserve`/`## Steps` headings (or
+  an `execute tasks N..M of <plan file>` line), an explicit "Done means all of these hold" acceptance
+  line, no hedge words (`as appropriate`, `whichever`, …) in Decisions/Steps, and every step must name
+  a file path — a miss is `422 { error, misses }`. The same check runs on each task of a
+  `POST /api/flow/:label/run` before it starts.
 - The manager tails each job's log file (not its stdio pipes, so state survives a server restart —
   `adoptOrphan` re-attaches to any `status: 'running'` record found on disk whose pid is still
   alive at startup, or settles it immediately if not) to derive `turns`, `lastTool`, a throttled
-  `currentActivity` line, and the session id.
+  `currentActivity` line, and the session id — all parsed from the engine's own JSON-lines output by
+  `server/activity.ts`, the shared log-parsing vocabulary (`ActivityEvent`s: tool/text/thinking/
+  result/error) that `threads.ts`, `chat-reports.ts` and `session-transcript.ts` all build on.
 - `landJob(id)`: for a worktree job, commits any dirty worktree state, cherry-picks (never merges)
   the branch's commits oldest-first onto the base branch (which must still be the branch checked out
   at worktree-creation time), removes the worktree and branch, marks the job reviewed. A conflict
@@ -258,16 +299,20 @@ resumable. Product intent is in `docs/decisions/system-chat.md`; this section is
 - **Landing**: identical to any other job — the chat calls `POST /api/jobs/:id/land` on a reviewed,
   worktree-backed agent once review passes, and a `landedAt` on a job with a `chatId` triggers a
   "Landed" notification.
-
-### In progress
-
-Naming a Studio workflow in the chat does not yet start it: `CHAT_RULES` still only says "Naming a
-Studio workflow makes you follow it instead," and `POST /api/studio/runs`'s body
-(`{terminalId?, workflowId?, revision?, cwd, request, label}`) has no `chat`/`chatTurn`/`engine`/
-`model` fields yet, so a chat can't hand a run its own session or get an `onRunSettled` report back
-through the flusher above. That wiring (Task B of
-`docs/superpowers/plans/2026-09-25-chat-queue-workflows-spec.md`) has not landed as of this writing;
-until it does, a chat that wants a named workflow run still has to spawn the agents itself.
+- **Naming a Studio workflow** (`CHAT_RULES` "## Studio workflows"): naming one is optional. When the
+  owner names one, the chat looks it up with `GET /api/studio/workflows` (matched case-insensitively)
+  and starts it with `POST /api/studio/runs {workflowId, revision, cwd, label, request, chat:
+  $MC_CHAT_ID, chatTurn: $MC_JOB_ID, engine, model?}` instead of spawning agents itself.
+  `chatDefaultFor`/`agentsFor` in `workflow-runner.ts` then resolve any node whose `agent.engine` is
+  unset (a "Chat decides" step) to that `chat`/`model`, leaving explicitly pinned nodes untouched, and
+  still refuses a run whose cross-family review would end up on the same model family as the
+  implementation it reviews. Each step's job carries `chatId`/`chatTurn` and `reason: "Studio · <workflow
+  name> · <step title>"` (so it shows individually on the chat's team card) but is never reported to
+  the chat on its own — `workflowRunId` excludes it from `needsReport`. When the run reaches a final
+  status, `onRunSettled` (wired in `server/index.ts`) hands it to `chatFlusher.onRunSettled`, which
+  posts one `[workflow <name> · <status>]` turn (one line per attempt) the same durable way as an agent
+  report (`WorkflowRun.reportedAt`, included in `recoverAll`). Without a named workflow, the chat keeps
+  choosing and spawning agents itself as described above.
 
 ## Terminals (`server/terminals.ts`, `server/routes/terminals.ts`) — live sessions
 
@@ -280,9 +325,10 @@ first node by hand). Codex terminals always prepend
 `--dangerously-bypass-approvals-and-sandbox`. Sessions persist across browser reconnects (a 64 KB
 ring buffer replays on reattach) until the server exits or `DELETE /api/terminals/:id` kills the pty.
 `WS /ws/terminal/:id` bridges pty ↔ xterm.js: binary/UTF-8 data frames, `{type:'resize',cols,rows}`
-control frames. Dropping a file onto a pane (`POST /api/terminals/drops`) resolves to the original
-path via a Spotlight match, or saves a copy under `~/.config/mission-control/drops/`, so the pty gets
-a shell-quoted real path. `GET /api/terminals/sessions?cwd=` lists resumable Claude sessions found
+control frames. Dropping a file onto a pane (`POST /api/terminals/drops`, `server/drops.ts`) resolves
+to the original path via a Spotlight match (name+size+mtime), or saves a copy under
+`~/.config/mission-control/drops/`, so the pty gets a shell-quoted real path. `GET
+/api/terminals/sessions?cwd=` lists resumable Claude sessions found
 under `~/.claude/projects/<slug>/`. `GET /api/terminals/:id/thread` renders a running terminal's own
 transcript file (Claude JSONL or Codex rollout, `server/session-transcript.ts`) the same shape as a
 job thread, cached by `(path, mtime, size)`, but with `canReply: false` — a terminal is driven by
@@ -300,12 +346,15 @@ current one (`createWorkflowStore`); a policy template (shared preamble text) is
 way under `policies/`. The one built-in `default` workflow is plan → verify-plan → execute → review.
 
 - **Running one** (`createWorkflowRunner`): resolves each unpinned node's engine/model to the
-  matching `EngineRoles` entry, snapshots the node's skill files and the workspace's git state before
-  each attempt, spawns a job per node (its own worktree, standard `createJob` path), waits for the
-  job's final message to end in an `MC_RESULT {"outcome",...}` line, runs the node's `checks`, and
-  follows the matching outcome edge — retrying the same node up to `maxVisits` times on `fail`.
-  `POST /api/studio/runs` starts one from `{terminalId?, workflowId?, revision?, cwd, request,
-  label}`; `GET /api/studio/runs` lists summaries, `GET .../:id` the full run (agents, attempts,
+  matching `EngineRoles` entry (or, when started from a chat, to that chat's own engine/model — see
+  **The chat** → "Naming a Studio workflow"), snapshots the node's skill files and the workspace's git
+  state before each attempt, spawns a job per node (its own worktree, standard `createJob` path),
+  waits for the job's final message to end in an `MC_RESULT {"outcome",...}` line, runs the node's
+  `checks`, and follows the matching outcome edge — retrying the same node up to `maxVisits` times on
+  `fail`, and blocking the run outright if a plan is unverified before an `implement` node or a review
+  would share a model family with the implementation it's reviewing. `POST /api/studio/runs` starts
+  one from `{terminalId?, workflowId?, revision?, cwd, request, label, chat?, chatTurn?, engine?,
+  model?}`; `GET /api/studio/runs` lists summaries, `GET .../:id` the full run (agents, attempts,
   checks, status); `.../:id/stop` and `.../:id/retry` control it.
 - **Designing one in English** (`createWorkflowBuilder`): `POST /api/studio/drafts` spawns a
   throwaway, read-only job (a separate temp git-free worktree under `~/.cache/mission-control/
@@ -314,8 +363,14 @@ way under `policies/`. The one built-in `default` workflow is plan → verify-pl
   proposing a tool/skill/check the human hasn't already approved.
 - **Connections** (`server/agent-connections.ts`): non-built-in AI connections (a custom API-
   compatible endpoint, an ACP agent, or a CLI with `{{prompt}}`/`{{model}}`/`{{session}}` slots),
-  stored one JSON file per id under `connections/`. `POST /api/studio/connections/:id/probe` spawns
-  `server/agent-bridge.ts` to ask a protocol connection what it can do (`mc_capabilities`).
+  stored one JSON file per id under `connections/`; `env` values name a *real* environment variable to
+  read at spawn time, never a literal secret in the file. `server/agent-bridge.ts` is the general
+  bridge for these: `jobs-engine-iface.ts` spawns it as the actual process for any job whose engine
+  isn't one of the three built-ins (it speaks ACP/OpenCode/raw-CLI to the connection, sandboxes every
+  tool file path to the job's own workspace, and redacts the connection's own secret env values out of
+  its JSON output), and `POST /api/studio/connections/:id/probe` spawns it in a `probe: true` mode to
+  ask a protocol connection what it can do (`mc_capabilities`). Either way it enforces a 60-minute
+  hard deadline (SIGTERM, then SIGKILL a second later).
 
 ## Flow, plans, and runs — the session side panel
 
@@ -383,6 +438,7 @@ directory mode 0700, files mode 0600:
 | `archive.jsonl` | `archive.ts` | archived session labels |
 | `workflows/<id>/<revision>.json` (+ `latest.json`) | `workflows.ts` | immutable, content-hashed workflow graphs |
 | `policies/<revision>.json` (+ `latest.json`) | `workflows.ts` | shared Studio policy/preamble text |
+| `workflow-runs/<runId>.json` | `workflow-runner.ts` | one file per Studio run: agents, attempts, checks, status |
 | `connections/<id>.json` | `agent-connections.ts` | non-built-in AI connections |
 | `worker-claude/`, `worker-codex/` | `worker-profile.ts` | isolated profile for `glm`/`codex` headless jobs |
 | `chat-claude/` | `chat-profile.ts` | isolated profile for `glm`-engine chats (`CLAUDE_CONFIG_DIR`) |
@@ -485,14 +541,14 @@ at all (never returns anything secret).
 | DELETE | `/api/studio/connections/:id` | — | `{ok:true}` | no |
 | POST | `/api/studio/connections/:id/probe` | — | `mc_capabilities` event or `400` | no |
 | GET | `/api/studio/runs` | — | `{runs: summary[]}` | yes |
-| POST | `/api/studio/runs` | `{terminalId?, workflowId?, revision?, cwd, request, label}` | `WorkflowRun` | yes |
+| POST | `/api/studio/runs` | `{terminalId?, workflowId?, revision?, cwd, request, label, chat?, chatTurn?, engine?, model?}` | `WorkflowRun` | yes |
 | GET | `/api/studio/runs/:id` | — | `WorkflowRun` or `404` | yes |
 | POST | `/api/studio/runs/:id/stop` | — | result | yes |
 | POST | `/api/studio/runs/:id/retry` | — | result | yes |
 
 ## Tests
 
-`bun test` across 71 files under `test/`, one file per server module plus one `*-routes.test.ts` per
+`bun test` across 68 files under `test/`, one file per server module plus one `*-routes.test.ts` per
 route file, named and structured to match the module/route file it covers (e.g.
 `test/chat-reports.test.ts` against `server/chat-reports.ts`, `test/jobs-routes.test.ts` against
 `server/routes/jobs.ts`). `MC_FAKE_ENGINES=1` (`server/engines.ts` `fakeEnginesEnabled`) substitutes
