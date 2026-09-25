@@ -14,6 +14,8 @@ export type EngineResolverParams = {
   coreRules?: string
   readOnly?: boolean
   mcpServers?: import('./workflows').WorkflowNode['mcpServers']
+  purpose?: 'workflow-design' | 'chat'
+  edit?: boolean
 }
 
 export type EngineResolver = (params: EngineResolverParams) => EngineSpawn | Promise<EngineSpawn>
@@ -27,6 +29,8 @@ export const fakeEchoResolver: EngineResolver = ({ engine, prompt }) => ({
 
 import { buildEnv, modelArgs, resolveBinary, resolveEngine, type EngineName, ENGINE_NAMES } from './engines'
 import { createConnectionStore } from './agent-connections'
+import { chatEnv, ensureChatProfile } from './chat-profile'
+import { ensureWorkerProfiles } from './worker-profile'
 import { join } from 'node:path'
 
 export function engineArgs(engine: EngineName, prompt: string, resumeSessionId?: string, model?: string): string[] {
@@ -43,11 +47,11 @@ export function engineSupportsResume(engine: string): boolean {
   return ENGINE_NAMES.includes(engine as EngineName)
 }
 
-export const realEngineResolver: EngineResolver = async ({ engine, prompt, resumeSessionId, model, connection, coreRules, mcpServers, readOnly }) => {
+export const realEngineResolver: EngineResolver = async ({ engine, prompt, resumeSessionId, model, connection, coreRules, mcpServers, readOnly, purpose, edit }) => {
   if (!ENGINE_NAMES.includes(engine as EngineName)) {
     const selected = connection ?? await createConnectionStore().get(engine)
     if (selected.id !== engine) throw new Error('Connection does not match the selected engine')
-    return { cmd: process.execPath, args: [join(import.meta.dir, 'agent-bridge.ts')], env: {}, stdin: JSON.stringify({ connection: selected, prompt, resumeSessionId, model, mcpServers, readOnly }) }
+    return { cmd: process.execPath, args: [join(import.meta.dir, 'agent-bridge.ts')], env: {}, stdin: JSON.stringify({ connection: selected, prompt, resumeSessionId, model, mcpServers, readOnly, purpose, edit }) }
   }
   if (mcpServers?.length) throw new Error('Attached MCP tools require an ACP connection; configure a native ACP adapter for this agent')
   const name = engine as EngineName
@@ -56,9 +60,9 @@ export const realEngineResolver: EngineResolver = async ({ engine, prompt, resum
     : ['-p', prompt, '--tools', '', '--strict-mcp-config', '--output-format', 'stream-json', '--verbose', ...modelArgs(name, model)]
     : engineArgs(name, prompt, resumeSessionId, model)
   if (coreRules) args.unshift(...(name === 'codex' ? ['-c', `developer_instructions=${JSON.stringify(coreRules)}`] : ['--append-system-prompt', coreRules]))
-  return {
-    cmd: resolveBinary(resolveEngine(name).cmd),
-    args,
-    env: await buildEnv(name, { worker: !readOnly }),
-  }
+  if (purpose === 'chat' && edit === false && name !== 'codex') args.push('--disallowedTools', 'Edit,Write,MultiEdit,NotebookEdit')
+  const env = purpose === 'chat'
+    ? { ...(await buildEnv(name, { worker: false })), ...chatEnv(name, { claude: (await ensureChatProfile()).claude, codex: (await ensureWorkerProfiles()).codex }) }
+    : await buildEnv(name, { worker: !readOnly })
+  return { cmd: resolveBinary(resolveEngine(name).cmd), args, env }
 }
