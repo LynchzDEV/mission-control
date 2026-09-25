@@ -27,8 +27,8 @@ describe('allowToken', () => {
     expect(allowToken('/api/jobs/abc/kill', 'POST')).toBe(true)
   })
 
-  test('allows GET only on /api/flow, /api/quota, /api/meta, /api/roles', () => {
-    for (const path of ['/api/flow', '/api/quota', '/api/meta', '/api/roles']) {
+  test('allows GET only on /api/flow, /api/quota, /api/meta, /api/roles, /api/providers', () => {
+    for (const path of ['/api/flow', '/api/quota', '/api/meta', '/api/roles', '/api/providers']) {
       expect(allowToken(path, 'GET')).toBe(true)
       expect(allowToken(path, 'POST')).toBe(false)
     }

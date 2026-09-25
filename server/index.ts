@@ -23,6 +23,7 @@ import { runsRoutes } from './routes/runs'
 import { jobsRoutes } from './routes/jobs'
 import { metaRoutes } from './routes/meta'
 import { modelsCache, modelsRoutes } from './routes/models'
+import { providersRoutes } from './routes/providers'
 import { terminalsRoutes } from './routes/terminals'
 import { flowRoutes } from './routes/flow'
 import { currentView, secretsRoutes } from './routes/secrets'
@@ -208,6 +209,7 @@ export async function createApp(): Promise<Elysia> {
     .use(secretsRoutes)
     .use(rolesRoutes)
     .use(modelsRoutes)
+    .use(providersRoutes)
 
   if (await publicDirExists()) {
     app.use(staticPlugin({ assets: PUBLIC_DIR, prefix: '', headers: { 'cache-control': 'no-cache' } }))
