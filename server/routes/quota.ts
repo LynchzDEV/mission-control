@@ -2,7 +2,7 @@ import { Elysia } from 'elysia'
 
 import { requireLocal } from '../auth'
 import { createTokenSampler, type TokenSampler } from '../meta'
-import { createQuotaCache, fetchExternalSessions, fetchQuotaComposite, type QuotaComposite } from '../quota'
+import { createQuotaCache, type ExternalSession, fetchQuotaComposite, type QuotaComposite } from '../quota'
 import { readSecrets } from '../secrets'
 
 export const tokenSampler: TokenSampler = createTokenSampler()
@@ -16,7 +16,9 @@ export const quotaCache = createQuotaCache<QuotaComposite>(async () => {
   return composite
 })
 
-export const quotaRoutes = new Elysia()
-  .onBeforeHandle(requireLocal)
-  .get('/api/quota', () => quotaCache.get())
-  .get('/api/sessions/external', async () => ({ sessions: await fetchExternalSessions() }))
+export function quotaRoutes(deps: { externalSessions: () => Promise<ExternalSession[]> }) {
+  return new Elysia()
+    .onBeforeHandle(requireLocal)
+    .get('/api/quota', () => quotaCache.get())
+    .get('/api/sessions/external', async () => ({ sessions: await deps.externalSessions() }))
+}

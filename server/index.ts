@@ -8,6 +8,8 @@ import { Elysia } from 'elysia'
 import { maybeAutoReview } from './auto-review'
 import { localRequestAllowed } from './local-access'
 import { quotaRoutes } from './routes/quota'
+import { historyRoutes } from './routes/history'
+import { createExternalSessionsCache, ownedPids } from './history'
 import { listenTarget, readConfig } from './secrets'
 import { createJobManager } from './jobs'
 import { notifyChat, notifySlowJob } from './notify'
@@ -197,6 +199,8 @@ export async function createApp(): Promise<Elysia> {
   const workflowBuilder = createWorkflowBuilder({ manager: jobManager, resolver: realEngineResolver, store: workflowStore })
   await workflowRunner.recover()
   await workflowBuilder.recover()
+  const knownDirectories = () => [...jobManager.listJobs().map(job => job.baseRepo ?? job.cwd), ...terminalRegistry.list().map(session => session.cwd)]
+  const externalSessionsCache = createExternalSessionsCache(() => ownedPids(jobManager.listJobs(), terminalRegistry.list()))
 
   const app = new Elysia()
     .get('/', async ({ request, set }) => {
@@ -218,10 +222,11 @@ export async function createApp(): Promise<Elysia> {
     })
     .use(tabPages())
     .use(healthApi())
-    .use(quotaRoutes)
+    .use(quotaRoutes({ externalSessions: () => externalSessionsCache.get() }))
     .use(metaRoutes(jobManager))
     .use(jobsRoutes(jobManager, realEngineResolver))
-    .use(chatRoutes({ knownDirectories: () => [...jobManager.listJobs().map(job => job.baseRepo ?? job.cwd), ...terminalRegistry.list().map(session => session.cwd)] }))
+    .use(chatRoutes({ knownDirectories }))
+    .use(historyRoutes({ manager: jobManager, registry: terminalRegistry, knownDirectories, external: () => externalSessionsCache.get() }))
     .use(terminalsRoutes(terminalRegistry))
     .use(flowRoutes(jobManager, terminalRegistry, planStore))
     .use(runsRoutes(planRunner))
