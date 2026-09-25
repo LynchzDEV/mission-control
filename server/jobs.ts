@@ -11,10 +11,11 @@ import {
   parseSessionId,
   reportedJobOutcome,
 } from './activity'
-import { DIR_MODE, FILE_MODE, configDir } from './secrets'
+import { DIR_MODE, FILE_MODE, configDir, listenTarget, readApiToken } from './secrets'
+import { chatRules } from './chat-profile'
 import { validateWorkspaceCwd } from './workspace'
 import { git, prepareWorktree, worktreeBranch } from './job-worktrees'
-import type { EngineResolver, EngineSpawn } from './jobs-engine-iface'
+import type { EngineResolver, EngineResolverParams, EngineSpawn } from './jobs-engine-iface'
 
 export const JOBS_FILE = 'jobs.jsonl'
 export const LOGS_DIR = 'logs'
@@ -57,9 +58,20 @@ export type JobRecord = {
   workflowRunId?: string
   workflowNodeId?: string
   workflowAttempt?: number
-  purpose?: 'workflow-design'
+  purpose?: JobPurpose
   resumeSupported?: boolean
+  chatId?: string
+  chatTurn?: string
+  reason?: string
+  project?: string | null
+  titleLocked?: boolean
+  source?: 'user' | 'agent'
+  edit?: boolean
 }
+
+export type JobPurpose = 'workflow-design' | 'chat'
+
+export type ChatJobPatch = Partial<Pick<JobRecord, 'label' | 'project' | 'titleLocked'>>
 
 export type CreateJobParams = {
   worktree?: boolean
@@ -79,8 +91,17 @@ export type CreateJobParams = {
   connection?: import('./agent-connections').AgentConnection
   coreRules?: string
   mcpServers?: import('./workflows').WorkflowNode['mcpServers']
-  purpose?: 'workflow-design'
+  purpose?: JobPurpose
+  chatId?: string
+  chatTurn?: string
+  reason?: string
+  project?: string | null
+  source?: 'user' | 'agent'
+  edit?: boolean
+  memory?: string
 }
+
+export const CHAT_STEP_ATTEMPTS = 3
 
 export type CreateJobResult =
   | { ok: true; job: JobRecord }
@@ -103,6 +124,7 @@ export type JobManager = {
   createJob(params: CreateJobParams, resolver: EngineResolver): Promise<CreateJobResult>
   killJob(id: string): Promise<KillJobResult>
   markReviewed(id: string, at?: number): Promise<MarkReviewedResult>
+  updateJob(id: string, patch: ChatJobPatch): Promise<JobRecord | undefined>
   listJobs(): JobRecord[]
   getJob(id: string): JobRecord | undefined
   currentActivity(id: string): string | null
@@ -428,7 +450,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     clearPendingActivityTimer(id)
     tails.delete(id)
     const diffStat = status === 'done' ? await captureDiffStat(current.cwd) : null
-    const settled = { ...current, status, endedAt: Date.now(), exitCode, diffStat }
+    const settled = { ...(jobs.get(id) ?? current), status, endedAt: Date.now(), exitCode, diffStat }
     await persist(settled)
     options.onJobSettled?.(settled)
   }
@@ -488,13 +510,55 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     if (record.status === 'running') adoptOrphan(record)
   }
 
+  function stepAttempts(chatId: string, label: string): number {
+    return [...jobs.values()].filter(job => job.chatId === chatId && job.label === label && !job.reviewOf).length
+  }
+
+  function chatSpawnContext(params: CreateJobParams, id: string, chatHomePath: string): Partial<EngineResolverParams> {
+    if (params.purpose !== 'chat') return {}
+    const root = params.threadRoot === undefined ? undefined : jobs.get(params.threadRoot)
+    const edit = params.edit ?? root?.edit ?? false
+    const project = params.project ?? root?.project ?? null
+    return {
+      purpose: 'chat',
+      edit,
+      coreRules: chatRules({ chatId: params.threadRoot ?? id, home: chatHomePath, project, edit, memory: params.memory ?? '', engine: params.engine }),
+    }
+  }
+
+  async function chatSpawnEnv(params: CreateJobParams, id: string): Promise<Record<string, string>> {
+    if (params.purpose !== 'chat') return {}
+    return {
+      MC_URL: `http://127.0.0.1:${listenTarget().port}`,
+      MC_TOKEN: await readApiToken(),
+      MC_CHAT_ID: params.threadRoot ?? id,
+      MISSION_CONTROL_CONFIG_DIR: dir,
+    }
+  }
+
+  function chatRecordFields(params: CreateJobParams, edit: boolean | undefined): Partial<JobRecord> {
+    const isChat = params.purpose === 'chat'
+    return {
+      ...(params.chatId ? { chatId: params.chatId } : {}),
+      ...(params.chatTurn ? { chatTurn: params.chatTurn } : {}),
+      ...(params.reason ? { reason: params.reason } : {}),
+      ...(isChat ? { edit: edit ?? false, source: params.source ?? 'user' } : {}),
+      ...(isChat && params.threadRoot === undefined ? { project: params.project ?? null, titleLocked: false } : {}),
+    }
+  }
+
   async function createJob(params: CreateJobParams, resolver: EngineResolver): Promise<CreateJobResult> {
-    const cwdCheck = await validateWorkspaceCwd(params.cwd, home)
+    const cwdCheck = await validateWorkspaceCwd(params.cwd, home, { requireGit: params.purpose !== 'chat' })
     if (!cwdCheck.ok) return { ok: false, status: 400, error: cwdCheck.error }
+    if (params.chatId && !params.reviewOf && stepAttempts(params.chatId, params.label) >= CHAT_STEP_ATTEMPTS) {
+      return { ok: false, status: 409, error: 'retry cap reached for this step' }
+    }
     const owner = workspaceOwners.get(cwdCheck.path)
     if (owner && owner !== params.workflowRunId) return { ok: false, status: 409, error: 'Workspace is reserved by a running workflow' }
 
     ensureDirsSync(dir, logsDir)
+    const id = crypto.randomUUID()
+    const chatContext = chatSpawnContext(params, id, cwdCheck.path)
     let spawnSpec: EngineSpawn
     try {
       spawnSpec = await resolver({
@@ -506,6 +570,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
         mcpServers: params.mcpServers,
         ...(params.resumeSessionId === undefined ? {} : { resumeSessionId: params.resumeSessionId }),
         ...(typeof params.model === 'string' && params.model !== '' ? { model: params.model } : {}),
+        ...chatContext,
       })
     } catch {
       return { ok: false, status: 400, error: 'engine resolver failed' }
@@ -522,8 +587,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const cwd = workspace.worktree ?? cwdCheck.path
     const activeOwner = workspaceOwners.get(cwdCheck.path) ?? workspaceOwners.get(cwd)
     if (activeOwner && activeOwner !== params.workflowRunId) return { ok: false, status: 409, error: 'Workspace is reserved by a running workflow' }
-    const id = crypto.randomUUID()
     const path = logPath(id)
+    const chatEnv = await chatSpawnEnv(params, id)
 
     let proc: Bun.Subprocess
     try {
@@ -531,7 +596,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       try {
         proc = Bun.spawn([spawnSpec.cmd, ...spawnSpec.args], {
           cwd,
-          env: { ...process.env, ...spawnSpec.env, MC_JOB_ID: id },
+          env: { ...process.env, ...spawnSpec.env, MC_JOB_ID: id, ...chatEnv },
           stdin: spawnSpec.stdin === undefined ? 'ignore' : 'pipe',
           stdout: logFd,
           stderr: logFd,
@@ -572,6 +637,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       reviewOf: typeof params.reviewOf === 'string' && params.reviewOf !== '' ? params.reviewOf : null,
       model: typeof params.model === 'string' && params.model !== '' ? params.model : null,
       ...(params.purpose ? { purpose: params.purpose } : {}),
+      ...chatRecordFields(params, chatContext.edit),
       ...(params.workflowRunId ? { workflowRunId: params.workflowRunId, workflowNodeId: params.workflowNodeId, workflowAttempt: params.workflowAttempt } : {}),
     }
     sessionScans.set(id, '')
@@ -619,6 +685,14 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const reviewed: JobRecord = { ...record, reviewedAt: at }
     await persist(reviewed)
     return { ok: true, job: reviewed }
+  }
+
+  async function updateJob(id: string, patch: ChatJobPatch): Promise<JobRecord | undefined> {
+    const record = jobs.get(id)
+    if (record === undefined) return undefined
+    const next = { ...record, ...patch }
+    await persist(next)
+    return next
   }
 
   const landingRepos = new Set<string>()
@@ -690,7 +764,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   function releaseWorkspace(cwd: string, owner: string): void {
     if (workspaceOwners.get(cwd) === owner) workspaceOwners.delete(cwd)
   }
-  return { createJob, killJob, landJob, markReviewed, listJobs, getJob, currentActivity: jobActivity, logPath, claimWorkspace, releaseWorkspace }
+  return { createJob, killJob, landJob, markReviewed, updateJob, listJobs, getJob, currentActivity: jobActivity, logPath, claimWorkspace, releaseWorkspace }
 }
 
 export async function readLogFile(path: string): Promise<string> {

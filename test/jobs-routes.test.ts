@@ -726,3 +726,110 @@ describe('POST /api/jobs spec lint', () => {
     for (const created of [planned, review]) await pollUntilDone(app, ((await created.json()) as { id: string }).id)
   })
 })
+
+describe('chat jobs', () => {
+  const chatBody = (extra: Record<string, unknown> = {}) => JSON.stringify({ engine: 'claude', cwd: repo, prompt: 'Fix the login bug\nmore', purpose: 'chat', ...extra })
+  const post = (app: Elysia, body: string) => app.handle(new Request('http://127.0.0.1:7777/api/jobs', { method: 'POST', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body }))
+
+  test('a chat root takes its title from the first line and carries the chat env', async () => {
+    const seen: EngineResolverParams[] = []
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, (params) => { seen.push(params); return { cmd: 'echo', args: [params.prompt], env: {} } })
+    const response = await post(app, chatBody({ edit: true }))
+    expect(response.status).toBe(200)
+    const job = await response.json()
+    expect(job.purpose).toBe('chat')
+    expect(job.label).toBe('Fix the login bug')
+    expect(job.edit).toBe(true)
+    expect(seen[0]?.purpose).toBe('chat')
+    expect(seen[0]?.edit).toBe(true)
+    expect(seen[0]?.coreRules).toContain('Mission Control chat')
+    expect(seen[0]?.coreRules).toContain(`Chat id ${job.id}`)
+  })
+
+  test('a chat job gets the cockpit address and its chat id in its env', async () => {
+    const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "chat=$MC_CHAT_ID url=$MC_URL token=${#MC_TOKEN}"'], env: {} })
+    const app = buildApp(createJobManager({ home: homedir() }), envResolver)
+    const root = await (await post(app, chatBody())).json()
+    await pollUntilDone(app, root.id)
+    const log = await (await app.handle(get(`/api/jobs/${root.id}/log`))).text()
+    expect(log).toContain(`chat=${root.id} url=http://127.0.0.1:`)
+    expect(log).not.toContain('token=0')
+  })
+
+  test('a chat needs a resumable engine and skips the spec lint', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, echoResolver)
+    expect((await post(app, chatBody({ engine: 'glm' }))).status).toBe(200)
+    expect((await post(app, chatBody({ engine: 'unknown-connection' }))).status).toBe(400)
+  })
+
+  test('spawned jobs carry chatId/chatTurn/reason and are listed by ?chat=', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, echoResolver)
+    const root = await (await post(app, chatBody())).json()
+    const spawned = await (await post(app, JSON.stringify({ engine: 'codex', cwd: repo, prompt: executionPlan('Build it'), label: 'Build it', chat: root.id, chatTurn: root.id, reason: 'Codex · many small edits' }))).json()
+    expect(spawned.chatId).toBe(root.id)
+    expect(spawned.chatTurn).toBe(root.id)
+    expect(spawned.reason).toBe('Codex · many small edits')
+    await post(app, JSON.stringify({ engine: 'codex', cwd: repo, prompt: 'unrelated', label: 'other' }))
+    const listed = await (await app.handle(new Request(`http://127.0.0.1:7777/api/jobs?chat=${root.id}`, { headers: { host: '127.0.0.1:7777' } }))).json()
+    expect(listed.jobs.map((job: { id: string }) => job.id).sort()).toEqual([root.id, spawned.id].sort())
+  })
+
+  test('a spawn naming a chat that does not exist is refused', async () => {
+    const app = buildApp(createJobManager({ home: homedir() }), echoResolver)
+    const worker = await (await post(app, JSON.stringify({ engine: 'codex', cwd: repo, prompt: 'p', label: 'x' }))).json()
+    for (const chat of ['nope', worker.id]) {
+      expect((await post(app, JSON.stringify({ engine: 'codex', cwd: repo, prompt: 'p', label: 'y', chat }))).status).toBe(400)
+    }
+    const root = await (await post(app, chatBody())).json()
+    expect((await post(app, JSON.stringify({ engine: 'codex', cwd: repo, prompt: 'p', label: 'y', chat: root.id, reason: 'x'.repeat(201) }))).status).toBe(400)
+  })
+
+  test('the fourth attempt at a step is refused', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, echoResolver)
+    const root = await (await post(app, chatBody())).json()
+    const step = () => post(app, JSON.stringify({ engine: 'codex', cwd: repo, prompt: executionPlan('Build it'), label: 'Build it', chat: root.id, chatTurn: root.id }))
+    for (let attempt = 0; attempt < 3; attempt += 1) expect((await step()).status).toBe(200)
+    const fourth = await step()
+    expect(fourth.status).toBe(409)
+    expect((await fourth.json()).error).toContain('retry cap')
+  })
+
+  test('PATCH renames a chat, sets its project, and a locked title stays', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, echoResolver)
+    const root = await (await post(app, chatBody())).json()
+    const patch = (body: Record<string, unknown>) => app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${root.id}`, { method: 'PATCH', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body: JSON.stringify(body) }))
+    expect((await (await patch({ project: repo })).json()).project).toBe(repo)
+    expect((await (await patch({ label: 'Login fix', titleLocked: true })).json()).label).toBe('Login fix')
+    expect((await (await patch({ label: 'Auto title' })).json()).label).toBe('Login fix')
+    expect((await patch({ project: '/tmp' })).status).toBe(400)
+    expect(manager.getJob(root.id)?.project).toBe(repo)
+    const worker = await (await post(app, JSON.stringify({ engine: 'codex', cwd: repo, prompt: executionPlan('x'), label: 'x' }))).json()
+    expect((await app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${worker.id}`, { method: 'PATCH', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body: '{"label":"y"}' }))).status).toBe(404)
+  })
+
+  test('a reply to a chat is a chat turn with a source', async () => {
+    const calls: EngineResolverParams[] = []
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, capturingResolver(calls))
+    const root = await (await post(app, chatBody({ edit: true }))).json()
+    await pollUntilDone(app, root.id)
+    const reply = await app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${root.id}/reply`, { method: 'POST', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body: JSON.stringify({ message: '[agent Build it] done', source: 'agent' }) }))
+    expect(reply.status).toBe(200)
+    const turn = await reply.json()
+    expect(turn.purpose).toBe('chat')
+    expect(turn.source).toBe('agent')
+    expect(turn.edit).toBe(true)
+    expect(turn.threadRoot).toBe(root.id)
+    expect(calls[1]?.purpose).toBe('chat')
+    expect(calls[1]?.resumeSessionId).toBe('sess-1')
+    expect(calls[1]?.coreRules).toContain(`Chat id ${root.id}`)
+    await pollUntilDone(app, turn.id)
+    const user = await (await app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${turn.id}/reply`, { method: 'POST', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body: JSON.stringify({ message: 'thanks', source: 'bogus' }) }))).json()
+    expect(user.source).toBe('user')
+  })
+})

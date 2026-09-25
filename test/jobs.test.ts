@@ -485,6 +485,32 @@ describe('jsonl reload', () => {
     expect(second.getJob(result.job.id)?.reviewedAt).toBe(1_700_000_000_000)
   })
 
+  test('updateJob persists a chat title and project across a reload', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const first = createJobManager({ home })
+    const result = await first.createJob({ engine: 'claude', cwd: repo, prompt: 'hi', label: 'hi', purpose: 'chat' }, echoResolver)
+    if (!result.ok) throw new Error('expected job to be created')
+    expect(result.job.project).toBeNull()
+    expect(result.job.titleLocked).toBe(false)
+    await waitForStatus(first, result.job.id)
+
+    const updated = await first.updateJob(result.job.id, { label: 'Login fix', titleLocked: true, project: repo })
+    expect(updated?.label).toBe('Login fix')
+    expect(await first.updateJob('nope', { label: 'x' })).toBeUndefined()
+
+    const second = createJobManager({ home })
+    expect(second.getJob(result.job.id)).toMatchObject({ label: 'Login fix', titleLocked: true, project: repo, status: 'done' })
+  })
+
+  test('a chat may run in a Chat home that is not a git repository, a worker may not', async () => {
+    const chatHomeDir = join(home, 'work')
+    await mkdir(chatHomeDir, { recursive: true })
+    const manager = createJobManager({ home })
+    expect((await manager.createJob({ engine: 'claude', cwd: chatHomeDir, prompt: 'hi', label: 'hi', purpose: 'chat' }, echoResolver)).ok).toBe(true)
+    expect((await manager.createJob({ engine: 'claude', cwd: chatHomeDir, prompt: 'hi', label: 'hi' }, echoResolver)).ok).toBe(false)
+  })
+
   test('markReviewed 404s for an unknown id and is idempotent for a known one', async () => {
     const repo = join(home, 'repo')
     await initGitRepo(repo)

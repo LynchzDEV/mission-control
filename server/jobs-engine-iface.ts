@@ -47,6 +47,12 @@ export function engineSupportsResume(engine: string): boolean {
   return ENGINE_NAMES.includes(engine as EngineName)
 }
 
+async function chatProfileEnv(engine: EngineName): Promise<Record<string, string>> {
+  if (engine === 'glm') return chatEnv(engine, { claude: (await ensureChatProfile()).claude, codex: '' })
+  if (engine === 'codex') return chatEnv(engine, { claude: '', codex: (await ensureWorkerProfiles()).codex })
+  return {}
+}
+
 export const realEngineResolver: EngineResolver = async ({ engine, prompt, resumeSessionId, model, connection, coreRules, mcpServers, readOnly, purpose, edit }) => {
   if (!ENGINE_NAMES.includes(engine as EngineName)) {
     const selected = connection ?? await createConnectionStore().get(engine)
@@ -62,7 +68,7 @@ export const realEngineResolver: EngineResolver = async ({ engine, prompt, resum
   if (coreRules) args.unshift(...(name === 'codex' ? ['-c', `developer_instructions=${JSON.stringify(coreRules)}`] : ['--append-system-prompt', coreRules]))
   if (purpose === 'chat' && edit === false && name !== 'codex') args.push('--disallowedTools', 'Edit,Write,MultiEdit,NotebookEdit')
   const env = purpose === 'chat'
-    ? { ...(await buildEnv(name, { worker: false })), ...chatEnv(name, { claude: (await ensureChatProfile()).claude, codex: (await ensureWorkerProfiles()).codex }) }
+    ? { ...(await buildEnv(name, { worker: false })), ...(await chatProfileEnv(name)) }
     : await buildEnv(name, { worker: !readOnly })
   return { cmd: resolveBinary(resolveEngine(name).cmd), args, env }
 }
