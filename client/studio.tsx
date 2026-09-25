@@ -1,27 +1,41 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { useNodesState, useEdgesState, MarkerType, type Node, type Edge } from '@xyflow/react'
+import { ReactFlow, Controls, Handle, Position, MarkerType, useNodesState, useEdgesState, type Node, type NodeProps, type Edge, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { Workflow, WorkflowNode, WorkflowRevision, PolicyRevision, Outcome } from '../server/workflows'
 import type { WorkflowRun } from '../server/workflow-runner'
 import type { DraftJob, WorkflowDraft } from '../server/workflow-builder'
 import { api } from './studio-api'
-import { type ConnectionList } from './studio-settings'
-import { agentLabel, insertWorkflowStep, removeWorkflowStep, taskPreset, workflowTemplates, type Provider } from './studio-graph'
+import { StepAttachments, type ConnectionList } from './studio-settings'
+import { agentLabel, insertWorkflowStep, removeWorkflowStep, stepPresets, taskPreset, workflowTemplates, type Provider } from './studio-graph'
 
 type TaskNode = Node<WorkflowNode & { agentLabel: string; branches: Outcome[] }, 'task'>
 type Screen = 'home' | 'templates' | 'editor' | 'connections' | 'runs' | 'rules'
 type Panel = 'assistant' | 'picker' | 'step' | 'history' | null
 type RunSummary = Pick<WorkflowRun, 'id' | 'label' | 'status' | 'error' | 'currentNodeId' | 'createdAt'> & { workflowName: string; revision: string }
+const outcomes: Outcome[] = ['pass', 'fail', 'blocked']
 const outcomeLabels: Record<Outcome, string> = { pass: 'When it succeeds', fail: 'If it fails', blocked: 'If it needs help' }
+const purposeLabels = { task: 'Custom task', plan: 'Plan work', 'verify-plan': 'Check a plan', implement: 'Implement changes', review: 'Review work' }
 const NAV: Array<[Screen, string]> = [['home', 'Workflows'], ['connections', 'Manage AIs'], ['runs', 'Runs'], ['rules', 'Rules']]
-const EXAMPLES = ['Plan the work, verify the plan, then implement and get an independent review using my configured AIs.', 'Research my question, then have another AI check the sources and findings.']
+const EXAMPLES: Array<[string, string]> = [['Plan, implement, review', 'Plan the work, verify the plan, then implement and get an independent review using my configured AIs.'], ['Research and verify', 'Research my question, then have another AI check the sources and findings.']]
+const SUGGESTIONS = ['Add a testing step before the final review', 'Use a different AI to review the work']
+const Icon = ({ id }: { id: string }) => <svg aria-hidden="true"><use href={`#${id}`} /></svg>
+
+const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>) {
+  return <div className="workflow-node" aria-pressed={selected}>
+    <Handle type="target" position={Position.Left} />
+    <strong>{data.title}</strong>
+    <small>{data.agent.engine ? <img src={`/providers/${data.agent.engine}.svg`} alt="" /> : <Icon id="auto-icon" />}{data.agentLabel}</small>
+    <Handle type="source" id="pass" position={Position.Right} />
+    {data.branches.filter(outcome => outcome !== 'pass').map((outcome, index) => <Handle key={outcome} title={outcomeLabels[outcome]} aria-label={outcomeLabels[outcome]} type="source" id={outcome} position={Position.Bottom} className={`handle-${outcome}`} style={{ left: index ? '70%' : '30%' }} />)}
+  </div>
+})
+const nodeTypes = { task: TaskCard }
 
 function graphEdges(graph: Workflow): Edge[] { return graph.edges.map(edge => ({ id: `${edge.source}-${edge.outcome}`, source: edge.source, target: edge.target, sourceHandle: edge.outcome, label: edge.outcome === 'pass' ? undefined : outcomeLabels[edge.outcome], markerEnd: { type: MarkerType.ArrowClosed }, className: `outcome-${edge.outcome}` })) }
 function fresh(graph: Workflow): WorkflowRevision { return { ...graph, id: `workflow-${crypto.randomUUID().slice(0, 8)}`, revision: '', createdAt: 0 } }
 function dateLabel(time: number): string { return time ? new Date(time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Built-in version' }
-const Icon = ({ id }: { id: string }) => <svg aria-hidden="true"><use href={`#${id}`} /></svg>
 
 function Studio() {
   const [screen, setScreen] = useState<Screen>('home')
@@ -37,6 +51,7 @@ function Studio() {
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
   const [description, setDescription] = useState('')
   const [builderEngine, setBuilderEngine] = useState('')
   const [draftJob, setDraftJob] = useState<DraftJob | null>(null)
@@ -46,46 +61,62 @@ function Studio() {
   const [runs, setRuns] = useState<RunSummary[]>([])
   const [run, setRun] = useState<WorkflowRun | null>(null)
   const [policy, setPolicy] = useState<PolicyRevision | null>(null)
+  const [modal, setModal] = useState<'run' | 'rules' | null>(null)
+  const [cwd, setCwd] = useState('')
+  const [runTitle, setRunTitle] = useState('')
+  const [request, setRequest] = useState('')
+  const [promptPreview, setPromptPreview] = useState('')
+  const flow = useRef<ReactFlowInstance<TaskNode> | null>(null)
+  const dialog = useRef<HTMLDialogElement | null>(null)
   const generationBase = useRef<WorkflowRevision | null>(null)
+  const current = nodes.find(node => node.id === selected)?.data
   const building = draftJob?.status === 'running'
   const disabled = busy || building
   const builtin = workflows.find(item => item.id === 'default')
   const templates = builtin ? workflowTemplates(builtin) : []
-  const label = (node: WorkflowNode) => agentLabel(node, providers)
+  const label = (node: Pick<WorkflowNode, 'agent'>) => agentLabel(node, providers)
   const toast = (text: string) => dispatchEvent(new CustomEvent('quiet:toast', { detail: text }))
 
   function nodesFor(value: Workflow): TaskNode[] { return value.nodes.map(node => ({ id: node.id, type: 'task', position: node.position, data: { ...node, agentLabel: label(node), branches: value.edges.filter(edge => edge.source === node.id).map(edge => edge.outcome) } })) }
-  function load(value: WorkflowRevision, edited = false) { setGraph(value); setNodes(nodesFor(value)); setEdges(graphEdges(value)); setSelected(null); setDirty(edited); setRevisions([]) }
+  function fit() { setTimeout(() => { void flow.current?.fitView({ padding: 0.2, maxZoom: 1 }) }, 70) }
+  function load(value: WorkflowRevision, edited = false) { setGraph(value); setNodes(nodesFor(value)); setEdges(graphEdges(value)); setSelected(null); setDirty(edited); setPromptPreview(''); setRevisions([]); fit() }
   function draft(): Workflow { return { id: graph!.id, name: graph!.name, entry: graph!.entry, nodes: nodes.map(node => { const { agentLabel: _label, branches: _branches, ...spec } = node.data; return { ...spec, position: node.position } }), edges: edges.map(edge => ({ source: edge.source, target: edge.target, outcome: (edge.sourceHandle ?? 'pass') as Outcome })) } }
-  function markDirty() { if (graph?.id === 'default') setGraph(current => current ? fresh({ ...current, name: `${current.name} copy` }) : current); setDirty(true); setError('') }
-  function adopt(value: Workflow) { markDirty(); setGraph(current => current ? { ...current, entry: value.entry } : current); setNodes(nodesFor(value)); setEdges(graphEdges(value)) }
+  function markDirty() { if (graph?.id === 'default') setGraph(current => current ? fresh({ ...current, name: `${current.name} copy` }) : current); setDirty(true); setError(''); setPromptPreview('') }
+  function patch(patch: Partial<WorkflowNode>) { if (disabled) return; markDirty(); setNodes(current => current.map(node => node.id === selected ? { ...node, data: { ...node.data, ...patch, ...(patch.agent ? { agentLabel: label({ agent: patch.agent }) } : {}) } } : node)) }
+  function adopt(value: Workflow) { markDirty(); setGraph(current => current ? { ...current, entry: value.entry } : current); setNodes(nodesFor(value)); setEdges(graphEdges(value)); fit() }
   function addStep(id: string) { if (disabled || !graph) return; const step = taskPreset(id); adopt(insertWorkflowStep(draft(), step, selected ?? undefined)); setSelected(step.id); setPanel('step') }
+  function wire(source: string, outcome: Outcome, target: string) { if (disabled) return; const value = draft(); value.edges = [...value.edges.filter(edge => edge.source !== source || edge.outcome !== outcome), ...(target ? [{ source, outcome, target }] : [])]; adopt(value) }
   async function action(task: () => Promise<void>) { setBusy(true); setError(''); try { await task() } catch (error) { setError((error as Error).message) } finally { setBusy(false) } }
   const refreshConnections = useCallback(async () => { setList(await api<ConnectionList>('/connections')); const result = await fetch('/api/providers').then(response => response.json()) as { providers: Provider[] }; setProviders(result.providers ?? []) }, [])
   const refreshWorkflows = useCallback(async () => { const result = await api<{ workflows: WorkflowRevision[]; selected: WorkflowRevision }>('/workflows'); setWorkflows(result.workflows); setDefaultFlow(result.selected); return result }, [])
   const refreshRuns = useCallback(async () => setRuns((await api<{ runs: RunSummary[] }>('/runs')).runs), [])
   useEffect(() => { let active = true; Promise.all([refreshWorkflows(), refreshConnections(), api<PolicyRevision>('/policy'), api<{ draft: DraftJob | null }>('/drafts')]).then(([, , policy, drafting]) => { if (active) { setPolicy(policy); if (drafting.draft) setDraftJob(drafting.draft) } }).catch(error => setError(error.message)); return () => { active = false } }, [])
   useEffect(() => { const guard = (event: BeforeUnloadEvent) => { if (dirty || building) event.preventDefault() }; addEventListener('beforeunload', guard); return () => removeEventListener('beforeunload', guard) }, [dirty, building])
+  useEffect(() => { if (modal) dialog.current?.showModal() }, [modal])
   useEffect(() => { if (screen === 'runs') void refreshRuns().catch(error => setError(error.message)) }, [screen, run?.status])
+  useEffect(() => { if (panel === 'history' && graph?.revision) void api<{ revisions: WorkflowRevision[] }>(`/workflows/${graph.id}/revisions`).then(result => setRevisions(result.revisions)).catch(error => setError(error.message)) }, [panel, graph?.id, graph?.revision])
+  useEffect(() => { if (!run || run.status !== 'running') return; let stopped = false; const poll = async () => { try { const result = await api<WorkflowRun>(`/runs/${run.id}`); if (!stopped) setRun(result) } catch (error) { if (!stopped) setError((error as Error).message) } }; const timer = setInterval(() => { if (!document.hidden) void poll() }, 1500); return () => { stopped = true; clearInterval(timer) } }, [run?.id, run?.status])
   useEffect(() => {
     if (!building || !draftJob) return
     let stopped = false, pending = false
     const poll = async () => { if (pending) return; pending = true; try { const result = await api<DraftJob>(`/drafts/${draftJob.id}`); if (stopped) return; if (result.status === 'done' && result.draft) { applyAiDraft(result.draft); setDraftJob(result) } else if (result.status === 'failed') { setDraftJob(result); setError(result.error ?? 'Could not build this workflow. Try again.') } } catch (error) { if (!stopped) setError((error as Error).message) } finally { pending = false } }
     const timer = setInterval(() => void poll(), 1200); void poll(); return () => { stopped = true; clearInterval(timer) }
   }, [draftJob?.id, building])
+  useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === 'Escape' && panel && !modal) setPanel(null) }; addEventListener('keydown', close); return () => removeEventListener('keydown', close) }, [panel, modal])
   function applyAiDraft(result: WorkflowDraft) { const base = generationBase.current; const next = base && base.id !== 'default' ? { ...result.workflow, id: base.id, revision: base.revision, createdAt: base.createdAt } : fresh(result.workflow); load(next, true); setAiSummary(result.summary); setSetup(result.setup); setScreen('editor'); setPanel('assistant'); setDescription(''); toast('Workflow draft ready. Review the steps before saving or running.') }
   async function generate() { if (!description.trim() || disabled) return; if (screen !== 'editor' && dirty && !confirm('Replace your unsaved draft with a new AI workflow?')) return; await action(async () => { generationBase.current = screen === 'editor' && graph ? { ...graph, ...draft() } : null; const base = generationBase.current; const job = await api<DraftJob>('/drafts', { description, ...(builderEngine ? { engine: builderEngine } : {}), ...(base?.nodes.length ? { workflow: base } : {}) }); setDraftJob(job); setPanel('assistant') }) }
   async function stopDraft() { if (!draftJob) return; await action(async () => { await api(`/drafts/${draftJob.id}/stop`, {}); setDraftJob({ ...draftJob, status: 'failed' }); toast('Workflow drafting stopped. Your existing flow is unchanged.') }) }
   function open(value: WorkflowRevision, copy = false) { if (building) return; if (dirty && !confirm('Discard unsaved changes and open this workflow?')) return; load(copy ? fresh(value) : value, copy); setScreen('editor'); setPanel(null); setAiSummary(''); setSetup([]) }
   function openTemplate(value: Workflow) { open({ ...value, revision: '', createdAt: 0 }, true) }
   function blank() { if (building) return; if (dirty && !confirm('Discard unsaved changes and start a new workflow?')) return; load(fresh({ id: 'new', name: 'Untitled workflow', entry: '', nodes: [], edges: [] }), true); setScreen('editor'); setPanel('picker'); setAiSummary(''); setSetup([]) }
+  async function save() { const result = await api<WorkflowRevision>('/workflows', { workflow: draft(), ...(graph?.revision ? { expectedRevision: graph.revision } : {}) }); load(result); await refreshWorkflows(); toast('Workflow saved. Existing runs keep their original version.'); return result }
   function go(next: Screen) { setScreen(next); setError('') }
+  function closeModal() { dialog.current?.close(); setModal(null) }
 
   const nav = document.getElementById('studio-nav')
   const heading = nav ? createPortal(screen === 'editor'
     ? <button type="button" className="text-button" onClick={() => go('home')}><Icon id="back-icon" />Workflows</button>
     : NAV.map(([id, text]) => <button key={id} type="button" className="text-button" aria-current={screen === id || (screen === 'templates' && id === 'home') ? 'page' : undefined} onClick={() => go(id)}>{text}</button>), nav) : null
-
   const providerOptions = providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)
   const promptBox = (small = false) => <form className="workflow-prompt" onSubmit={event => { event.preventDefault(); void generate() }}>
     <textarea aria-label={small ? 'Ask AI to change the workflow' : 'Describe your workflow'} rows={small ? 6 : 4} value={description} disabled={disabled} onChange={event => setDescription(event.target.value)} placeholder={small ? 'Add a testing step before the review…' : 'Plan the work, build it, then ask another AI to review…'} required />
@@ -93,6 +124,7 @@ function Studio() {
     {building && <p className="muted" role="status">Your AI is drafting the workflow… This can take a minute.</p>}
   </form>
   const strip = (value: Workflow) => <span className="strip" aria-hidden="true">{value.nodes.slice(0, 5).map(node => <i key={node.id} />)}</span>
+  const modelsOf = (engine?: string) => providers.find(provider => provider.id === engine)?.models ?? []
 
   return <>
     {heading}
@@ -100,7 +132,7 @@ function Studio() {
     {screen === 'home' && <section className="studio-view describe-home">
       <h2>How should your team work?</h2><p className="muted">Describe the steps you have in mind. Shape them on the canvas.</p>
       {promptBox()}
-      <div className="prompt-examples"><span className="muted">Try an example</span>{EXAMPLES.map((example, index) => <button key={example} type="button" className="example" disabled={disabled} onClick={() => setDescription(example)}>{index === 0 ? 'Plan, implement, review' : 'Research and verify'}</button>)}</div>
+      <div className="prompt-examples"><span className="muted">Try an example</span>{EXAMPLES.map(([title, text]) => <button key={title} type="button" className="example" disabled={disabled} onClick={() => setDescription(text)}>{title}</button>)}</div>
       <div className="starting-options">
         <button type="button" className="studio-option" disabled={!defaultFlow || building} onClick={() => defaultFlow && open(defaultFlow)}><Icon id="flow-icon" /><strong>Use the default</strong><small>{defaultFlow?.name ?? 'Loading your default…'}</small></button>
         <button type="button" className="studio-option" disabled={building} onClick={() => go('templates')}><Icon id="history-icon" /><strong>Browse templates</strong><small>A starting point to make yours</small></button>
@@ -114,10 +146,69 @@ function Studio() {
       {templates.map((item, index) => <button key={item.id} type="button" className="studio-option" disabled={building} onClick={() => index === 0 ? open({ ...item, revision: builtin!.revision, createdAt: 0 }) : openTemplate(item)}><strong>{index === 0 ? 'Plan, build & review' : item.name}</strong><small>{item.nodes.length} steps · {index === 0 ? 'Default workflow' : index === 1 ? 'Explore, then check the findings' : 'Check existing work and take a closer look'}</small></button>)}
       <button type="button" className="studio-option" disabled={building} onClick={blank}><strong>Blank workflow</strong><small>Start with your own task</small></button>
     </div></section>}
-    {screen === 'editor' && <section className="studio-view"><p className="studio-placeholder">The editor for {graph?.name ?? 'this workflow'} lands in the next task. {nodes.length} steps loaded{dirty ? ' · Unsaved changes' : ''}.</p></section>}
+    {screen === 'editor' && graph && <section className="studio-view">
+      <header className="editor-heading">
+        <div><label className="visually-hidden" htmlFor="workflow-name">Workflow name</label><input id="workflow-name" value={graph.name} disabled={disabled} onChange={event => { markDirty(); setGraph(current => current ? { ...current, name: event.target.value } : current) }} /><p className="muted" role="status">{dirty ? 'Unsaved changes' : graph.id === 'default' ? 'Default workflow' : 'Saved'} · {nodes.length} step{nodes.length === 1 ? '' : 's'}</p></div>
+        <div className="editor-actions"><button type="button" className="text-button" aria-pressed={panel === 'history'} onClick={() => setPanel(panel === 'history' ? null : 'history')}>History</button><button type="button" className="pill" disabled={!dirty || disabled} onClick={() => void action(async () => { await save() })}>Save</button><button type="button" className="pill" disabled={disabled || !nodes.length} onClick={() => void action(async () => { if (dirty) await save(); setRunTitle(graph.name); setModal('run') })}>Run workflow</button></div>
+      </header>
+      <div className="editor-body">
+        <div className="workflow-canvas">
+          <div className="canvas-tools"><button type="button" className="pill" disabled={disabled} onClick={() => { setQuery(''); setPanel('picker') }}><Icon id="plus-icon" />Add step</button>{aiSummary && <span className="draft-notice"><strong>AI draft</strong> {aiSummary} <button type="button" className="round" aria-label="Dismiss draft message" onClick={() => setAiSummary('')}><Icon id="close-icon" /></button></span>}<button type="button" className="text-button" aria-pressed={panel === 'assistant'} onClick={() => setPanel(panel === 'assistant' ? null : 'assistant')}><Icon id="spark-icon" />Ask AI</button></div>
+          <div className="flow-host">
+            <ReactFlow<TaskNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onInit={instance => { flow.current = instance; fit() }} onNodesChange={changes => { onNodesChange(changes); if (changes.some(change => change.type === 'position' && change.dragging)) markDirty() }} onEdgesChange={changes => { onEdgesChange(changes); if (changes.some(change => change.type === 'remove')) markDirty() }} onNodeClick={(_, node) => { setSelected(node.id); setPanel('step') }} onConnect={connection => { if (connection.source && connection.target) wire(connection.source, (connection.sourceHandle ?? 'pass') as Outcome, connection.target) }} nodesDraggable={!disabled} nodesConnectable={!disabled} deleteKeyCode={null} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1 }} minZoom={0.25} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Controls showInteractive={false} /></ReactFlow>
+            {!nodes.length && <div className="empty-canvas"><span className="welcome-mark"><Icon id="plus-icon" /></span><h3>Your workflow starts here</h3><p className="muted">Add a step, or describe the whole workflow to AI.</p><div><button type="button" className="pill" onClick={() => setPanel('picker')}>Add first step</button><button type="button" className="pill" onClick={() => setPanel('assistant')}><Icon id="spark-icon" />Build with AI</button></div></div>}
+          </div>
+          <p className="canvas-note">Drag to arrange · connect to set the order. <button type="button" className="text-button" onClick={() => setModal('rules')}><Icon id="lock-icon" />Core rules always apply</button></p>
+        </div>
+        <aside className="step-inspector" aria-label={panel === 'picker' ? 'Add a step' : panel === 'step' ? 'Edit step' : panel === 'history' ? 'Workflow history' : panel === 'assistant' ? 'Build with AI' : 'Step details'}>
+          {panel === null && <p className="muted">Select a step to edit it.</p>}
+          {panel === 'picker' && <><h2>Add a step</h2><label className="search-field flat-search"><Icon id="search-icon" /><input aria-label="Find a step" placeholder="Find a step…" value={query} onChange={event => setQuery(event.target.value)} /></label>
+            <div className="preset-list">{stepPresets.filter(item => item.id !== 'custom' && `${item.title} ${item.description}`.toLowerCase().includes(query.toLowerCase())).map(item => <button key={item.id} type="button" className="preset-row" disabled={disabled} onClick={() => addStep(item.id)}><span><strong>{item.title}</strong><small>{item.description}</small></span><Icon id="plus-icon" /></button>)}
+              <button type="button" className="preset-row custom" disabled={disabled} onClick={() => addStep('custom')}><span><strong>Custom task</strong><small>Write your own instructions. Use any connected AI and its tools.</small></span><Icon id="plus-icon" /></button></div>
+            <p className="muted">Presets are starting points. Every field stays editable.</p></>}
+          {panel === 'step' && (current ? <fieldset disabled={disabled} className="step-editor"><h2>Edit step</h2>
+            <label>Step name<input value={current.title} onChange={event => patch({ title: event.target.value })} /></label>
+            <label>What should happen?<textarea rows={6} value={current.instructions} onChange={event => patch({ instructions: event.target.value })} /></label>
+            <label>Who should do it?<select value={current.agent.engine ?? ''} onChange={event => event.target.value === 'connect' ? go('connections') : patch({ agent: event.target.value ? { role: current.agent.role, engine: event.target.value } : { role: current.agent.role } })}><option value="">Chat decides</option>{providerOptions}{current.agent.engine && !providers.some(provider => provider.id === current.agent.engine) && <option value={current.agent.engine}>Unavailable · {current.agent.engine}</option>}<option value="connect">+ Connect another AI</option></select><small className="muted">{current.agent.engine ? 'Always use this AI for this step.' : 'The chat picks the AI for this step from its strengths and usage.'}</small></label>
+            <details><summary>Tools, skills & checks{current.skills.length + current.mcpServers.length + current.checks.length ? ` (${current.skills.length + current.mcpServers.length + current.checks.length})` : ''}</summary><StepAttachments node={current} onChange={patch} /></details>
+            <details><summary>More options</summary>
+              <label>Task purpose<select value={current.kind} onChange={event => patch({ kind: event.target.value as WorkflowNode['kind'] })}>{Object.entries(purposeLabels).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
+              {outcomes.map(outcome => <label key={outcome}>{outcomeLabels[outcome]}<select value={edges.find(edge => edge.source === current.id && edge.sourceHandle === outcome)?.target ?? ''} onChange={event => wire(current.id, outcome, event.target.value)}><option value="">End the workflow</option>{nodes.filter(node => node.id !== current.id).map(node => <option key={node.id} value={node.id}>{node.data.title}</option>)}</select></label>)}
+              <label>Model<input list="studio-models" value={current.agent.model ?? ''} placeholder="Use this AI's default" onChange={event => patch({ agent: { ...current.agent, model: event.target.value || undefined } })} /><datalist id="studio-models">{modelsOf(current.agent.engine).map(model => <option key={model} value={model} />)}</datalist></label>
+              <label>Maximum attempts<input type="number" min={1} max={10} value={current.maxVisits} onChange={event => patch({ maxVisits: Number(event.target.value) })} /></label>
+              <label>Model family (if unknown)<input value={current.agent.family ?? ''} onChange={event => patch({ agent: { ...current.agent, family: event.target.value || undefined } })} /></label>
+              <button type="button" className="text-button" disabled={dirty || busy} title={dirty ? 'Save first to preview the exact instructions' : undefined} onClick={() => void action(async () => setPromptPreview((await api<{ prompt: string }>('/preview', { id: graph.id, revision: graph.revision, nodeId: current.id, request: request || 'Preview request' })).prompt))}>Preview full instructions</button>
+              {promptPreview && <pre className="studio-output">{promptPreview}</pre>}
+            </details>
+            <div className="inspector-actions"><button type="button" className="text-button danger" onClick={() => { adopt(removeWorkflowStep(draft(), current.id)); setSelected(null); setPanel(null) }}>Remove step</button><span><button type="button" className="text-button" onClick={() => { setQuery(''); setPanel('picker') }}><Icon id="plus-icon" />Add next step</button><button type="button" className="pill" onClick={() => setPanel(null)}>Done</button></span></div>
+          </fieldset> : <p className="muted">Select a step on the canvas to edit it.</p>)}
+          {panel === 'assistant' && <><h2>Build with AI</h2><p className="muted">Describe a change, add a step, or ask for a different approach. Your AI updates this draft.</p>
+            {aiSummary && <div className="saved-revision"><strong>Draft ready</strong><small>{aiSummary}</small></div>}
+            {setup.length > 0 && <div className="saved-revision"><strong>Before running</strong><ul>{setup.map(item => <li key={item}>{item}</li>)}</ul><button type="button" className="text-button" onClick={() => go('connections')}>Manage AIs</button></div>}
+            <div className="prompt-examples"><span className="muted">Try a change</span>{SUGGESTIONS.map(suggestion => <button key={suggestion} type="button" className="example" disabled={disabled} onClick={() => setDescription(suggestion)}>{suggestion}</button>)}</div>
+            {promptBox(true)}<p className="muted">Changes stay in this draft until you save.</p></>}
+          {panel === 'history' && <><h2>History</h2><p className="muted">Saved versions stay available. Running work keeps the version it started with.</p>
+            {dirty && <div className="saved-revision"><strong>Current draft</strong><small>Unsaved changes</small></div>}
+            {revisions.map(item => <div className="saved-revision" key={item.revision}><strong>{item.revision === graph.revision ? 'Current saved version' : dateLabel(item.createdAt)}</strong><small>{item.nodes.length} steps · {dateLabel(item.createdAt)}</small><button type="button" className="text-button" disabled={building} onClick={() => { open(item); setPanel('history') }}>Open version</button></div>)}
+            {!graph.revision && <p className="muted">Save this workflow to create its first version.</p>}
+            <div className="inspector-actions"><button type="button" className="text-button" disabled={dirty || disabled || !graph.revision || (defaultFlow?.id === graph.id && defaultFlow.revision === graph.revision)} onClick={() => void action(async () => { await api('/default', { id: graph.id, revision: graph.revision }); await refreshWorkflows(); toast('Default updated for future runs.') })}>Use as default workflow</button><button type="button" className="text-button" disabled={building} onClick={() => { load(fresh({ ...draft(), name: `${graph.name} copy` }), true); setPanel(null) }}>Make a copy</button></div></>}
+        </aside>
+      </div>
+    </section>}
     {screen === 'connections' && <section className="studio-view"><p className="studio-placeholder">Manage AIs lands in a later task. {list.connections.length} connections configured.</p></section>}
     {screen === 'runs' && <section className="studio-view"><p className="studio-placeholder">Runs lands in a later task. {runs.length} runs so far.</p></section>}
     {screen === 'rules' && <section className="studio-view"><p className="studio-placeholder">Rules lands in a later task.{policy ? ` Core prompt revision ${policy.revision}.` : ''}</p></section>}
+    {modal && <dialog ref={dialog} className="access-dialog flat" onClose={() => setModal(null)} aria-labelledby="studio-dialog-title">
+      <header className="dialog-heading"><h2 id="studio-dialog-title">{modal === 'rules' ? 'Rules you can rely on' : 'Run this workflow'}</h2><form method="dialog"><button className="round" aria-label="Close dialog"><Icon id="close-icon" /></button></form></header>
+      {modal === 'rules' ? <><p className="muted">Every workflow follows your project instructions, reports actual evidence, and requires a verified plan and an independent review for implementation work.</p><p className="muted">These rules stay in place when you edit a workflow or ask AI to change it.</p><button type="button" className="pill" onClick={closeModal}>Back to workflow</button></>
+        : <form className="field-stack" onSubmit={event => { event.preventDefault(); void action(async () => { const started = await api<WorkflowRun>('/runs', { workflowId: graph!.id, revision: graph!.revision, cwd, label: runTitle, request }); setRun(started); closeModal(); go('runs'); toast('Workflow started.') }) }}>
+          <label>Run title<input required value={runTitle} onChange={event => setRunTitle(event.target.value)} /></label>
+          <label>Project folder<input required value={cwd} onChange={event => setCwd(event.target.value)} placeholder="/Users/you/projects/my-project" /></label>
+          <label>What should this run accomplish?<textarea required rows={4} value={request} onChange={event => setRequest(event.target.value)} /></label>
+          <p className="muted">Your AIs will work in this folder using the workflow's configured tools and checks.</p>
+          <button disabled={busy} className="pill" type="submit">{busy ? 'Starting…' : 'Start run'}</button>
+        </form>}
+    </dialog>}
   </>
 }
 
