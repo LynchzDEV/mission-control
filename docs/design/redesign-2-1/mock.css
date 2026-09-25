@@ -1,0 +1,4 @@
+.mock-badge{position:absolute;z-index:5;font:600 10px/1 'Helvetica Neue',sans-serif;letter-spacing:.5px;text-transform:uppercase;color:#fff;background:#e0567a;padding:4px 7px;border-radius:6px;pointer-events:none}
+.mock-new{outline:2px dashed #e0567a;outline-offset:6px;border-radius:14px;position:relative}
+.mock-foot{position:fixed;left:16px;bottom:10px;z-index:9;font:11px Menlo,monospace;color:#8a93a6;background:#eaedf6e6;padding:4px 8px;border-radius:6px}
+.chat-snippet .msg{margin-bottom:26px}

@@ -1,0 +1,27 @@
+.th-main{flex:1;min-height:0;display:flex;flex-direction:column;padding:0 28px 28px}
+.th-term{position:relative;flex:1;background:#eaedf6}
+.th-term pre{margin:0;font:13px/1.55 Menlo,monospace;color:#344155;white-space:pre}
+.th-term .tc{color:#6b7ea3}.th-term .tp{color:#8062bd}.th-term .tk{color:#d4a091}.th-term .cur{color:#8062bd;animation:pulse 1s steps(2) infinite}
+.th-head{display:flex;align-items:center;gap:12px;padding:4px 2px 14px}
+.th-logo{display:grid;place-items:center;width:30px;height:30px;flex:0 0 30px;border-radius:9px;background:color-mix(in srgb,#d4a091 24%,#fff)}
+.th-logo img{width:17px;height:17px}
+.th-title{flex:1;min-width:0}
+.th-title h1{font-size:15px;font-weight:500;margin:0 0 2px;display:flex;align-items:center;gap:8px}
+.th-title p{font-size:12px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.th-status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:#3f7352;background:#dcece1;padding:4px 10px;border-radius:20px}
+.th-status i,.th-dot{width:7px;height:7px;border-radius:50%;background:#5b9a6e;animation:pulse 1.8s ease-in-out infinite}
+.th-dot{display:inline-block}
+.th-icon{display:grid;place-items:center;width:32px;height:32px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--muted);padding:0}
+.th-icon:hover{border-color:var(--accent);color:var(--accent)}
+.th-icon svg{width:16px;height:16px}
+.th-find{display:flex;align-items:center;gap:8px;width:260px;padding:6px 10px;border-radius:10px;background:#e2e6f0;color:var(--muted)}
+.th-find svg{width:15px;height:15px}
+.th-find input{flex:1;min-width:0;border:0;background:transparent;font-size:13px;outline:none}
+.th-find kbd{font:11px Menlo,monospace;color:var(--muted)}
+.th-float{position:absolute;top:12px;right:12px;display:flex;align-items:center;gap:8px;padding:5px 6px 5px 5px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,#fff 45%,var(--paper));z-index:2}
+.th-float .th-logo{width:26px;height:26px;flex-basis:26px;border-radius:8px}
+.th-float .th-logo img{width:15px;height:15px}
+.th-float .th-icon{width:28px;height:28px;border:0}
+.th-sep{width:1px;height:18px;background:var(--line)}
+.mock-foot{left:auto;right:16px}
+.th-name{font-size:13px;font-weight:500;color:#505e75;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:2px}

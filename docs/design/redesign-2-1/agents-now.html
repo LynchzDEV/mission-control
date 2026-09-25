@@ -1,0 +1,13 @@
+<!doctype html><html lang="en"><head><title>Agents — NOW</title>
+<meta charset="utf-8"><link rel="stylesheet" href="quiet.css"><link rel="stylesheet" href="mock.css"></head>
+<body><main class="canvas"><div data-toolbar></div>
+<div class="workspace"><div class="chat-container"><div class="stage"><section class="conversation content-width"><div class="chat chat-snippet" data-include="chat-snippet.frag"></div></section></div>
+<div class="composer-area content-width"><form class="composer nui-neuromorphic-inset"><textarea rows="1" placeholder="Write a message here…"></textarea><button type="button" class="round send"><svg><use href="#arrow-icon"/></svg></button></form></div></div>
+<dialog id="agents" class="drawer" open><header class="dialog-heading"><h2>Agents</h2><form method="dialog"><button class="round"><svg><use href="#close-icon"/></svg></button></form></header>
+<div id="live-agents"><p id="live-agents-status" class="muted">3 agents in this chat</p><div id="live-agents-list">
+<details class="agent" open><summary><span>fix chat scroll</span><span class="status" data-state="running">Working</span></summary><div class="agent-body"><p class="muted">Claude · opus — chat UI needs judgment</p><p>Edit client/chat.ts</p><div class="agent-actions"><button class="text-button">Stop</button><button class="text-button">Reply</button></div></div></details>
+<details class="agent"><summary><span>say-hi html</span><span class="status" data-state="done">Done</span></summary></details>
+<details class="agent"><summary><span>review say-hi</span><span class="status" data-state="needs-you">Needs you</span></summary></details>
+</div></div></dialog></div></main>
+<p class="mock-foot">NOW · client/shell-activity.ts paintChatAgents · public/quiet.css .agent / .status</p>
+<script src="frame.js"></script></body></html>

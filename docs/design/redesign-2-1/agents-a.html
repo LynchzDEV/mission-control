@@ -1,0 +1,15 @@
+<!doctype html><html lang="en"><head><title>Agents — A live cards</title>
+<meta charset="utf-8"><link rel="stylesheet" href="quiet.css"><link rel="stylesheet" href="mock.css"><link rel="stylesheet" href="agents.css"></head>
+<body><main class="canvas"><div data-toolbar></div>
+<div class="workspace"><div class="chat-container"><div class="stage"><section class="conversation content-width"><div class="chat chat-snippet" data-include="chat-snippet.frag"></div></section></div>
+<div class="composer-area content-width"><form class="composer nui-neuromorphic-inset"><textarea rows="1" placeholder="Write a message here…"></textarea><button type="button" class="round send"><svg><use href="#arrow-icon"/></svg></button></form></div></div>
+<dialog id="agents" class="drawer" open><header class="dialog-heading"><h2>Agents</h2><form method="dialog"><button class="round"><svg><use href="#close-icon"/></svg></button></form></header>
+<div class="mock-new"><span class="mock-badge" style="top:-10px;right:0">new</span><p class="muted" style="font-size:13px;margin:6px 0 14px">3 agents · 1 working</p><article class="ag-card" style="--engine:#d4a091"><div class="ag-head"><span class="ag-disc"><img src="providers/claude.svg" alt=""></span><strong>fix chat scroll</strong><span class="pill-state" data-s="running">Working · 1:12</span></div>
+<p class="ag-meta">Claude · opus — chat UI needs judgment</p>
+<ol class="ag-feed"><li><b>Read</b> client/chat.ts</li><li><b>Grep</b> scrollTop</li><li class="now"><b>Edit</b> client/chat.ts +8 −2 </li></ol>
+<div class="ag-foot"><span>3 tools · 12k tokens</span><span class="sp"></span><button class="ag-btn">Reply</button><button class="ag-btn danger">Stop</button></div></article><article class="ag-card" style="--engine:#bfd38b"><div class="ag-head"><span class="ag-disc"><img src="providers/codex.svg" alt=""></span><strong>review say-hi</strong><span class="pill-state" data-s="needs">Needs you</span></div>
+<p class="ag-meta">Codex · gpt-5.5 — cross-family review</p><p class="ag-meta" style="color:#a13f58">Land failed: job has no worktree</p>
+<div class="ag-foot"><span>2:46 AM</span><span class="sp"></span><button class="ag-btn">Open report</button><button class="ag-btn">Retry</button></div></article><article class="ag-card" style="--engine:#91b0dc"><div class="ag-head"><span class="ag-disc"><img src="providers/glm.svg" alt=""></span><strong>say-hi html</strong><span class="pill-state" data-s="done">Done · 48s</span></div>
+<p class="ag-meta">GLM · glm-5.3-flash · 1 file changed, +42</p></article></div></dialog></div></main>
+<p class="mock-foot">A · live cards — replaces #live-agents-list in client/shell-activity.ts paintChatAgents</p>
+<script src="frame.js"></script></body></html>

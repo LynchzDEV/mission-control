@@ -1,0 +1,15 @@
+<!doctype html><html lang="en"><head><title>Agents — C list + detail</title>
+<meta charset="utf-8"><link rel="stylesheet" href="quiet.css"><link rel="stylesheet" href="mock.css"><link rel="stylesheet" href="agents.css"></head>
+<body><main class="canvas"><div data-toolbar></div>
+<div class="workspace"><div class="chat-container"><div class="stage"><section class="conversation content-width"><div class="chat chat-snippet" data-include="chat-snippet.frag"></div></section></div>
+<div class="composer-area content-width"><form class="composer nui-neuromorphic-inset"><textarea rows="1" placeholder="Write a message here…"></textarea><button type="button" class="round send"><svg><use href="#arrow-icon"/></svg></button></form></div></div>
+<dialog id="agents" class="drawer" open><header class="dialog-heading"><h2>Agents</h2><form method="dialog"><button class="round"><svg><use href="#close-icon"/></svg></button></form></header>
+<div class="mock-new"><span class="mock-badge" style="top:-10px;right:0">new</span>
+<div class="ag-row sel" style="--engine:#d4a091"><span class="ag-disc"><img src="providers/claude.svg" alt=""></span><span class="l">fix chat scroll</span><time>1:12</time><span class="pill-state" data-s="running">Working</span></div>
+<div class="ag-row" style="--engine:#bfd38b"><span class="ag-disc"><img src="providers/codex.svg" alt=""></span><span class="l">review say-hi</span><time>2:46</time><span class="pill-state" data-s="needs">Needs you</span></div>
+<div class="ag-row" style="--engine:#91b0dc"><span class="ag-disc"><img src="providers/glm.svg" alt=""></span><span class="l">say-hi html</span><time>48s</time><span class="pill-state" data-s="done">Done</span></div>
+<div style="border-top:1px solid var(--line);margin:14px 0 0;padding-top:14px"><div class="ag-head" style="--engine:#d4a091"><strong>fix chat scroll</strong><button class="ag-btn danger">Stop</button></div><p class="muted" style="font-size:12px;margin:4px 0 0">Claude · opus — chat UI needs judgment</p>
+<div class="ag-log"><div><span class="t">02:41:08</span> <span class="k">Read</span> client/chat.ts</div><div><span class="t">02:41:15</span> <span class="k">Grep</span> "scrollTop" client/</div><div><span class="t">02:41:40</span> I'll force a scroll after the user sends…</div><div><span class="t">02:42:02</span> <span class="k">Edit</span> client/chat.ts <span class="ok">+8 −2</span></div><div><span class="t">02:42:20</span> <span class="k">Bash</span> bun test chat-view ▍</div></div>
+<form class="ag-reply"><textarea rows="2" placeholder="Message fix chat scroll…"></textarea><button type="button" class="round send"><svg><use href="#arrow-icon"/></svg></button></form></div></div></dialog></div></main>
+<p class="mock-foot">C · list + live detail log — client/shell-activity.ts; activity from server/activity.ts events</p>
+<script src="frame.js"></script></body></html>
