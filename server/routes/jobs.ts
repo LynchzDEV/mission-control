@@ -57,7 +57,7 @@ function chatTitle(prompt: string): string {
 
 async function projectInChatHome(path: string, root: JobRecord): Promise<string | Failure> {
   const home = await realHome()
-  const check = await validateWorkspaceCwd(path, home)
+  const check = await validateWorkspaceCwd(path, home, { requireGit: false })
   if (!check.ok) return { status: 400, error: check.error }
   const chat = chatHome(await readConfig(), [root.cwd], home)
   if (!chat.ok || (check.path !== chat.path && !check.path.startsWith(`${chat.path}/`))) {
@@ -83,7 +83,7 @@ async function chatRootFields(payload: Record<string, unknown>): Promise<Pick<Cr
   if (payload.purpose !== 'chat') return {}
   if (!engineSupportsResume(payload.engine as string)) return { status: 400, error: 'chat needs an AI that can resume a conversation' }
   if (typeof payload.project !== 'string') return { purpose: 'chat', edit: payload.edit === true }
-  const check = await validateWorkspaceCwd(payload.project, await realHome())
+  const check = await validateWorkspaceCwd(payload.project, await realHome(), { requireGit: false })
   if (!check.ok) return { status: 400, error: check.error }
   return { purpose: 'chat', edit: payload.edit === true, project: check.path }
 }

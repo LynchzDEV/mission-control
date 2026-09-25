@@ -215,7 +215,9 @@ async function ensureHome(): Promise<string | null> {
 async function startChat(prompt: string): Promise<void> {
   const home = await ensureHome()
   if (!home) return
+  await providersReady
   const choice = launchChoice(providers, stored('mc.shell.engine'), stored('mc.shell.model'))
+  if (!choice.engine) { chatError('No AI is connected yet. Add one in Studio → Manage AIs.'); return }
   const project = stored('mc.shell.project')
   const result = await postJson('/api/jobs', { engine: choice.engine, ...(choice.model ? { model: choice.model } : {}), cwd: home, prompt, label: titleFrom(prompt), purpose: 'chat', edit: stored('mc.shell.edit') === '1', ...(project ? { project } : {}) })
   if (!result.ok) { chatError(errorText(result)); return }
@@ -318,7 +320,7 @@ addEventListener('quiet:open-chat', (event) => openChat((event as CustomEvent<st
 addEventListener('quiet:show', (event) => { if ((event as CustomEvent<string>).detail === 'conversation') schedule(); else clearTimeout(pollTimer) })
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') schedule(); else clearTimeout(pollTimer) })
 
-void getJson('/api/providers').then(result => {
+const providersReady = getJson('/api/providers').then(result => {
   if (result.ok) providers = (readArray(result.data.providers) as unknown as LaunchProvider[]).filter(item => typeof item.id === 'string')
 })
 addEventListener('quiet:screen', (event) => { if ((event as CustomEvent<string>).detail === 'history') void pollJobs() })

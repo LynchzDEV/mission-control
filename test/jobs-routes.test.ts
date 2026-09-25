@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -767,6 +767,17 @@ describe('chat jobs', () => {
     const app = buildApp(manager, echoResolver)
     expect((await post(app, chatBody({ engine: 'glm' }))).status).toBe(200)
     expect((await post(app, chatBody({ engine: 'unknown-connection' }))).status).toBe(400)
+  })
+
+  test('a chat may name a project folder that is not a git repository', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, echoResolver)
+    const plain = await mkdtemp(join(homedir(), 'mc-chat-plain-'))
+    try {
+      const response = await post(app, chatBody({ project: plain }))
+      expect(response.status).toBe(200)
+      expect((await response.json()).project).toBe(await realpath(plain))
+    } finally { await rm(plain, { recursive: true, force: true }) }
   })
 
   test('spawned jobs carry chatId/chatTurn/reason and are listed by ?chat=', async () => {
