@@ -114,7 +114,7 @@ document.querySelectorAll<HTMLElement>('[data-chat]').forEach(button => {
   }
 })
 
-($('access-host') as HTMLInputElement).value = location.host
+;($('access-host') as HTMLInputElement).value = location.host
 
 document.querySelectorAll<HTMLElement>('[data-dialog]').forEach(button => {
   button.onclick = () => ($(button.dataset.dialog ?? '') as HTMLDialogElement).showModal()
