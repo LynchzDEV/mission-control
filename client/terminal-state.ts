@@ -52,3 +52,8 @@ export function findKeys(event: { key: string; metaKey: boolean; ctrlKey: boolea
   if (event.key === 'Enter') return event.shiftKey ? 'prev' : 'next'
   return null
 }
+
+export function dropCopy(count: number): { title: string; toast: string } {
+  const files = count === 0 ? 'files' : `${count} file${count === 1 ? '' : 's'}`
+  return { title: `Drop to add ${files}`, toast: `Added ${files}` }
+}

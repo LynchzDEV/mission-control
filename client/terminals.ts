@@ -1,9 +1,9 @@
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { providerName } from './terminal-view'
-import { errorText, getJson, postJson, readArray, readRecord } from './shared'
+import { errorText, getJson, pathsFromUriList, postJson, readArray, readRecord, shellQuote } from './shared'
 import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
-import { dragKind, latestLine, nextActive, renameValue, sessionState, splitPlan, type Session, type SessionState } from './terminal-state'
+import { dragKind, dropCopy, latestLine, nextActive, renameValue, sessionState, splitPlan, type Session, type SessionState } from './terminal-state'
 import { createPanes, type PaneHeader } from './terminal-panes'
 
 type Provider = { id: string; name: string; models: string[] }
@@ -183,17 +183,60 @@ function paintZones(zone: 'right' | 'bottom' | null, show: boolean): void {
   dropStage.dataset.dragging = String(show)
   for (const name of ['right', 'bottom'] as const) $(`drop-${name}`).dataset.hot = String(show && zone === name)
 }
+const dropOver = $('drop-over')
+function paintDropOver(transfer: DataTransfer | null, show: boolean): void {
+  if (show) $('drop-over-title').textContent = dropCopy(Array.from(transfer?.items ?? []).filter(item => item.kind === 'file').length).title
+  dropOver.hidden = !show
+}
+let toastTimer = 0
+function toast(text: string): void {
+  const box = $('toast')
+  box.textContent = text
+  box.hidden = false
+  clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => { box.hidden = true }, 2000)
+}
+function dropTarget(event: DragEvent): TerminalView | null {
+  const id = (event.target as Element | null)?.closest<HTMLElement>('.term-host')?.dataset.id ?? activeId
+  return id ? views.get(id) ?? null : null
+}
+async function uploadDrop(file: File): Promise<string> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('lastModified', String(file.lastModified))
+  const response = await fetch('/api/terminals/drops', { method: 'POST', body: form })
+  const payload = (await response.json().catch(() => ({}))) as { error?: string; path?: string }
+  if (!response.ok || typeof payload.path !== 'string') throw new Error(payload.error ?? `Upload failed (${response.status})`)
+  return payload.path
+}
+async function dropFiles(transfer: DataTransfer | null, view: TerminalView): Promise<void> {
+  const socket = view.socket
+  if (!socket || socket.readyState !== WebSocket.OPEN) { toast('That terminal is not connected'); return }
+  let paths = pathsFromUriList(transfer?.getData('text/uri-list') ?? '')
+  if (paths.length === 0 && transfer) {
+    try { paths = await Promise.all(Array.from(transfer.files).map(uploadDrop)) }
+    catch (error) { toast(error instanceof Error ? error.message : 'Upload failed'); return }
+  }
+  if (paths.length === 0) { toast('Nothing to add'); return }
+  socket.send(new TextEncoder().encode(`${paths.map(shellQuote).join(' ')} `))
+  view.terminal.focus()
+  toast(dropCopy(paths.length).toast)
+}
 dropStage.addEventListener('dragover', (event) => {
-  if (dragKind(event.dataTransfer?.types ?? []) !== 'card') return
+  const kind = dragKind(event.dataTransfer?.types ?? [])
+  if (kind === 'none') return
   event.preventDefault()
+  if (kind === 'files') { paintDropOver(event.dataTransfer, true); return }
   const box = dropStage.getBoundingClientRect()
   const zone = event.clientX > box.left + box.width * 0.52 ? 'right' : event.clientY > box.top + box.height * 0.6 ? 'bottom' : null
   paintZones(zone, true)
 })
-dropStage.addEventListener('dragleave', (event) => { if (!dropStage.contains(event.relatedTarget as Node | null)) paintZones(null, false) })
+dropStage.addEventListener('dragleave', (event) => { if (!dropStage.contains(event.relatedTarget as Node | null)) { paintZones(null, false); paintDropOver(null, false) } })
 dropStage.addEventListener('drop', (event) => {
-  if (dragKind(event.dataTransfer?.types ?? []) !== 'card') return
+  const kind = dragKind(event.dataTransfer?.types ?? [])
+  if (kind === 'none') return
   event.preventDefault()
+  if (kind === 'files') { paintDropOver(null, false); const view = dropTarget(event); if (view) void dropFiles(event.dataTransfer, view); return }
   const id = event.dataTransfer?.getData('text/x-mc-terminal') ?? ''
   const plan = splitPlan(id, panes.shown(), dragZone)
   paintZones(null, false)
@@ -208,7 +251,10 @@ function stateLabel(state: SessionState): string {
   return state === 'working' ? 'working' : state === 'ended' ? 'ended' : 'idle'
 }
 
-function buildCard(session: Session): HTMLButtonElement {
+function buildCard(session: Session): HTMLElement {
+  const item = document.createElement('div')
+  item.className = 'rail-item'
+  item.dataset.id = session.id
   const card = document.createElement('button')
   card.type = 'button'
   card.className = 'session-card'
@@ -218,22 +264,20 @@ function buildCard(session: Session): HTMLButtonElement {
   const title = document.createElement('span'); title.className = 'card-title'
   const dot = document.createElement('span'); dot.className = 'dot'
   head.append(logo, title, dot)
-  const end = document.createElement('span')
+  const end = document.createElement('button')
+  end.type = 'button'
   end.className = 'round card-x'
-  end.setAttribute('role', 'button')
   end.setAttribute('aria-label', 'End this terminal')
-  end.tabIndex = 0
   end.insertAdjacentHTML('afterbegin', '<svg><use href="#close-icon"/></svg>')
-  end.onclick = (event) => { event.stopPropagation(); askEnd(session.id) }
-  end.onkeydown = (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); askEnd(session.id) } }
-  head.append(end)
+  end.onclick = () => askEnd(session.id)
   card.append(head, document.createElement('small'), document.createElement('code'))
   card.draggable = true
   card.ondragstart = (event) => { event.dataTransfer?.setData('text/x-mc-terminal', session.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move' }
   card.ondragend = () => paintZones(null, false)
   card.onclick = () => activate(session.id)
   title.ondblclick = (event) => { event.stopPropagation(); startRename(card) }
-  return card
+  item.append(card, end)
+  return item
 }
 
 let renaming: string | null = null
@@ -250,9 +294,8 @@ function askEnd(id: string): void {
 
 async function endSession(id: string): Promise<void> {
   let ok = false
-  try { ok = (await fetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'DELETE' })).ok } catch {}
-  if (!ok) { $('live-status').textContent = 'Could not end this terminal. Try again.'; return }
-  sessions = sessions.filter(session => session.id !== id)
+  try { const response = await fetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'DELETE' }); ok = response.ok || response.status === 404 } catch {}
+  if (!ok) { toast('Could not end this terminal. Try again.'); return }
   await refreshSessions()
   if (canvas.dataset.live === 'true' && activeId) views.get(activeId)?.terminal.focus()
 }
@@ -310,7 +353,7 @@ async function rename(id: string, title: string): Promise<void> {
     const response = await fetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title }) })
     ok = response.ok
   } catch {}
-  if (!ok) { setStatus('Could not rename this terminal.', false); renderRail(); return }
+  if (!ok) { toast('Could not rename this terminal'); renderRail(); return }
   sessions = sessions.map(session => session.id === id ? { ...session, title } : session)
   const view = views.get(id)
   if (view) { view.session = { ...view.session, title }; panes.retitle(id, paneHeader(view.session)) }
@@ -318,7 +361,9 @@ async function rename(id: string, title: string): Promise<void> {
   renderRail()
 }
 
-function paintCard(card: HTMLButtonElement, session: Session): void {
+function paintCard(item: HTMLElement, session: Session): void {
+  const card = item.querySelector('.session-card')
+  if (!card) return
   const view = views.get(session.id)
   const state = view?.state ?? 'idle'
   card.setAttribute('aria-current', String(session.id === activeId))
@@ -334,7 +379,7 @@ function paintCard(card: HTMLButtonElement, session: Session): void {
 export function renderRail(): void {
   if (renaming !== null) return
   $('rail-count').textContent = sessions.length ? `Terminals · ${sessions.length}` : 'Terminals'
-  const existing = new Map([...cards.querySelectorAll<HTMLButtonElement>('.session-card')].map(card => [card.dataset.id ?? '', card]))
+  const existing = new Map([...cards.querySelectorAll<HTMLElement>('.rail-item')].map(item => [item.dataset.id ?? '', item]))
   const wanted = sessions.map(session => session.id)
   for (const [id, card] of existing) if (!wanted.includes(id)) card.remove()
   const ordered = sessions.map(session => { const card = existing.get(session.id) ?? buildCard(session); paintCard(card, session); return card })
@@ -343,9 +388,11 @@ export function renderRail(): void {
   $('rail-empty').hidden = sessions.length > 0
 }
 
+let refreshGeneration = 0
 async function refreshSessions(): Promise<void> {
+  const generation = ++refreshGeneration
   const result = await getJson('/api/terminals')
-  if (!result.ok) return
+  if (!result.ok || generation !== refreshGeneration) return
   sessions = (readArray(result.data.sessions) as Session[]).filter(item => typeof item.id === 'string')
   for (const session of sessions) ensureView(session)
   const order = [...views.keys()]
