@@ -53,44 +53,15 @@ Decided: the Review page and its header count are dropped; "needs you" in Histor
 - Password system: REMOVED entirely (login page, setup, `/api/login`, `/api/setup`, session cookies). Mission Control is locked to this machine: always listens on `127.0.0.1`, bind address setting removed, server keeps the local-access guards (peer, Host, Origin, Fetch Metadata) against other sites, embedded pages and DNS rebinding. API token stays (mc-dispatch uses it); copy / rotate still to be wired.
 - Decided: add **Chat home** (default = deepest folder shared by known projects, never `~`).
 
-## 8. Studio — port every feature (user: "studio is good in feature now")
-Source: `client/studio.tsx`, `client/studio-settings.tsx`. New design: `docs/design/quiet-chat/index.html` Studio sections. ✓ = in the new design, ✗ = missing.
+## 8. Studio — PORTED 2026-09-24 (Phase 4, a27c8a6..HEAD)
+Studio is a screen inside the quiet shell (`#studio`, the Studio pill toggles it; `/studio` redirects there). The React island `client/studio.tsx` keeps every feature of the old page, re-skinned to the design's Studio sections. Reference screenshots: `docs/design/quiet-chat/reference/studio-*.png`.
 
-**Home**
-- ✓ Describe → Build workflow · ✗ Stop drafting · ✗ "drafting…" status
-- ✗ "Try an example" chips (Plan, implement, review · Research and verify)
-- ✓ Use default / Browse templates / Start from scratch · ✗ compact template shortcuts
-- ✗ "Continue editing <name> · Unsaved changes" · ✗ "Your workflows" saved list
+**Home** ✓ describe box (provider select from `/api/providers`, Build workflow / Stop drafting, drafting status), ✓ example chips, ✓ Use the default / Browse templates / Start from scratch, ✓ compact template shortcuts, ✓ Continue editing · Unsaved changes, ✓ Your workflows.
+**Editor** ✓ name, status, step count, History, Save, Run workflow dialog (title, folder, request, Start run, errors inline), ✓ real canvas (drag, connect, fail/blocked branches, zoom, empty state, keyboard selection opens the step), ✓ Add step picker (search, presets, Custom task), ✓ Ask AI panel (draft summary, Before running notes, suggestions, AI draft notice), ✓ Core rules dialog, ✓ History (Open version, Use as default workflow, Make a copy).
+**Step editor** ✓ name, instructions, Who should do it (Chat decides + every provider + Connect another AI; a removed connection reads Unavailable), ✓ Tools, skills & checks, ✓ purpose, outcome wiring, model, attempts, family, ✓ Preview full instructions, ✓ Add next step / Done.
+**Runs** ✓ list + Refresh, ✓ run detail (status, Stop run / Retry current step, request, folder, error, attempts with AI · model, summary, evidence, checks, job log, instructions used, versions used).
+**Rules** ✓ core rules card, ✓ prompt editor with earlier versions, Save prompt, placeholder hint.
+**Manage AIs** ✓ built-ins with the z.ai base URL + token form under GLM, ✓ presets (Grok Build, Qwen Code, OpenCode, custom ACP, custom CLI), ✓ full connection form, Save / Check / Remove. Work defaults: removed.
+**Everywhere** ✓ error banner, ✓ toasts, ✓ unsaved-changes guard (leaving Studio or the tab).
 
-**Editor**
-- ✓ Name, status · ✗ step count
-- ✓ Save · ✗ Run workflow dialog (run title, project folder, what to accomplish, Start run)
-- ✗ Real canvas: drag steps, connect steps, branches (when it succeeds / if it fails / if it needs help), zoom controls, empty-canvas state
-- ✗ Add step picker: search, step presets, Custom task (new design just appends a step)
-- ✓ Ask AI panel · ✗ draft summary, "Before running" setup notes, suggested edits, "AI draft" notice
-- ✗ Core rules dialog (only a note on the canvas)
-- History: ✓ versions (sample) · ✗ Open version, ✗ Use as default workflow, ✗ Make a copy
-
-**Step editor**
-- ✓ Step name, instructions, who does it (built-ins only), remove step
-- ✗ Tools, skills & checks (MCP tools, skill files, acceptance checks)
-- ✗ Task purpose · ✗ branch wiring per outcome · ✗ model · ✗ maximum attempts · ✗ model family
-- ✗ Preview full instructions · ✗ Add next step / Done · ✗ "+ Connect another AI"
-
-**Runs**
-- ✓ Recent runs list (sample) · ✗ Refresh
-- ✗ Run detail: status, Stop run, Retry current step, request, folder, error, each attempt (AI + model, summary, evidence, check output, job log link, instructions used), versions used
-
-**Rules**
-- ✓ Core rules, core prompt editor · ✗ start from an earlier version · ✗ Save prompt · ✗ placeholder hint ({{core_rules}}, {{workflow}}, {{assignment}})
-
-**Manage AIs**
-- ✓ AI list, + Add a connection, Check connection (disabled)
-- ✗ Presets (Grok Build, Qwen Code, OpenCode, custom ACP agent, custom headless CLI)
-- ✗ Fields: connection ID, name, adapter, command, arguments, environment variables/references, models, model family, output format, auto-approve, base URL, API key variable, provider ID, terminal arguments · ✗ Save / Remove connection
-- Work defaults: REMOVE (decided in 7)
-
-**Everywhere**
-- ✗ Error banner · ✗ toast notices · ✗ unsaved-changes guard on leaving
-
-**Decided:** a step's "Who should do it?" default is **Chat decides** (replaces "Use default", since roles are gone). Unpinned steps start from the AI + model picked in the chat's AI chip; the chat may switch per task by strengths and usage. Pinning a specific AI + model per step stays.
+Decided: a step's "Who should do it?" default is **Chat decides** (an unpinned step). Deferred to Phase 5: resolving Chat decides from the chat's AI chip when a run starts; Runs "View in chat"; Studio fields are flat by the standing rule (the design's inset fields were not kept).
