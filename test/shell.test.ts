@@ -24,10 +24,17 @@ afterEach(async () => {
 describe('quiet shell', () => {
   test('/ renders the composer, toolbar controls and the usage card mount', async () => {
     const markup = await (await app.handle(new Request('http://localhost/'))).text()
-    for (const marker of ['id="composer"', 'id="new-chat"', 'id="open-agents"', 'id="toggle-flow"', 'id="usage-track"', 'id="live-launch"', 'href="/quiet.css"', 'href="/vendor/neumo-ui.css"', 'href="/studio"', 'window.MC_WORKSPACE_DIR=']) expect(markup).toContain(marker)
+    for (const marker of ['id="composer"', 'id="new-chat"', 'id="open-agents"', 'id="toggle-flow"', 'id="usage-track"', 'id="live-launch"', 'href="/quiet.css"', 'href="/studio"', 'window.MC_WORKSPACE_DIR=']) expect(markup).toContain(marker)
     expect(markup).not.toContain('id="tabs"')
     expect(markup).not.toContain('Design preview')
     expect(markup).not.toContain('./vendor/')
+  })
+
+  test('neumo-ui loads once, layered beneath quiet.css', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    expect(markup).not.toContain('href="/vendor/neumo-ui.css"')
+    const quiet = await Bun.file(join(import.meta.dir, '../public/quiet.css')).text()
+    expect(quiet.startsWith("@import url('/vendor/neumo-ui.css') layer(neumo);")).toBe(true)
   })
 
   test('the access dialog states only true facts', async () => {

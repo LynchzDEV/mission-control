@@ -176,7 +176,6 @@ export function ShellPage(props: ShellProps): string {
   <title>Mission Control</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/vendor/xterm.css">
-  <link rel="stylesheet" href="/vendor/neumo-ui.css">
   <link rel="stylesheet" href="/quiet.css">
   <script>window.MC_WORKSPACE_DIR=${JSON.stringify(props.workspaceDir)}</script>
   <script src="/js/shell.js" type="module" defer></script>
