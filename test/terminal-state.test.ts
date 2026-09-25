@@ -61,14 +61,18 @@ describe('dragKind', () => {
 
 describe('findKeys', () => {
   const key = (key: string, extra: Partial<{ metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }> = {}) => ({ key, metaKey: false, ctrlKey: false, shiftKey: false, ...extra })
-  test('⌘F or Ctrl+F opens; Enter / Shift+Enter / Escape act only while open', () => {
-    expect(findKeys(key('f', { metaKey: true }), false)).toBe('open')
-    expect(findKeys(key('F', { ctrlKey: true }), true)).toBe('open')
-    expect(findKeys(key('Enter'), true)).toBe('next')
-    expect(findKeys(key('Enter', { shiftKey: true }), true)).toBe('prev')
-    expect(findKeys(key('Escape'), true)).toBe('close')
-    expect(findKeys(key('Enter'), false)).toBeNull()
-    expect(findKeys(key('f'), false)).toBeNull()
+  test('⌘F opens on a Mac and Ctrl+F elsewhere; Enter / Shift+Enter / Escape act only while open', () => {
+    expect(findKeys(key('f', { metaKey: true }), false, true)).toBe('open')
+    expect(findKeys(key('F', { ctrlKey: true }), true, false)).toBe('open')
+    expect(findKeys(key('Enter'), true, true)).toBe('next')
+    expect(findKeys(key('Enter', { shiftKey: true }), true, true)).toBe('prev')
+    expect(findKeys(key('Escape'), true, true)).toBe('close')
+    expect(findKeys(key('Enter'), false, true)).toBeNull()
+    expect(findKeys(key('f'), false, true)).toBeNull()
+  })
+  test('Ctrl+F stays with the shell on a Mac and ⌘F is not a shortcut elsewhere', () => {
+    expect(findKeys(key('f', { ctrlKey: true }), false, true)).toBeNull()
+    expect(findKeys(key('f', { metaKey: true }), false, false)).toBeNull()
   })
 })
 
@@ -82,9 +86,13 @@ describe('dropCopy', () => {
 
 describe('findCount', () => {
   test('reads n of m, 0 of m before a match is chosen, and No matches', () => {
-    expect(findCount(1, 3)).toBe('2 of 3')
-    expect(findCount(-1, 3)).toBe('0 of 3')
-    expect(findCount(-1, 0)).toBe('No matches')
+    expect(findCount(1, 3, 'a')).toBe('2 of 3')
+    expect(findCount(-1, 3, 'a')).toBe('0 of 3')
+    expect(findCount(-1, 0, 'a')).toBe('No matches')
     expect(findCount(-1, 0, '')).toBe('')
+  })
+  test('reads 1000+ once the addon stops counting', () => {
+    expect(findCount(4, 1000, 'a')).toBe('5 of 1000+')
+    expect(findCount(-1, 1000, 'a')).toBe('0 of 1000+')
   })
 })

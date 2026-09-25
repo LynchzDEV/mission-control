@@ -59,7 +59,7 @@ export class TerminalView {
     this.terminal.loadAddon(this.fit)
     this.terminal.loadAddon(this.search)
     this.terminal.loadAddon(new WebLinksAddon())
-    this.terminal.attachCustomKeyEventHandler(event => { if (findKeys(event, false) !== 'open') return true; if (event.type === 'keydown') openFind(); return false })
+    this.terminal.attachCustomKeyEventHandler(event => { if (findKeys(event, false, MAC) !== 'open') return true; if (event.type === 'keydown') openFind(); return false })
     this.search.onDidChangeResults(({ resultIndex, resultCount }) => { if (activeId === session.id) $('find-count').textContent = findCount(resultIndex, resultCount, findInput.value) })
     this.terminal.open(this.host)
     this.terminal.onData(data => { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(new TextEncoder().encode(data)) })
@@ -192,6 +192,7 @@ function paintZones(zone: 'right' | 'bottom' | null, show: boolean): void {
   dropStage.dataset.dragging = String(show)
   for (const name of ['right', 'bottom'] as const) $(`drop-${name}`).dataset.hot = String(show && zone === name)
 }
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform)
 const findBar = $('find')
 const findInput = $('find-input') as HTMLInputElement
 const MATCH_DECORATIONS = { matchBackground: '#8062bd33', activeMatchBackground: '#8062bd88', matchOverviewRuler: '#8062bd88', activeMatchColorOverviewRuler: '#8062bd' }
@@ -203,37 +204,41 @@ function findStep(direction: 'next' | 'prev'): void {
   if (direction === 'next') view.search.findNext(findInput.value, options)
   else view.search.findPrevious(findInput.value, options)
 }
-function openFind(): void {
-  if (!activeId) return
+function openFind(): boolean {
+  if (!activeId || document.querySelector('dialog[open]')) return false
+  if (!findBar.hidden) { findInput.focus(); findInput.select(); return true }
   $('find-open').hidden = true
+  $('live-status').hidden = true
   findBar.hidden = false
   findInput.focus()
   findInput.select()
   findStep('next')
+  return true
 }
 function closeFind(): void {
   const view = activeId ? views.get(activeId) : null
   view?.search.clearDecorations()
   findBar.hidden = true
   $('find-open').hidden = false
+  $('live-status').hidden = false
   $('find-count').textContent = ''
   view?.terminal.focus()
 }
-$('find-open').onclick = openFind
+$('find-open').onclick = () => void openFind()
 $('find-prev').onclick = () => findStep('prev')
 $('find-next').onclick = () => findStep('next')
 $('find-close').onclick = closeFind
 findInput.oninput = () => findStep('next')
 findInput.onkeydown = (event) => {
   event.stopPropagation()
-  const action = findKeys(event, true)
+  const action = findKeys(event, true, MAC)
   if (action === null) return
   event.preventDefault()
   if (action === 'close') closeFind()
   else if (action === 'prev') findStep('prev')
   else findStep('next')
 }
-document.addEventListener('keydown', (event) => { if (canvas.dataset.live === 'true' && findKeys(event, false) === 'open') { event.preventDefault(); openFind() } })
+document.addEventListener('keydown', (event) => { if (canvas.dataset.live === 'true' && findKeys(event, false, MAC) === 'open' && openFind()) event.preventDefault() })
 
 const dropOver = $('drop-over')
 function paintDropOver(transfer: DataTransfer | null, show: boolean): void {

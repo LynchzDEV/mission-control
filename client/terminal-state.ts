@@ -45,8 +45,8 @@ export function dragKind(types: readonly string[]): DragKind {
 
 export type FindKey = 'open' | 'next' | 'prev' | 'close' | null
 
-export function findKeys(event: { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }, findOpen: boolean): FindKey {
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') return 'open'
+export function findKeys(event: { key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }, findOpen: boolean, mac: boolean): FindKey {
+  if ((mac ? event.metaKey : event.ctrlKey) && event.key.toLowerCase() === 'f') return 'open'
   if (!findOpen) return null
   if (event.key === 'Escape') return 'close'
   if (event.key === 'Enter') return event.shiftKey ? 'prev' : 'next'
@@ -58,8 +58,10 @@ export function dropCopy(count: number): { title: string; toast: string } {
   return { title: `Drop to add ${files}`, toast: `Added ${files}` }
 }
 
-export function findCount(index: number, count: number, term = 'x'): string {
+export const FIND_CAP = 1000
+
+export function findCount(index: number, count: number, term: string): string {
   if (term === '') return ''
   if (count === 0) return 'No matches'
-  return `${index + 1} of ${count}`
+  return `${index + 1} of ${count >= FIND_CAP ? `${FIND_CAP}+` : count}`
 }
