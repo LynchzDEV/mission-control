@@ -23,7 +23,7 @@ const SUGGESTIONS = ['Add a testing step before the final review', 'Use a differ
 const Icon = ({ id }: { id: string }) => <svg aria-hidden="true"><use href={`#${id}`} /></svg>
 
 const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>) {
-  return <div className="workflow-node" aria-pressed={selected}>
+  return <div className="workflow-node" data-selected={selected}>
     <Handle type="target" position={Position.Left} />
     <strong>{data.title}</strong>
     <small>{data.agent.engine ? <img src={`/providers/${data.agent.engine}.svg`} alt="" /> : <Icon id="auto-icon" />}{data.agentLabel}</small>
@@ -33,6 +33,7 @@ const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>)
 })
 const nodeTypes = { task: TaskCard }
 
+const navHost = document.getElementById('studio-nav')
 function graphEdges(graph: Workflow): Edge[] { return graph.edges.map(edge => ({ id: `${edge.source}-${edge.outcome}`, source: edge.source, target: edge.target, sourceHandle: edge.outcome, label: edge.outcome === 'pass' ? undefined : outcomeLabels[edge.outcome], markerEnd: { type: MarkerType.ArrowClosed }, className: `outcome-${edge.outcome}` })) }
 function fresh(graph: Workflow): WorkflowRevision { return { ...graph, id: `workflow-${crypto.randomUUID().slice(0, 8)}`, revision: '', createdAt: 0 } }
 function dateLabel(time: number): string { return time ? new Date(time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Built-in version' }
@@ -79,11 +80,11 @@ function Studio() {
   const label = (node: Pick<WorkflowNode, 'agent'>) => agentLabel(node, providers)
   const toast = (text: string) => dispatchEvent(new CustomEvent('quiet:toast', { detail: text }))
 
-  function nodesFor(value: Workflow): TaskNode[] { return value.nodes.map(node => ({ id: node.id, type: 'task', position: node.position, data: { ...node, agentLabel: label(node), branches: value.edges.filter(edge => edge.source === node.id).map(edge => edge.outcome) } })) }
+  function nodesFor(value: Workflow): TaskNode[] { return value.nodes.map(node => ({ id: node.id, type: 'task', position: node.position, ariaLabel: `${node.title} · ${label(node)}`, data: { ...node, agentLabel: label(node), branches: value.edges.filter(edge => edge.source === node.id).map(edge => edge.outcome) } })) }
   function fit() { setTimeout(() => { void flow.current?.fitView({ padding: 0.2, maxZoom: 1 }) }, 70) }
   function load(value: WorkflowRevision, edited = false) { setGraph(value); setNodes(nodesFor(value)); setEdges(graphEdges(value)); setSelected(null); setDirty(edited); setPromptPreview(''); setRevisions([]); fit() }
   function draft(): Workflow { return { id: graph!.id, name: graph!.name, entry: graph!.entry, nodes: nodes.map(node => { const { agentLabel: _label, branches: _branches, ...spec } = node.data; return { ...spec, position: node.position } }), edges: edges.map(edge => ({ source: edge.source, target: edge.target, outcome: (edge.sourceHandle ?? 'pass') as Outcome })) } }
-  function markDirty() { if (graph?.id === 'default') setGraph(current => current ? fresh({ ...current, name: `${current.name} copy` }) : current); setDirty(true); setError(''); setPromptPreview('') }
+  function markDirty() { setGraph(current => current?.id === 'default' ? fresh({ ...current, name: `${current.name} copy` }) : current); setDirty(true); setError(''); setPromptPreview('') }
   function patch(patch: Partial<WorkflowNode>) { if (disabled) return; markDirty(); setNodes(current => current.map(node => node.id === selected ? { ...node, data: { ...node.data, ...patch, ...(patch.agent ? { agentLabel: label({ agent: patch.agent }) } : {}) } } : node)) }
   function adopt(value: Workflow) { markDirty(); setGraph(current => current ? { ...current, entry: value.entry } : current); setNodes(nodesFor(value)); setEdges(graphEdges(value)); fit() }
   function addStep(id: string) { if (disabled || !graph) return; const step = taskPreset(id); adopt(insertWorkflowStep(draft(), step, selected ?? undefined)); setSelected(step.id); setPanel('step') }
@@ -104,7 +105,7 @@ function Studio() {
     const poll = async () => { if (pending) return; pending = true; try { const result = await api<DraftJob>(`/drafts/${draftJob.id}`); if (stopped) return; if (result.status === 'done' && result.draft) { applyAiDraft(result.draft); setDraftJob(result) } else if (result.status === 'failed') { setDraftJob(result); setError(result.error ?? 'Could not build this workflow. Try again.') } } catch (error) { if (!stopped) setError((error as Error).message) } finally { pending = false } }
     const timer = setInterval(() => void poll(), 1200); void poll(); return () => { stopped = true; clearInterval(timer) }
   }, [draftJob?.id, building])
-  useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === 'Escape' && panel && !modal) setPanel(null) }; addEventListener('keydown', close); return () => removeEventListener('keydown', close) }, [panel, modal])
+  useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === 'Escape' && panel && !modal && !document.getElementById('studio')?.hidden) setPanel(null) }; addEventListener('keydown', close); return () => removeEventListener('keydown', close) }, [panel, modal])
   useEffect(() => {
     const guard = (event: Event) => { const next = (event as CustomEvent<string>).detail; if (next === 'studio' || !(dirty || building)) return; if (!confirm(building ? 'A workflow is still drafting. Leave Studio anyway?' : 'Discard unsaved changes?')) setTimeout(() => dispatchEvent(new CustomEvent('quiet:show', { detail: 'studio' })), 0) }
     addEventListener('quiet:screen', guard); return () => removeEventListener('quiet:screen', guard)
@@ -119,14 +120,14 @@ function Studio() {
   function go(next: Screen) { setScreen(next); setError('') }
   function closeModal() { dialog.current?.close(); setModal(null) }
 
-  const nav = document.getElementById('studio-nav')
-  const heading = nav ? createPortal(screen === 'editor'
+  const heading = navHost ? createPortal(screen === 'editor'
     ? <button type="button" className="text-button" onClick={() => go('home')}><Icon id="back-icon" />Workflows</button>
-    : NAV.map(([id, text]) => <button key={id} type="button" className="text-button" aria-current={screen === id || (screen === 'templates' && id === 'home') ? 'page' : undefined} onClick={() => go(id)}>{text}</button>), nav) : null
+    : NAV.map(([id, text]) => <button key={id} type="button" className="text-button" aria-current={screen === id || (screen === 'templates' && id === 'home') ? 'page' : undefined} onClick={() => go(id)}>{text}</button>), navHost) : null
   const providerOptions = providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)
+  const draftProviders = providers.filter(provider => !list.connections.some(connection => connection.id === provider.id && connection.adapter === 'cli'))
   const promptBox = (small = false) => <form className="workflow-prompt" onSubmit={event => { event.preventDefault(); void generate() }}>
     <textarea aria-label={small ? 'Ask AI to change the workflow' : 'Describe your workflow'} rows={small ? 6 : 4} value={description} disabled={disabled} onChange={event => setDescription(event.target.value)} placeholder={small ? 'Add a testing step before the review…' : 'Plan the work, build it, then ask another AI to review…'} required />
-    <div><label><span className="visually-hidden">Planning AI</span><select aria-label="Planning AI" disabled={disabled} value={builderEngine} onChange={event => setBuilderEngine(event.target.value)}><option value="">Chat default</option>{providerOptions}</select></label>{building ? <button type="button" className="pill" onClick={() => void stopDraft()}>Stop drafting</button> : <button className="pill" type="submit" disabled={busy || !description.trim()}><Icon id="spark-icon" />{small ? 'Update draft' : 'Build workflow'}</button>}</div>
+    <div><label><span className="visually-hidden">Planning AI</span><select aria-label="Planning AI" disabled={disabled} value={builderEngine} onChange={event => setBuilderEngine(event.target.value)}><option value="">Chat default</option>{draftProviders.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>{building ? <button type="button" className="pill" onClick={() => void stopDraft()}>Stop drafting</button> : <button className="pill" type="submit" disabled={busy || !description.trim()}><Icon id="spark-icon" />{small ? 'Update draft' : 'Build workflow'}</button>}</div>
     {building && <p className="muted" role="status">Your AI is drafting the workflow… This can take a minute.</p>}
   </form>
   const strip = (value: Workflow) => <span className="strip" aria-hidden="true">{value.nodes.slice(0, 5).map(node => <i key={node.id} />)}</span>
@@ -161,7 +162,7 @@ function Studio() {
         <div className="workflow-canvas">
           <div className="canvas-tools"><button type="button" className="pill" disabled={disabled} onClick={() => { setQuery(''); setPanel('picker') }}><Icon id="plus-icon" />Add step</button>{aiSummary && <span className="draft-notice"><strong>AI draft</strong> {aiSummary} <button type="button" className="round" aria-label="Dismiss draft message" onClick={() => setAiSummary('')}><Icon id="close-icon" /></button></span>}<button type="button" className="text-button" aria-pressed={panel === 'assistant'} onClick={() => setPanel(panel === 'assistant' ? null : 'assistant')}><Icon id="spark-icon" />Ask AI</button></div>
           <div className="flow-host">
-            <ReactFlow<TaskNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onInit={instance => { flow.current = instance; fit() }} onNodesChange={changes => { onNodesChange(changes); if (changes.some(change => change.type === 'position' && change.dragging)) markDirty() }} onEdgesChange={changes => { onEdgesChange(changes); if (changes.some(change => change.type === 'remove')) markDirty() }} onNodeClick={(_, node) => { setSelected(node.id); setPanel('step') }} onConnect={connection => { if (connection.source && connection.target) wire(connection.source, (connection.sourceHandle ?? 'pass') as Outcome, connection.target) }} nodesDraggable={!disabled} nodesConnectable={!disabled} deleteKeyCode={null} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1 }} minZoom={0.25} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Controls showInteractive={false} /></ReactFlow>
+            <ReactFlow<TaskNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onInit={instance => { flow.current = instance; fit() }} onNodesChange={changes => { onNodesChange(changes); if (changes.some(change => change.type === 'position' && change.dragging)) markDirty() }} onEdgesChange={changes => { onEdgesChange(changes); if (changes.some(change => change.type === 'remove')) markDirty() }} onNodeClick={(_, node) => { setSelected(node.id); setPanel('step') }} onSelectionChange={({ nodes: picked }) => { const id = picked[0]?.id; if (id && id !== selected) { setSelected(id); setPanel('step') } }} onConnect={connection => { if (connection.source && connection.target) wire(connection.source, (connection.sourceHandle ?? 'pass') as Outcome, connection.target) }} nodesDraggable={!disabled} nodesConnectable={!disabled} deleteKeyCode={null} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1 }} minZoom={0.25} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Controls showInteractive={false} /></ReactFlow>
             {!nodes.length && <div className="empty-canvas"><span className="welcome-mark"><Icon id="plus-icon" /></span><h3>Your workflow starts here</h3><p className="muted">Add a step, or describe the whole workflow to AI.</p><div><button type="button" className="pill" onClick={() => setPanel('picker')}>Add first step</button><button type="button" className="pill" onClick={() => setPanel('assistant')}><Icon id="spark-icon" />Build with AI</button></div></div>}
           </div>
           <p className="canvas-note">Drag to arrange · connect to set the order. <button type="button" className="text-button" onClick={() => setModal('rules')}><Icon id="lock-icon" />Core rules always apply</button></p>
@@ -242,6 +243,7 @@ function Studio() {
           <label>Project folder<input required value={cwd} onChange={event => setCwd(event.target.value)} placeholder="/Users/you/projects/my-project" /></label>
           <label>What should this run accomplish?<textarea required rows={4} value={request} onChange={event => setRequest(event.target.value)} /></label>
           <p className="muted">Your AIs will work in this folder using the workflow's configured tools and checks.</p>
+          {error && <p role="alert" className="chat-error">{error}</p>}
           <button disabled={busy} className="pill" type="submit">{busy ? 'Starting…' : 'Start run'}</button>
         </form>}
     </dialog>}

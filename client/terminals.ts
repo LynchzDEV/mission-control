@@ -255,14 +255,14 @@ function paintDropOver(transfer: DataTransfer | null, show: boolean): void {
   dropOver.hidden = !show
 }
 let toastTimer = 0
-function toast(text: string): void {
+function toast(text: string, ms = 2000): void {
   const box = $('toast')
   box.textContent = text
   box.hidden = false
   clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => { box.hidden = true }, 2000)
+  toastTimer = window.setTimeout(() => { box.hidden = true }, ms)
 }
-addEventListener('quiet:toast', (event) => toast(String((event as CustomEvent<string>).detail)))
+addEventListener('quiet:toast', (event) => toast(String((event as CustomEvent<string>).detail), 4000))
 function dropTarget(event: DragEvent): TerminalView | null {
   const id = (event.target as Element | null)?.closest<HTMLElement>('.term-host')?.dataset.id ?? activeId
   return id ? views.get(id) ?? null : null

@@ -7,7 +7,7 @@ const composer = $('composer') as HTMLFormElement
 
 function showScreen(name: (typeof screens)[number]): void {
   if (name !== 'history') { beforeHistory = null; $('search').setAttribute('aria-pressed', 'false') }
-  if (name !== 'studio') beforeStudio = null
+  if (name !== 'studio' && name !== 'history') beforeStudio = null
   $('open-studio').setAttribute('aria-pressed', String(name === 'studio'))
   dispatchEvent(new Event('quiet:design'))
   dispatchEvent(new CustomEvent('quiet:screen', { detail: name }))
