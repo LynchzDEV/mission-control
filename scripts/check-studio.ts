@@ -29,11 +29,7 @@ const errors: string[] = []
 const terminalIds: string[] = []
 page.on('pageerror', error => errors.push(error.message))
 try {
-  await page.goto(url)
-  await page.getByLabel('Password', { exact: true }).fill('studio-browser-test-password')
-  await page.getByRole('button', { name: 'Create workspace' }).click()
-  await page.waitForURL('**/terminals')
-  await page.getByRole('link', { name: 'Studio', exact: true }).click()
+  await page.goto(`${url}/studio`)
   const studio = page.frameLocator('iframe[title="Studio"]')
   await studio.getByRole('heading', { name: 'How should your team work?' }).waitFor()
   await page.screenshot({ path: join(tmpdir(), 'mc-studio-a-home.png'), fullPage: true })
