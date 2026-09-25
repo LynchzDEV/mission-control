@@ -286,15 +286,13 @@ dialog[open]::backdrop { opacity: 1; }
 .live-heading p { font-size: 12px; margin: 0; overflow-wrap: anywhere; }
 .live-actions { display: flex; align-items: center; gap: 20px; }
 #live-status { font-size: 12px; }
-#live-terminal { flex: 1; min-height: 100px; min-width: 0; padding: 12px; border-radius: 16px; box-shadow: var(--inset); overflow: hidden; }
-#live-terminal .xterm { height: 100%; }
 .canvas[data-live="true"] .chat-container > .stage, .canvas[data-live="true"] .chat-container > .composer-area { display: none; }
 #live-error { font-size: 14px; line-height: 1.6; }
 @media (max-width: 700px) {
   .live-workspace { padding-inline: 14px; }
   .live-heading { flex-wrap: wrap; gap: 16px; }
   .live-actions { gap: 12px; flex-wrap: wrap; }
-  #live-terminal { padding: 14px; }
+  .term-host { padding: 10px; }
 }
 
 .toolbar .round { width: 32px; min-height: 32px; flex-basis: 32px; }
@@ -447,3 +445,24 @@ a.pill:hover { color: var(--accent); }
 .flat .field-stack :is(input, select):focus-visible { background: #dde2ee; border-color: #c9c0e3; }
 .flat .field-stack > .pill { width: 100%; margin-top: 8px; min-height: 42px; color: var(--accent); }
 @media (max-width: 600px) { .chip-menu { left: 0; width: min(300px, calc(100vw - 28px)); } .model-menu { left: 0; } }
+
+.with-rail { flex: 1; min-height: 0; display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 20px; }
+.rail { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; padding: 4px 4px 0 0; min-height: 0; }
+.rail-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); padding: 0 4px; }
+.rail-head .round { width: 28px; min-height: 28px; flex-basis: 28px; }
+.rail-cards { display: grid; align-content: start; gap: 12px; overflow-y: auto; padding: 6px 8px 12px 6px; margin: -6px -8px 0 -6px; scrollbar-width: thin; }
+.session-card { display: grid; gap: 6px; padding: 12px 14px; border-radius: 16px; box-shadow: var(--raised); text-align: left; font-size: 13px; }
+.session-card[aria-current="true"] { box-shadow: var(--inset); color: var(--accent); }
+.session-card header { display: flex; align-items: center; gap: 8px; font-weight: 500; min-width: 0; }
+.session-card .card-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-card small { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-card code { font: 11px Menlo, monospace; color: #505e75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.logo { width: 14px; height: 14px; flex: 0 0 14px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; background: #9aa3b5; margin-left: auto; }
+.dot[data-state="working"] { background: #5b8a6a; }
+.dot[data-state="ended"] { background: #b0556a; }
+.live-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.live-stage { flex: 1; min-height: 100px; min-width: 0; position: relative; display: flex; }
+.term-host { flex: 1; min-width: 0; min-height: 0; padding: 12px; border-radius: 16px; box-shadow: var(--inset); overflow: hidden; }
+.term-host .xterm { height: 100%; }
+@media (max-width: 900px) { .with-rail { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .rail { grid-template-rows: auto; } .rail-cards { grid-auto-flow: column; grid-auto-columns: 200px; overflow-x: auto; overflow-y: hidden; } }

@@ -49,9 +49,14 @@ const BODY = `
       </div></div>
     </section>
 
-    <section id="live" class="live-workspace" aria-label="Live Claude Code terminal" hidden>
-      <header class="live-heading"><div><h1 id="live-name">Claude Code</h1><p id="live-directory" class="muted"></p></div><div class="live-actions"><span id="live-status" role="status">Connecting…</span><button id="live-reconnect" class="text-button" hidden disabled>Reconnect</button></div></header>
-      <div id="live-terminal"></div>
+    <section id="live" class="live-workspace" aria-label="Live terminals" hidden>
+      <div class="with-rail">
+        <aside class="rail" aria-label="Terminals"><div class="rail-head"><span id="rail-count">Terminals</span><button type="button" class="round" id="rail-new" aria-label="New terminal" title="New terminal"><svg><use href="#plus-icon"/></svg></button></div><div id="rail-cards" class="rail-cards"></div></aside>
+        <div class="live-main" id="live-main">
+          <header class="live-heading"><div><h1 id="live-name">Terminal</h1><p id="live-directory" class="muted"></p></div><div class="live-actions"><span id="live-status" role="status">Connecting…</span><button id="live-reconnect" class="text-button" hidden disabled>Reconnect</button></div></header>
+          <div id="live-stage" class="live-stage"></div>
+        </div>
+      </div>
     </section>
 
     <div class="stage">
@@ -186,7 +191,7 @@ export function ShellPage(props: ShellProps): string {
   <script>window.MC_WORKSPACE_DIR=${JSON.stringify(props.workspaceDir)}</script>
   <script src="/js/shell.js" type="module" defer></script>
   <script src="/js/shell-composer.js" type="module" defer></script>
-  <script src="/js/shell-terminal.js" type="module" defer></script>
+  <script src="/js/terminals.js" type="module" defer></script>
   <script src="/js/shell-activity.js" type="module" defer></script>
   <script src="/js/usage-card.js" type="module" defer></script>
 </head>
