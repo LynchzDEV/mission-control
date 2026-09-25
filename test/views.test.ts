@@ -191,6 +191,11 @@ describe('tab views', () => {
     expect(html).not.toContain('data-fields="bind"')
   })
 
+  test('settings has no password row now that there is no login', async () => {
+    const { html } = await render('/settings')
+    expect(html).not.toContain('Password')
+  })
+
   test('dispatch and terminals render the model input preloaded with the role default', async () => {
     await app.handle(
       new Request('http://localhost/api/roles', {

@@ -75,9 +75,6 @@ export function SettingsPage(props: SettingsProps): string {
           <Row title="API token" caption="Bearer token for scripts and the dispatch skill">
             <div class="row-inline"><span class="pill" id="s-api-token">{props.apiTokenConfigured ? 'Configured' : 'Not configured'}</span><button type="button" class="composer-cancel" data-api-token-reveal="reveal" data-status="s-msg">Copy token</button><button type="button" class="composer-cancel" data-api-token-rotate="rotate" data-status="s-msg">Rotate token</button></div>
           </Row>
-          <Row title="Password" caption="Workspace sign-in">
-            <small class="row-note">Password changes are unavailable in this interface.</small>
-          </Row>
         </div>
       </section>
 
