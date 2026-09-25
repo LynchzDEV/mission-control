@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { providerName } from './terminal-view'
 import { errorText, getJson, postJson, readArray, readRecord } from './shared'
+import { launchChoice, restoreRequested } from './shell-launch'
 
 type Session = { id: string; engine: string; cwd: string }
 type Provider = { id: string; name: string; models: string[] }
@@ -169,9 +170,9 @@ async function load(restore = false): Promise<void> {
   const providers = readArray(providerResult.data.providers) as Provider[]
   models = Object.fromEntries(providers.map(provider => [provider.id, provider.models]))
   engineSelect.replaceChildren(...providers.map(provider => new Option(provider.name, provider.id)))
-  const lastEngine = stored(engineKey)
-  engineSelect.value = providers.some(provider => provider.id === lastEngine) ? lastEngine! : (providers[0]?.id ?? '')
-  modelInput.value = engineSelect.value === lastEngine ? stored(modelKey) ?? '' : ''
+  const choice = launchChoice(providers, stored(engineKey), stored(modelKey))
+  engineSelect.value = choice.engine
+  modelInput.value = choice.model
   const workflows = readArray(workflowResult.data.workflows) as Array<{ id: string; revision: string; name: string }>
   workflowSelect.replaceChildren(new Option(`Default · ${String(selected.name)}`, ''), ...workflows.filter(item => item.id && item.revision && item.name && !(item.id === selected.id && item.revision === selected.revision)).map(item => new Option(item.name, `${item.id}@${item.revision}`)))
   workflowSelect.disabled = false
@@ -212,6 +213,7 @@ async function createTerminal(): Promise<void> {
 engineSelect.onchange = () => { modelInput.value = ''; updateModelChoices() }
 addEventListener('quiet:design', () => { if (canvas.dataset.live === 'true') visible(false) })
 addEventListener('quiet:open-terminal', (event) => { void openTerminal((event as CustomEvent<{ restore: boolean }>).detail.restore) })
+if (restoreRequested(location)) void openTerminal(true)
 reconnectButton.onclick = async () => {
   if (opening) return
   opening = true

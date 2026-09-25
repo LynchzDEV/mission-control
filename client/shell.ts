@@ -154,6 +154,5 @@ $('session').addEventListener('close', () => {
 document.querySelectorAll<HTMLElement>('[data-live]').forEach(button => {
   button.onclick = () => { $('new-chat-menu').hidePopover(); dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { restore: false } })) }
 })
-if (location.hash === '#terminal' || new URLSearchParams(location.search).has('terminal')) dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { restore: true } }))
 
 export {}
