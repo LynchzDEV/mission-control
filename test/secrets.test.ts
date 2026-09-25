@@ -42,7 +42,7 @@ async function modeOf(path: string): Promise<number> {
 describe('defaults', () => {
   test('missing files fall back to documented defaults', async () => {
     expect(await readSecrets()).toEqual({ zaiAuthToken: null, zaiBaseUrl: DEFAULT_ZAI_BASE_URL, apiToken: null })
-    expect(await readConfig()).toEqual({ roles: DEFAULT_ROLES, autoReview: false })
+    expect(await readConfig()).toEqual({ roles: DEFAULT_ROLES, autoReview: false, chatHome: null })
   })
 
   test('corrupt json falls back instead of throwing', async () => {
@@ -90,6 +90,14 @@ describe('round trip', () => {
     expect((await readConfig()).autoReview).toBe(true)
     await writeConfig({ roles: DEFAULT_ROLES })
     expect((await readConfig()).autoReview).toBe(true)
+  })
+
+  test('chatHome defaults to null, survives the round trip and drops non-strings', async () => {
+    expect((await readConfig()).chatHome).toBeNull()
+    await writeConfig({ chatHome: '/Users/me/work' })
+    expect((await readConfig()).chatHome).toBe('/Users/me/work')
+    await Bun.write(configPath(CONFIG_FILE), JSON.stringify({ chatHome: 42 }))
+    expect((await readConfig()).chatHome).toBeNull()
   })
 
   test('legacy string roles on disk load with a null model', async () => {

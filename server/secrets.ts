@@ -36,6 +36,7 @@ export const DEFAULT_ROLES: EngineRoles = {
 export type AppConfig = {
   roles: EngineRoles
   autoReview: boolean
+  chatHome: string | null
 }
 
 export type PublicSecretsView = {
@@ -146,6 +147,7 @@ export async function readConfig(): Promise<AppConfig> {
   return {
     roles: readRoles(raw.roles),
     autoReview: raw.autoReview === true,
+    chatHome: asString(raw.chatHome),
   }
 }
 

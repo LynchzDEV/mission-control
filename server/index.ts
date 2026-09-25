@@ -22,6 +22,7 @@ import { studioRoutes } from './routes/studio'
 import { StudioPage } from './views/studio'
 import { runsRoutes } from './routes/runs'
 import { jobsRoutes } from './routes/jobs'
+import { chatRoutes } from './routes/chat'
 import { metaRoutes } from './routes/meta'
 import { modelsCache, modelsRoutes } from './routes/models'
 import { providersRoutes } from './routes/providers'
@@ -204,6 +205,7 @@ export async function createApp(): Promise<Elysia> {
     .use(quotaRoutes)
     .use(metaRoutes(jobManager))
     .use(jobsRoutes(jobManager, realEngineResolver))
+    .use(chatRoutes({ knownDirectories: () => [...jobManager.listJobs().map(job => job.baseRepo ?? job.cwd), ...terminalRegistry.list().map(session => session.cwd)] }))
     .use(terminalsRoutes(terminalRegistry))
     .use(flowRoutes(jobManager, terminalRegistry, planStore))
     .use(runsRoutes(planRunner))
