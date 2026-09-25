@@ -12,7 +12,7 @@ import { listenTarget, readConfig } from './secrets'
 import { createJobManager } from './jobs'
 import { notifyChat, notifySlowJob } from './notify'
 import { createReportPoster } from './chat-reports'
-import { readRedactedLog } from './log-redaction'
+import { redactedTailReader } from './log-redaction'
 import { createTerminalRegistry } from './terminals'
 import { realEngineResolver } from './jobs-engine-iface'
 import { createPlanRunner } from './plan-runner'
@@ -181,7 +181,13 @@ export async function createApp(): Promise<Elysia> {
       void maybeAutoReview(record, jobManager, { resolver: realEngineResolver }).catch(() => {})
     },
   })
-  const reportPoster = createReportPoster(jobManager, realEngineResolver, { notify: notifyChat, readLog: id => readRedactedLog(jobManager.logPath(id)) })
+  const reportPoster = createReportPoster(jobManager, realEngineResolver, {
+    notify: notifyChat,
+    logReader: async () => {
+      const read = await redactedTailReader()
+      return id => read(jobManager.logPath(id))
+    },
+  })
   const planRunner = createPlanRunner({ manager: jobManager, resolver: realEngineResolver, plans: planStore })
   const terminalRegistry = createTerminalRegistry()
   const workflowRunner = createWorkflowRunner({ manager: jobManager, resolver: realEngineResolver, store: workflowStore, terminals: terminalRegistry })

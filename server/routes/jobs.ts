@@ -9,7 +9,8 @@ import { parseActivity } from '../activity'
 import type { ChatJobPatch, CreateJobParams, JobManager, JobRecord } from '../jobs'
 import { readLogSince, readLogTail } from '../jobs'
 import { readConfig } from '../secrets'
-import { createSecretsRedactor, logSecrets, readRedactedLog } from '../log-redaction'
+import { createSecretsRedactor, logSecrets, readRedactedLog, redactedTailReader } from '../log-redaction'
+import { projectMemory } from '../chat-reports'
 import { notifyChat } from '../notify'
 import { chatHome } from '../chat-home'
 import { validateWorkspaceCwd } from '../workspace'
@@ -42,6 +43,12 @@ async function realHome(): Promise<string> {
 
 function isChatRoot(job: JobRecord | undefined): job is JobRecord {
   return job !== undefined && job.purpose === 'chat' && threadRootOf(job) === job.id
+}
+
+async function chatMemory(manager: JobManager, project: string | null | undefined, rootId: string): Promise<Pick<CreateJobParams, 'memory'>> {
+  if (!project) return {}
+  const read = await redactedTailReader()
+  return { memory: await projectMemory(manager.listJobs(), project, rootId, (id) => read(manager.logPath(id))) }
 }
 
 function chatTitle(prompt: string): string {
@@ -239,6 +246,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
           ...(model === undefined ? {} : { model }),
           ...chatRoot,
           ...chatSpawn,
+          ...(chatRoot.purpose === 'chat' ? await chatMemory(manager, chatRoot.project, '') : {}),
         },
         resolver,
       )
@@ -358,6 +366,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
             source: payload?.source === 'agent' ? 'agent' as const : 'user' as const,
             edit: chatRoot?.edit ?? parent.edit ?? false,
             project: chatRoot?.project ?? null,
+            ...await chatMemory(manager, chatRoot?.project, rootId),
           } : {}),
           engine: parent.engine,
           cwd: parent.cwd,

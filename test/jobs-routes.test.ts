@@ -824,6 +824,36 @@ describe('chat jobs', () => {
     expect(log).not.toContain(token)
   })
 
+  test('a new chat in a project carries the memory of earlier chats there', async () => {
+    const seen: EngineResolverParams[] = []
+    const app = buildApp(createJobManager({ home: homedir() }), (params) => { seen.push(params); return { cmd: 'echo', args: [SESSION_LINE], env: {} } })
+    const first = await (await post(app, chatBody({ project: repo, prompt: 'Login fix' }))).json()
+    await pollUntilDone(app, first.id)
+    const second = await (await post(app, chatBody({ project: repo, prompt: 'Next thing' }))).json()
+    await pollUntilDone(app, second.id)
+    expect(seen[0]?.coreRules).not.toContain('Login fix (today)')
+    expect(seen[1]?.coreRules).toContain('Login fix (today)')
+    const reply = await app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${second.id}/reply`, { method: 'POST', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body: JSON.stringify({ message: 'go on' }) }))
+    expect(reply.status).toBe(200)
+    expect(seen[2]?.coreRules).toContain('Login fix (today)')
+    await pollUntilDone(app, (await reply.json()).id)
+  })
+
+  test('the log stream redacts the API token', async () => {
+    const token = await readApiToken()
+    const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "token=$MC_TOKEN"'], env: {} })
+    const app = buildApp(createJobManager({ home: homedir() }), envResolver)
+    const root = await (await post(app, chatBody())).json()
+    await pollUntilDone(app, root.id)
+    const controller = new AbortController()
+    const response = await app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${root.id}/stream`, { headers: { host: '127.0.0.1:7777' }, signal: controller.signal }))
+    const reader = response.body!.getReader()
+    const chunk = new TextDecoder().decode((await reader.read()).value)
+    controller.abort()
+    expect(chunk).toContain('token=[REDACTED]')
+    expect(chunk).not.toContain(token)
+  })
+
   test('landing a chat-spawned job notifies the chat', async () => {
     const notes: string[] = []
     const manager = createJobManager({ home: homedir() })

@@ -13,10 +13,13 @@ export const REPORT_RETRY_LIMIT = 400
 
 export type AgentReport = { message: string; needsYou: boolean }
 
+export type LogReader = (id: string) => Promise<string>
+
 export type ReportPosterOptions = {
-  readLog: (id: string) => Promise<string>
+  logReader: () => Promise<LogReader>
   notify?: (title: string, body: string) => Promise<void>
   retryMs?: number
+  retryLimit?: number
   schedule?: (retry: () => Promise<void>, ms: number) => void
 }
 
@@ -68,27 +71,76 @@ export async function projectMemory(jobs: readonly JobRecord[], project: string,
 
 export function createReportPoster(manager: JobManager, resolver: EngineResolver, opts: ReportPosterOptions): (record: JobRecord) => Promise<void> {
   const retryMs = opts.retryMs ?? REPORT_RETRY_MS
+  const retryLimit = opts.retryLimit ?? REPORT_RETRY_LIMIT
   const schedule = opts.schedule ?? ((retry, ms) => { setTimeout(() => void retry().catch(() => {}), ms) })
+  const waiting = new Map<string, JobRecord[]>()
+  const attempts = new Map<string, number>()
+  const scheduled = new Set<string>()
+  const queues = new Map<string, Promise<void>>()
 
-  const post = async (record: JobRecord, attempt: number): Promise<void> => {
-    const chatId = record.chatId
-    if (!chatId) return
+  const chatRootFor = (chatId: string): JobRecord | undefined => {
     const root = manager.getJob(chatId)
-    if (!root || root.purpose !== 'chat' || threadRootOf(root) !== root.id) return
-    const chain = threadChain(manager.listJobs(), chatId)
-    if (threadIsRunning(chain)) {
-      if (attempt < REPORT_RETRY_LIMIT) schedule(() => post(record, attempt + 1), retryMs)
+    return root && root.purpose === 'chat' && threadRootOf(root) === root.id ? root : undefined
+  }
+
+  const enqueue = (chatId: string): Promise<void> => {
+    const next = (queues.get(chatId) ?? Promise.resolve()).then(() => flush(chatId)).catch((error) => console.error(`chat report for ${chatId} failed`, error))
+    queues.set(chatId, next)
+    return next
+  }
+
+  const needsYouNotice = async (root: JobRecord, reports: ReadonlyArray<{ record: JobRecord; report: AgentReport }>): Promise<void> => {
+    const needing = reports.filter(({ report }) => report.needsYou).map(({ record }) => record.label)
+    if (needing.length > 0) await opts.notify?.('Needs you', `${root.label} · ${needing.join(', ')}`)
+  }
+
+  const take = (chatId: string, records: readonly JobRecord[]): void => {
+    const rest = (waiting.get(chatId) ?? []).filter((entry) => !records.includes(entry))
+    if (rest.length > 0) {
+      waiting.set(chatId, rest)
       return
     }
+    waiting.delete(chatId)
+    attempts.delete(chatId)
+  }
+
+  const drop = async (root: JobRecord, records: readonly JobRecord[], reason: string): Promise<void> => {
+    take(root.id, records)
+    for (const record of records) console.error(`chat report dropped: chat ${root.id} agent ${record.label} (${reason})`)
+    const readLog = await opts.logReader()
+    await needsYouNotice(root, await Promise.all(records.map(async (record) => ({ record, report: agentReport(record, await readLog(record.id)) }))))
+  }
+
+  const wait = async (root: JobRecord, records: readonly JobRecord[]): Promise<void> => {
+    const attempt = attempts.get(root.id) ?? 0
+    if (attempt >= retryLimit) return drop(root, records, 'chat stayed busy')
+    if (scheduled.has(root.id)) return
+    attempts.set(root.id, attempt + 1)
+    scheduled.add(root.id)
+    schedule(() => {
+      scheduled.delete(root.id)
+      return enqueue(root.id)
+    }, retryMs)
+  }
+
+  const flush = async (chatId: string): Promise<void> => {
+    const records = waiting.get(chatId) ?? []
+    const root = chatRootFor(chatId)
+    if (records.length === 0 || root === undefined) return
+    if (threadIsRunning(threadChain(manager.listJobs(), chatId))) return wait(root, records)
+    const readLog = await opts.logReader()
+    const reports = await Promise.all(records.map(async (record) => ({ record, report: agentReport(record, await readLog(record.id)) })))
+    const memory = root.project ? await projectMemory(manager.listJobs(), root.project, chatId, readLog) : ''
+    const chain = threadChain(manager.listJobs(), chatId)
+    if (threadIsRunning(chain)) return wait(root, records)
     const sessionId = replySessionId(chain)
     const last = chain[chain.length - 1]
-    if (sessionId === null || last === undefined) return
-    const report = agentReport(record, await opts.readLog(record.id))
-    const memory = root.project ? await projectMemory(manager.listJobs(), root.project, chatId, opts.readLog) : ''
+    if (sessionId === null || last === undefined) return drop(root, records, 'chat has no session to resume')
+    take(chatId, records)
     const created = await manager.createJob({
       engine: root.engine,
       cwd: root.cwd,
-      prompt: report.message,
+      prompt: reports.map(({ report }) => report.message).join('\n\n'),
       label: root.label,
       parentJobId: last.id,
       threadRoot: chatId,
@@ -100,9 +152,15 @@ export function createReportPoster(manager: JobManager, resolver: EngineResolver
       memory,
       ...(root.model === null ? {} : { model: root.model }),
     }, resolver)
-    if (!created.ok) console.error(`chat report for ${record.id} not posted: ${created.error}`)
-    if (report.needsYou) await opts.notify?.('Needs you', `${root.label} · ${record.label}`)
+    if (!created.ok) return drop(root, records, created.error)
+    await needsYouNotice(root, reports)
   }
 
-  return (record) => post(record, 0)
+  return (record) => {
+    const chatId = record.chatId
+    if (!chatId || chatRootFor(chatId) === undefined) return Promise.resolve()
+    const pending = waiting.get(chatId) ?? []
+    if (!pending.some((entry) => entry.id === record.id)) waiting.set(chatId, [...pending, record])
+    return enqueue(chatId)
+  }
 }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -53,6 +53,20 @@ describe('projectMemory', () => {
     expect(memory).not.toContain('This chat')
     expect(memory).not.toContain('Other')
   })
+  test('keeps at most eight chats and eight agents, and leaves out this chat\'s own agents', async () => {
+    const jobs: JobRecord[] = [
+      ...Array.from({ length: 10 }, (_, index) => ({ ...base, id: `c${index}`, purpose: 'chat' as const, project: '/p', label: `Chat ${index}`, threadRoot: `c${index}`, chatId: undefined, startedAt: 100 + index })),
+      ...Array.from({ length: 10 }, (_, index) => ({ ...base, id: `a${index}`, label: `Agent ${index}`, cwd: '/p', chatId: 'c0', startedAt: 200 + index })),
+      { ...base, id: 'own', label: 'Own agent', cwd: '/p', chatId: 'here', startedAt: 999 },
+    ]
+    const lines = (await projectMemory(jobs, '/p', 'here', async () => '')).split('\n')
+    expect(lines.filter((line) => line.startsWith('- Chat '))).toHaveLength(8)
+    expect(lines.filter((line) => line.startsWith('- agent '))).toHaveLength(8)
+    expect(lines.join('\n')).toContain('Chat 9')
+    expect(lines.join('\n')).not.toContain('Chat 1 ')
+    expect(lines.join('\n')).not.toContain('Own agent')
+  })
+
   test('an empty project has no memory', async () => {
     expect(await projectMemory([], '/p', 'c1', async () => '')).toBe('')
   })
@@ -75,6 +89,7 @@ describe('createReportPoster', () => {
   })
 
   afterEach(async () => {
+    mock.restore()
     delete process.env.MISSION_CONTROL_CONFIG_DIR
     await rm(configDir, { recursive: true, force: true })
     await rm(repo, { recursive: true, force: true })
@@ -102,16 +117,25 @@ describe('createReportPoster', () => {
     return settled(manager, result.job.id)
   }
 
-  const readLog = (manager: JobManager) => (id: string) => readLogFile(manager.logPath(id))
+  const logReader = (manager: JobManager) => async () => (id: string) => readLogFile(manager.logPath(id))
+  const agentTurns = (manager: JobManager) => manager.listJobs().filter((job) => job.source === 'agent')
+
+  async function waitForSession(manager: JobManager, id: string): Promise<void> {
+    const deadline = Date.now() + 5000
+    while (manager.getJob(id)?.sessionId === null) {
+      if (Date.now() > deadline) throw new Error('no session id')
+      await new Promise((resolveWait) => setTimeout(resolveWait, 20))
+    }
+  }
 
   test('a settled agent posts an agent turn into its idle chat', async () => {
     const manager = createJobManager({ home: homedir() })
     const root = await settled(manager, (await chatRoot(manager)).id)
     const worker = await agent(manager, root.id, 'All tests pass.')
     const notes: string[] = []
-    const poster = createReportPoster(manager, sessionResolver, { readLog: readLog(manager), notify: async (title, body) => { notes.push(`${title}|${body}`) } })
+    const poster = createReportPoster(manager, sessionResolver, { logReader: logReader(manager), notify: async (title, body) => { notes.push(`${title}|${body}`) } })
     await poster(worker)
-    const turn = manager.listJobs().find((job) => job.source === 'agent')
+    const turn = agentTurns(manager)[0]
     expect(turn?.prompt.startsWith('[agent Build it · codex] done')).toBe(true)
     expect(turn?.prompt).toContain('All tests pass.')
     expect(turn?.threadRoot).toBe(root.id)
@@ -126,37 +150,86 @@ describe('createReportPoster', () => {
     const root = await settled(manager, (await chatRoot(manager)).id)
     const worker = await agent(manager, root.id, 'Which branch should I use?')
     const notes: string[] = []
-    await createReportPoster(manager, sessionResolver, { readLog: readLog(manager), notify: async (title, body) => { notes.push(`${title}|${body}`) } })(worker)
+    await createReportPoster(manager, sessionResolver, { logReader: logReader(manager), notify: async (title, body) => { notes.push(`${title}|${body}`) } })(worker)
     expect(notes).toEqual(['Needs you|Login fix · Build it'])
-    await settled(manager, manager.listJobs().find((job) => job.source === 'agent')!.id)
+    await settled(manager, agentTurns(manager)[0]!.id)
+  })
+
+  test('two agents settling together fold into one chat turn', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const root = await settled(manager, (await chatRoot(manager)).id)
+    const first = await agent(manager, root.id, 'First done.')
+    const second = await agent(manager, root.id, 'Second done.')
+    const poster = createReportPoster(manager, sessionResolver, { logReader: logReader(manager), schedule: () => {} })
+    await Promise.all([poster(first), poster(second)])
+    const turns = agentTurns(manager)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.prompt).toContain('First done.')
+    expect(turns[0]?.prompt).toContain('Second done.')
+    expect(turns[0]?.prompt).toContain('\n\n[agent Build it · codex] done')
+    await settled(manager, turns[0]!.id)
   })
 
   test('the report waits until the chat stops running, then posts', async () => {
     const manager = createJobManager({ home: homedir() })
     const root = await chatRoot(manager, runningSessionResolver)
-    const deadline = Date.now() + 5000
-    while (manager.getJob(root.id)?.sessionId === null) {
-      if (Date.now() > deadline) throw new Error('no session id')
-      await new Promise((resolveWait) => setTimeout(resolveWait, 20))
-    }
+    await waitForSession(manager, root.id)
     const worker = await agent(manager, root.id, 'Done.')
     const queued: Array<() => Promise<void>> = []
-    const poster = createReportPoster(manager, sessionResolver, { readLog: readLog(manager), schedule: (retry) => { queued.push(retry) } })
+    const poster = createReportPoster(manager, sessionResolver, { logReader: logReader(manager), schedule: (retry) => { queued.push(retry) } })
+    await poster(worker)
     await poster(worker)
     expect(queued).toHaveLength(1)
-    expect(manager.listJobs().some((job) => job.source === 'agent')).toBe(false)
+    expect(agentTurns(manager)).toHaveLength(0)
     await manager.killJob(root.id)
     await settled(manager, root.id)
     await queued[0]!()
-    const turn = manager.listJobs().find((job) => job.source === 'agent')
-    expect(turn?.prompt.startsWith('[agent Build it · codex] done')).toBe(true)
-    await settled(manager, turn!.id)
+    const turns = agentTurns(manager)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.prompt.startsWith('[agent Build it · codex] done')).toBe(true)
+    await settled(manager, turns[0]!.id)
+  })
+
+  test('a report dropped at the retry limit is logged and still notifies when it needs you', async () => {
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    const manager = createJobManager({ home: homedir() })
+    const root = await chatRoot(manager, runningSessionResolver)
+    await waitForSession(manager, root.id)
+    const worker = await agent(manager, root.id, 'Which branch should I use?')
+    const notes: string[] = []
+    const queued: Array<() => Promise<void>> = []
+    const poster = createReportPoster(manager, sessionResolver, { logReader: logReader(manager), retryLimit: 1, schedule: (retry) => { queued.push(retry) }, notify: async (title, body) => { notes.push(`${title}|${body}`) } })
+    await poster(worker)
+    await queued[0]!()
+    expect(queued).toHaveLength(1)
+    expect(agentTurns(manager)).toHaveLength(0)
+    expect(notes).toEqual(['Needs you|Login fix · Build it'])
+    expect(errors.mock.calls.some((call) => String(call[0]).includes(root.id) && String(call[0]).includes('Build it'))).toBe(true)
+    await manager.killJob(root.id)
+    await settled(manager, root.id)
+  })
+
+  test('a chat without a session drops the report with a log line and a needs-you notice', async () => {
+    const errors = spyOn(console, 'error').mockImplementation(() => {})
+    const manager = createJobManager({ home: homedir() })
+    const root = await chatRoot(manager, () => ({ cmd: 'echo', args: ['no session'], env: {} }))
+    const deadline = Date.now() + 5000
+    while (manager.getJob(root.id)?.status === 'running') {
+      if (Date.now() > deadline) throw new Error('root did not settle')
+      await new Promise((resolveWait) => setTimeout(resolveWait, 20))
+    }
+    const worker = await agent(manager, root.id, 'Should I land it?')
+    const notes: string[] = []
+    await createReportPoster(manager, sessionResolver, { logReader: logReader(manager), notify: async (title, body) => { notes.push(`${title}|${body}`) } })(worker)
+    expect(agentTurns(manager)).toHaveLength(0)
+    expect(notes).toEqual(['Needs you|Login fix · Build it'])
+    expect(errors.mock.calls.some((call) => String(call[0]).includes(root.id))).toBe(true)
   })
 
   test('a job with no chat, or a chat id that is not a chat root, posts nothing', async () => {
     const manager = createJobManager({ home: homedir() })
     const worker = await agent(manager, 'missing', 'x')
-    const poster = createReportPoster(manager, sessionResolver, { readLog: readLog(manager), schedule: () => { throw new Error('should not retry') } })
+    const poster = createReportPoster(manager, sessionResolver, { logReader: logReader(manager), schedule: () => { throw new Error('should not retry') } })
     await poster(worker)
     await poster({ ...worker, chatId: undefined })
     await poster({ ...worker, chatId: worker.id })
