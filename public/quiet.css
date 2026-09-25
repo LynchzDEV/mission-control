@@ -461,6 +461,13 @@ a.pill:hover { color: var(--accent); }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; background: #9aa3b5; margin-left: auto; }
 .dot[data-state="working"] { background: #5b8a6a; }
 .rail-empty { font-size: 12px; padding: 4px; margin: 0; }
+.card-x { width: 22px; min-height: 22px; flex: 0 0 22px; opacity: 0; transition: opacity 140ms; }
+.card-x svg { width: 11px; height: 11px; }
+.session-card:hover .card-x, .session-card:focus-within .card-x, .card-x:focus-visible { opacity: 1; }
+.danger { color: #b0556a; }
+.confirm-dialog { width: 380px; }
+.confirm-dialog p { font-size: 14px; line-height: 1.6; margin-bottom: 22px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 12px; }
 .name-edit { font: inherit; font-weight: 500; width: 100%; min-width: 0; padding: 3px 8px; margin: -3px 0; border-radius: 8px; box-shadow: none; background: #e2e6f0; border: 1px solid #c9c0e3; color: #505e75; outline: none; }
 .edit-hint { font-size: 10px; color: var(--muted); white-space: normal; }
 .session-card.editing { box-shadow: var(--raised); color: inherit; }

@@ -129,6 +129,12 @@ const BODY = `
 
   <dialog id="access" class="access-dialog" aria-labelledby="access-title"><header class="dialog-heading"><h2 id="access-title">Access</h2><form method="dialog"><button class="round" aria-label="Close access" autofocus><svg><use href="#close-icon"/></svg></button></form></header><p class="muted">This app answers only on this machine.</p><div class="field-stack"><label>Address<input id="access-host" value="" readonly></label><p class="muted">The API token for scripts and the dispatch skill lives in <a href="/settings">Settings</a>.</p></div></dialog>
 
+  <dialog id="end-session" class="access-dialog confirm-dialog" aria-labelledby="end-session-title">
+    <header class="dialog-heading"><h2 id="end-session-title">End this terminal?</h2><form method="dialog"><button class="round" aria-label="Cancel"><svg><use href="#close-icon"/></svg></button></form></header>
+    <p id="end-session-text" class="muted">This stops its running process. Its history stays in History.</p>
+    <div class="editor-actions dialog-actions"><button type="button" class="pill" id="end-session-cancel">Cancel</button><button type="button" class="pill danger" id="end-session-confirm">End session</button></div>
+  </dialog>
+
   <dialog id="live-launch" class="access-dialog flat" aria-labelledby="live-launch-title">
     <header class="dialog-heading"><h2 id="live-launch-title">Open terminal</h2><form method="dialog"><button class="round" aria-label="Close terminal launcher"><svg><use href="#close-icon"/></svg></button></form></header>
     <p id="live-error" role="status"></p>

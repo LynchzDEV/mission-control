@@ -218,6 +218,15 @@ function buildCard(session: Session): HTMLButtonElement {
   const title = document.createElement('span'); title.className = 'card-title'
   const dot = document.createElement('span'); dot.className = 'dot'
   head.append(logo, title, dot)
+  const end = document.createElement('span')
+  end.className = 'round card-x'
+  end.setAttribute('role', 'button')
+  end.setAttribute('aria-label', 'End this terminal')
+  end.tabIndex = 0
+  end.insertAdjacentHTML('afterbegin', '<svg><use href="#close-icon"/></svg>')
+  end.onclick = (event) => { event.stopPropagation(); askEnd(session.id) }
+  end.onkeydown = (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); askEnd(session.id) } }
+  head.append(end)
   card.append(head, document.createElement('small'), document.createElement('code'))
   card.draggable = true
   card.ondragstart = (event) => { event.dataTransfer?.setData('text/x-mc-terminal', session.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move' }
@@ -228,6 +237,29 @@ function buildCard(session: Session): HTMLButtonElement {
 }
 
 let renaming: string | null = null
+let ending: string | null = null
+const endDialog = $('end-session') as HTMLDialogElement
+
+function askEnd(id: string): void {
+  const session = sessions.find(item => item.id === id)
+  if (!session) return
+  ending = id
+  $('end-session-title').textContent = `End ${session.title}?`
+  endDialog.showModal()
+}
+
+async function endSession(id: string): Promise<void> {
+  let ok = false
+  try { ok = (await fetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'DELETE' })).ok } catch {}
+  if (!ok) { $('live-status').textContent = 'Could not end this terminal. Try again.'; return }
+  sessions = sessions.filter(session => session.id !== id)
+  await refreshSessions()
+  if (canvas.dataset.live === 'true' && activeId) views.get(activeId)?.terminal.focus()
+}
+
+$('end-session-confirm').onclick = () => { const id = ending; endDialog.close(); if (id) void endSession(id) }
+$('end-session-cancel').onclick = () => endDialog.close()
+endDialog.addEventListener('close', () => { ending = null })
 
 function startRename(card: HTMLButtonElement): void {
   const id = card.dataset.id ?? ''
