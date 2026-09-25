@@ -42,7 +42,7 @@ class Tab implements ITabRenderer {
     close.className = 'round close-split'
     close.setAttribute('aria-label', 'Close this pane')
     close.insertAdjacentHTML('afterbegin', '<svg><use href="#close-icon"/></svg>')
-    close.onclick = (event) => { event.stopPropagation(); parameters.api.close() }
+    close.onclick = (event) => { event.stopPropagation(); if (parameters.containerApi.panels.length > 1) parameters.api.close() }
     this.element.append(close)
   }
   paint(header: PaneHeader): void {
@@ -56,20 +56,23 @@ export function createPanes(root: HTMLElement): Panes {
   const tabs = new Map<string, Tab>()
   const api: DockviewApi = createDockview(root, {
     className: 'mc-panes',
-    theme: themeLight,
+    theme: { ...themeLight, gap: 14 },
     disableDnd: true,
     hideBorders: true,
     singleTabMode: 'fullwidth',
     createComponent: () => new Content(),
-    createTabComponent: () => new Tab(),
+    createTabComponent: (options) => { const tab = new Tab(); tabs.set(options.id, tab); return tab },
   })
+  const paintSingle = (): void => { root.dataset.single = String(api.panels.length <= 1) }
+  api.onDidAddPanel(paintSingle)
+  api.onDidRemovePanel(paintSingle)
+  paintSingle()
   const layout = (): void => { if (root.clientWidth > 0 && root.clientHeight > 0) api.layout(root.clientWidth, root.clientHeight) }
   new ResizeObserver(layout).observe(root)
   layout()
   const params = (host: HTMLElement, header: PaneHeader): PaneParams => ({ host, header })
   const add = (id: string, host: HTMLElement, header: PaneHeader, position?: { referencePanel: string; direction: PaneDirection | 'within' }) => {
     const panel = api.addPanel<PaneParams>({ id, component: 'terminal', tabComponent: 'terminal', title: header.title, params: params(host, header), ...(position ? { position } : {}) })
-    tabs.set(id, panel.view.tab as unknown as Tab)
     panel.api.setActive()
   }
   return {
@@ -87,7 +90,7 @@ export function createPanes(root: HTMLElement): Panes {
       if (!reference) { add(id, host, header); return }
       add(id, host, header, { referencePanel: reference.id, direction })
     },
-    hide(id) { api.getPanel(id)?.api.close() },
+    hide(id) { if (api.panels.length > 1) api.getPanel(id)?.api.close() },
     retitle(id, header) { api.getPanel(id)?.api.setTitle(header.title); tabs.get(id)?.paint(header) },
     shown: () => api.panels.map(panel => panel.id),
     active: () => api.activePanel?.id ?? null,

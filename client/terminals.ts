@@ -151,6 +151,7 @@ function setActiveState(id: string): void {
   if (!view) return
   activeId = id
   store(savedKey, id)
+  if (canvas.dataset.live === 'true') { const url = new URL(location.href); url.searchParams.set('terminal', id); url.hash = 'terminal'; history.replaceState(null, '', url) }
   $('live-name').textContent = view.session.title
   $('live-directory').textContent = `${engineName(view.session.engine)}${view.session.model ? ` · ${view.session.model}` : ''} · ${view.session.cwd}`
   $('live').setAttribute('aria-label', `Live ${engineName(view.session.engine)} terminal`)
@@ -197,7 +198,8 @@ dropStage.addEventListener('drop', (event) => {
   const plan = splitPlan(id, panes.shown(), dragZone)
   paintZones(null, false)
   const view = views.get(id)
-  if (!plan || !view) return
+  if (!view) return
+  if (!plan) { if (panes.shown().includes(id)) activate(id); return }
   panes.split(id, view.host, paneHeader(view.session), plan.direction)
   setActiveState(id)
 })
@@ -219,6 +221,7 @@ function buildCard(session: Session): HTMLButtonElement {
   card.append(head, document.createElement('small'), document.createElement('code'))
   card.draggable = true
   card.ondragstart = (event) => { event.dataTransfer?.setData('text/x-mc-terminal', session.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move' }
+  card.ondragend = () => paintZones(null, false)
   card.onclick = () => activate(session.id)
   title.ondblclick = (event) => { event.stopPropagation(); startRename(card) }
   return card
