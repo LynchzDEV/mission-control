@@ -359,6 +359,44 @@ describe('external session ps parsing', () => {
     expect(parsePsOutput('', new Set())).toEqual([])
     expect(parsePsOutput('header only\nnonsense line with no pid', new Set())).toEqual([])
   })
+
+  const engineOf = (row: string) => parsePsOutput(`  PID ELAPSED COMMAND\n${row}`, new Set())[0]?.engine ?? 'skipped'
+
+  test.each([
+    ['75479 37:49 claude', 'claude'],
+    ['111 01:00 /Users/x/.local/bin/claude --resume abc', 'claude'],
+    ['112 01:00 node /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js', 'claude'],
+    ['113 01:00 codex', 'codex'],
+    [
+      '8460 03-06:14:35 /Users/x/.bun/bin/bun /Users/x/.claude/plugins/cache/thedotmack/claude-mem/12.3.9/scripts/worker-service.cjs --daemon',
+      'skipped',
+    ],
+    [
+      '8510 03-06:14:33 /Users/x/.local/bin/uv tool uvx --python 3.13 chroma-mcp --data-dir /Users/x/.claude-mem/chroma',
+      'skipped',
+    ],
+    ['9224 30:08 /bin/zsh -c source /Users/x/.claude/shell-snapshots/snapshot-zsh-1.sh', 'skipped'],
+    [
+      '32970 00:13 /Users/x/.local/bin/claude --output-format stream-json --verbose --input-format stream-json',
+      'skipped',
+    ],
+    ['114 00:10 claude -p hi', 'skipped'],
+    ['115 00:10 codex exec --json hi', 'skipped'],
+    ['116 00:10 /opt/homebrew/bin/codex app-server', 'skipped'],
+    ['117 00:10 claude mcp serve', 'skipped'],
+    ['118 00:10 claude --output-format=stream-json', 'skipped'],
+    ['119 00:10 codex resume abc', 'codex'],
+    ['41788 08:21 claude attach 96251881', 'claude'],
+    ['26024 22:29 /Users/x/.local/bin/claude daemon run --origin transient', 'skipped'],
+    ['26808 22:26 claude bg-pty-host --bg-pty-host /tmp/cc/a.pty.sock 200 50', 'skipped'],
+    ['26813 22:26 claude bg-spare --bg-spare /tmp/cc/a.claim.sock', 'skipped'],
+    ['120 00:10 node /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js doctor', 'skipped'],
+    ['121 00:10 claude fix the exec bug', 'claude'],
+    ['122 00:10 codex e hi', 'skipped'],
+    ['123 00:10 codex review the exec path', 'codex'],
+  ])('engine comes from the executable: %s → %s', (row, expected) => {
+    expect(engineOf(row)).toBe(expected)
+  })
 })
 
 describe('parseLsofCwd', () => {

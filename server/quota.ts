@@ -373,6 +373,29 @@ export function glmPeak(now: Date): PeakInfo {
   return { peak, minutesToChange }
 }
 
+const HELPER_MARKERS = [' -p ', ' --print', '--output-format stream-json', '--input-format stream-json', '--output-format=stream-json', '--input-format=stream-json']
+const HELPER_SUBCOMMANDS: Record<ExternalEngine, readonly string[]> = {
+  claude: ['daemon', 'bg-pty-host', 'bg-spare', 'mcp', 'update', 'doctor', 'install', 'setup-token', 'config', 'plugin', 'migrate-installer'],
+  codex: ['exec', 'e', 'app-server', 'mcp', 'mcp-server', 'login', 'logout', 'apply', 'completion', 'debug'],
+}
+
+const basename = (path: string | undefined) => path?.split('/').pop() ?? ''
+
+function engineOfCommand(command: string): ExternalEngine | null {
+  const [executable, script, ...rest] = command.split(/\s+/)
+  const program = basename(executable)
+  if (program === 'claude' || program === 'codex') return interactive(program, script)
+  if (program !== 'node' && program !== 'bun') return null
+  const scriptName = basename(script)
+  if (scriptName === 'codex' && program === 'node') return interactive('codex', rest[0])
+  if (scriptName === 'claude' || (scriptName === 'cli.js' && script?.includes('/claude-code/'))) return interactive('claude', rest[0])
+  return null
+}
+
+function interactive(engine: ExternalEngine, firstArg: string | undefined): ExternalEngine | null {
+  return firstArg !== undefined && HELPER_SUBCOMMANDS[engine].includes(firstArg) ? null : engine
+}
+
 export function parsePsOutput(
   raw: string,
   ownedPids: ReadonlySet<number>,
@@ -388,13 +411,8 @@ export function parsePsOutput(
     const [, pidText = '', etime = '', command = ''] = match
     const pid = Number.parseInt(pidText, 10)
     if (!Number.isInteger(pid) || ownedPids.has(pid)) continue
-    if (/(^|\/)ps(\s|$)/.test(command) || /\bgrep\b/.test(command)) continue
-
-    const engine: ExternalEngine | null = /\bcodex\b/.test(command)
-      ? 'codex'
-      : /\bclaude\b/.test(command)
-        ? 'claude'
-        : null
+    if (HELPER_MARKERS.some((flag) => `${command} `.includes(flag))) continue
+    const engine = engineOfCommand(command)
     if (engine === null) continue
 
     results.push({ pid, etime, engine })
