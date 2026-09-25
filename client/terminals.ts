@@ -5,7 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { providerName } from './terminal-view'
 import { errorText, getJson, pathsFromUriList, postJson, readArray, readRecord, shellQuote } from './shared'
 import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
-import { dragKind, dropCopy, findCount, findKeys, latestLine, nextActive, renameValue, sessionState, splitPlan, type Session, type SessionState } from './terminal-state'
+import { dragKind, dropCopy, findCount, findKeys, latestLine, restoreTarget, nextActive, renameValue, sessionState, splitPlan, type Session, type SessionState } from './terminal-state'
 import { createPanes, type PaneHeader } from './terminal-panes'
 
 type Provider = { id: string; name: string; models: string[] }
@@ -37,7 +37,6 @@ cwdInput.value = (window as { MC_WORKSPACE_DIR?: string }).MC_WORKSPACE_DIR ?? '
 
 const stored = (key: string): string | null => { try { return localStorage.getItem(key) } catch { return null } }
 const store = (key: string, value: string | null): void => { try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key) } catch {} }
-const rememberedId = (): string | null => new URLSearchParams(location.search).get('terminal') ?? stored(savedKey)
 
 export class TerminalView {
   readonly host = document.createElement('div')
@@ -145,6 +144,10 @@ function ensureView(session: Session): TerminalView {
     views.set(session.id, view)
     park.append(view.host)
     view.connect()
+  } else if (view.session.title !== session.title || view.session.model !== session.model) {
+    view.session = session
+    panes.retitle(session.id, paneHeader(session))
+    if (activeId === session.id) $('live-name').textContent = session.title
   } else view.session = session
   return view
 }
@@ -160,7 +163,10 @@ function setActiveState(id: string): void {
   activeId = id
   store(savedKey, id)
   if (!findBar.hidden) findStep('next')
-  if (canvas.dataset.live === 'true') { const url = new URL(location.href); url.searchParams.set('terminal', id); url.hash = 'terminal'; history.replaceState(null, '', url) }
+  if (canvas.dataset.live === 'true') {
+    const url = new URL(location.href); url.searchParams.set('terminal', id); url.hash = 'terminal'; history.replaceState(null, '', url)
+    dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: view.session }))
+  }
   $('live-name').textContent = view.session.title
   $('live-directory').textContent = `${engineName(view.session.engine)}${view.session.model ? ` · ${view.session.model}` : ''} · ${view.session.cwd}`
   $('live').setAttribute('aria-label', `Live ${engineName(view.session.engine)} terminal`)
@@ -239,6 +245,8 @@ findInput.onkeydown = (event) => {
   else findStep('next')
 }
 document.addEventListener('keydown', (event) => { if (canvas.dataset.live === 'true' && findKeys(event, false, MAC) === 'open' && openFind()) event.preventDefault() })
+$('find-key').textContent = MAC ? '⌘F' : 'Ctrl+F'
+for (const type of ['dragover', 'drop'] as const) document.addEventListener(type, (event) => { if (dragKind(event.dataTransfer?.types ?? []) === 'files' && !dropStage.contains(event.target as Node | null)) event.preventDefault() })
 
 const dropOver = $('drop-over')
 function paintDropOver(transfer: DataTransfer | null, show: boolean): void {
@@ -405,6 +413,7 @@ function startRename(card: HTMLButtonElement): void {
 }
 
 async function rename(id: string, title: string): Promise<void> {
+  refreshGeneration += 1
   let ok = false
   try {
     const response = await fetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title }) })
@@ -475,8 +484,7 @@ async function load(restore = false): Promise<void> {
   workflowsReady = false
   await refreshSessions()
   if (restore) {
-    const wanted = rememberedId()
-    const target = (wanted && views.has(wanted) ? wanted : null) ?? sessions[0]?.id ?? null
+    const target = restoreTarget(new URLSearchParams(location.search).get('terminal'), stored(savedKey), [...views.keys()])
     if (target) { launch.close(); activate(target); return }
   }
   if (!launch.open) return

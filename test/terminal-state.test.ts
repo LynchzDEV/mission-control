@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { dragKind, dropCopy, findCount, findKeys, latestLine, nextActive, renameValue, sessionState, splitPlan } from '../client/terminal-state'
+import { dragKind, dropCopy, findCount, findKeys, latestLine, nextActive, renameValue, restoreTarget, sessionState, splitPlan } from '../client/terminal-state'
 
 describe('sessionState', () => {
   test('working within 5 s of output, idle after, ended wins', () => {
@@ -94,5 +94,14 @@ describe('findCount', () => {
   test('reads 1000+ once the addon stops counting', () => {
     expect(findCount(4, 1000, 'a')).toBe('5 of 1000+')
     expect(findCount(-1, 1000, 'a')).toBe('0 of 1000+')
+  })
+})
+
+describe('restoreTarget', () => {
+  test('the URL id wins, then the stored id, then the first session', () => {
+    expect(restoreTarget('b', 'a', ['a', 'b'])).toBe('b')
+    expect(restoreTarget('gone', 'a', ['c', 'a'])).toBe('a')
+    expect(restoreTarget('gone', 'gone', ['c', 'a'])).toBe('c')
+    expect(restoreTarget(null, null, [])).toBeNull()
   })
 })

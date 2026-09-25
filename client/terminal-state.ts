@@ -65,3 +65,8 @@ export function findCount(index: number, count: number, term: string): string {
   if (count === 0) return 'No matches'
   return `${index + 1} of ${count >= FIND_CAP ? `${FIND_CAP}+` : count}`
 }
+
+export function restoreTarget(urlId: string | null, storedId: string | null, ids: readonly string[]): string | null {
+  for (const candidate of [urlId, storedId]) if (candidate && ids.includes(candidate)) return candidate
+  return ids[0] ?? null
+}

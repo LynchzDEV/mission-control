@@ -482,7 +482,6 @@ a.pill:hover { color: var(--accent); }
 @media (max-width: 900px) { .with-rail { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); } .rail { grid-template-rows: auto; } .rail-cards { grid-auto-flow: column; grid-auto-columns: 200px; overflow-x: auto; overflow-y: hidden; } }
 
 .drop-stage { position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; }
-.live-stage { flex: 1; min-height: 100px; min-width: 0; }
 .drop-zone { position: absolute; display: grid; place-items: center; border-radius: 14px; font-size: 13px; color: var(--accent); background: #8062bd14; border: 1.5px dashed #8062bd66; pointer-events: none; opacity: 0; transition: opacity 120ms, background 120ms; }
 .drop-zone.right { top: 0; bottom: 0; right: 0; width: 48%; }
 .drop-zone.bottom { left: 0; right: 0; bottom: 0; height: 40%; width: 50%; }
