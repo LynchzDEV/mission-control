@@ -12,7 +12,7 @@ Design source: `docs/design/redesign-2-1/DECISION.md` §1 (Agents, Variant E) an
 - Flow graph replaces the card columns in `#live-flow-steps` with an SVG graph built from `flowColumns(item)` (`client/awareness.ts`, unchanged): nodes laid out left→right by column, vertically centered within their column, node 168×64, column gap 64px, row gap 14px. Node = flat card (`#f6f7fb`, 1px `--line`, 12px radius): title 13px/500, detail 11px muted, left 3px stripe in the assignee engine color (claude `#d4a091`, glm `#91b0dc`, codex `#bfd38b`, none → `--line`). Edges: every node in column i connects to every node in column i+1, cubic curves, 1.75px `#8a93a8`, 6px arrowhead. States: done node border `#bcd6c4` and its outgoing edges `#6f9c7e`; active node accent border + pulsing ring (`box-shadow 0 0 0 4px #8062bd1f` ↔ `0 0 0 8px #8062bd00`, 1.6s) and its incoming edges carry the flowing accent dash (`stroke-dasharray 6 14`, dashoffset 0→−20, 1.1s linear infinite); failed node border `#e8c4cd`, detail red.
 - First paint of a graph draws edges in: `stroke-dashoffset` from path length to 0 over 700ms, staggered 140ms per edge (the pre-2.0 `client/flow.ts` behaviour; see `git show ce5b8e3^:client/flow.ts`, lines around `strokeDashoffset`). Repaints with the same node keys do not replay it. Respect the motion toggle: when `localStorage['mc.motion.paused'] === 'true'` no dash animation and no draw-in.
 - Flow for a chat: `quiet:chat-agents` scope also fills the Flow panel. Its items = `awarenessFlows(buildWork(<chat's agent jobs>, states))` where the chat's agent jobs are `GET /api/jobs?chat=<id>` minus `purpose === 'chat'`, and `states` from `GET /api/flow?includeArchived=1` `sessions`. With no agents: status text `No agents in this chat yet.`
-- Flow opens reliably: `toggle-flow` always calls `refresh()` after opening, and `refresh()` runs when either the Agents drawer or the Flow panel is open (today's guard stays).
+- Flow opens reliably: `toggle-flow` always calls `refresh()` after opening, and `refresh()` runs while the Agents drawer is open and also while the Flow panel is open (today's guard stays).
 
 ## Preserve
 - `setActivityScope` generation guard against stale responses (`client/shell-activity.ts`).
@@ -25,13 +25,13 @@ Design source: `docs/design/redesign-2-1/DECISION.md` §1 (Agents, Variant E) an
 ## Tasks (one commit each, in order)
 
 ### Task 1 — Agents drawer follows the chat
-Files: `client/chat.ts`, `client/shell-activity.ts`, `test/shell.test.ts` (or the nearest existing client test that loads `shell-activity`; create `test/shell-activity.test.ts` using the hand-rolled DOM technique already used in `test/shell.test.ts` if none fits).
+Files: `client/chat.ts`, `client/shell-activity.ts`, new `test/shell-activity.test.ts` (use the hand-rolled DOM technique already used in `test/shell.test.ts`).
 - Dispatch events per Decisions. Test: after `quiet:chat-agents` with `'c1'`, a stubbed `getJson` is called with `/api/jobs?chat=c1` when the drawer is open.
 - Commit: `fix(agents): the Agents drawer follows the open chat`
 
 ### Task 2 — Variant E list and header
 Files: `server/views/shell.ts` (`#agents` dialog header markup only), `client/shell-activity.ts` (`paintChatAgents`, `paintAgents`, new `plainActivity`), `public/quiet.css` (replace the `.agent`, `.agent summary`, `.status`, `.agent-body`, `.agent-actions`, `.live-agent-body`, `.drawer .dialog-heading` rules used by the drawer; copy values from `docs/design/redesign-2-1/agents.css` `.ag-*` rules).
-- Tests (new `test/shell-activity-view.test.ts` or extend an existing view test): `plainActivity('Read client/chat.ts')` → `'Reading client/chat.ts'`; `plainActivity('Bash bun test')` → `'Running bun test'`; `plainActivity('Thinking')` → `'Thinking'`.
+- Tests (in `test/shell-activity.test.ts`): `plainActivity('Read client/chat.ts')` → `'Reading client/chat.ts'`; `plainActivity('Bash bun test')` → `'Running bun test'`; `plainActivity('Thinking')` → `'Thinking'`.
 - Commit: `feat(agents): one line per agent with a live activity line`
 
 ### Task 3 — click-to-open detail
