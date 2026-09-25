@@ -262,6 +262,7 @@ function toast(text: string): void {
   clearTimeout(toastTimer)
   toastTimer = window.setTimeout(() => { box.hidden = true }, 2000)
 }
+addEventListener('quiet:toast', (event) => toast(String((event as CustomEvent<string>).detail)))
 function dropTarget(event: DragEvent): TerminalView | null {
   const id = (event.target as Element | null)?.closest<HTMLElement>('.term-host')?.dataset.id ?? activeId
   return id ? views.get(id) ?? null : null

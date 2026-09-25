@@ -5,9 +5,9 @@ export type ThreadMessage =
   | { role: 'result'; kind: 'result'; jobId: string; text: string; isError: boolean }
 
 export type TurnJob = { id: string; status: string; startedAt: number; endedAt: number | null; source?: 'user' | 'agent' }
-export type AgentJob = { id: string; engine: string; model: string | null; label: string; reason?: string; status: string; startedAt: number; endedAt: number | null; chatTurn?: string; reviewOf: string | null; reviewedAt: number | null; currentActivity?: string | null; diffStat: string | null }
+export type AgentJob = { id: string; engine: string; model: string | null; label: string; reason?: string; status: string; startedAt: number; endedAt: number | null; chatTurn?: string; chatId?: string; reviewOf: string | null; reviewedAt: number | null; landedAt?: number | null; stoppedAt?: number | null; currentActivity?: string | null; diffStat: string | null }
 export type Turn = { id: string; source: 'user' | 'agent'; prompt: string; text: string; tools: number; edits: string[]; started: number; ended: number | null; running: boolean }
-export type TeamState = 'running' | 'reviewing' | 'done' | 'landed' | 'needs-you'
+export type TeamState = 'running' | 'reviewing' | 'done' | 'landed' | 'needs-you' | 'retried' | 'stopped'
 export type TeamRow = { id: string; engine: string; model: string | null; label: string; reason: string; state: TeamState; activity: string; started: number; ended: number | null }
 
 const TITLE_MAX = 60
@@ -40,16 +40,34 @@ export function workedLine(turn: Turn, now: number): string {
   return `Worked ${duration((turn.ended ?? now) - turn.started)} · used ${turn.tools} tool${turn.tools === 1 ? '' : 's'}`
 }
 
+function superseded(job: AgentJob, all: readonly AgentJob[]): boolean {
+  return all.some(other => other.id !== job.id && other.chatId === job.chatId && other.label === job.label && other.startedAt > job.startedAt)
+}
+
 function stateOf(job: AgentJob, all: readonly AgentJob[]): TeamState {
   if (job.status === 'running') return 'running'
-  if (job.status === 'failed') return 'needs-you'
-  if (job.reviewedAt !== null) return 'landed'
+  if (job.stoppedAt) return 'stopped'
+  if (job.status === 'failed') return superseded(job, all) ? 'retried' : 'needs-you'
+  if (job.landedAt) return 'landed'
   if (all.some(other => other.reviewOf === job.id && other.status === 'running')) return 'reviewing'
   return 'done'
 }
 
 export function teamRows(jobs: readonly AgentJob[], turnId: string): TeamRow[] {
   return jobs.filter(job => job.chatTurn === turnId).map(job => ({ id: job.id, engine: job.engine, model: job.model, label: job.label, reason: job.reason ?? '', state: stateOf(job, jobs), activity: job.status === 'running' ? job.currentActivity ?? '' : '', started: job.startedAt, ended: job.endedAt }))
+}
+
+export type ChatSignal = { state: 'running' | 'needs-you' | 'landed' | null; count: number }
+
+export function chatSignal(turnsRunning: boolean, agents: readonly AgentJob[]): ChatSignal {
+  const rows = agents.map(job => stateOf(job, agents))
+  const running = rows.filter(state => state === 'running').length
+  if (turnsRunning || running > 0 || rows.includes('reviewing')) return { state: 'running', count: running }
+  const needsYou = rows.filter(state => state === 'needs-you').length
+  if (needsYou > 0) return { state: 'needs-you', count: needsYou }
+  const landed = rows.filter(state => state === 'landed').length
+  if (landed > 0) return { state: 'landed', count: landed }
+  return { state: null, count: 0 }
 }
 
 export function titleFrom(prompt: string): string {

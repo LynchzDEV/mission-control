@@ -1,7 +1,7 @@
 import { renderMarkdown } from './markdown'
 import { errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
-import { historyDay, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { chatSignal, historyDay, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const RUNNING_POLL_MS = 2000
@@ -39,11 +39,14 @@ function setRunning(on: boolean): void {
 }
 
 function chatError(text: string): void {
+  const last = messages.lastElementChild
+  if (last instanceof HTMLElement && last.className === 'chat-error') { last.textContent = text; return }
   const line = document.createElement('p')
   line.className = 'chat-error'
   line.textContent = text
   messages.append(line)
 }
+function clearChatError(): void { messages.querySelectorAll('.chat-error').forEach(node => node.remove()) }
 
 function engineName(engine: string): string {
   return providers.find(item => item.id === engine)?.name ?? engine
@@ -59,6 +62,8 @@ function stateText(row: TeamRow, now: number): string {
   if (row.state === 'reviewing') return 'In review'
   if (row.state === 'landed') return 'Landed'
   if (row.state === 'needs-you') return 'Needs you'
+  if (row.state === 'retried') return 'Retried'
+  if (row.state === 'stopped') return 'Stopped'
   return 'Done'
 }
 
@@ -160,7 +165,8 @@ async function refresh(): Promise<void> {
   const mine = ++generation
   const [thread, jobs] = await Promise.all([getJson(`/api/jobs/${encodeURIComponent(root)}/thread`), getJson(`/api/jobs?chat=${encodeURIComponent(root)}`)])
   if (mine !== generation || !root) return
-  if (!thread.ok) { chatError(errorText(thread)); return }
+  if (!thread.ok) { chatError(`Could not reach the chat: ${errorText(thread)}. Retrying…`); schedule(); return }
+  clearChatError()
   const all = readArray(jobs.ok ? jobs.data.jobs : []) as unknown as Array<AgentJob & TurnJob & { threadRoot?: string; purpose?: string; project?: string | null }>
   const turnsJobs = all.filter(job => job.threadRoot === root)
   agents = all.filter(job => job.purpose !== 'chat')
@@ -172,7 +178,7 @@ async function refresh(): Promise<void> {
 
 function schedule(): void {
   clearTimeout(pollTimer)
-  if (root && !$('conversation').hidden) pollTimer = window.setTimeout(() => void refresh(), running ? RUNNING_POLL_MS : IDLE_POLL_MS)
+  if (root && !$('conversation').hidden && document.visibilityState === 'visible') pollTimer = window.setTimeout(() => void refresh(), running ? RUNNING_POLL_MS : IDLE_POLL_MS)
 }
 
 function askHome(why: string, candidates: string[]): Promise<string | null> {
@@ -220,7 +226,7 @@ async function startChat(prompt: string): Promise<void> {
 
 async function sendMessage(prompt: string): Promise<void> {
   show('conversation')
-  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], started: Date.now(), ended: null, running: true })); setRunning(true); await startChat(prompt); if (!root) setRunning(false); return }
+  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], started: Date.now(), ended: null, running: true })); setRunning(true); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
   setRunning(true)
   const result = await postJson(`/api/jobs/${encodeURIComponent(root)}/reply`, { message: prompt })
   if (!result.ok) { chatError(errorText(result)); setRunning(false); return }
@@ -241,12 +247,12 @@ function paintHistory(jobs: ListedJob[]): void {
   historySignature = signature
   const openIds = new Set([...list.querySelectorAll<HTMLElement>('details[open]')].map(item => item.dataset.chat))
   list.replaceChildren(...roots.map((chat, index) => {
-    const agentsOf = jobs.filter(job => job.chatId === chat.id)
-    const state = jobs.some(job => job.threadRoot === chat.id && job.status === 'running') || agentsOf.some(job => job.status === 'running') ? 'running' : agentsOf.some(job => job.status === 'failed') ? 'needs-you' : null
+    const signal = chatSignal(jobs.some(job => job.threadRoot === chat.id && job.status === 'running'), jobs.filter(job => job.chatId === chat.id))
+    const state = signal.state
     const item = document.createElement('details'); item.className = 'history-item'; item.dataset.chat = chat.id; item.open = openIds.size ? openIds.has(chat.id) : index === 0
     const summary = document.createElement('summary')
     const title = document.createElement('span')
-    if (state) { const dot = document.createElement('span'); dot.className = 'live-dot'; dot.dataset.state = state; title.append(dot) }
+    if (state) { const dot = document.createElement('span'); dot.className = 'live-dot'; dot.dataset.state = state; dot.title = `${signal.count} ${state === 'running' ? 'running' : state === 'needs-you' ? 'need you' : 'landed'}`; title.append(dot); if (signal.count > 1) { const count = document.createElement('small'); count.className = 'dot-count'; count.textContent = String(signal.count); title.append(count) } }
     title.append(chat.label)
     const time = document.createElement('time'); time.textContent = historyDay(latest(chat.id).startedAt, Date.now())
     summary.append(title, time)

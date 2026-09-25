@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { historyDay, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
+import { chatSignal, historyDay, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
 
 const thread = [
   { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Fix login' },
@@ -43,8 +43,22 @@ describe('teamRows', () => {
   ]
   test('rows for the turn only, with review and failure states', () => {
     expect(teamRows(agents as never, 't1').map(row => [row.id, row.state, row.activity])).toEqual([['a', 'reviewing', ''], ['r', 'running', 'Reading diff'], ['f', 'needs-you', '']])
-    expect(teamRows([{ ...agents[0], reviewedAt: 9 }] as never, 't1')[0]?.state).toBe('landed')
+    expect(teamRows([{ ...agents[0], landedAt: 9 }] as never, 't1')[0]?.state).toBe('landed')
+    expect(teamRows([{ ...agents[0], reviewedAt: 9 }] as never, 't1')[0]?.state).toBe('done')
     expect(teamRows([agents[0]] as never, 't1')[0]?.state).toBe('done')
+  })
+  test('a failed attempt followed by a later attempt with the same step reads retried; a stopped job reads stopped', () => {
+    const failed = { ...agents[2], chatId: 'c' }
+    const retry = { ...agents[2], id: 'f2', status: 'done', startedAt: 9, chatId: 'c' }
+    expect(teamRows([failed, retry] as never, 't1').map(row => row.state)).toEqual(['retried', 'done'])
+    expect(teamRows([{ ...failed, stoppedAt: 5 }] as never, 't1')[0]?.state).toBe('stopped')
+  })
+  test('chatSignal reads running, then needs-you, then landed, with counts', () => {
+    expect(chatSignal(false, [agents[0], agents[1]] as never)).toEqual({ state: 'running', count: 1 })
+    expect(chatSignal(true, [] as never)).toEqual({ state: 'running', count: 0 })
+    expect(chatSignal(false, [agents[2], { ...agents[2], id: 'g' }] as never)).toEqual({ state: 'needs-you', count: 2 })
+    expect(chatSignal(false, [{ ...agents[0], landedAt: 1 }] as never)).toEqual({ state: 'landed', count: 1 })
+    expect(chatSignal(false, [agents[0]] as never)).toEqual({ state: null, count: 0 })
   })
 })
 
