@@ -66,10 +66,10 @@ if (canvas && motion && context) {
       dot.near += (target - dot.near) * FADE
       const push = dot.near * 4 + wave * 5
       const angle = Math.atan2(dot.y - lens.y, dot.x - lens.x)
-      const mix = Math.min(1, twinkle * 0.35 + dot.near * 0.7 + wave * 0.8)
+      const mix = Math.min(1, twinkle * 0.35 + dot.near * 0.35 + wave * 0.8)
       context.fillStyle = `rgb(${250 - mix * 122}, ${251 - mix * 153}, ${255 - mix * 66})`
       context.beginPath()
-      context.arc(dot.x + Math.cos(angle) * push, dot.y + Math.sin(angle) * push, 1.4 + twinkle * 0.8 + dot.near * 1.8 + wave * 1.6, 0, Math.PI * 2)
+      context.arc(dot.x + Math.cos(angle) * push, dot.y + Math.sin(angle) * push, 1.4 + twinkle * 0.8 + dot.near * 0.9 + wave * 1.6, 0, Math.PI * 2)
       context.fill()
     }
     settledFrames = paused && ripples.length === 0 ? settledFrames + 1 : 0

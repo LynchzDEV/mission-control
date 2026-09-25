@@ -43,6 +43,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .round { width: 40px; flex: 0 0 40px; padding: 0; }
 .pill { padding: 0 16px; white-space: nowrap; }
 .stage { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #dfe1e6 transparent; padding: 20px 28px; display: flex; }
+.stage :is(p, li, h1, h2, h3, strong, em, small, time, summary, td, th) { text-shadow: 0 0 2px #fff, 0 0 6px var(--paper); }
 .content-width { width: min(100%, 760px); margin-inline: auto; }
 .welcome { align-self: center; width: 100%; text-align: center; margin: -20px 0 0; padding-bottom: 38px; }
 .welcome-mark { display: grid; place-items: center; width: 42px; height: 42px; margin: 0 auto 20px; border: 1px solid transparent; border-radius: 18px; color: var(--accent); background: var(--paper); box-shadow: var(--raised); }
