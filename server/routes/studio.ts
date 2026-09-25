@@ -45,6 +45,7 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
     })
     .get('/api/studio/connections', async () => ({ builtins: BUILTIN_AGENTS, connections: await connections.list(), presets: CONNECTION_PRESETS, models: await listModels(), roles: (await readConfig()).roles }))
     .post('/api/studio/connections', async ({ body }) => { const saved = await connections.save(body); modelsCache.invalidate(); return saved })
+    .delete('/api/studio/connections/:id', async ({ params }) => { await connections.remove(params.id); modelsCache.invalidate(); return { ok: true } })
     .post('/api/studio/connections/:id/probe', async ({ params }) => {
       const connection = await connections.get(params.id)
       if (connection.adapter === 'cli') throw new Error('CLI connections do not advertise protocol capabilities')

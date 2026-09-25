@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { atomicJson, identifier } from './workflows'
@@ -87,5 +87,9 @@ export function createConnectionStore(base = configDir()) {
     await atomicJson(join(root, `${connection.id}.json`), connection)
     return connection
   }
-  return { get, list, save }
+  async function remove(id: string): Promise<void> {
+    if (BUILTIN_AGENTS.includes(id as typeof BUILTIN_AGENTS[number])) throw new Error('Cannot remove a built-in connection')
+    await rm(join(root, `${identifier.parse(id)}.json`), { force: true })
+  }
+  return { get, list, save, remove }
 }

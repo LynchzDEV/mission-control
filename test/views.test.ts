@@ -265,6 +265,22 @@ describe('tab views', () => {
   })
 })
 
+describe('studio route', () => {
+  test('/studio opens the Studio screen in the shell, embedded or not', async () => {
+    for (const path of ['/studio', '/studio?embed=1']) {
+      const response = await app.handle(new Request(`http://localhost${path}`))
+      expect(response.status).toBe(302)
+      expect(response.headers.get('location')).toBe('/?screen=studio')
+    }
+  })
+
+  test('/studio refuses a rebinding host without redirecting', async () => {
+    const response = await app.handle(new Request('http://rebind.example/studio', { headers: { host: 'rebind.example:7777' } }))
+    expect(response.status).toBe(403)
+    expect(response.headers.get('location')).toBeNull()
+  })
+})
+
 describe('persistent workspace routes', () => {
   test('every direct secondary route still carries the persistent terminal shell', async () => {
     for (const path of ['/terminals', '/lanes', '/dispatch', '/review', '/settings']) {

@@ -21,6 +21,9 @@ afterEach(async () => { delete process.env.MISSION_CONTROL_CONFIG_DIR; await rm(
 function request(path: string, body?: unknown, origin = 'http://localhost') {
   return app.handle(new Request(`${origin}/api/studio${path}`, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }))
 }
+function remove(path: string, origin = 'http://localhost') {
+  return app.handle(new Request(`${origin}/api/studio${path}`, { method: 'DELETE' }))
+}
 
 test('Studio configuration and execution refuse a rebinding host', async () => {
   const rebind = 'http://rebind.example'
@@ -55,4 +58,16 @@ test('custom agent setup exposes references, never the referenced credential val
     expect(body).toContain('MC_FIXTURE_KEY')
     expect(body).not.toContain('sensitive-test-value')
   } finally { delete process.env.MC_FIXTURE_KEY }
+})
+
+test('a saved connection can be removed while built-ins stay', async () => {
+  expect((await request('/connections', { id: 'qwen', name: 'Qwen', adapter: 'acp', command: 'qwen', args: ['--acp'] })).status).toBe(200)
+  const removed = await remove('/connections/qwen')
+  expect(removed.status).toBe(200)
+  expect(await removed.json()).toEqual({ ok: true })
+  expect((await (await request('/connections')).json()).connections).toEqual([])
+  const builtin = await remove('/connections/claude')
+  expect(builtin.status).toBe(400)
+  expect((await builtin.json()).error).toContain('built-in')
+  expect((await remove('/connections/qwen', 'http://rebind.example')).status).toBe(403)
 })

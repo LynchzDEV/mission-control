@@ -21,7 +21,6 @@ import { createWorkflowStore } from './workflows'
 import { createWorkflowBuilder } from './workflow-builder'
 import { createWorkflowRunner } from './workflow-runner'
 import { studioRoutes } from './routes/studio'
-import { StudioPage } from './views/studio'
 import { runsRoutes } from './routes/runs'
 import { jobsRoutes } from './routes/jobs'
 import { chatRoutes } from './routes/chat'
@@ -123,11 +122,15 @@ const TAB_PAGES: Record<string, (embedded?: boolean) => string | Promise<string>
   '/terminals': terminalsPage,
   '/review': ReviewPage,
   '/settings': settingsPage,
-  '/studio': (embedded = false) => StudioPage({ embedded }),
 }
 
 function tabPages() {
-  const instance = new Elysia()
+  const instance = new Elysia().get('/studio', ({ request, set }) => {
+    if (!localRequestAllowed(request)) { set.status = 403; return 'local access only' }
+    set.status = 302
+    set.headers['location'] = '/?screen=studio'
+    return ''
+  })
   for (const [path, view] of Object.entries(TAB_PAGES)) {
     instance.get(path, async ({ request, set }) => {
       if (!localRequestAllowed(request)) { set.status = 403; return 'local access only' }

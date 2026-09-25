@@ -34,3 +34,13 @@ test('connections cannot override worker identity or embed credentials in endpoi
   expect(connectionSchema.safeParse({ ...base, env: { MC_JOB_ID: 'MY_JOB_ID' } }).success).toBe(false)
   expect(connectionSchema.safeParse({ ...base, adapter: 'opencode', models: ['local'], baseUrl: 'https://user:secret@example.com/v1' }).success).toBe(false)
 })
+
+test('removing a connection deletes it, tolerates repeats and protects built-ins', async () => {
+  const store = createConnectionStore(dir)
+  await store.save({ id: 'qwen', name: 'Qwen', adapter: 'acp', command: 'qwen', args: ['--acp'] })
+  await store.remove('qwen')
+  expect(await store.list()).toEqual([])
+  await expect(store.get('qwen')).rejects.toThrow()
+  await store.remove('qwen')
+  await expect(store.remove('claude')).rejects.toThrow('Cannot remove a built-in connection')
+})
