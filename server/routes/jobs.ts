@@ -11,6 +11,8 @@ import { readLogSince, readLogTail } from '../jobs'
 import { readConfig } from '../secrets'
 import { activityRedactor, createSecretsRedactor, logSecrets, readRedactedLog, redactedTailReader } from '../log-redaction'
 import { projectMemory } from '../chat-reports'
+import type { ChatQueue } from '../chat-queue'
+import { chatQueuePath, createChatQueue } from '../chat-queue'
 import { notifyChat } from '../notify'
 import { chatHome } from '../chat-home'
 import { validateWorkspaceCwd } from '../workspace'
@@ -190,10 +192,11 @@ export function createLogStreamResponse(path: string, signal: AbortSignal, secre
   return new Response(stream, { headers: sseHeaders() })
 }
 
-export type JobsRoutesOptions = { notify?: (title: string, body: string) => Promise<void> }
+export type JobsRoutesOptions = { notify?: (title: string, body: string) => Promise<void>; queue?: ChatQueue }
 
 export function jobsRoutes(manager: JobManager, resolver: EngineResolver, options: JobsRoutesOptions = {}): Elysia {
   const notify = options.notify ?? notifyChat
+  const queue = options.queue ?? createChatQueue(chatQueuePath())
   return new Elysia()
     .onBeforeHandle(requireLocal)
     .post('/api/jobs', async ({ body, set }) => {
@@ -362,10 +365,12 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       const threadHead = manager.getJob(rootId)
       const isChat = parent.purpose === 'chat' || threadHead?.purpose === 'chat'
       if (isChat && threadIsRunning(chain)) {
-        set.status = 409
-        return { error: 'The chat is still replying' }
+        const item = await queue.add(rootId, message)
+        set.status = 202
+        return { queued: true, item }
       }
       const chatRoot = isChat ? threadHead : undefined
+      const earlier = isChat ? await queue.take(rootId) : []
       const result = await manager.createJob(
         {
           ...(isChat ? {
@@ -376,7 +381,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
           } : {}),
           engine: parent.engine,
           cwd: parent.cwd,
-          prompt: message,
+          prompt: [...earlier.map((item) => item.text), message].join('\n\n'),
           label: parent.label,
           parentJobId: parent.id,
           threadRoot: rootId,
@@ -390,10 +395,27 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         resolver,
       )
       if (!result.ok) {
+        await queue.restore(rootId, earlier)
         set.status = result.status
         return { error: result.error }
       }
       return result.job
+    })
+    .get('/api/jobs/:id/queue', ({ params, set }) => {
+      const job = manager.getJob(params.id)
+      if (job === undefined) {
+        set.status = 404
+        return { error: 'job not found' }
+      }
+      return { items: queue.list(threadRootOf(job)) }
+    })
+    .delete('/api/jobs/:id/queue/:itemId', async ({ params, set }) => {
+      const job = manager.getJob(params.id)
+      if (job === undefined || !(await queue.remove(threadRootOf(job), params.itemId))) {
+        set.status = 404
+        return { error: 'queued message not found' }
+      }
+      return { ok: true }
     })
     .post('/api/jobs/:id/land', async ({ params, set }) => {
       const result = await manager.landJob(params.id)

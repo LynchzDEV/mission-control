@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { JobManager, JobRecord } from '../server/jobs'
-import { createJobManager, readLogFile } from '../server/jobs'
+import { createJobManager, JOBS_FILE, LOGS_DIR, readLogFile } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
-import { agentReport, createReportPoster, projectMemory } from '../server/chat-reports'
+import { agentReport, createChatFlusher, projectMemory, RESTART_CATCH_UP } from '../server/chat-reports'
+import type { ChatFlusherOptions } from '../server/chat-reports'
+import { createChatQueue } from '../server/chat-queue'
+import type { ChatQueue } from '../server/chat-queue'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 
 const base: JobRecord = { id: 'j1', engine: 'codex', cwd: '/p', worktree: null, baseRepo: null, baseBranch: null, label: 'Build it', prompt: 'x', pid: 1, status: 'done', startedAt: 1, turns: 3, slowAt: null, lastTool: null, endedAt: 2, exitCode: 0, diffStat: ' 2 files changed', reviewedAt: null, sessionId: null, parentJobId: null, threadRoot: 'j1', terminalId: null, reviewOf: null, model: null, chatId: 'root' }
@@ -82,7 +85,7 @@ const sessionResolver: EngineResolver = () => ({ cmd: 'echo', args: [SESSION_LIN
 const runningSessionResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `echo '${SESSION_LINE}'; sleep 30`], env: {} })
 const agentResolver = (text: string): EngineResolver => () => ({ cmd: 'echo', args: [textEvent(text)], env: {} })
 
-describe('createReportPoster', () => {
+describe('createChatFlusher', () => {
   let configDir: string
   let repo: string
 
@@ -124,6 +127,12 @@ describe('createReportPoster', () => {
 
   const logReader = (manager: JobManager) => async () => (id: string) => readLogFile(manager.logPath(id))
   const agentTurns = (manager: JobManager) => manager.listJobs().filter((job) => job.source === 'agent')
+  const chatTurnsAfterRoot = (manager: JobManager, rootId: string) => manager.listJobs().filter((job) => job.threadRoot === rootId && job.id !== rootId)
+  const queueFile = () => join(configDir, 'chat-queue.json')
+
+  function flusherFor(manager: JobManager, opts: Partial<ChatFlusherOptions> = {}, queue: ChatQueue = createChatQueue(queueFile())) {
+    return createChatFlusher(manager, sessionResolver, { logReader: logReader(manager), queue, ...opts })
+  }
 
   async function waitForSession(manager: JobManager, id: string): Promise<void> {
     const deadline = Date.now() + 5000
@@ -133,13 +142,14 @@ describe('createReportPoster', () => {
     }
   }
 
-  test('a settled agent posts an agent turn into its idle chat', async () => {
+  test('a settled agent posts an agent turn into its idle chat and is marked reported', async () => {
     const manager = createJobManager({ home: homedir() })
     const root = await settled(manager, (await chatRoot(manager)).id)
     const worker = await agent(manager, root.id, 'All tests pass.')
+    expect(worker.reportedAt).toBeNull()
     const notes: string[] = []
-    const poster = createReportPoster(manager, sessionResolver, { logReader: logReader(manager), notify: async (title, body) => { notes.push(`${title}|${body}`) } })
-    await poster(worker)
+    const flusher = flusherFor(manager, { notify: async (title, body) => { notes.push(`${title}|${body}`) } })
+    await flusher.onAgentSettled(worker)
     const turn = agentTurns(manager)[0]
     expect(turn?.prompt.startsWith('[agent Build it · codex] done')).toBe(true)
     expect(turn?.prompt).toContain('All tests pass.')
@@ -147,7 +157,10 @@ describe('createReportPoster', () => {
     expect(turn?.parentJobId).toBe(root.id)
     expect(turn?.purpose).toBe('chat')
     expect(notes).toEqual([])
+    expect(typeof manager.getJob(worker.id)?.reportedAt).toBe('number')
     await settled(manager, turn!.id)
+    await flusher.kick(root.id)
+    expect(agentTurns(manager)).toHaveLength(1)
   })
 
   test('an agent that asks a question notifies that it needs you', async () => {
@@ -155,7 +168,7 @@ describe('createReportPoster', () => {
     const root = await settled(manager, (await chatRoot(manager)).id)
     const worker = await agent(manager, root.id, 'Which branch should I use?')
     const notes: string[] = []
-    await createReportPoster(manager, sessionResolver, { logReader: logReader(manager), notify: async (title, body) => { notes.push(`${title}|${body}`) } })(worker)
+    await flusherFor(manager, { notify: async (title, body) => { notes.push(`${title}|${body}`) } }).onAgentSettled(worker)
     expect(notes).toEqual(['Needs you|Login fix · Build it'])
     await settled(manager, agentTurns(manager)[0]!.id)
   })
@@ -165,13 +178,14 @@ describe('createReportPoster', () => {
     const root = await settled(manager, (await chatRoot(manager)).id)
     const first = await agent(manager, root.id, 'First done.')
     const second = await agent(manager, root.id, 'Second done.')
-    const poster = createReportPoster(manager, sessionResolver, { logReader: logReader(manager), schedule: () => {} })
-    await Promise.all([poster(first), poster(second)])
+    const flusher = flusherFor(manager, { schedule: () => {} })
+    await Promise.all([flusher.onAgentSettled(first), flusher.onAgentSettled(second)])
     const turns = agentTurns(manager)
     expect(turns).toHaveLength(1)
     expect(turns[0]?.prompt).toContain('First done.')
     expect(turns[0]?.prompt).toContain('Second done.')
     expect(turns[0]?.prompt).toContain('\n\n[agent Build it · codex] done')
+    expect(turns[0]?.prompt).not.toContain(RESTART_CATCH_UP)
     await settled(manager, turns[0]!.id)
   })
 
@@ -181,9 +195,9 @@ describe('createReportPoster', () => {
     await waitForSession(manager, root.id)
     const worker = await agent(manager, root.id, 'Done.')
     const queued: Array<() => Promise<void>> = []
-    const poster = createReportPoster(manager, sessionResolver, { logReader: logReader(manager), schedule: (retry) => { queued.push(retry) } })
-    await poster(worker)
-    await poster(worker)
+    const flusher = flusherFor(manager, { schedule: (retry) => { queued.push(retry) } })
+    await flusher.onAgentSettled(worker)
+    await flusher.onAgentSettled(worker)
     expect(queued).toHaveLength(1)
     expect(agentTurns(manager)).toHaveLength(0)
     await manager.killJob(root.id)
@@ -195,26 +209,30 @@ describe('createReportPoster', () => {
     await settled(manager, turns[0]!.id)
   })
 
-  test('a report dropped at the retry limit is logged and still notifies when it needs you', async () => {
+  test('a report past the retry limit keeps waiting, logs, and goes out when the chat is next idle', async () => {
     const errors = spyOn(console, 'error').mockImplementation(() => {})
     const manager = createJobManager({ home: homedir() })
     const root = await chatRoot(manager, runningSessionResolver)
     await waitForSession(manager, root.id)
     const worker = await agent(manager, root.id, 'Which branch should I use?')
-    const notes: string[] = []
     const queued: Array<() => Promise<void>> = []
-    const poster = createReportPoster(manager, sessionResolver, { logReader: logReader(manager), retryLimit: 1, schedule: (retry) => { queued.push(retry) }, notify: async (title, body) => { notes.push(`${title}|${body}`) } })
-    await poster(worker)
+    const flusher = flusherFor(manager, { retryLimit: 1, schedule: (retry) => { queued.push(retry) } })
+    await flusher.onAgentSettled(worker)
     await queued[0]!()
     expect(queued).toHaveLength(1)
     expect(agentTurns(manager)).toHaveLength(0)
-    expect(notes).toEqual(['Needs you|Login fix · Build it'])
+    expect(manager.getJob(worker.id)?.reportedAt).toBeNull()
     expect(errors.mock.calls.some((call) => String(call[0]).includes(root.id) && String(call[0]).includes('Build it'))).toBe(true)
     await manager.killJob(root.id)
     await settled(manager, root.id)
+    await flusher.kick(root.id)
+    const turns = agentTurns(manager)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.prompt).toContain('Which branch should I use?')
+    await settled(manager, turns[0]!.id)
   })
 
-  test('a chat without a session drops the report with a log line and a needs-you notice', async () => {
+  test('a chat without a session marks the report with a log line and a needs-you notice', async () => {
     const errors = spyOn(console, 'error').mockImplementation(() => {})
     const manager = createJobManager({ home: homedir() })
     const root = await chatRoot(manager, () => ({ cmd: 'echo', args: ['no session'], env: {} }))
@@ -225,7 +243,9 @@ describe('createReportPoster', () => {
     }
     const worker = await agent(manager, root.id, 'Should I land it?')
     const notes: string[] = []
-    await createReportPoster(manager, sessionResolver, { logReader: logReader(manager), notify: async (title, body) => { notes.push(`${title}|${body}`) } })(worker)
+    const flusher = flusherFor(manager, { notify: async (title, body) => { notes.push(`${title}|${body}`) } })
+    await flusher.onAgentSettled(worker)
+    await flusher.kick(root.id)
     expect(agentTurns(manager)).toHaveLength(0)
     expect(notes).toEqual(['Needs you|Login fix · Build it'])
     expect(errors.mock.calls.some((call) => String(call[0]).includes(root.id))).toBe(true)
@@ -242,19 +262,117 @@ describe('createReportPoster', () => {
     }
     const worker = await agent(manager, root.id, 'Done again.')
     const notes: string[] = []
-    await createReportPoster(manager, sessionResolver, { logReader: logReader(manager), notify: async (title, body) => { notes.push(`${title}|${body}`) } })(worker)
+    await flusherFor(manager, { notify: async (title, body) => { notes.push(`${title}|${body}`) } }).onAgentSettled(worker)
     expect(agentTurns(manager)).toHaveLength(12)
     expect(notes).toEqual(['Needs you|Login fix · waiting for you after 12 agent rounds'])
     expect(errors.mock.calls.some((call) => String(call[0]).includes(root.id))).toBe(true)
   })
 
-  test('a job with no chat, or a chat id that is not a chat root, posts nothing', async () => {
+  test('a queued user message goes out even after twelve agent rounds, with the held report after it', async () => {
+    spyOn(console, 'error').mockImplementation(() => {})
+    const manager = createJobManager({ home: homedir() })
+    const root = await settled(manager, (await chatRoot(manager)).id)
+    for (let round = 0; round < 12; round += 1) {
+      const turn = await manager.createJob({ engine: 'claude', cwd: repo, prompt: `[agent round ${round}]`, label: root.label, threadRoot: root.id, parentJobId: root.id, resumeSessionId: 'sess-1', purpose: 'chat', source: 'agent' }, sessionResolver)
+      if (!turn.ok) throw new Error(turn.error)
+      await settled(manager, turn.job.id)
+    }
+    const worker = await agent(manager, root.id, 'Held report.')
+    const queue = createChatQueue(queueFile())
+    const flusher = flusherFor(manager, {}, queue)
+    await flusher.onAgentSettled(worker)
+    await queue.add(root.id, 'keep going')
+    await flusher.kick(root.id)
+    const turn = manager.listJobs().find((job) => job.source === 'user' && job.threadRoot === root.id && job.id !== root.id)
+    expect(turn?.prompt.startsWith('keep going\n\n[agent Build it · codex] done')).toBe(true)
+    await settled(manager, turn!.id)
+  })
+
+  test('queued messages become the next turn in order when the running turn settles, with a settled agent after them', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const root = await chatRoot(manager, runningSessionResolver)
+    await waitForSession(manager, root.id)
+    const queue = createChatQueue(queueFile())
+    const flusher = flusherFor(manager, { schedule: () => {} }, queue)
+    await queue.add(root.id, 'first thing')
+    await queue.add(root.id, 'second thing')
+    const worker = await agent(manager, root.id, 'Agent finished.')
+    await flusher.onAgentSettled(worker)
+    await flusher.kick(root.id)
+    expect(chatTurnsAfterRoot(manager, root.id)).toHaveLength(0)
+    await manager.killJob(root.id)
+    await settled(manager, root.id)
+    await flusher.kick(root.id)
+    const turns = chatTurnsAfterRoot(manager, root.id)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.source).toBe('user')
+    expect(turns[0]?.prompt.startsWith('first thing\n\nsecond thing\n\n[agent Build it · codex] done')).toBe(true)
+    expect(queue.list(root.id)).toEqual([])
+    expect(createChatQueue(queueFile()).list(root.id)).toEqual([])
+    expect(typeof manager.getJob(worker.id)?.reportedAt).toBe('number')
+    await settled(manager, turns[0]!.id)
+    await flusher.kick(root.id)
+    expect(chatTurnsAfterRoot(manager, root.id)).toHaveLength(1)
+  })
+
+  test('recovery after a restart catches the chat up in one turn and leaves legacy agents alone', async () => {
+    const rootId = 'root-1'
+    const record = (fields: Record<string, unknown>) => JSON.stringify({ ...base, cwd: repo, pid: 999_999, startedAt: 1, endedAt: 2, diffStat: null, ...fields })
+    await mkdir(join(configDir, LOGS_DIR), { recursive: true })
+    await writeFile(join(configDir, JOBS_FILE), [
+      record({ id: rootId, engine: 'claude', label: 'Login fix', purpose: 'chat', project: repo, threadRoot: rootId, chatId: undefined, sessionId: 'sess-1', source: 'user', edit: false }),
+      record({ id: 'agent-1', label: 'Build it', chatId: rootId, threadRoot: 'agent-1', reportedAt: null, startedAt: 3, endedAt: 4 }),
+      record({ id: 'legacy', label: 'Old work', chatId: rootId, threadRoot: 'legacy', startedAt: 5, endedAt: 6 }),
+      '',
+    ].join('\n'))
+    await writeFile(join(configDir, LOGS_DIR, 'agent-1.log'), `${textEvent('Finished while you were away.')}\n`)
+    const manager = createJobManager({ home: homedir() })
+    const flusher = flusherFor(manager)
+    await flusher.recoverAll()
+    const turns = chatTurnsAfterRoot(manager, rootId)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.prompt.startsWith(`${RESTART_CATCH_UP}\n[agent Build it · codex] done`)).toBe(true)
+    expect(turns[0]?.prompt).toContain('Finished while you were away.')
+    expect(turns[0]?.prompt).not.toContain('Old work')
+    expect(turns[0]?.source).toBe('agent')
+    expect(typeof manager.getJob('agent-1')?.reportedAt).toBe('number')
+    await settled(manager, turns[0]!.id)
+  })
+
+  test('recovery sends messages that were queued before the restart', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const root = await settled(manager, (await chatRoot(manager)).id)
+    await createChatQueue(queueFile()).add(root.id, 'did you finish?')
+    const flusher = flusherFor(manager)
+    await flusher.recoverAll()
+    const turns = chatTurnsAfterRoot(manager, root.id)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.prompt).toBe('did you finish?')
+    expect(turns[0]?.source).toBe('user')
+    await settled(manager, turns[0]!.id)
+  })
+
+  test('a job with no chat, a workflow step, or a chat id that is not a chat root posts nothing', async () => {
     const manager = createJobManager({ home: homedir() })
     const worker = await agent(manager, 'missing', 'x')
-    const poster = createReportPoster(manager, sessionResolver, { logReader: logReader(manager), schedule: () => { throw new Error('should not retry') } })
-    await poster(worker)
-    await poster({ ...worker, chatId: undefined })
-    await poster({ ...worker, chatId: worker.id })
+    const flusher = flusherFor(manager, { schedule: () => { throw new Error('should not retry') } })
+    await flusher.onAgentSettled(worker)
+    await flusher.onAgentSettled({ ...worker, chatId: undefined })
+    await flusher.onAgentSettled({ ...worker, chatId: worker.id })
+    await flusher.kick('missing')
     expect(manager.listJobs()).toHaveLength(1)
+  })
+
+  test('a workflow step in a chat is not reported', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const root = await settled(manager, (await chatRoot(manager)).id)
+    const step = await manager.createJob({ engine: 'codex', cwd: repo, prompt: 'p', label: 'Step', chatId: root.id, workflowRunId: 'run-1', workflowNodeId: 'n1', workflowAttempt: 1 }, agentResolver('step done'))
+    if (!step.ok) throw new Error(step.error)
+    const done = await settled(manager, step.job.id)
+    expect(done.reportedAt).toBeUndefined()
+    const flusher = flusherFor(manager)
+    await flusher.onAgentSettled(done)
+    await flusher.recoverAll()
+    expect(agentTurns(manager)).toHaveLength(0)
   })
 })

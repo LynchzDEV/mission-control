@@ -69,11 +69,12 @@ export type JobRecord = {
   edit?: boolean
   stoppedAt?: number
   landedAt?: number
+  reportedAt?: number | null
 }
 
 export type JobPurpose = 'workflow-design' | 'chat'
 
-export type ChatJobPatch = Partial<Pick<JobRecord, 'label' | 'project' | 'titleLocked' | 'landedAt' | 'stoppedAt'>>
+export type ChatJobPatch = Partial<Pick<JobRecord, 'label' | 'project' | 'titleLocked' | 'landedAt' | 'stoppedAt' | 'reportedAt'>>
 
 export type CreateJobParams = {
   worktree?: boolean
@@ -542,6 +543,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const isChat = params.purpose === 'chat'
     return {
       ...(params.chatId ? { chatId: params.chatId } : {}),
+      ...(params.chatId && !params.workflowRunId ? { reportedAt: null } : {}),
       ...(params.chatTurn ? { chatTurn: params.chatTurn } : {}),
       ...(params.reason ? { reason: params.reason } : {}),
       ...(isChat ? { edit: edit ?? false, source: params.source ?? 'user' } : {}),

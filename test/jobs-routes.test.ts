@@ -11,6 +11,7 @@ import type { JobManager } from '../server/jobs'
 import type { EngineResolver, EngineResolverParams } from '../server/jobs-engine-iface'
 import { engineArgs } from '../server/jobs-engine-iface'
 import { jobsRoutes, safeEnqueue } from '../server/routes/jobs'
+import { createChatQueue } from '../server/chat-queue'
 import { readApiToken } from '../server/secrets'
 import { initScratchGitRepo, runGit } from './support/scratch-git-repo'
 import { executionPlan } from './support/execution-plan'
@@ -918,21 +919,88 @@ describe('chat jobs', () => {
 
   const replyTo = (app: Elysia, id: string, message: string) => app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${id}/reply`, { method: 'POST', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body: JSON.stringify({ message }) }))
 
-  test('a reply while the chat is still replying is refused', async () => {
-    const resolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `echo '${SESSION_LINE}'; sleep 30`], env: {} })
-    const manager = createJobManager({ home: homedir() })
-    const app = buildApp(manager, resolver)
+  const queueOf = (app: Elysia, id: string) => app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${id}/queue`, { headers: { host: '127.0.0.1:7777' } }))
+  const unqueue = (app: Elysia, id: string, itemId: string) => app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${id}/queue/${itemId}`, { method: 'DELETE', headers: { host: '127.0.0.1:7777' } }))
+
+  async function runningChat(app: Elysia, manager: JobManager): Promise<{ id: string }> {
     const root = await (await post(app, chatBody())).json()
     const deadline = Date.now() + 5000
     while (manager.getJob(root.id)?.sessionId === null) {
       if (Date.now() > deadline) throw new Error('no session id')
       await new Promise((resolveWait) => setTimeout(resolveWait, 20))
     }
+    return root
+  }
+
+  test('a reply while the chat is still replying is queued and listed on any turn of the chat', async () => {
+    const resolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `echo '${SESSION_LINE}'; sleep 30`], env: {} })
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, resolver)
+    const root = await runningChat(app, manager)
     const reply = await replyTo(app, root.id, 'hurry up')
-    expect(reply.status).toBe(409)
-    expect(await reply.json()).toEqual({ error: 'The chat is still replying' })
+    expect(reply.status).toBe(202)
+    const body = await reply.json()
+    expect(body.queued).toBe(true)
+    expect(body.item.chatId).toBe(root.id)
+    expect(body.item.text).toBe('hurry up')
+    expect(manager.listJobs()).toHaveLength(1)
+    const listed = await (await queueOf(app, root.id)).json()
+    expect(listed.items.map((item: { text: string }) => item.text)).toEqual(['hurry up'])
+    expect(JSON.parse(await readFile(join(configDir, 'chat-queue.json'), 'utf8')).items).toHaveLength(1)
     await manager.killJob(root.id)
     await pollUntilDone(app, root.id)
+  })
+
+  test('DELETE removes a queued message and a missing one is a 404', async () => {
+    const resolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `echo '${SESSION_LINE}'; sleep 30`], env: {} })
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, resolver)
+    const root = await runningChat(app, manager)
+    const { item } = await (await replyTo(app, root.id, 'never mind')).json()
+    await replyTo(app, root.id, 'keep this')
+    expect((await unqueue(app, root.id, item.id)).status).toBe(200)
+    expect((await unqueue(app, root.id, item.id)).status).toBe(404)
+    expect((await unqueue(app, 'nope', item.id)).status).toBe(404)
+    expect((await queueOf(app, 'nope')).status).toBe(404)
+    const listed = await (await queueOf(app, root.id)).json()
+    expect(listed.items.map((entry: { text: string }) => entry.text)).toEqual(['keep this'])
+    await manager.killJob(root.id)
+    await pollUntilDone(app, root.id)
+  })
+
+  test('a reply to an idle chat sends earlier queued messages first, in order', async () => {
+    const calls: EngineResolverParams[] = []
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, capturingResolver(calls))
+    const root = await (await post(app, chatBody())).json()
+    await pollUntilDone(app, root.id)
+    const queue = createChatQueue(join(configDir, 'chat-queue.json'))
+    await queue.add(root.id, 'first')
+    await queue.add(root.id, 'second')
+    const replyApp = buildApp(manager, capturingResolver(calls))
+    const reply = await replyTo(replyApp, root.id, 'third')
+    expect(reply.status).toBe(200)
+    const turn = await reply.json()
+    expect(turn.prompt).toBe('first\n\nsecond\n\nthird')
+    expect((await (await queueOf(replyApp, root.id)).json()).items).toEqual([])
+    await pollUntilDone(app, turn.id)
+  })
+
+  test('a reply to a running non-chat job is still not queued', async () => {
+    const resolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `echo '${SESSION_LINE}'; sleep 30`], env: {} })
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, resolver)
+    const job = await (await post(app, JSON.stringify({ engine: 'claude', cwd: repo, prompt: 'p', label: 'plain' }))).json()
+    const deadline = Date.now() + 5000
+    while (manager.getJob(job.id)?.sessionId === null) {
+      if (Date.now() > deadline) throw new Error('no session id')
+      await new Promise((resolveWait) => setTimeout(resolveWait, 20))
+    }
+    const reply = await replyTo(app, job.id, 'more')
+    expect(reply.status).toBe(200)
+    expect((await (await queueOf(app, job.id)).json()).items).toEqual([])
+    for (const entry of manager.listJobs()) await manager.killJob(entry.id)
+    for (const entry of manager.listJobs()) await pollUntilDone(app, entry.id)
   })
 
   test('a follow-up to a chat-spawned agent stays in the chat and is not a new attempt', async () => {

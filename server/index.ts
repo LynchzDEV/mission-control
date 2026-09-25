@@ -13,7 +13,9 @@ import { createExternalSessionsCache, ownedPids } from './history'
 import { listenTarget } from './secrets'
 import { createJobManager } from './jobs'
 import { notifyChat, notifySlowJob } from './notify'
-import { createReportPoster } from './chat-reports'
+import { createChatFlusher } from './chat-reports'
+import { chatQueuePath, createChatQueue } from './chat-queue'
+import { threadRootOf } from './threads'
 import { redactedTailReader } from './log-redaction'
 import { createTerminalRegistry } from './terminals'
 import { realEngineResolver } from './jobs-engine-iface'
@@ -157,13 +159,16 @@ export async function createApp(): Promise<Elysia> {
       }
       void planRunner.onJobSettled(record).catch(() => {})
       if (record.chatId) {
-        void reportPoster(record).catch(error => console.error('Chat report failed', error))
+        void chatFlusher.onAgentSettled(record).catch(error => console.error('Chat report failed', error))
         return
       }
+      if (record.purpose === 'chat') void chatFlusher.kick(threadRootOf(record)).catch(error => console.error('Chat queue failed', error))
       void maybeAutoReview(record, jobManager, { resolver: realEngineResolver }).catch(() => {})
     },
   })
-  const reportPoster = createReportPoster(jobManager, realEngineResolver, {
+  const chatQueue = createChatQueue(chatQueuePath())
+  const chatFlusher = createChatFlusher(jobManager, realEngineResolver, {
+    queue: chatQueue,
     notify: notifyChat,
     logReader: async () => {
       const read = await redactedTailReader()
@@ -176,6 +181,7 @@ export async function createApp(): Promise<Elysia> {
   const workflowBuilder = createWorkflowBuilder({ manager: jobManager, resolver: realEngineResolver, store: workflowStore })
   await workflowRunner.recover()
   await workflowBuilder.recover()
+  void chatFlusher.recoverAll().catch(error => console.error('Chat catch-up failed', error))
   const knownDirectories = () => [...jobManager.listJobs().map(job => job.baseRepo ?? job.cwd), ...terminalRegistry.list().map(session => session.cwd)]
   const externalSessionsCache = createExternalSessionsCache(() => ownedPids(jobManager.listJobs(), terminalRegistry.list()))
 
@@ -201,7 +207,7 @@ export async function createApp(): Promise<Elysia> {
     .use(healthApi())
     .use(quotaRoutes({ externalSessions: () => externalSessionsCache.get() }))
     .use(metaRoutes(jobManager))
-    .use(jobsRoutes(jobManager, realEngineResolver))
+    .use(jobsRoutes(jobManager, realEngineResolver, { queue: chatQueue }))
     .use(chatRoutes({ knownDirectories }))
     .use(historyRoutes({ manager: jobManager, registry: terminalRegistry, knownDirectories, external: () => externalSessionsCache.get() }))
     .use(terminalsRoutes(terminalRegistry))
