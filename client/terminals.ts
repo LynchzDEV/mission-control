@@ -543,6 +543,16 @@ async function createTerminal(): Promise<void> {
 ;($('live-create') as HTMLFormElement).onsubmit = (event) => { event.preventDefault(); void createTerminal() }
 engineSelect.onchange = () => { modelInput.value = ''; updateModelChoices() }
 $('rail-new').onclick = () => void openTerminal(false)
+const railOpenKey = 'mc.rail.open'
+function paintRail(open: boolean): void {
+  const toggle = $('rail-toggle')
+  ;(document.querySelector('.with-rail') as HTMLElement).dataset.rail = open ? 'open' : 'closed'
+  toggle.setAttribute('aria-expanded', String(open))
+  toggle.setAttribute('aria-label', open ? 'Hide the session list' : 'Show the session list')
+  toggle.title = open ? 'Hide the session list' : 'Show the session list'
+}
+$('rail-toggle').onclick = () => { const open = (document.querySelector('.with-rail') as HTMLElement).dataset.rail === 'closed'; store(railOpenKey, open ? null : '0'); paintRail(open) }
+paintRail(stored(railOpenKey) !== '0')
 addEventListener('quiet:design', () => { if (canvas.dataset.live === 'true') visible(false) })
 addEventListener('quiet:open-terminal', (event) => { void openTerminal((event as CustomEvent<{ restore: boolean }>).detail.restore) })
 reconnectButton.onclick = async () => {

@@ -20,15 +20,16 @@ const BODY = `
     <symbol id="file-icon" viewBox="0 0 20 20"><path d="M5 2.5h6.5L15 6v11.5H5Z"/><path d="M11.5 2.5V6H15"/></symbol>
     <symbol id="up-icon" viewBox="0 0 20 20"><path d="m5 12 5-5 5 5"/></symbol>
     <symbol id="down-icon" viewBox="0 0 20 20"><path d="m5 8 5 5 5-5"/></symbol>
+    <symbol id="pause-icon" viewBox="0 0 20 20"><path d="M7 5v10M13 5v10"/></symbol>
+    <symbol id="play-icon" viewBox="0 0 20 20"><path d="M7 4.5v11l9-5.5Z"/></symbol>
     <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
     <symbol id="open-icon" viewBox="0 0 20 20"><path d="M11 4h5v5M16 4l-7 7M14 12v3.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5H8"/></symbol>
   </svg>
   <canvas id="backdrop" class="backdrop" aria-hidden="true"></canvas>
-  <button class="pill motion-toggle" id="motion" type="button" aria-pressed="false">Pause motion</button>
   <main class="canvas">
     <header class="toolbar">
       <nav aria-label="Chats">
-        <button id="search" class="round" aria-label="Search chats" title="Search chats"><svg><use href="#search-icon"/></svg></button>
+        <button id="search" class="round" aria-pressed="false" aria-label="Search chats" title="Search chats"><svg><use href="#search-icon"/></svg></button>
         <span class="split"><button id="new-chat" class="pill"><svg><use href="#plus-icon"/></svg>New chat</button><button id="new-chat-more" class="caret" popovertarget="new-chat-menu" aria-label="More ways to start" aria-expanded="false"><svg><use href="#chevron-icon"/></svg></button></span>
         <div id="new-chat-menu" popover aria-label="More ways to start"><button class="row" data-live><svg><use href="#terminal-icon"/></svg><span>Terminal<small>Live session with any connected AI</small></span></button></div>
       </nav>
@@ -39,6 +40,7 @@ const BODY = `
         <a id="open-studio" class="pill" href="/studio">Studio</a>
         <button id="open-agents" class="round quiet-control" aria-expanded="false" aria-controls="agents" aria-label="Agents" title="Agents"><svg><use href="#agents-icon"/></svg></button>
         <button id="toggle-flow" class="round quiet-control" aria-label="Flow" title="Flow" aria-expanded="false" aria-controls="flow"><svg><use href="#flow-icon"/></svg></button>
+        <button id="motion" class="round quiet-control" type="button" aria-pressed="false" aria-label="Pause motion" title="Pause motion"><svg><use id="motion-icon" href="#pause-icon"/></svg></button>
         <button class="round quiet-control" data-dialog="access" aria-label="Access" title="Access"><svg><use href="#lock-icon"/></svg></button>
       </nav>
     </header>
@@ -56,7 +58,7 @@ const BODY = `
 
     <section id="live" class="live-workspace" aria-label="Live terminals" hidden>
       <div class="with-rail">
-        <aside class="rail" id="rail" aria-label="Terminals"><div class="rail-head"><span id="rail-count">Terminals</span><button type="button" class="round" id="rail-new" aria-label="New terminal" title="New terminal"><svg><use href="#plus-icon"/></svg></button></div><div id="rail-cards" class="rail-cards"></div><p id="rail-empty" class="muted rail-empty">No terminals yet. Open one with +.</p></aside>
+        <aside class="rail" id="rail" aria-label="Terminals"><div class="rail-head"><button type="button" class="round rail-toggle" id="rail-toggle" aria-expanded="true" aria-controls="rail" aria-label="Hide the session list" title="Hide the session list"><svg><use href="#back-icon"/></svg></button><span id="rail-count">Terminals</span><button type="button" class="round" id="rail-new" aria-label="New terminal" title="New terminal"><svg><use href="#plus-icon"/></svg></button></div><div id="rail-cards" class="rail-cards"></div><p id="rail-empty" class="muted rail-empty">No terminals yet. Open one with +.</p></aside>
         <div class="live-main" id="live-main">
           <header class="live-heading"><div><h1 id="live-name">Terminal</h1><p id="live-directory" class="muted"></p></div><div class="live-actions"><button id="find-open" class="pill find-open" type="button"><svg aria-hidden="true"><use href="#search-icon"/></svg>Find <kbd id="find-key">⌘F</kbd></button><div class="find" id="find" hidden><input id="find-input" type="text" placeholder="Find" aria-label="Find in this terminal" autocomplete="off"><span id="find-count" role="status"></span><button class="round" id="find-prev" type="button" aria-label="Previous match"><svg><use href="#up-icon"/></svg></button><button class="round" id="find-next" type="button" aria-label="Next match"><svg><use href="#down-icon"/></svg></button><button class="round" id="find-close" type="button" aria-label="Close find"><svg><use href="#close-icon"/></svg></button></div><span id="live-status" role="status">Connecting…</span><button id="live-reconnect" class="text-button" hidden disabled>Reconnect</button></div></header>
           <div class="drop-stage" id="drop-stage" data-dragging="false"><div id="live-stage" class="live-stage"></div><div class="drop-zone right" id="drop-right" data-hot="false">Drop to open beside</div><div class="drop-zone bottom" id="drop-bottom" data-hot="false">Drop to open below</div><div class="drop-over" id="drop-over" hidden><svg class="drop-over-icon"><use href="#file-icon"/></svg><strong id="drop-over-title">Drop to add files</strong><small>Their paths are typed at the prompt · up to 100 MB each</small></div></div>
@@ -157,38 +159,14 @@ const BODY = `
   <template id="assistant-row">
     <div class="msg assistant"><span class="avatar"><svg><use href="#spark-icon"/></svg></span><div class="msg-body"><div class="msg-meta"><strong>Mission Control</strong><time>now</time></div></div></div>
   </template>
-  <template id="reply-simplify">
-    <div class="md">
-      <p>Let's start small: <strong>one quiet canvas</strong>, your conversations, and a place to type. Agents and Flow stay within reach and open only when you need them.</p>
-      <p>I've split it into two steps:</p>
-      <ol>
-        <li><strong>Build</strong> the single-canvas layout in <code>server/views/terminals.tsx</code></li>
-        <li><strong>Review</strong> by a different AI family before anything lands</li>
-      </ol>
-    </div>
-    <article class="team-card">
-      <header><strong>Team for this task</strong><span class="muted">2 agents · <svg class="inline-icon"><use href="#folder-icon"/></svg>mission-control</span><button type="button" class="text-button" data-open-agents>Open in Agents <svg><use href="#open-icon"/></svg></button></header>
-      <ol>
-        <li data-engine="claude" data-state="running"><span class="engine-disc"><img src="/providers/claude.svg" alt="Claude"></span><div><strong>Build the quiet canvas</strong><small>Claude · sonnet — layout work across several views</small><p class="latest"><span class="pulse"></span>Editing <code>terminals.tsx</code></p></div><span class="state">Running · 4m</span></li>
-        <li data-engine="codex" data-state="queued"><span class="engine-disc"><img src="/providers/codex.svg" alt="Codex"></span><div><strong>Review the layout</strong><small>Codex · gpt-5.5 — a different family reviews</small></div><span class="state">Next</span></li>
-      </ol>
-      <div class="team-progress"><span style="width:40%"></span></div>
-    </article>
+  <template id="team-card">
+    <article class="team-card"><header><strong>Team for this task</strong><span class="muted"></span><button type="button" class="text-button" data-open-agents>Open in Agents <svg><use href="#open-icon"/></svg></button></header><ol></ol><div class="team-progress" hidden><span></span></div></article>
   </template>
-  <template id="reply-reconnect">
-    <div class="md">
-      <p>I'll follow the connection lifecycle and check how a session resumes after a disconnect. The conversation should stay in place.</p>
-      <pre><code>socket.onclose = () =&gt; scheduleReconnect(terminalId)</code></pre>
-    </div>
-  </template>
-  <template id="reply-workflow">
-    <div class="md">
-      <p>I'll walk through creating a workflow, choosing its steps, and starting a session. Then I'll check where the first run can be <em>simpler</em>.</p>
-    </div>
-  </template>
-  <template id="reply-default">
-    <div class="md"><p>This is a design preview. A connected AI would answer here, and start agents when the work needs them.</p></div>
-  </template>
+  <dialog id="chat-home" class="access-dialog flat" aria-labelledby="chat-home-title">
+    <header class="dialog-heading"><h2 id="chat-home-title">Where do your projects live?</h2><form method="dialog"><button class="round" aria-label="Close" type="submit"><svg><use href="#close-icon"/></svg></button></form></header>
+    <p class="muted" id="chat-home-why">The chat runs in one folder that holds your projects. It is never your home folder.</p>
+    <form id="chat-home-form" class="field-stack"><label>Folder<input id="chat-home-path" type="text" autocomplete="off" spellcheck="false" required></label><div id="chat-home-candidates" class="home-candidates"></div><p id="chat-home-error" class="muted" role="alert"></p><button class="pill" type="submit">Use this folder</button></form>
+  </dialog>
 `
 
 export function ShellPage(props: ShellProps): string {
@@ -204,6 +182,7 @@ export function ShellPage(props: ShellProps): string {
   <script>window.MC_WORKSPACE_DIR=${JSON.stringify(props.workspaceDir)}</script>
   <script src="/js/shell.js" type="module" defer></script>
   <script src="/js/shell-composer.js" type="module" defer></script>
+  <script src="/js/chat.js" type="module" defer></script>
   <script src="/js/terminals.js" type="module" defer></script>
   <script src="/js/shell-activity.js" type="module" defer></script>
   <script src="/js/usage-card.js" type="module" defer></script>

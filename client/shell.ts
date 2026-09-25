@@ -1,16 +1,12 @@
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const screens = ['welcome', 'history', 'conversation'] as const
-const responses: Record<string, string> = {
-  'Simplify the terminal page': 'reply-simplify',
-  'Fix the session reconnect': 'reply-reconnect',
-  'Review the workflow builder': 'reply-workflow',
-}
 const agents = $('agents') as HTMLDialogElement
 const flow = $('flow')
 const message = $('message') as HTMLTextAreaElement
 const composer = $('composer') as HTMLFormElement
 
 function showScreen(name: (typeof screens)[number]): void {
+  if (name !== 'history') { beforeHistory = null; $('search').setAttribute('aria-pressed', 'false') }
   dispatchEvent(new Event('quiet:design'))
   for (const screen of screens) $(screen).hidden = screen !== name
   ;(document.querySelector('.canvas') as HTMLElement).dataset.screen = name
@@ -46,54 +42,35 @@ agents.onkeydown = (event) => {
 $('toggle-flow').onclick = () => toggleFlow(flow.dataset.open !== 'true')
 $('close-flow').onclick = () => { toggleFlow(false); $('toggle-flow').focus() }
 
-function setActivity(active: boolean): void {
-  document.querySelectorAll<HTMLElement>('.activity-empty').forEach(node => { node.hidden = active })
-  document.querySelectorAll<HTMLElement>('.activity-filled').forEach(node => { node.hidden = !active })
-}
 
-function appendUserMessage(text: string): void {
-  const row = document.createElement('div')
-  const bubble = document.createElement('div')
-  row.className = 'msg user'
-  bubble.className = 'user-message'
-  bubble.textContent = text
-  row.append(bubble)
-  $('messages').append(row)
-}
 
-function appendAssistantMessage(templateId: string): void {
-  const row = ($('assistant-row') as HTMLTemplateElement).content.firstElementChild!.cloneNode(true) as HTMLElement
-  row.querySelector('time')!.textContent = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  row.querySelector('.msg-body')!.append(($(templateId) as HTMLTemplateElement).content.cloneNode(true))
-  row.querySelector('[data-open-agents]')?.addEventListener('click', () => $('open-agents').click())
-  $('messages').append(row)
-}
 
-function showConversation(prompt: string): void {
-  appendUserMessage(prompt)
-  appendAssistantMessage(responses[prompt] ?? 'reply-default')
-  showScreen('conversation')
-  setActivity($('messages').firstElementChild?.textContent === 'Simplify the terminal page')
-  const stage = document.querySelector('.stage') as HTMLElement
-  stage.scrollTop = stage.scrollHeight
-}
 
 $('new-chat').onclick = () => {
-  $('messages').replaceChildren()
+  dispatchEvent(new Event('quiet:new-chat'))
   composer.reset()
   message.style.height = ''
-  ;($('agent-reply') as HTMLFormElement).reset()
-  $('sent-reply').hidden = true
   showScreen('welcome')
-  setActivity(false)
   message.focus()
 }
+addEventListener('quiet:show', (event) => showScreen((event as CustomEvent<(typeof screens)[number]>).detail))
 
+let beforeHistory: { screen: (typeof screens)[number]; live: boolean } | null = null
 function showHistory(): void {
+  const live = (document.querySelector('.canvas') as HTMLElement).dataset.live === 'true'
+  beforeHistory = { screen: screens.find(screen => !$(screen).hidden) ?? 'welcome', live }
   showScreen('history')
+  $('search').setAttribute('aria-pressed', 'true')
   $('chat-search').focus()
 }
-$('search').onclick = showHistory
+function leaveHistory(): void {
+  const back = beforeHistory ?? { screen: 'welcome' as const, live: false }
+  beforeHistory = null
+  $('search').setAttribute('aria-pressed', 'false')
+  showScreen(back.screen)
+  if (back.live) dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { restore: true } }))
+}
+$('search').onclick = () => { if ($('history').hidden) showHistory(); else leaveHistory() }
 $('new-chat-menu').addEventListener('toggle', (event) => $('new-chat-more').setAttribute('aria-expanded', String((event as ToggleEvent).newState === 'open')))
 
 $('chat-search').oninput = () => {
@@ -103,15 +80,6 @@ $('chat-search').oninput = () => {
   $('no-results').hidden = items.some(item => !item.hidden)
 }
 
-document.querySelectorAll<HTMLElement>('[data-chat]').forEach(button => {
-  button.onclick = () => {
-    $('messages').replaceChildren()
-    $('sent-reply').hidden = true
-    ;($('agent-reply') as HTMLFormElement).reset()
-    showConversation(button.dataset.chat ?? '')
-    message.focus()
-  }
-})
 
 ;($('access-host') as HTMLInputElement).value = location.host
 
@@ -119,16 +87,6 @@ document.querySelectorAll<HTMLElement>('[data-dialog]').forEach(button => {
   button.onclick = () => ($(button.dataset.dialog ?? '') as HTMLDialogElement).showModal()
 })
 
-composer.onsubmit = (event) => {
-  event.preventDefault()
-  const prompt = message.value.trim()
-  if (!prompt) return
-  if (!$('history').hidden) $('messages').replaceChildren()
-  showConversation(prompt)
-  message.value = ''
-  message.style.height = ''
-  message.focus()
-}
 message.onkeydown = (event) => {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
   event.preventDefault()
@@ -137,14 +95,6 @@ message.onkeydown = (event) => {
 message.oninput = () => {
   message.style.height = ''
   message.style.height = `${Math.min(138, message.scrollHeight)}px`
-}
-;($('agent-reply') as HTMLFormElement).onsubmit = (event) => {
-  event.preventDefault()
-  const reply = ($('reply') as HTMLTextAreaElement).value.trim()
-  if (!reply) return
-  $('sent-reply').textContent = reply
-  $('sent-reply').hidden = false
-  ;($('reply') as HTMLTextAreaElement).value = ''
 }
 
 document.querySelectorAll<HTMLElement>('[data-live]').forEach(button => {

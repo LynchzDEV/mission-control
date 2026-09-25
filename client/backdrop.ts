@@ -28,7 +28,9 @@ if (canvas && motion && context) {
   const lens = { x: -1e4, y: -1e4 }
   const syncMotion = (): void => {
     motion.setAttribute('aria-pressed', String(paused))
-    motion.textContent = paused ? 'Play motion' : 'Pause motion'
+    motion.setAttribute('aria-label', paused ? 'Play motion' : 'Pause motion')
+    motion.title = paused ? 'Play motion' : 'Pause motion'
+    document.getElementById('motion-icon')?.setAttribute('href', paused ? '#play-icon' : '#pause-icon')
   }
   motion.onclick = () => { paused = !paused; try { localStorage.setItem(PAUSED_KEY, String(paused)) } catch {} syncMotion(); settledFrames = 0; if (!drawing) requestAnimationFrame(draw) }
   syncMotion()
