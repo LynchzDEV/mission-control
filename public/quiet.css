@@ -547,3 +547,19 @@ a.pill:hover { color: var(--accent); }
 .history-item summary .live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 8px; vertical-align: 2px; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
 .history-item summary .live-dot[data-state="needs-you"] { background: #b0556a; animation: none; }
 .history-empty { color: var(--muted); font-size: 14px; }
+.canvas[data-screen="studio"] .chat-container > .composer-area { display: none; }
+.studio .studio-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 20px; padding: 10px 16px; border-radius: 14px; box-shadow: var(--raised); color: #b0556a; font-size: 13px; }
+.workflow-prompt textarea:focus-visible { outline: none; }
+.workflow-prompt select { border: 1px solid transparent; background: #e2e6f0; border-radius: 10px; }
+.prompt-examples { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: -12px 0 32px; font-size: 12px; }
+.prompt-examples .example { padding: 6px 12px; border-radius: 12px; font-size: 12px; box-shadow: var(--raised); }
+.compact-templates { display: grid; gap: 12px; margin-top: 24px; }
+.compact-templates button { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 16px; box-shadow: var(--raised); text-align: left; font-size: 13px; }
+.compact-templates .strip { display: inline-flex; gap: 6px; }
+.compact-templates .strip i { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); opacity: .5; }
+.continue-draft { margin-top: 28px; display: inline-flex; gap: 8px; align-items: center; }
+.saved-workflows { margin-top: 36px; }
+.saved-workflows h3 { font-size: 15px; font-weight: 500; margin-bottom: 14px; }
+.saved-workflows button { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 16px; box-shadow: var(--raised); text-align: left; margin-bottom: 12px; }
+.saved-workflows small { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.studio-placeholder { color: var(--muted); font-size: 14px; padding: 40px 0; text-align: center; }

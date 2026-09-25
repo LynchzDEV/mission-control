@@ -28,3 +28,9 @@ export function workflowTemplates(defaultFlow: Workflow): Workflow[] {
     return {id:`template-${template.id}`,name:template.name,entry:nodes[0]!.id,nodes,edges:[{source:nodes[0]!.id,target:nodes[1]!.id,outcome:'pass' as const}]}
   })]
 }
+export type Provider = { id: string; name: string; models: string[]; builtin?: boolean; family?: string | null }
+export function agentLabel(node: Pick<WorkflowNode, 'agent'>, providers: readonly Provider[]): string {
+  const engine = node.agent.engine
+  if (!engine) return 'Chat decides'
+  return providers.find(provider => provider.id === engine)?.name ?? `Unavailable · ${engine}`
+}

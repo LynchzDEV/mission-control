@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { defaultWorkflow, validateWorkflow } from '../server/workflows'
-import { insertWorkflowStep, removeWorkflowStep, taskPreset, workflowTemplates } from '../client/studio-graph'
+import { agentLabel, insertWorkflowStep, removeWorkflowStep, taskPreset, workflowTemplates } from '../client/studio-graph'
 
 test('adding a custom step keeps the following review connected and preserves failure routes',()=>{
   const graph=defaultWorkflow()
@@ -25,4 +25,11 @@ test('all built-in starting templates satisfy core graph rules and blank graphs 
   const graph=insertWorkflowStep({id:'empty',name:'New workflow',entry:'',nodes:[],edges:[]},step)
   expect(graph.entry).toBe(step.id)
   expect(validateWorkflow(graph)).toEqual([])
+})
+
+test('agentLabel reads Chat decides, the provider name, or Unavailable for a removed connection',()=>{
+  const providers=[{id:'claude',name:'Claude',models:[]},{id:'qwen',name:'Qwen Code',models:[]}]
+  expect(agentLabel({agent:{role:'execute'}},providers)).toBe('Chat decides')
+  expect(agentLabel({agent:{role:'execute',engine:'qwen'}},providers)).toBe('Qwen Code')
+  expect(agentLabel({agent:{role:'execute',engine:'grok'}},providers)).toBe('Unavailable · grok')
 })

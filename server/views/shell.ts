@@ -37,7 +37,7 @@ const BODY = `
         <section class="usage-card" aria-label="Provider usage">
           <div class="usage-track" id="usage-track"></div>
         </section>
-        <a id="open-studio" class="pill" href="/studio">Studio</a>
+        <button id="open-studio" class="pill" type="button" aria-pressed="false">Studio</button>
         <button id="open-agents" class="round quiet-control" aria-expanded="false" aria-controls="agents" aria-label="Agents" title="Agents"><svg><use href="#agents-icon"/></svg><span id="agents-count" class="count" hidden></span></button>
         <button id="toggle-flow" class="round quiet-control" aria-label="Flow" title="Flow" aria-expanded="false" aria-controls="flow"><svg><use href="#flow-icon"/></svg></button>
         <button id="motion" class="round quiet-control" type="button" aria-pressed="false" aria-label="Pause motion" title="Pause motion"><svg><use id="motion-icon" href="#pause-icon"/></svg></button>
@@ -83,6 +83,10 @@ const BODY = `
 
       <section id="conversation" class="conversation content-width" aria-label="Conversation" hidden>
         <div id="messages" class="chat" role="log" aria-live="polite"></div>
+      </section>
+      <section id="studio" class="studio" aria-label="Workflow Studio" hidden>
+        <header class="studio-heading"><div><h1>Studio</h1><p class="muted">Give your AI team a way to work.</p></div><nav id="studio-nav" aria-label="Studio sections"></nav></header>
+        <div id="studio-root"></div>
       </section>
     </div>
 
@@ -157,10 +161,12 @@ export function ShellPage(props: ShellProps): string {
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/vendor/xterm.css">
   <link rel="stylesheet" href="/quiet.css">
+  <link rel="stylesheet" href="/js/studio.css">
   <script>window.MC_WORKSPACE_DIR=${JSON.stringify(props.workspaceDir)}</script>
   <script src="/js/shell.js" type="module" defer></script>
   <script src="/js/shell-composer.js" type="module" defer></script>
   <script src="/js/chat.js" type="module" defer></script>
+  <script src="/js/studio.js" type="module" defer></script>
   <script src="/js/terminals.js" type="module" defer></script>
   <script src="/js/shell-activity.js" type="module" defer></script>
   <script src="/js/usage-card.js" type="module" defer></script>
