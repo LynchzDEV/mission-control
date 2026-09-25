@@ -3,8 +3,8 @@ import type { JobRecord } from './jobs'
 
 export type ThreadMessage =
   | { role: 'user'; kind: 'prompt'; jobId: string; ts: number; text: string }
-  | { role: 'assistant'; kind: 'thinking'; jobId: string; text: string }
-  | { role: 'assistant'; kind: 'text'; jobId: string; text: string }
+  | { role: 'assistant'; kind: 'thinking'; jobId: string; text: string; partial?: true }
+  | { role: 'assistant'; kind: 'text'; jobId: string; text: string; partial?: true }
   | {
       role: 'assistant'
       kind: 'tool'
@@ -42,8 +42,8 @@ export function eventToMessage(event: ActivityEvent, jobId: string): ThreadMessa
       resultIsError: event.resultIsError === true,
     }
   }
-  if (event.kind === 'thinking') return { role: 'assistant', kind: 'thinking', jobId, text: event.detail }
-  if (event.kind === 'text') return { role: 'assistant', kind: 'text', jobId, text: event.detail }
+  if (event.kind === 'thinking') return { role: 'assistant', kind: 'thinking', jobId, text: event.detail, ...(event.partial ? { partial: true } : {}) }
+  if (event.kind === 'text') return { role: 'assistant', kind: 'text', jobId, text: event.detail, ...(event.partial ? { partial: true } : {}) }
   if (event.kind === 'result') {
     return { role: 'result', kind: 'result', jobId, text: event.detail, isError: false }
   }

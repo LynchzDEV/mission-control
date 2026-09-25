@@ -9,6 +9,7 @@ export type ActivityEvent = {
   input?: string
   result?: string
   resultIsError?: boolean
+  partial?: true
 }
 
 export const DEFAULT_ACTIVITY_MAX = 50
@@ -237,9 +238,34 @@ function attachToolResult(event: ActivityEvent, results: Map<string, ToolResult>
   return { ...event, result: found.text, resultIsError: found.isError }
 }
 
+type PendingPartial = { text: string; thinking: boolean }
+
+const NO_PENDING: PendingPartial = { text: '', thinking: false }
+
+function applyStreamEvent(pending: PendingPartial, event: unknown): PendingPartial {
+  if (!isRecord(event)) return pending
+  const type = asString(event.type)
+  if (type === 'content_block_start') {
+    return isRecord(event.content_block) && event.content_block.type === 'thinking' ? { ...pending, thinking: true } : pending
+  }
+  if (type === 'content_block_stop') return { ...pending, thinking: false }
+  if (type === 'content_block_delta' && isRecord(event.delta) && event.delta.type === 'text_delta') {
+    return { ...pending, text: pending.text + asString(event.delta.text) }
+  }
+  return pending
+}
+
+function pendingEvents(pending: PendingPartial): ActivityEvent[] {
+  const events: ActivityEvent[] = []
+  if (pending.thinking) events.push({ kind: 'thinking', title: 'THINKING', detail: '', partial: true })
+  if (pending.text !== '') events.push({ kind: 'text', title: 'TEXT', detail: pending.text, partial: true })
+  return events
+}
+
 function parseStream(logText: string, max: number, limits: Limits): ActivityEvent[] {
   const events: ActivityEvent[] = []
   const results = new Map<string, ToolResult>()
+  let pending = NO_PENDING
   for (const line of logText.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed.startsWith('{')) continue
@@ -254,8 +280,14 @@ function parseStream(logText: string, max: number, limits: Limits): ActivityEven
       collectToolResults(parsed, results)
       continue
     }
+    if (limits.full && asString(parsed.type) === 'stream_event') {
+      pending = applyStreamEvent(pending, parsed.event)
+      continue
+    }
+    if (limits.full && asString(parsed.type) === 'assistant') pending = NO_PENDING
     events.push(...eventsFrom(parsed, limits))
   }
+  events.push(...pendingEvents(pending))
   const resolved = limits.full ? events.map((event) => attachToolResult(event, results)) : events
   if (max < 0 || resolved.length <= max) return resolved
   return resolved.slice(resolved.length - max)

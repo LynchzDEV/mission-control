@@ -77,6 +77,10 @@ describe('resolver for a chat', () => {
     expect(existsSync(join(dir, 'chat-claude'))).toBe(false)
     expect(existsSync(join(dir, 'worker-codex'))).toBe(false)
   })
+  test('a claude chat streams partial messages and a worker job does not', async () => {
+    expect((await realEngineResolver({ engine: 'claude', prompt: 'hi', purpose: 'chat', edit: true })).args).toContain('--include-partial-messages')
+    expect((await realEngineResolver({ engine: 'claude', prompt: 'hi' })).args).not.toContain('--include-partial-messages')
+  })
   test('a worker job is unchanged', async () => {
     expect(engineArgs('claude', 'p')).toEqual(['-p', 'p', '--output-format', 'stream-json', '--verbose'])
     await writeSecrets({ zaiAuthToken: 'zai-test-token' })

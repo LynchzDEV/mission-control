@@ -67,6 +67,7 @@ export const realEngineResolver: EngineResolver = async ({ engine, prompt, resum
     : engineArgs(name, prompt, resumeSessionId, model)
   if (coreRules) args.unshift(...(name === 'codex' ? ['-c', `developer_instructions=${JSON.stringify(coreRules)}`] : ['--append-system-prompt', coreRules]))
   if (purpose === 'chat' && edit === false && name !== 'codex') args.push('--disallowedTools', 'Edit,Write,MultiEdit,NotebookEdit')
+  if (purpose === 'chat' && name !== 'codex') args.push('--include-partial-messages')
   const env = purpose === 'chat'
     ? { ...(await buildEnv(name, { worker: false })), ...(await chatProfileEnv(name)) }
     : await buildEnv(name, { worker: !readOnly })

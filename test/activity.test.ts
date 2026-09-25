@@ -9,6 +9,7 @@ import {
   currentActivity,
   formatActivity,
   parseActivity,
+  parseThread,
   toolDetail,
   type ActivityEvent,
 } from '../server/activity'
@@ -198,5 +199,29 @@ describe('createActivityThrottle', () => {
     throttle.ready()
     clock += 100_000
     expect(throttle.remainingMs()).toBe(0)
+  })
+})
+
+const PARTIAL_FIXTURE = join(import.meta.dir, 'fixtures', 'claude-partial.jsonl')
+
+describe('partial messages', () => {
+  test('parseThread keeps a partial text tail', async () => {
+    const events = parseThread(await readFile(PARTIAL_FIXTURE, 'utf8'))
+    expect(events.at(-1)).toEqual({ kind: 'text', title: 'TEXT', detail: "Hey, how's everything", partial: true })
+  })
+
+  test('parseThread drops the partial once the assistant line lands', async () => {
+    const log = `${await readFile(PARTIAL_FIXTURE, 'utf8')}{"type":"assistant","message":{"content":[{"type":"text","text":"Hey, how's everything going today?"}]}}\n`
+    const texts = parseThread(log).filter((event) => event.kind === 'text')
+    expect(texts).toEqual([{ kind: 'text', title: 'TEXT', detail: "Hey, how's everything going today?" }])
+  })
+
+  test('parseThread marks an open thinking block', async () => {
+    const log = (await readFile(PARTIAL_FIXTURE, 'utf8')).split('\n').slice(0, 2).join('\n')
+    expect(parseThread(log).at(-1)).toEqual({ kind: 'thinking', title: 'THINKING', detail: '', partial: true })
+  })
+
+  test('parseActivity ignores stream_event lines', async () => {
+    expect(parseActivity(await readFile(PARTIAL_FIXTURE, 'utf8'))).toEqual([])
   })
 })
