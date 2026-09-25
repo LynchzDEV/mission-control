@@ -1,0 +1,40 @@
+import { afterAll, beforeAll, expect, test } from 'bun:test'
+
+const requested: string[] = []
+const realFetch = globalThis.fetch
+const realInterval = globalThis.setInterval
+const elements = new Map<string, any>()
+const element = (id: string): any => elements.get(id) ?? elements.set(id, make()).get(id)
+const make = (): any => ({ hidden: false, open: false, textContent: '', value: '', dataset: {} as Record<string, string>, children: [] as any[], append(...nodes: any[]) { this.children.push(...nodes) }, replaceChildren(...nodes: any[]) { this.children = nodes }, querySelectorAll: () => [], addEventListener() {}, setAttribute() {}, focus() {} })
+
+beforeAll(async () => {
+  ;(globalThis as any).document = { hidden: false, body: { dataset: { chat: 'c0' } }, createElement: make, querySelectorAll: () => [], getElementById: element }
+  element('agents').open = true
+  ;(globalThis as any).setInterval = () => 0
+  globalThis.fetch = (async (url: string) => { requested.push(url); return Response.json({ jobs: [] }) }) as typeof fetch
+  await import('../client/shell-activity')
+})
+
+afterAll(() => {
+  delete (globalThis as any).document
+  globalThis.setInterval = realInterval
+  globalThis.fetch = realFetch
+})
+
+test('a chat already open before the drawer script loads is picked up', () => {
+  expect(requested).toContain('/api/jobs?chat=c0')
+})
+
+test('the Agents drawer loads the agents of the chat it was pointed at', () => {
+  element('agents').open = true
+  dispatchEvent(new CustomEvent('quiet:chat-agents', { detail: 'c1' }))
+  expect(requested).toContain('/api/jobs?chat=c1')
+  expect(element('live-agents').hidden).toBe(false)
+})
+
+test('clearing the scope empties the drawer and stops chat requests', () => {
+  requested.length = 0
+  dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null }))
+  expect(requested).toEqual([])
+  expect(element('live-agents').hidden).toBe(true)
+})

@@ -171,6 +171,7 @@ async function refresh(): Promise<void> {
 for (const id of ['open-agents', 'toggle-flow']) $(id).addEventListener('click', () => void refresh())
 addEventListener('quiet:activity-scope', (event) => { const session = (event as CustomEvent<Session | null>).detail; setActivityScope(session ? { kind: 'session', session } : null) })
 addEventListener('quiet:chat-agents', (event) => { const chat = (event as CustomEvent<string | null>).detail; if (chat) setActivityScope({ kind: 'chat', chat }) })
+if (document.body.dataset.chat) setActivityScope({ kind: 'chat', chat: document.body.dataset.chat })
 ;($('agent-reply') as HTMLFormElement).onsubmit = async (event) => {
   event.preventDefault()
   const box = $('reply') as HTMLTextAreaElement

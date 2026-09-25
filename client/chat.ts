@@ -342,7 +342,9 @@ async function startChat(prompt: string): Promise<void> {
   const result = await postJson('/api/jobs', { engine: choice.engine, ...(choice.model ? { model: choice.model } : {}), cwd: home, prompt, label: titleFrom(prompt), purpose: 'chat', edit: stored('mc.shell.edit') === '1', ...(project ? { project } : {}) })
   if (!result.ok) { chatError(errorText(result)); return }
   root = String(result.data.id)
+  document.body.dataset.chat = root
   setUrl(root)
+  dispatchEvent(new CustomEvent('quiet:chat-agents', { detail: root }))
   await refresh()
 }
 
@@ -423,7 +425,9 @@ export function openChat(id: string): void {
   shownTurns = []
   messages.replaceChildren()
   setUrl(id)
+  document.body.dataset.chat = id
   show('conversation')
+  dispatchEvent(new CustomEvent('quiet:chat-agents', { detail: id }))
   void refresh()
 }
 
@@ -437,7 +441,7 @@ composer.onsubmit = (event) => {
   message.focus()
 }
 
-addEventListener('quiet:new-chat', () => { root = null; agents = []; shownTurns = []; messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null) })
+addEventListener('quiet:new-chat', () => { root = null; agents = []; shownTurns = []; messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null); delete document.body.dataset.chat; dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null })) })
 addEventListener('quiet:open-chat', (event) => openChat((event as CustomEvent<string>).detail))
 addEventListener('quiet:show', (event) => { if ((event as CustomEvent<string>).detail === 'conversation') schedule(); else stopPolling() })
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') schedule(); else stopPolling() })
