@@ -622,3 +622,22 @@ a.pill:hover { color: var(--accent); }
 .saved-revision ul { padding-left: 18px; font-size: 13px; margin: 8px 0; }
 .saved-revision .text-button { display: block; margin-top: 10px; }
 .saved-revision + .saved-revision { margin-top: 12px; }
+.runs-view .runs-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.runs-view .history-item summary { padding: 20px; }
+.runs-view .history-item > p { margin: 0 0 20px; }
+.run-detail { padding: 0 20px 20px; font-size: 14px; line-height: 1.7; }
+.run-detail .run-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 12px; }
+.run-detail code { font: 12px Menlo, monospace; }
+.run-detail .attempts { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 14px; }
+.run-detail .attempts li { padding: 14px 16px; border-radius: 16px; box-shadow: var(--raised); }
+.run-detail .attempts h3 { display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 500; margin: 0 0 4px; }
+.run-detail .attempts ul { padding-left: 18px; font-size: 13px; color: var(--muted); }
+.run-detail details summary { font-size: 13px; padding: 8px 0; }
+.status[data-state="failed"], .status[data-state="fail"], .status[data-state="blocked"] { color: #b0556a; }
+.status[data-state="failed"]::before, .status[data-state="fail"]::before, .status[data-state="blocked"]::before { background: #b0556a; }
+.status[data-state="done"], .status[data-state="pass"] { color: #5b8a6a; }
+.status[data-state="done"]::before, .status[data-state="pass"]::before { background: #5b8a6a; }
+.status[data-state="stopped"] { color: var(--muted); }
+.status[data-state="stopped"]::before { background: var(--muted); }
+.rules-text { font: 13px/1.7 inherit; white-space: pre-wrap; margin: 0; }
+.prompt-template { font: 12.5px/1.6 Menlo, monospace; }

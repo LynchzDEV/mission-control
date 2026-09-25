@@ -61,6 +61,8 @@ function Studio() {
   const [runs, setRuns] = useState<RunSummary[]>([])
   const [run, setRun] = useState<WorkflowRun | null>(null)
   const [policy, setPolicy] = useState<PolicyRevision | null>(null)
+  const [policyText, setPolicyText] = useState('')
+  const [policyRevisions, setPolicyRevisions] = useState<PolicyRevision[]>([])
   const [modal, setModal] = useState<'run' | 'rules' | null>(null)
   const [cwd, setCwd] = useState('')
   const [runTitle, setRunTitle] = useState('')
@@ -90,10 +92,10 @@ function Studio() {
   const refreshConnections = useCallback(async () => { setList(await api<ConnectionList>('/connections')); const result = await fetch('/api/providers').then(response => response.json()) as { providers: Provider[] }; setProviders(result.providers ?? []) }, [])
   const refreshWorkflows = useCallback(async () => { const result = await api<{ workflows: WorkflowRevision[]; selected: WorkflowRevision }>('/workflows'); setWorkflows(result.workflows); setDefaultFlow(result.selected); return result }, [])
   const refreshRuns = useCallback(async () => setRuns((await api<{ runs: RunSummary[] }>('/runs')).runs), [])
-  useEffect(() => { let active = true; Promise.all([refreshWorkflows(), refreshConnections(), api<PolicyRevision>('/policy'), api<{ draft: DraftJob | null }>('/drafts')]).then(([, , policy, drafting]) => { if (active) { setPolicy(policy); if (drafting.draft) setDraftJob(drafting.draft) } }).catch(error => setError(error.message)); return () => { active = false } }, [])
+  useEffect(() => { let active = true; Promise.all([refreshWorkflows(), refreshConnections(), api<PolicyRevision>('/policy'), api<{ draft: DraftJob | null }>('/drafts')]).then(([, , policy, drafting]) => { if (active) { setPolicy(policy); setPolicyText(policy.template); if (drafting.draft) setDraftJob(drafting.draft) } }).catch(error => setError(error.message)); return () => { active = false } }, [])
   useEffect(() => { const guard = (event: BeforeUnloadEvent) => { if (dirty || building) event.preventDefault() }; addEventListener('beforeunload', guard); return () => removeEventListener('beforeunload', guard) }, [dirty, building])
   useEffect(() => { if (modal) dialog.current?.showModal() }, [modal])
-  useEffect(() => { if (screen === 'runs') void refreshRuns().catch(error => setError(error.message)) }, [screen, run?.status])
+  useEffect(() => { if (screen === 'runs') void refreshRuns().catch(error => setError(error.message)); if (screen === 'rules') void api<{ revisions: PolicyRevision[] }>('/policy/revisions').then(result => setPolicyRevisions(result.revisions)).catch(error => setError(error.message)) }, [screen, run?.status])
   useEffect(() => { if (panel === 'history' && graph?.revision) void api<{ revisions: WorkflowRevision[] }>(`/workflows/${graph.id}/revisions`).then(result => setRevisions(result.revisions)).catch(error => setError(error.message)) }, [panel, graph?.id, graph?.revision])
   useEffect(() => { if (!run || run.status !== 'running') return; let stopped = false; const poll = async () => { try { const result = await api<WorkflowRun>(`/runs/${run.id}`); if (!stopped) setRun(result) } catch (error) { if (!stopped) setError((error as Error).message) } }; const timer = setInterval(() => { if (!document.hidden) void poll() }, 1500); return () => { stopped = true; clearInterval(timer) } }, [run?.id, run?.status])
   useEffect(() => {
@@ -196,8 +198,38 @@ function Studio() {
       </div>
     </section>}
     {screen === 'connections' && <section className="studio-view"><p className="studio-placeholder">Manage AIs lands in a later task. {list.connections.length} connections configured.</p></section>}
-    {screen === 'runs' && <section className="studio-view"><p className="studio-placeholder">Runs lands in a later task. {runs.length} runs so far.</p></section>}
-    {screen === 'rules' && <section className="studio-view"><p className="studio-placeholder">Rules lands in a later task.{policy ? ` Core prompt revision ${policy.revision}.` : ''}</p></section>}
+    {screen === 'runs' && <section className="studio-view secondary-studio runs-view">
+      <div className="runs-heading"><h2>Recent runs</h2><button type="button" className="text-button" disabled={busy} onClick={() => void action(refreshRuns)}>Refresh</button></div>
+      {runs.length === 0 && <p className="muted">Your workflow runs will appear here.</p>}
+      <div className="history-list">{runs.map(item => <details key={item.id} className="history-item" open={run?.id === item.id} onToggle={event => { if (event.currentTarget.open && run?.id !== item.id) void action(async () => setRun(await api<WorkflowRun>(`/runs/${item.id}`))) }}>
+        <summary><span>{item.label}</span><span className="status" data-state={item.status}>{item.status}</span></summary>
+        {run?.id === item.id ? <div className="run-detail">
+          <div className="run-actions"><span className="muted">{run.workflow.name} · {dateLabel(run.createdAt)}</span>{run.status === 'running' ? <button type="button" className="text-button danger" disabled={busy} onClick={() => void action(async () => setRun(await api<WorkflowRun>(`/runs/${run.id}/stop`, {})))}>Stop run</button> : run.status !== 'done' && <button type="button" className="text-button" disabled={busy} onClick={() => void action(async () => setRun(await api<WorkflowRun>(`/runs/${run.id}/retry`, {})))}>Retry current step</button>}</div>
+          <p>{run.request}</p><p className="muted"><code>{run.cwd}</code></p>
+          {run.error && <p role="alert" className="chat-error">{run.error}</p>}
+          <ol className="attempts">{run.attempts.map(attempt => <li key={`${attempt.nodeId}-${attempt.number}`}>
+            <h3>{run.workflow.nodes.find(node => node.id === attempt.nodeId)?.title ?? attempt.nodeId}<span className="status" data-state={attempt.result?.outcome ?? attempt.status}>{attempt.result?.outcome ?? attempt.status}</span></h3>
+            <p className="muted">{label({ agent: { role: 'execute', engine: run.agents[attempt.nodeId]?.engine } })}{run.agents[attempt.nodeId]?.model ? ` · ${run.agents[attempt.nodeId]?.model}` : ''}</p>
+            {attempt.result && <><p>{attempt.result.summary}</p>{attempt.result.evidence.length > 0 && <ul>{attempt.result.evidence.map((evidence, index) => <li key={index}>{evidence}</li>)}</ul>}</>}
+            {attempt.checks.map((check, index) => <details key={index}><summary>{check.command} {check.args.join(' ')} · {check.exitCode === 0 ? 'Passed' : 'Failed'}</summary><pre className="studio-output">{check.output}</pre></details>)}
+            {attempt.jobId && <p><a className="text-button" href={`/api/jobs/${attempt.jobId}/log`} target="_blank" rel="noreferrer">Open job log</a></p>}
+            <details><summary>Instructions used for this step</summary><pre className="studio-output">{attempt.prompt}</pre></details>
+          </li>)}</ol>
+          <details><summary>Versions used for this run</summary><p className="muted">Workflow {run.workflow.revision} · Core prompt {run.policy.revision}</p></details>
+        </div> : <p className="muted">{item.workflowName} · {dateLabel(item.createdAt)}</p>}
+      </details>)}</div>
+    </section>}
+    {screen === 'rules' && policy && <section className="studio-view secondary-studio">
+      <h2>Rules every workflow follows</h2><p className="muted">Required rules apply to every step. Editing a workflow cannot remove them.</p>
+      <div className="rules-card"><pre className="rules-text">{policy.coreRules}</pre></div>
+      <details><summary>Edit the core prompt</summary>
+        <p className="muted">Changes apply to future runs. Existing runs keep their original instructions.</p>
+        <label>Start from an earlier version<select value="" onChange={event => { const earlier = policyRevisions.find(item => item.revision === event.target.value); if (earlier) setPolicyText(earlier.template) }}><option value="">Choose a saved version</option>{policyRevisions.map(item => <option key={item.revision} value={item.revision}>{dateLabel(item.createdAt)}{item.revision === policy.revision ? ' · current' : ''}</option>)}</select></label>
+        <label>Prompt template<textarea className="prompt-template" rows={14} value={policyText} onChange={event => setPolicyText(event.target.value)} /></label>
+        <p className="muted">Keep one each of {'{{core_rules}}'}, {'{{workflow}}'} and {'{{assignment}}'}.</p>
+        <button type="button" className="pill" disabled={busy || policyText === policy.template} onClick={() => void action(async () => { const next = await api<PolicyRevision>('/policy', { template: policyText }); setPolicy(next); setPolicyText(next.template); setPolicyRevisions((await api<{ revisions: PolicyRevision[] }>('/policy/revisions')).revisions); toast('Core prompt saved for future runs.') })}>Save prompt</button>
+      </details>
+    </section>}
     {modal && <dialog ref={dialog} className="access-dialog flat" onClose={() => setModal(null)} aria-labelledby="studio-dialog-title">
       <header className="dialog-heading"><h2 id="studio-dialog-title">{modal === 'rules' ? 'Rules you can rely on' : 'Run this workflow'}</h2><form method="dialog"><button className="round" aria-label="Close dialog"><Icon id="close-icon" /></button></form></header>
       {modal === 'rules' ? <><p className="muted">Every workflow follows your project instructions, reports actual evidence, and requires a verified plan and an independent review for implementation work.</p><p className="muted">These rules stay in place when you edit a workflow or ask AI to change it.</p><button type="button" className="pill" onClick={closeModal}>Back to workflow</button></>
