@@ -461,6 +461,9 @@ a.pill:hover { color: var(--accent); }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; background: #9aa3b5; margin-left: auto; }
 .dot[data-state="working"] { background: #5b8a6a; }
 .rail-empty { font-size: 12px; padding: 4px; margin: 0; }
+.name-edit { font: inherit; font-weight: 500; width: 100%; min-width: 0; padding: 3px 8px; margin: -3px 0; border-radius: 8px; box-shadow: none; background: #e2e6f0; border: 1px solid #c9c0e3; color: #505e75; outline: none; }
+.edit-hint { font-size: 10px; color: var(--muted); white-space: normal; }
+.session-card.editing { box-shadow: var(--raised); color: inherit; }
 .live-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .live-stage { flex: 1; min-height: 100px; min-width: 0; position: relative; display: flex; }
 .term-host { flex: 1; min-width: 0; min-height: 0; padding: 12px; border-radius: 16px; box-shadow: var(--inset); overflow: hidden; }

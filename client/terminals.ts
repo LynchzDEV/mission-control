@@ -3,7 +3,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { providerName } from './terminal-view'
 import { errorText, getJson, postJson, readArray, readRecord } from './shared'
 import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
-import { dragKind, latestLine, nextActive, sessionState, splitPlan, type Session, type SessionState } from './terminal-state'
+import { dragKind, latestLine, nextActive, renameValue, sessionState, splitPlan, type Session, type SessionState } from './terminal-state'
 import { createPanes, type PaneHeader } from './terminal-panes'
 
 type Provider = { id: string; name: string; models: string[] }
@@ -127,7 +127,7 @@ function visible(on: boolean): void {
   if (!on) url.searchParams.delete('terminal')
   if (on && activeId) url.searchParams.set('terminal', activeId)
   history.replaceState(null, '', url)
-  if (on) requestAnimationFrame(() => { activeId && views.get(activeId)?.resize(); activeId && views.get(activeId)?.terminal.focus() })
+  if (on) requestAnimationFrame(() => { activeId && views.get(activeId)?.resize(); if (renaming === null && !(document.activeElement instanceof HTMLInputElement)) activeId && views.get(activeId)?.terminal.focus() })
   else $('new-chat').focus()
 }
 
@@ -220,7 +220,67 @@ function buildCard(session: Session): HTMLButtonElement {
   card.draggable = true
   card.ondragstart = (event) => { event.dataTransfer?.setData('text/x-mc-terminal', session.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move' }
   card.onclick = () => activate(session.id)
+  title.ondblclick = (event) => { event.stopPropagation(); startRename(card) }
   return card
+}
+
+let renaming: string | null = null
+
+function startRename(card: HTMLButtonElement): void {
+  const id = card.dataset.id ?? ''
+  const session = sessions.find(item => item.id === id)
+  if (!session || renaming === id) return
+  renaming = id
+  const editor = document.createElement('div')
+  editor.className = 'session-card editing'
+  editor.dataset.id = id
+  const head = document.createElement('header')
+  const logo = document.createElement('img'); logo.className = 'logo'; logo.alt = ''; logo.src = `/providers/${session.engine}.svg`
+  const input = document.createElement('input')
+  input.className = 'name-edit'
+  input.value = session.title
+  input.maxLength = 60
+  input.setAttribute('aria-label', 'Terminal name')
+  head.append(logo, input)
+  const hint = document.createElement('small')
+  hint.className = 'edit-hint'
+  hint.textContent = 'Enter to save · Esc to cancel · empty keeps the old name'
+  editor.append(head, hint)
+  card.replaceWith(editor)
+  let settled = false
+  const finish = (save: boolean): void => {
+    if (settled) return
+    settled = true
+    renaming = null
+    const next = save ? renameValue(session.title, input.value) : null
+    editor.replaceWith(card)
+    card.focus()
+    if (next !== null) void rename(id, next)
+    else renderRail()
+  }
+  input.onkeydown = (event) => {
+    event.stopPropagation()
+    if (event.key === 'Enter') { event.preventDefault(); finish(true) }
+    else if (event.key === 'Escape') { event.preventDefault(); finish(false) }
+  }
+  input.onblur = () => finish(false)
+  input.onclick = (event) => event.stopPropagation()
+  input.focus()
+  input.select()
+}
+
+async function rename(id: string, title: string): Promise<void> {
+  let ok = false
+  try {
+    const response = await fetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title }) })
+    ok = response.ok
+  } catch {}
+  if (!ok) { if (activeId === id) $('live-status').textContent = 'Could not rename this terminal.'; return }
+  sessions = sessions.map(session => session.id === id ? { ...session, title } : session)
+  const view = views.get(id)
+  if (view) { view.session = { ...view.session, title }; panes.retitle(id, paneHeader(view.session)) }
+  if (activeId === id) $('live-name').textContent = title
+  renderRail()
 }
 
 function paintCard(card: HTMLButtonElement, session: Session): void {
@@ -237,6 +297,7 @@ function paintCard(card: HTMLButtonElement, session: Session): void {
 }
 
 export function renderRail(): void {
+  if (renaming !== null) return
   $('rail-count').textContent = sessions.length ? `Terminals · ${sessions.length}` : 'Terminals'
   const existing = new Map([...cards.querySelectorAll<HTMLButtonElement>('.session-card')].map(card => [card.dataset.id ?? '', card]))
   const wanted = sessions.map(session => session.id)
