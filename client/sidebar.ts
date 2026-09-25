@@ -1,5 +1,6 @@
 import { getJson, readArray } from './shared'
 import { chatSignal, historyDay, type HistoryItem } from './chat-view'
+import { renameValue, type Session } from './terminal-state'
 
 type Day = 'Today' | 'Yesterday' | 'Earlier'
 type Listed = Extract<HistoryItem, { kind: 'chat' | 'terminal' }>
@@ -16,6 +17,13 @@ export function sidebarGroups(items: HistoryItem[], now: number): { day: Day; it
   return DAYS.map(day => ({ day, items: listed.filter(item => dayOf(item) === day) })).filter(group => group.items.length > 0)
 }
 
+export function withLiveTerminals(items: HistoryItem[], sessions: Session[] | null, now: number): HistoryItem[] {
+  if (!sessions) return items
+  const known = new Map(items.flatMap(item => item.kind === 'terminal' ? [[item.id, item] as const] : []))
+  const live = sessions.map((session): HistoryItem => ({ kind: 'terminal', id: session.id, title: session.title, updatedAt: known.get(session.id)?.updatedAt ?? now, cwd: session.cwd, engine: session.engine, sessionId: known.get(session.id)?.sessionId ?? null }))
+  return [...items.filter(item => item.kind !== 'terminal'), ...live].sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
 function rowOf(item: Listed): Row {
   if (item.kind === 'terminal') return { item, state: 'live', note: '' }
   const signal = chatSignal(item.running, item.agents)
@@ -25,6 +33,9 @@ function rowOf(item: Listed): Row {
 
 let openChatId: string | null = null
 let signature = ''
+let historyItems: HistoryItem[] = []
+let liveTerminals: Session[] | null = null
+let renaming = false
 
 function selectedKey(): string | null {
   if (document.body.dataset.live === 'true') { const id = new URL(location.href).searchParams.get('terminal'); return id ? `terminal:${id}` : null }
@@ -36,6 +47,49 @@ function open(item: Listed): void {
   else dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { id: item.id } }))
 }
 
+function startRename(item: Listed, text: HTMLElement): void {
+  if (renaming) return
+  renaming = true
+  const input = Object.assign(document.createElement('input'), { className: 'sb-rename', value: item.title, maxLength: 60 })
+  input.setAttribute('aria-label', 'Terminal name')
+  text.replaceWith(input)
+  let settled = false
+  const finish = (save: boolean): void => {
+    if (settled) return
+    settled = true
+    renaming = false
+    const title = save ? renameValue(item.title, input.value) : null
+    input.replaceWith(text)
+    if (title !== null) dispatchEvent(new CustomEvent('quiet:terminal-rename', { detail: { id: item.id, title } }))
+    signature = ''
+    paint(historyItems)
+  }
+  input.onkeydown = (event) => {
+    event.stopPropagation()
+    if (event.key === 'Enter') { event.preventDefault(); finish(true) }
+    else if (event.key === 'Escape') { event.preventDefault(); finish(false) }
+  }
+  input.onblur = () => finish(false)
+  input.onclick = (event) => { event.stopPropagation(); event.preventDefault() }
+  input.focus()
+  input.select()
+}
+
+function terminalActions(item: Listed, element: HTMLElement, text: HTMLElement | null): HTMLElement {
+  element.draggable = true
+  element.ondragstart = (event) => { event.dataTransfer?.setData('text/x-mc-terminal', item.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move' }
+  if (!text) return element
+  text.ondblclick = (event) => { event.preventDefault(); event.stopPropagation(); startRename(item, text) }
+  const end = Object.assign(document.createElement('button'), { type: 'button', className: 'sb-x', title: 'End this terminal' })
+  end.setAttribute('aria-label', `End ${item.title}`)
+  end.innerHTML = '<svg><use href="#close-icon"/></svg>'
+  end.onclick = () => dispatchEvent(new CustomEvent('quiet:terminal-end', { detail: item.id }))
+  const wrap = document.createElement('div')
+  wrap.className = 'sb-item'
+  wrap.append(element, end)
+  return wrap
+}
+
 function rowElement(row: Row, className: 'sb-row' | 'sb-mini'): HTMLElement {
   const element = document.createElement('a')
   element.className = className
@@ -45,13 +99,14 @@ function rowElement(row: Row, className: 'sb-row' | 'sb-mini'): HTMLElement {
   element.onclick = (event) => { event.preventDefault(); open(row.item) }
   const icon = document.createElement('span'); icon.className = 'sb-ic'; icon.innerHTML = row.item.kind === 'chat' ? CHAT_ICON : TERMINAL_ICON
   element.append(icon)
+  let text: HTMLElement | null = null
   if (className === 'sb-row') {
-    const text = document.createElement('span'); text.className = 'sb-t'; text.textContent = row.item.title
+    text = document.createElement('span'); text.className = 'sb-t'; text.textContent = row.item.title
     if (row.note) text.append(Object.assign(document.createElement('small'), { textContent: row.note }))
     element.append(text)
   } else element.title = row.item.title
   if (row.state) { const dot = document.createElement('i'); dot.className = 'sb-dot'; dot.dataset.s = row.state; element.append(dot) }
-  return element
+  return row.item.kind === 'terminal' ? terminalActions(row.item, element, text) : element
 }
 
 function markSelected(): void {
@@ -64,7 +119,9 @@ function markSelected(): void {
 }
 
 function paint(items: HistoryItem[]): void {
-  const groups = sidebarGroups(items, Date.now())
+  historyItems = items
+  if (renaming) return
+  const groups = sidebarGroups(withLiveTerminals(items, liveTerminals, Date.now()), Date.now())
   const rows = groups.flatMap(group => group.items.map(item => rowOf(item as Listed)))
   const next = JSON.stringify([groups.map(group => [group.day, group.items.length]), rows.map(row => [row.item.kind, row.item.id, row.item.title, row.state, row.note])])
   if (next === signature) return
@@ -90,6 +147,7 @@ async function poll(): Promise<void> {
 
 if (typeof document !== 'undefined') {
   addEventListener('quiet:chat-open', (event) => { openChatId = (event as CustomEvent<string>).detail; markSelected(); void poll() })
+  addEventListener('quiet:terminals', (event) => { liveTerminals = (event as CustomEvent<Session[]>).detail; paint(historyItems); markSelected() })
   addEventListener('quiet:new-chat', () => { openChatId = null; markSelected() })
   for (const name of ['quiet:screen', 'quiet:activity-scope']) addEventListener(name, markSelected)
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void poll() })

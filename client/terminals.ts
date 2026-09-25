@@ -4,7 +4,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { errorText, getJson, pathsFromUriList, postJson, providerName, readArray, readRecord, shellQuote } from './shared'
 import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
-import { dragKind, dropCopy, findCount, findKeys, latestLine, restoreTarget, nextActive, renameValue, sessionState, splitPlan, type Session, type SessionState } from './terminal-state'
+import { dragKind, dropCopy, findCount, findKeys, restoreTarget, nextActive, sessionState, splitPlan, type Session, type SessionState } from './terminal-state'
 import { createPanes, type PaneHeader } from './terminal-panes'
 
 type Provider = { id: string; name: string; models: string[] }
@@ -12,7 +12,7 @@ type Provider = { id: string; name: string; models: string[] }
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const canvas = document.querySelector('.canvas') as HTMLElement
 const savedKey = 'mc.quiet.terminal', recentKey = 'mc.term.recentCwd', engineKey = 'mc.shell.engine', modelKey = 'mc.shell.model'
-const POLL_MS = 5000, TICK_MS = 2000, BUFFER_CHARS = 4000
+const POLL_MS = 5000, BUFFER_CHARS = 4000
 const launch = $('live-launch') as HTMLDialogElement
 const engineSelect = $('live-engine') as HTMLSelectElement
 const modelInput = $('live-model') as HTMLInputElement
@@ -23,7 +23,6 @@ const reconnectButton = $('live-reconnect') as HTMLButtonElement
 const stage = $('live-stage')
 const park = $('term-park')
 const dropStage = $('drop-stage')
-const cards = $('rail-cards')
 const panes = createPanes(stage)
 const views = new Map<string, TerminalView>()
 let sessions: Session[] = []
@@ -101,7 +100,6 @@ export class TerminalView {
       this.terminal.options.disableStdin = true
       this.ended = event.code === 4404 || event.code === 4410
       if (activeId === this.session.id) setStatus(this.ended ? 'Session ended.' : 'Disconnected. Reconnect to try again.', !this.ended)
-      renderRail()
     }
   }
 
@@ -133,8 +131,8 @@ function visible(on: boolean): void {
   if (!on) url.searchParams.delete('terminal')
   if (on && activeId) url.searchParams.set('terminal', activeId)
   history.replaceState(null, '', url)
-  if (on) requestAnimationFrame(() => { activeId && views.get(activeId)?.resize(); if (renaming === null && !(document.activeElement instanceof HTMLInputElement)) activeId && views.get(activeId)?.terminal.focus() })
-  else $('new-chat').focus()
+  if (on) requestAnimationFrame(() => { activeId && views.get(activeId)?.resize(); if (!(document.activeElement instanceof HTMLInputElement)) activeId && views.get(activeId)?.terminal.focus() })
+  else { const newChat = $('new-chat'); (newChat.offsetParent !== null ? newChat : $('message')).focus() }
 }
 
 function ensureView(session: Session): TerminalView {
@@ -174,7 +172,7 @@ function setActiveState(id: string): void {
   if (view.ended) setStatus('Session ended.', false)
   else if (state === WebSocket.OPEN) setStatus(`Connected · live ${engineName(view.session.engine)}`, false)
   else if (state === WebSocket.CLOSED) setStatus('Disconnected. Reconnect to try again.', true)
-  renderRail()
+  publishSessions()
 }
 
 export function activate(id: string): void {
@@ -313,40 +311,6 @@ dropStage.addEventListener('drop', (event) => {
   setActiveState(id)
 })
 
-function stateLabel(state: SessionState): string {
-  return state === 'working' ? 'working' : state === 'ended' ? 'ended' : 'idle'
-}
-
-function buildCard(session: Session): HTMLElement {
-  const item = document.createElement('div')
-  item.className = 'rail-item'
-  item.dataset.id = session.id
-  const card = document.createElement('button')
-  card.type = 'button'
-  card.className = 'session-card'
-  card.dataset.id = session.id
-  const head = document.createElement('header')
-  const logo = document.createElement('img'); logo.className = 'logo'; logo.alt = ''
-  const title = document.createElement('span'); title.className = 'card-title'
-  const dot = document.createElement('span'); dot.className = 'dot'
-  head.append(logo, title, dot)
-  const end = document.createElement('button')
-  end.type = 'button'
-  end.className = 'round card-x'
-  end.setAttribute('aria-label', 'End this terminal')
-  end.insertAdjacentHTML('afterbegin', '<svg><use href="#close-icon"/></svg>')
-  end.onclick = () => askEnd(session.id)
-  card.append(head, document.createElement('small'), document.createElement('code'))
-  card.draggable = true
-  card.ondragstart = (event) => { event.dataTransfer?.setData('text/x-mc-terminal', session.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move' }
-  card.ondragend = () => paintZones(null, false)
-  card.onclick = () => activate(session.id)
-  title.ondblclick = (event) => { event.stopPropagation(); startRename(card) }
-  item.append(card, end)
-  return item
-}
-
-let renaming: string | null = null
 let ending: string | null = null
 const endDialog = $('end-session') as HTMLDialogElement
 
@@ -370,49 +334,6 @@ $('end-session-confirm').onclick = () => { const id = ending; endDialog.close();
 $('end-session-cancel').onclick = () => endDialog.close()
 endDialog.addEventListener('close', () => { ending = null })
 
-function startRename(card: HTMLButtonElement): void {
-  const id = card.dataset.id ?? ''
-  const session = sessions.find(item => item.id === id)
-  if (!session || renaming === id) return
-  renaming = id
-  const editor = document.createElement('div')
-  editor.className = 'session-card editing'
-  editor.dataset.id = id
-  const head = document.createElement('header')
-  const logo = document.createElement('img'); logo.className = 'logo'; logo.alt = ''; logo.src = `/providers/${session.engine}.svg`
-  const input = document.createElement('input')
-  input.className = 'name-edit'
-  input.value = session.title
-  input.maxLength = 60
-  input.setAttribute('aria-label', 'Terminal name')
-  head.append(logo, input)
-  const hint = document.createElement('span')
-  hint.className = 'edit-hint'
-  hint.textContent = 'Enter to save · Esc to cancel · empty keeps the old name'
-  editor.append(head, hint, card.querySelector('code')?.cloneNode(true) ?? document.createElement('code'))
-  card.replaceWith(editor)
-  let settled = false
-  const finish = (save: boolean): void => {
-    if (settled) return
-    settled = true
-    renaming = null
-    const next = save ? renameValue(session.title, input.value) : null
-    editor.replaceWith(card)
-    card.focus()
-    if (next !== null) void rename(id, next)
-    else renderRail()
-  }
-  input.onkeydown = (event) => {
-    event.stopPropagation()
-    if (event.key === 'Enter') { event.preventDefault(); finish(true) }
-    else if (event.key === 'Escape') { event.preventDefault(); finish(false) }
-  }
-  input.onblur = () => finish(false)
-  input.onclick = (event) => event.stopPropagation()
-  input.focus()
-  input.select()
-}
-
 async function rename(id: string, title: string): Promise<void> {
   refreshGeneration += 1
   let ok = false
@@ -420,40 +341,15 @@ async function rename(id: string, title: string): Promise<void> {
     const response = await fetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title }) })
     ok = response.ok
   } catch {}
-  if (!ok) { toast('Could not rename this terminal'); renderRail(); return }
+  if (!ok) { toast('Could not rename this terminal'); return }
   sessions = sessions.map(session => session.id === id ? { ...session, title } : session)
   const view = views.get(id)
   if (view) { view.session = { ...view.session, title }; panes.retitle(id, paneHeader(view.session)) }
   if (activeId === id) $('live-name').textContent = title
-  renderRail()
+  publishSessions()
 }
 
-function paintCard(item: HTMLElement, session: Session): void {
-  const card = item.querySelector('.session-card')
-  if (!card) return
-  const view = views.get(session.id)
-  const state = view?.state ?? 'idle'
-  card.setAttribute('aria-current', String(session.id === activeId))
-  const logo = card.querySelector('img') as HTMLImageElement
-  const src = `/providers/${session.engine}.svg`
-  if (logo.getAttribute('src') !== src) logo.src = src
-  card.querySelector('.card-title')!.textContent = session.title
-  ;(card.querySelector('.dot') as HTMLElement).dataset.state = state
-  card.querySelector('small')!.textContent = `${providerName(session.engine)}${session.model ? ` · ${session.model}` : ''} · ${stateLabel(state)}`
-  card.querySelector('code')!.textContent = view ? latestLine(view.buffer) || '>' : '>'
-}
-
-export function renderRail(): void {
-  if (renaming !== null) return
-  $('rail-count').textContent = sessions.length ? `Terminals · ${sessions.length}` : 'Terminals'
-  const existing = new Map([...cards.querySelectorAll<HTMLElement>('.rail-item')].map(item => [item.dataset.id ?? '', item]))
-  const wanted = sessions.map(session => session.id)
-  for (const [id, card] of existing) if (!wanted.includes(id)) card.remove()
-  const ordered = sessions.map(session => { const card = existing.get(session.id) ?? buildCard(session); paintCard(card, session); return card })
-  const current = [...cards.children].map(card => (card as HTMLElement).dataset.id)
-  if (current.join() !== wanted.join()) cards.replaceChildren(...ordered)
-  $('rail-empty').hidden = sessions.length > 0
-}
+function publishSessions(): void { dispatchEvent(new CustomEvent('quiet:terminals', { detail: sessions })) }
 
 let refreshGeneration = 0
 async function refreshSessions(): Promise<void> {
@@ -471,7 +367,7 @@ async function refreshSessions(): Promise<void> {
     if (next) { if (canvas.dataset.live === 'true') activate(next); else setActiveState(next) }
     else { activeId = null; store(savedKey, null); if (canvas.dataset.live === 'true') visible(false) }
   }
-  renderRail()
+  publishSessions()
 }
 
 function updateModelChoices(): void {
@@ -556,17 +452,9 @@ async function resumeSession(resume: { sessionId: string; cwd: string; title: st
 
 ;($('live-create') as HTMLFormElement).onsubmit = (event) => { event.preventDefault(); void createTerminal() }
 engineSelect.onchange = () => { modelInput.value = ''; updateModelChoices() }
-$('rail-new').onclick = () => void openTerminal(false)
-const railOpenKey = 'mc.rail.open'
-function paintRail(open: boolean): void {
-  const toggle = $('rail-toggle')
-  ;(document.querySelector('.with-rail') as HTMLElement).dataset.rail = open ? 'open' : 'closed'
-  toggle.setAttribute('aria-expanded', String(open))
-  toggle.setAttribute('aria-label', open ? 'Hide the session list' : 'Show the session list')
-  toggle.title = open ? 'Hide the session list' : 'Show the session list'
-}
-$('rail-toggle').onclick = () => { const open = (document.querySelector('.with-rail') as HTMLElement).dataset.rail === 'closed'; store(railOpenKey, open ? null : '0'); paintRail(open) }
-paintRail(stored(railOpenKey) !== '0')
+addEventListener('quiet:terminal-end', (event) => askEnd((event as CustomEvent<string>).detail))
+addEventListener('quiet:terminal-rename', (event) => { const { id, title } = (event as CustomEvent<{ id: string; title: string }>).detail; void rename(id, title) })
+document.addEventListener('dragend', () => paintZones(null, false))
 addEventListener('quiet:design', () => { if (canvas.dataset.live === 'true') visible(false) })
 addEventListener('quiet:open-terminal', (event) => {
   const detail = (event as CustomEvent<{ restore?: boolean; id?: string; cwd?: string; resume?: { sessionId: string; cwd: string; title: string } }>).detail
@@ -587,5 +475,4 @@ reconnectButton.onclick = async () => {
   else setStatus('Session ended.', false)
 }
 setInterval(() => { if (!document.hidden) void refreshSessions() }, POLL_MS)
-setInterval(() => { if (!document.hidden && canvas.dataset.live === 'true') renderRail() }, TICK_MS)
 if (restoreRequested(location)) void openTerminal(true)
