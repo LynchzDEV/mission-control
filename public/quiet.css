@@ -436,8 +436,8 @@ a.pill:hover { color: var(--accent); }
 .chip.off { color: var(--muted); }
 .chip.off[aria-pressed="true"] { color: var(--accent); box-shadow: var(--inset); }
 .chip-group { display: inline-flex; align-items: center; gap: 8px; }
-.chip-extra { display: inline-flex; align-items: center; gap: 8px; max-width: 0; opacity: 0; overflow: hidden; padding: 4px 0; margin: -4px 0; transition: max-width 260ms cubic-bezier(.22, 1, .36, 1), opacity 180ms; }
-.chip-group[data-expanded="true"] .chip-extra { max-width: 240px; opacity: 1; padding-inline: 2px; }
+.chip-extra { display: inline-flex; align-items: center; gap: 8px; max-width: 0; opacity: 0; overflow: hidden; padding: 16px 0 16px 16px; margin: -16px 0 -16px -16px; transition: max-width 260ms cubic-bezier(.22, 1, .36, 1), opacity 180ms; }
+.chip-group[data-expanded="true"] .chip-extra { max-width: 300px; opacity: 1; padding-right: 16px; margin-right: -8px; }
 .chip-menu { bottom: calc(100% - 30px); left: 8px; width: 300px; }
 .model-menu { left: 150px; width: 220px; max-height: 360px; overflow: auto; }
 .flat { box-shadow: 0 24px 60px #737ea32e; }
