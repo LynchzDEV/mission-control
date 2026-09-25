@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { clamp, errorText, getJson, pathsFromUriList, shellQuote, streamJobLog } from '../client/shared'
+import { errorText, getJson, pathsFromUriList, shellQuote, streamJobLog } from '../client/shared'
 
 const originalFetch = globalThis.fetch
 
@@ -108,16 +108,5 @@ describe('shellQuote / pathsFromUriList', () => {
   test('ignores blank lines, comments, and non-file schemes', () => {
     expect(pathsFromUriList('')).toEqual([])
     expect(pathsFromUriList('\r\n\r\n#comment\r\nhttp://x/y')).toEqual([])
-  })
-})
-
-describe('clamp', () => {
-  test('passes values already inside the range through unchanged', () => {
-    expect(clamp(5, 0, 10)).toBe(5)
-  })
-
-  test('floors and ceils out-of-range values', () => {
-    expect(clamp(-3, 0, 10)).toBe(0)
-    expect(clamp(30, 0, 10)).toBe(10)
   })
 })

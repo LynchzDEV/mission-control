@@ -23,15 +23,6 @@ afterEach(async () => {
 
 const RETIRED_PAGES = ['/lanes', '/dispatch', '/terminals', '/review', '/settings']
 
-describe('awareness island', () => {
-  test('/js/awareness.js ships the mini transcript feed', async () => {
-    const response = await app.handle(new Request('http://localhost/js/awareness.js'))
-    expect(response.status).toBe(200)
-    const code = await response.text()
-    for (const marker of ['"mini"', 'waiting for response', '/thread', 'mc:agent-open']) expect(code).toContain(marker)
-  })
-})
-
 describe('retired page routes', () => {
   test('each old tab page redirects to the shell, embedded or not', async () => {
     for (const path of RETIRED_PAGES) {

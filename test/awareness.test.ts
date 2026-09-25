@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { activeAgents, scopedWork, selectFlow, awarenessFlows, flowSteps, flowColumns } from '../client/awareness'
+import { activeAgents, scopedWork, selectFlow, awarenessFlows, flowSteps, flowColumns, workingLabel } from '../client/awareness'
 import { buildWork, type WorkJob } from '../client/work'
 const job = {id:'old',threadRoot:'old',label:'shared',engine:'codex',cwd:'/repo',status:'done',startedAt:1,endedAt:2} as WorkJob
 test('actual flow job ownership prevents same-label historical activity duplication', () => {
@@ -82,4 +82,9 @@ test('automatic work uses actual threads and a separately acknowledged human rev
 test('scope removes a foreign reply before assembling flow branches', () => {
   const item = buildWork([{...job,terminalId:'a'},{...job,id:'foreign',terminalId:'b',status:'running'}] as WorkJob[],{})
   expect(scopedWork(item,'a','/repo')[0]!.members!.map(job => job.id)).toEqual(['old'])
+})
+test('working label counts seconds under a minute and minutes plus seconds after', () => {
+  expect(workingLabel(1000, 6000)).toBe('Working · 5s')
+  expect(workingLabel(1000, 66999)).toBe('Working · 1m 5s')
+  expect(workingLabel(9000, 1000)).toBe('Working · 0s')
 })

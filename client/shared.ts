@@ -122,23 +122,6 @@ export function pathsFromUriList(text: string): string[] {
   return paths
 }
 
-const ICON_PATHS = {
-  focus: 'M7 3H3v4m10-4h4v4M3 13v4h4m6 0h4v-4',
-  chevron: 'm5 12 5-5 5 5',
-} as const
-
-export function icon(name: keyof typeof ICON_PATHS): SVGSVGElement {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.setAttribute('viewBox', '0 0 20 20'); svg.setAttribute('aria-hidden', 'true')
-  const path = document.createElementNS(svg.namespaceURI!, 'path')
-  path.setAttribute('d', ICON_PATHS[name]); svg.append(path)
-  return svg
-}
-
 export function providerName(engine: string): string {
   return ({claude:'Claude',codex:'Codex',glm:'GLM'} as Record<string,string>)[engine] ?? engine
-}
-
-export function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }

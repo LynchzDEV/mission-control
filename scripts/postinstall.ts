@@ -5,8 +5,7 @@ import { type SkillInstallResult, installSkills } from '../server/skill-install'
 import { syncEngineAssets } from '../server/engine-assets'
 
 const ROOT = resolve(import.meta.dir, '..')
-const PUBLIC_OUT = join(ROOT, 'public')
-const VENDOR_OUT = join(PUBLIC_OUT, 'vendor')
+const VENDOR_OUT = join(ROOT, 'public', 'vendor')
 
 type VendorAsset = {
   label: string

@@ -29,6 +29,7 @@ describe('quiet shell', () => {
     expect(markup).not.toContain('id="tabs"')
     expect(markup).not.toContain('Design preview')
     expect(markup).not.toContain('./vendor/')
+    for (const cdn of ['cdn.jsdelivr.net', 'fonts.googleapis.com']) expect(markup).not.toContain(cdn)
   })
 
   test('neumo-ui loads once, layered beneath quiet.css', async () => {
