@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { localRequestAllowed } from '../server/local-access'
+import { localRequestAllowed, sameOrigin } from '../server/local-access'
 
 const req = (headers: Record<string, string>, url = 'http://127.0.0.1:7777/api/jobs', method = 'GET') =>
   new Request(url, { method, headers })
@@ -33,5 +33,15 @@ describe('localRequestAllowed', () => {
   })
   test('ignores leftover session cookies', () => {
     expect(localRequestAllowed(req({ host: '127.0.0.1:7777', cookie: 'mc_session=1.2.3' }))).toBe(true)
+  })
+})
+
+describe('sameOrigin', () => {
+  test('sameOrigin accepts the app\'s own origin', () => {
+    expect(sameOrigin(req({ host: '127.0.0.1:7777', origin: 'http://127.0.0.1:7777' }))).toBe(true)
+  })
+  test('sameOrigin rejects another local port and a missing Origin', () => {
+    expect(sameOrigin(req({ host: '127.0.0.1:7777', origin: 'http://127.0.0.1:5173' }))).toBe(false)
+    expect(sameOrigin(req({ host: '127.0.0.1:7777' }))).toBe(false)
   })
 })

@@ -87,7 +87,7 @@ type SocketProbe = {
   close(): Promise<void>
 }
 
-function openSocket(url: string, origin: string | null = 'http://127.0.0.1'): SocketProbe {
+function openSocket(url: string, origin: string | null = `http://${new URL(url).host}`): SocketProbe {
   const socket = new WebSocket(url, {
     headers: origin === null ? {} : { origin },
   } as unknown as string[])
@@ -280,6 +280,18 @@ describe('WS /ws/terminal/:id', () => {
     const port = server.server?.port
     try {
       const probe = openSocket(`ws://127.0.0.1:${port}/ws/terminal/anything`, null)
+      await expect(probe.opened).rejects.toBeDefined()
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('refuses the upgrade from another local port', async () => {
+    const app = buildApp()
+    const server = app.listen({ hostname: '127.0.0.1', port: 0 })
+    const port = server.server?.port
+    try {
+      const probe = openSocket(`ws://127.0.0.1:${port}/ws/terminal/anything`, 'http://127.0.0.1:5173')
       await expect(probe.opened).rejects.toBeDefined()
     } finally {
       server.stop(true)

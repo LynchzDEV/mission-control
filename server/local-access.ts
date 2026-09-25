@@ -7,8 +7,18 @@ function hostname(host: string | null): string | null {
   return host.split(':')[0]!
 }
 
+function requestHost(request: Request): string {
+  return request.headers.get('host') ?? new URL(request.url).host
+}
+
+export function sameOrigin(request: Request): boolean {
+  const origin = request.headers.get('origin')
+  if (origin === null) return false
+  try { return new URL(origin).host === requestHost(request) } catch { return false }
+}
+
 export function localRequestAllowed(request: Request): boolean {
-  const host = hostname(request.headers.get('host') ?? new URL(request.url).host)
+  const host = hostname(requestHost(request))
   if (host === null || !LOCAL_HOSTS.has(host)) return false
   const origin = request.headers.get('origin')
   if (origin !== null && origin !== 'null') {

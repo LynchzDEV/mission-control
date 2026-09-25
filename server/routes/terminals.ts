@@ -4,7 +4,7 @@ import { parseTranscript, readTranscriptTail, statTranscript, type TranscriptMes
 const transcriptCache = new Map<string, { key: string; messages: TranscriptMessage[] }>()
 
 import { requireLocal } from '../auth'
-import { localRequestAllowed } from '../local-access'
+import { localRequestAllowed, sameOrigin } from '../local-access'
 import { checkDropSize, findOriginalFile, saveDroppedCopy } from '../drops'
 import { MAX_MODEL_LENGTH } from '../engines'
 import { MAX_TITLE_LENGTH, normalizeTitle, type TerminalRegistry } from '../terminals'
@@ -186,7 +186,7 @@ function terminalSocket(registry: TerminalRegistry): Elysia {
 
   return new Elysia().ws('/ws/terminal/:id', {
     beforeHandle({ request, set }) {
-      if (localRequestAllowed(request) && request.headers.get('origin') !== null) return
+      if (localRequestAllowed(request) && sameOrigin(request)) return
       set.status = 403
       return 'local access only'
     },
