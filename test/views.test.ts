@@ -28,7 +28,7 @@ async function render(path: string): Promise<{ status: number; html: string }> {
 
 const PAGES: [string, string[]][] = [
   ['/lanes', ['id="work-view"', 'id="work-list"', 'id="work-selected"', 'id="work-filter"', 'id="usage-view"']],
-  ['/settings', ['Connections', 'Work defaults', 'Access', 'id="bind"']],
+  ['/settings', ['Connections', 'Work defaults', 'Access', 'id="s-api-token"']],
   ['/dispatch', ['id="dispatch-form"', 'id="prompt"', 'Isolated worktree', 'id="work-list"']],
   ['/terminals', ['id="term-pane"', 'id="term-strip"', 'id="term-form"', 'id="agent-sidebar"', 'id="ascii-horizon"']],
   ['/review', ['id="work-view"', 'data-mode="review"']],
@@ -183,6 +183,12 @@ describe('tab views', () => {
     const after = await render('/settings')
     expect(after.html).toMatch(/<option value="on" selected/)
     expect(after.html).not.toMatch(/<option value="off" selected/)
+  })
+
+  test('settings offers no bind address to widen the listener', async () => {
+    const { html } = await render('/settings')
+    expect(html).not.toContain('id="bind"')
+    expect(html).not.toContain('data-fields="bind"')
   })
 
   test('dispatch and terminals render the model input preloaded with the role default', async () => {

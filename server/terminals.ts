@@ -17,7 +17,7 @@ import {
 } from './engines'
 import { validateWorkspaceCwd } from './workspace'
 import { connectionEnvironment, createConnectionStore, type AgentConnection } from './agent-connections'
-import { configDir, parseBind, readConfig } from './secrets'
+import { configDir, listenTarget } from './secrets'
 import { createWorkflowStore } from './workflows'
 
 export const RING_BUFFER_BYTES = 64 * 1024
@@ -202,8 +202,8 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     const rows = clampDimension(params.rows, DEFAULT_ROWS)
 
     const id = crypto.randomUUID()
-    const target = parseBind((await readConfig()).bind)
-    const mcUrl = `http://${target.hostname === '0.0.0.0' ? '127.0.0.1' : target.hostname}:${target.port}`
+    const target = listenTarget()
+    const mcUrl = `http://${target.hostname}:${target.port}`
     const instructions = `This is a Mission Control terminal. Its pinned workflow is ${JSON.stringify(workflow)}. For a user-requested workflow task, start POST ${mcUrl}/api/studio/runs with terminalId ${JSON.stringify(id)}, cwd ${JSON.stringify(cwdCheck.path)}, label, and the complete user request. Mission Control owns the workflow steps; do not also execute those steps yourself. Read the Bearer apiToken from secrets.json in MISSION_CONTROL_CONFIG_DIR without printing it. Use MC_URL for all cockpit calls, never a hardcoded port. Follow the mc-dispatch skill when available, preserving this terminal's workflow and service address. Answer ordinary questions directly. Opening this terminal does not authorize starting any work; wait for the user. MC_WORKFLOW_ID and MC_WORKFLOW_REVISION identify the pinned version.`
     const sessionId = connection || engine === 'codex' ? null : (params.resumeSessionId ?? crypto.randomUUID())
     let pty: IPty

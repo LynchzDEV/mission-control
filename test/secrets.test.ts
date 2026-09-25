@@ -6,13 +6,12 @@ import { join } from 'node:path'
 import {
   API_TOKEN_PREFIX,
   CONFIG_FILE,
-  DEFAULT_BIND,
   DEFAULT_ROLES,
   DEFAULT_ZAI_BASE_URL,
   SECRETS_FILE,
   configPath,
   ensureConfigDir,
-  parseBind,
+  listenTarget,
   publicView,
   readApiToken,
   readConfig,
@@ -43,7 +42,7 @@ async function modeOf(path: string): Promise<number> {
 describe('defaults', () => {
   test('missing files fall back to documented defaults', async () => {
     expect(await readSecrets()).toEqual({ zaiAuthToken: null, zaiBaseUrl: DEFAULT_ZAI_BASE_URL, apiToken: null })
-    expect(await readConfig()).toEqual({ bind: DEFAULT_BIND, roles: DEFAULT_ROLES, autoReview: false })
+    expect(await readConfig()).toEqual({ roles: DEFAULT_ROLES, autoReview: false })
   })
 
   test('corrupt json falls back instead of throwing', async () => {
@@ -71,11 +70,6 @@ describe('round trip', () => {
     expect(stored.zaiBaseUrl).toBe('https://example.test/anthropic')
   })
 
-  test('config survives write then read', async () => {
-    await writeConfig({ bind: '0.0.0.0:8080' })
-    expect(await readConfig()).toEqual({ bind: '0.0.0.0:8080', roles: DEFAULT_ROLES, autoReview: false })
-  })
-
   test('roles persist and missing fields fall back per role', async () => {
     const roles = {
       plan: { engine: 'codex', model: 'gpt-5.1' },
@@ -94,7 +88,7 @@ describe('round trip', () => {
     expect((await readConfig()).autoReview).toBe(false)
     await writeConfig({ autoReview: true })
     expect((await readConfig()).autoReview).toBe(true)
-    await writeConfig({ bind: '0.0.0.0:8081' })
+    await writeConfig({ roles: DEFAULT_ROLES })
     expect((await readConfig()).autoReview).toBe(true)
   })
 
@@ -121,7 +115,7 @@ describe('round trip', () => {
 describe('permissions', () => {
   test('directory is 0700 and every file is 0600', async () => {
     await writeSecrets({ zaiAuthToken: TOKEN })
-    await writeConfig({ bind: DEFAULT_BIND })
+    await writeConfig({ autoReview: false })
 
     expect(await modeOf(dir)).toBe(0o700)
     expect(await modeOf(configPath(SECRETS_FILE))).toBe(0o600)
@@ -205,17 +199,17 @@ describe('rotateApiToken', () => {
   })
 })
 
-describe('parseBind', () => {
-  test('parses a valid host:port', () => {
-    expect(parseBind('127.0.0.1:7777')).toEqual({ hostname: '127.0.0.1', port: 7777 })
-    expect(parseBind('0.0.0.0:8080')).toEqual({ hostname: '0.0.0.0', port: 8080 })
+describe('listenTarget', () => {
+  test('is loopback on 7777 by default', () => {
+    delete process.env.MISSION_CONTROL_PORT
+    expect(listenTarget()).toEqual({ hostname: '127.0.0.1', port: 7777 })
   })
 
-  test('falls back to the default for malformed values', () => {
-    const fallback = { hostname: '127.0.0.1', port: 7777 }
-    expect(parseBind('nonsense')).toEqual(fallback)
-    expect(parseBind('127.0.0.1:0')).toEqual(fallback)
-    expect(parseBind(':7777')).toEqual(fallback)
-    expect(parseBind('127.0.0.1:99999')).toEqual(fallback)
+  test('honours MISSION_CONTROL_PORT and ignores junk', () => {
+    process.env.MISSION_CONTROL_PORT = '7781'
+    expect(listenTarget().port).toBe(7781)
+    process.env.MISSION_CONTROL_PORT = 'nope'
+    expect(listenTarget().port).toBe(7777)
+    delete process.env.MISSION_CONTROL_PORT
   })
 })

@@ -7,7 +7,7 @@ import { Elysia } from 'elysia'
 import { maybeAutoReview } from './auto-review'
 import { localRequestAllowed } from './local-access'
 import { quotaRoutes } from './routes/quota'
-import { DEFAULT_BIND, parseBind, readConfig } from './secrets'
+import { listenTarget, readConfig } from './secrets'
 import { createJobManager } from './jobs'
 import { notifySlowJob } from './notify'
 import { createTerminalRegistry } from './terminals'
@@ -217,8 +217,7 @@ export async function createApp(): Promise<Elysia> {
 }
 
 if (import.meta.main) {
-  const config = await readConfig().catch(() => ({ bind: DEFAULT_BIND }))
-  const target = parseBind(config.bind)
+  const target = listenTarget()
   const occupied = await fetch(`http://${target.hostname}:${target.port}/api/health`, { signal: AbortSignal.timeout(800) })
     .then(() => true, () => false)
   if (occupied) {

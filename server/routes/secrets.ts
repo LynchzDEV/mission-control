@@ -3,38 +3,24 @@ import { Elysia } from 'elysia'
 import { requireLocal } from '../auth'
 import {
   type PublicSecretsView,
-  parseBind,
   publicView,
   readApiToken,
-  readConfig,
   readSecrets,
   rotateApiToken,
-  writeConfig,
   writeSecrets,
 } from '../secrets'
 
 export type SecretsPatch = {
   zaiAuthToken?: unknown
   zaiBaseUrl?: unknown
-  bind?: unknown
-  confirmAnyInterface?: unknown
 }
 
-export type SecretsResponse = PublicSecretsView & { bind: string }
+export type SecretsResponse = PublicSecretsView
 
 function cleanString(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
   return trimmed === '' ? null : trimmed
-}
-
-function isBind(value: string): boolean {
-  const target = parseBind(value)
-  return `${target.hostname}:${target.port}` === value
-}
-
-function isAnyInterfaceHost(hostname: string): boolean {
-  return hostname === '0.0.0.0' || hostname === '::' || hostname === ''
 }
 
 function validUrl(value: string): boolean {
@@ -47,8 +33,8 @@ function validUrl(value: string): boolean {
 }
 
 export async function currentView(): Promise<SecretsResponse> {
-  const [secrets, config, apiToken] = await Promise.all([readSecrets(), readConfig(), readApiToken()])
-  return { ...publicView({ ...secrets, apiToken }), bind: config.bind }
+  const [secrets, apiToken] = await Promise.all([readSecrets(), readApiToken()])
+  return publicView({ ...secrets, apiToken })
 }
 
 export async function applyPatch(
@@ -56,32 +42,18 @@ export async function applyPatch(
 ): Promise<{ ok: true; view: SecretsResponse } | { ok: false; status: number; error: string }> {
   const token = cleanString(patch.zaiAuthToken)
   const baseUrl = cleanString(patch.zaiBaseUrl)
-  const bind = cleanString(patch.bind)
 
-  if (token === null && baseUrl === null && bind === null) {
+  if (token === null && baseUrl === null) {
     return { ok: false, status: 400, error: 'nothing to update' }
   }
   if (baseUrl !== null && !validUrl(baseUrl)) {
     return { ok: false, status: 400, error: 'zaiBaseUrl must be an http(s) url' }
   }
-  if (bind !== null && !isBind(bind)) {
-    return { ok: false, status: 400, error: 'bind must be host:port' }
-  }
-  if (
-    bind !== null &&
-    isAnyInterfaceHost(parseBind(bind).hostname) &&
-    patch.confirmAnyInterface !== true
-  ) {
-    return { ok: false, status: 400, error: 'any-interface bind requires confirmAnyInterface:true' }
-  }
 
-  if (token !== null || baseUrl !== null) {
-    await writeSecrets({
-      ...(token === null ? {} : { zaiAuthToken: token }),
-      ...(baseUrl === null ? {} : { zaiBaseUrl: baseUrl }),
-    })
-  }
-  if (bind !== null) await writeConfig({ bind })
+  await writeSecrets({
+    ...(token === null ? {} : { zaiAuthToken: token }),
+    ...(baseUrl === null ? {} : { zaiBaseUrl: baseUrl }),
+  })
 
   return { ok: true, view: await currentView() }
 }

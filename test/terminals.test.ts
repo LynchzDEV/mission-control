@@ -17,7 +17,6 @@ import {
 } from '../server/terminals'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 import { createWorkflowStore, defaultWorkflow } from '../server/workflows'
-import { writeConfig } from '../server/secrets'
 
 let configDir: string
 let repo: string
@@ -40,6 +39,7 @@ afterEach(async () => {
   registry.shutdown()
   delete process.env.MISSION_CONTROL_CONFIG_DIR
   delete process.env.MC_FAKE_ENGINES
+  delete process.env.MISSION_CONTROL_PORT
   await rm(configDir, { recursive: true, force: true })
   await rm(repo, { recursive: true, force: true })
   await rm(plain, { recursive: true, force: true })
@@ -54,7 +54,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void
 }
 
 test('terminals independently pin default or custom workflows and inherit their own service address', async () => {
-  await writeConfig({ bind: '127.0.0.1:7778' })
+  process.env.MISSION_CONTROL_PORT = '7778'
   const store = createWorkflowStore()
   const custom = await store.save({ ...defaultWorkflow(), id: 'research', name: 'Research workflow' })
   const standard = await registry.createTerminal({ engine: 'claude', cwd: repo })

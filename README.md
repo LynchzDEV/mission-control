@@ -97,7 +97,7 @@ The application is written in TypeScript and CSS; client bundles are cached unti
 
 ## Security
 
-- Binds `127.0.0.1` by default. Widening (e.g. to a Tailscale IP) is a deliberate settings change. Workspace data, actions, and terminal WebSocket connections require authentication; health, login/setup, and static client assets are public.
+- Binds `127.0.0.1` only; the port comes from `MISSION_CONTROL_PORT` (default 7777). Requests are served only to local browsers (Host/Origin/Fetch-Metadata guard) or with the API token; health and static assets are public.
 - Sessions are HMAC-signed httpOnly cookies; login is rate-limited (5 failures → 60s lockout).
 - Credentials are stored in `~/.config/mission-control/` (`0700` dirs, `0600` files). Provider credentials are passed to engines through their environment. Settings can explicitly reveal or rotate the separate cockpit API token after authentication.
 - Jobs and terminals only run in directories that resolve (post-symlink) under `$HOME`; traversal attempts are rejected.

@@ -4,7 +4,7 @@ import type { EngineRoles } from '../secrets'
 import { Layout } from './layout'
 import { ModelListsScript, ModelPicker } from './model-picker'
 
-export type SettingsProps = { embedded?: boolean; zaiBaseUrl: string; zaiAuthTokenConfigured: boolean; apiTokenConfigured: boolean; bind: string; roles: EngineRoles; autoReview: boolean; models: ModelLists }
+export type SettingsProps = { embedded?: boolean; zaiBaseUrl: string; zaiAuthTokenConfigured: boolean; apiTokenConfigured: boolean; roles: EngineRoles; autoReview: boolean; models: ModelLists }
 
 const ENGINE_LABEL: Record<string, string> = { claude: 'Claude', codex: 'Codex', glm: 'GLM' }
 const ROLES = [
@@ -70,11 +70,8 @@ export function SettingsPage(props: SettingsProps): string {
       </section>
 
       <section class="settings-section" aria-labelledby="access">
-        <div class="section-head"><h2 id="access">Access</h2><p>Workspace network and API access.</p></div>
+        <div class="section-head"><h2 id="access">Access</h2><p>API access for scripts.</p></div>
         <div class="settings-rows">
-          <Row title="Bind address" caption="Takes effect on the next start">
-            <div class="field-row"><label class="field"><span class="field-label">Host and port</span><input id="bind" name="bind" value={props.bind} autocomplete="off" /></label></div>
-          </Row>
           <Row title="API token" caption="Bearer token for scripts and the dispatch skill">
             <div class="row-inline"><span class="pill" id="s-api-token">{props.apiTokenConfigured ? 'Configured' : 'Not configured'}</span><button type="button" class="composer-cancel" data-api-token-reveal="reveal" data-status="s-msg">Copy token</button><button type="button" class="composer-cancel" data-api-token-rotate="rotate" data-status="s-msg">Rotate token</button></div>
           </Row>
@@ -82,7 +79,6 @@ export function SettingsPage(props: SettingsProps): string {
             <small class="row-note">Password changes are unavailable in this interface.</small>
           </Row>
         </div>
-        <div class="settings-actions"><button type="button" class="composer-open" data-post="/api/secrets" data-fields="bind" data-status="s-msg">Save address</button></div>
       </section>
 
       <p class="settings-feedback" id="s-msg" role="status" aria-live="polite"></p>

@@ -7,7 +7,6 @@ export const DIR_MODE = 0o700
 export const FILE_MODE = 0o600
 
 export const DEFAULT_ZAI_BASE_URL = 'https://api.z.ai/api/anthropic'
-export const DEFAULT_BIND = '127.0.0.1:7777'
 
 export const SECRETS_FILE = 'secrets.json'
 export const CONFIG_FILE = 'config.json'
@@ -35,7 +34,6 @@ export const DEFAULT_ROLES: EngineRoles = {
 }
 
 export type AppConfig = {
-  bind: string
   roles: EngineRoles
   autoReview: boolean
 }
@@ -46,9 +44,11 @@ export type PublicSecretsView = {
   apiTokenConfigured: boolean
 }
 
-export type BindTarget = {
-  hostname: string
-  port: number
+export type BindTarget = { hostname: '127.0.0.1'; port: number }
+
+export function listenTarget(): BindTarget {
+  const port = Number.parseInt(process.env.MISSION_CONTROL_PORT ?? '', 10)
+  return { hostname: '127.0.0.1', port: Number.isInteger(port) && port > 0 && port < 65536 ? port : 7777 }
 }
 
 export function configDir(): string {
@@ -144,7 +144,6 @@ function readRoles(raw: unknown): EngineRoles {
 export async function readConfig(): Promise<AppConfig> {
   const raw = await readJsonFile(CONFIG_FILE)
   return {
-    bind: asString(raw.bind) ?? DEFAULT_BIND,
     roles: readRoles(raw.roles),
     autoReview: raw.autoReview === true,
   }
@@ -154,17 +153,6 @@ export async function writeConfig(patch: Partial<AppConfig>): Promise<AppConfig>
   const merged: AppConfig = { ...(await readConfig()), ...patch }
   await writeJsonFile(CONFIG_FILE, merged)
   return merged
-}
-
-export function parseBind(bind: string): BindTarget {
-  const separator = bind.lastIndexOf(':')
-  if (separator <= 0) return parseBind(DEFAULT_BIND)
-  const hostname = bind.slice(0, separator)
-  const port = Number.parseInt(bind.slice(separator + 1), 10)
-  if (hostname === '' || !Number.isInteger(port) || port < 1 || port > 65535) {
-    return parseBind(DEFAULT_BIND)
-  }
-  return { hostname, port }
 }
 
 export function publicView(secrets: Secrets): PublicSecretsView {
