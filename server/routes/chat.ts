@@ -17,15 +17,16 @@ async function realHome(home: string): Promise<string> {
 }
 
 export function chatRoutes(deps: ChatDeps): Elysia {
-  const home = deps.home ?? homedir()
+  const home = () => realHome(deps.home ?? homedir())
   return new Elysia()
     .onBeforeHandle(requireLocal)
-    .get('/api/chat/home', async () => chatHome(await readConfig(), deps.knownDirectories(), home))
+    .get('/api/chat/home', async () => chatHome(await readConfig(), deps.knownDirectories(), await home()))
     .put('/api/chat/home', async ({ body, set }) => {
       const path = typeof (body as { path?: unknown } | null)?.path === 'string' ? (body as { path: string }).path.trim() : ''
-      const check = await validateWorkspaceCwd(path, home, { requireGit: false })
+      const realHomeDir = await home()
+      const check = await validateWorkspaceCwd(path, realHomeDir, { requireGit: false })
       if (!check.ok) { set.status = 400; return { error: check.error } }
-      if (check.path === await realHome(home)) { set.status = 400; return { error: 'Chat home cannot be your home folder' } }
+      if (check.path === realHomeDir) { set.status = 400; return { error: 'Chat home cannot be your home folder' } }
       await writeConfig({ chatHome: check.path })
       return { ok: true, path: check.path }
     })
