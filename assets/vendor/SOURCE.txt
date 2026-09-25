@@ -1,0 +1,1 @@
+neumo-ui.css: Neumo UI 1.0.0 compiled stylesheet (MIT, see neumo-ui-LICENSE), copied to public/vendor by scripts/postinstall.ts

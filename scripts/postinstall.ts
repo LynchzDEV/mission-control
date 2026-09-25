@@ -57,6 +57,11 @@ const ASSETS: VendorAsset[] = [
     dest: 'textmode.filters.umd.js',
   },
   {
+    label: 'neumo-ui',
+    sources: ['assets/vendor/neumo-ui.css'],
+    dest: 'neumo-ui.css',
+  },
+  {
     label: 'anime.js',
     sources: [
       'node_modules/animejs/dist/bundles/anime.umd.min.js',

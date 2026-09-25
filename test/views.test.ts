@@ -261,8 +261,8 @@ describe('tab views', () => {
 })
 
 describe('persistent workspace routes', () => {
-  test('home and every direct secondary route carry the persistent terminal shell', async () => {
-    for (const path of ['/', '/terminals', '/lanes', '/dispatch', '/review', '/settings']) {
+  test('every direct secondary route still carries the persistent terminal shell', async () => {
+    for (const path of ['/terminals', '/lanes', '/dispatch', '/review', '/settings']) {
       const response = await app.handle(new Request(`http://localhost${path}`))
       const html = await response.text()
       expect(response.status).toBe(200)

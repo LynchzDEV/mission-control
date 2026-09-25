@@ -45,7 +45,7 @@ describe('local access', () => {
   test('GET / serves the app shell to a local browser', async () => {
     const response = await app.handle(get('/'))
     expect(response.status).toBe(200)
-    expect(await response.text()).toContain('data-page="app"')
+    expect(await response.text()).toContain('id="composer"')
   })
   test('a foreign Origin is refused on data routes', async () => {
     const response = await app.handle(new Request('http://127.0.0.1/api/jobs', { headers: { host: '127.0.0.1:7777', origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' } }))

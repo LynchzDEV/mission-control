@@ -1,4 +1,5 @@
 import { stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { staticPlugin } from '@elysiajs/static'
@@ -34,6 +35,7 @@ import { DispatchPage } from './views/dispatch'
 import { LanesPage } from './views/lanes'
 import { ReviewPage } from './views/review'
 import { SettingsPage } from './views/settings'
+import { ShellPage } from './views/shell'
 import { TerminalsPage } from './views/terminals'
 
 const ROOT = resolve(import.meta.dir, '..')
@@ -93,8 +95,8 @@ function page(markup: string): Response {
   return new Response(markup, { headers: HTML_HEADERS })
 }
 
-async function appShellPage(): Promise<Response> {
-  return page(await terminalsPage())
+function appShellPage(): Response {
+  return page(ShellPage({ workspaceDir: homedir() }))
 }
 
 async function settingsPage(embedded = false): Promise<string> {

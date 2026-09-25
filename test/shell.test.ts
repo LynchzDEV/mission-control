@@ -1,0 +1,40 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import type { Elysia } from 'elysia'
+
+import { createApp } from '../server/index'
+
+let dir: string
+let app: Elysia
+
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'mc-shell-'))
+  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  app = await createApp()
+})
+
+afterEach(async () => {
+  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  await rm(dir, { recursive: true, force: true })
+})
+
+describe('quiet shell', () => {
+  test('/ renders the composer, toolbar controls and the usage card mount', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    for (const marker of ['id="composer"', 'id="new-chat"', 'id="open-agents"', 'id="toggle-flow"', 'id="usage-track"', 'id="live-launch"', 'href="/quiet.css"', 'href="/vendor/neumo-ui.css"', 'href="/studio"', 'window.MC_WORKSPACE_DIR=']) expect(markup).toContain(marker)
+    expect(markup).not.toContain('id="tabs"')
+    expect(markup).not.toContain('Design preview')
+    expect(markup).not.toContain('./vendor/')
+  })
+
+  test('the shell islands transpile', async () => {
+    for (const island of ['shell', 'shell-terminal', 'shell-activity']) {
+      const response = await app.handle(new Request(`http://localhost/js/${island}.js`))
+      expect(response.status).toBe(200)
+      expect((await response.text()).length).toBeGreaterThan(100)
+    }
+  })
+})
