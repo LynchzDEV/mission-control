@@ -641,3 +641,12 @@ a.pill:hover { color: var(--accent); }
 .status[data-state="stopped"]::before { background: var(--muted); }
 .rules-text { font: 13px/1.7 inherit; white-space: pre-wrap; margin: 0; }
 .prompt-template { font: 12.5px/1.6 Menlo, monospace; }
+.connection-choice[aria-pressed="true"] { box-shadow: var(--inset); color: var(--accent); }
+.connection-list .text-button { margin-top: 8px; }
+.connection-list .text-button[aria-pressed="true"] { color: var(--accent); }
+.connection-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 8px 0 16px; }
+.connection-settings .field-stack { max-width: 560px; }
+.connection-settings details { margin-bottom: 20px; }
+.connection-settings .preset-list { max-width: 560px; }
+.switch-label input { accent-color: var(--accent); width: 18px; height: 18px; box-shadow: none; }
+.field-stack small { display: block; font-size: 12px; margin-top: -4px; }

@@ -7,7 +7,7 @@ import type { Workflow, WorkflowNode, WorkflowRevision, PolicyRevision, Outcome 
 import type { WorkflowRun } from '../server/workflow-runner'
 import type { DraftJob, WorkflowDraft } from '../server/workflow-builder'
 import { api } from './studio-api'
-import { StepAttachments, type ConnectionList } from './studio-settings'
+import { Connections, StepAttachments, type ConnectionList } from './studio-settings'
 import { agentLabel, insertWorkflowStep, removeWorkflowStep, stepPresets, taskPreset, workflowTemplates, type Provider } from './studio-graph'
 
 type TaskNode = Node<WorkflowNode & { agentLabel: string; branches: Outcome[] }, 'task'>
@@ -105,6 +105,10 @@ function Studio() {
     const timer = setInterval(() => void poll(), 1200); void poll(); return () => { stopped = true; clearInterval(timer) }
   }, [draftJob?.id, building])
   useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === 'Escape' && panel && !modal) setPanel(null) }; addEventListener('keydown', close); return () => removeEventListener('keydown', close) }, [panel, modal])
+  useEffect(() => {
+    const guard = (event: Event) => { const next = (event as CustomEvent<string>).detail; if (next === 'studio' || !(dirty || building)) return; if (!confirm(building ? 'A workflow is still drafting. Leave Studio anyway?' : 'Discard unsaved changes?')) setTimeout(() => dispatchEvent(new CustomEvent('quiet:show', { detail: 'studio' })), 0) }
+    addEventListener('quiet:screen', guard); return () => removeEventListener('quiet:screen', guard)
+  }, [dirty, building])
   function applyAiDraft(result: WorkflowDraft) { const base = generationBase.current; const next = base && base.id !== 'default' ? { ...result.workflow, id: base.id, revision: base.revision, createdAt: base.createdAt } : fresh(result.workflow); load(next, true); setAiSummary(result.summary); setSetup(result.setup); setScreen('editor'); setPanel('assistant'); setDescription(''); toast('Workflow draft ready. Review the steps before saving or running.') }
   async function generate() { if (!description.trim() || disabled) return; if (screen !== 'editor' && dirty && !confirm('Replace your unsaved draft with a new AI workflow?')) return; await action(async () => { generationBase.current = screen === 'editor' && graph ? { ...graph, ...draft() } : null; const base = generationBase.current; const job = await api<DraftJob>('/drafts', { description, ...(builderEngine ? { engine: builderEngine } : {}), ...(base?.nodes.length ? { workflow: base } : {}) }); setDraftJob(job); setPanel('assistant') }) }
   async function stopDraft() { if (!draftJob) return; await action(async () => { await api(`/drafts/${draftJob.id}/stop`, {}); setDraftJob({ ...draftJob, status: 'failed' }); toast('Workflow drafting stopped. Your existing flow is unchanged.') }) }
@@ -197,7 +201,7 @@ function Studio() {
         </aside>
       </div>
     </section>}
-    {screen === 'connections' && <section className="studio-view"><p className="studio-placeholder">Manage AIs lands in a later task. {list.connections.length} connections configured.</p></section>}
+    {screen === 'connections' && <Connections list={list} refresh={refreshConnections} report={toast} onError={setError} />}
     {screen === 'runs' && <section className="studio-view secondary-studio runs-view">
       <div className="runs-heading"><h2>Recent runs</h2><button type="button" className="text-button" disabled={busy} onClick={() => void action(refreshRuns)}>Refresh</button></div>
       {runs.length === 0 && <p className="muted">Your workflow runs will appear here.</p>}

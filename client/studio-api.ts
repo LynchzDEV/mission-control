@@ -4,3 +4,7 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
   if (!response.ok) throw new Error(result.error ?? `Request failed (${response.status})`)
   return result as T
 }
+export async function apiDelete(path: string): Promise<void> {
+  const response = await fetch(`/api/studio${path}`, { method: 'DELETE' })
+  if (!response.ok) { const result = await response.json().catch(() => ({})) as { error?: string }; throw new Error(result.error ?? `Request failed (${response.status})`) }
+}
