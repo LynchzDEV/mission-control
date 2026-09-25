@@ -1,31 +1,68 @@
-import { describe, expect, test } from 'bun:test'
-import { parseInline, parseMarkdown } from '../client/markdown'
+import { afterAll, describe, expect, test } from 'bun:test'
+import { JSDOM } from 'jsdom'
 
-describe('parseMarkdown', () => {
-  test('splits fences, headings, lists, quotes and paragraphs in order', () => {
-    const blocks = parseMarkdown(['# Plan', 'First line', 'second line', '', '- one', '- two', '  continued', '1. a', '2) b', '> note', '```ts', 'const x = 1', '', '```', 'tail'].join('\n'))
-    expect(blocks.map((block) => block.kind)).toEqual(['heading', 'para', 'list', 'list', 'quote', 'code', 'para'])
-    expect(blocks[0]).toEqual({ kind: 'heading', level: 1, text: 'Plan' })
-    expect(blocks[1]).toEqual({ kind: 'para', text: 'First line\nsecond line' })
-    expect(blocks[2]).toEqual({ kind: 'list', ordered: false, items: ['one', 'two\ncontinued'] })
-    expect(blocks[3]).toEqual({ kind: 'list', ordered: true, items: ['a', 'b'] })
-    expect(blocks[4]).toEqual({ kind: 'quote', text: 'note' })
-    expect(blocks[5]).toEqual({ kind: 'code', lang: 'ts', text: 'const x = 1\n' })
-  })
+const { window } = new JSDOM('')
+Object.assign(globalThis, { window, document: window.document })
+const { renderMarkdown } = await import('../client/markdown')
+afterAll(() => { window.close(); Reflect.deleteProperty(globalThis, 'window'); Reflect.deleteProperty(globalThis, 'document') })
 
-  test('an unterminated fence swallows the rest and plain text stays one paragraph', () => {
-    expect(parseMarkdown('```\nraw')).toEqual([{ kind: 'code', lang: '', text: 'raw' }])
-    expect(parseMarkdown('just words\r\nmore words')).toEqual([{ kind: 'para', text: 'just words\nmore words' }])
-    expect(parseMarkdown('')).toEqual([])
-  })
-})
+function render(source: string): HTMLElement {
+  const host = document.createElement('div')
+  host.append(renderMarkdown(source))
+  return host
+}
 
-describe('parseInline', () => {
-  test('marks code, bold and italics and leaves stray markers alone', () => {
-    expect(parseInline('run `bun test` then **commit** and _push_ 2*3')).toEqual([
-      { kind: 'text', text: 'run ' }, { kind: 'code', text: 'bun test' }, { kind: 'text', text: ' then ' }, { kind: 'strong', text: 'commit' },
-      { kind: 'text', text: ' and ' }, { kind: 'em', text: 'push' }, { kind: 'text', text: ' 2*3' },
+describe('renderMarkdown', () => {
+  test('fences, headings, lists, quotes and paragraphs keep their classes in order', () => {
+    const host = render(['# Plan', 'First line', 'second line', '', '- one', '- two', '', '1. a', '2. b', '', '> note', '', '```ts', 'const x = 1', '```', '', 'tail'].join('\n'))
+    expect([...host.children].map((node) => `${node.tagName.toLowerCase()}.${node.className}`)).toEqual([
+      'h1.md-heading md-h1', 'p.md-para', 'ul.md-list', 'ol.md-list', 'blockquote.md-quote', 'pre.md-code', 'p.md-para',
     ])
-    expect(parseInline('plain')).toEqual([{ kind: 'text', text: 'plain' }])
+    expect([...host.querySelectorAll('ul.md-list li')].map((li) => li.textContent)).toEqual(['one', 'two'])
+    expect([...host.querySelectorAll('ol.md-list li')].map((li) => li.textContent)).toEqual(['a', 'b'])
+    const pre = host.querySelector<HTMLElement>('pre.md-code')!
+    expect(pre.dataset.lang).toBe('ts')
+    expect(pre.querySelector('code')!.textContent).toBe('const x = 1\n')
+  })
+
+  test('deep headings cap at md-h3 and an empty source renders nothing', () => {
+    expect(render('#### deep').querySelector('h4')!.className).toBe('md-heading md-h3')
+    expect(render('').childNodes.length).toBe(0)
+  })
+
+  test('links open in a new tab with a safe rel', () => {
+    const link = render('[a](http://x.dev)').querySelector('a.md-link')!
+    expect(link.getAttribute('href')).toBe('http://x.dev')
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+  })
+
+  test('gfm tables and strikethrough render', () => {
+    const host = render(['| a | b |', '| - | - |', '| 1 | 2 |', '', '~~gone~~'].join('\n'))
+    expect(host.querySelectorAll('table.md-table th').length).toBe(2)
+    expect(host.querySelector('del')!.textContent).toBe('gone')
+  })
+
+  test('raw html is sanitized', () => {
+    const host = render('<img src=x onerror=alert(1)>')
+    expect(host.innerHTML).not.toContain('onerror')
+  })
+
+  test('model html cannot set element ids that hijack page templates', () => {
+    expect(render('<p id="assistant-row">x</p>').querySelector('[id]')).toBeNull()
+  })
+
+  test('model html cannot style elements', () => {
+    expect(render('<div style="position:fixed">x</div>').querySelector('[style]')).toBeNull()
+  })
+
+  test('model html cannot render forms or inputs', () => {
+    const host = render('<form action="https://evil.test"><input></form>')
+    expect(host.querySelector('form')).toBeNull()
+    expect(host.querySelector('input')).toBeNull()
+  })
+
+  test('markdown images do not load', () => {
+    expect(render('![t](https://evil.test/p.png)').querySelector('img')).toBeNull()
   })
 })
