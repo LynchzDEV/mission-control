@@ -428,6 +428,7 @@ export function openChat(id: string): void {
   document.body.dataset.chat = id
   show('conversation')
   dispatchEvent(new CustomEvent('quiet:chat-agents', { detail: id }))
+  dispatchEvent(new CustomEvent('quiet:chat-open', { detail: id }))
   void refresh()
 }
 

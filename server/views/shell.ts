@@ -185,6 +185,7 @@ export function ShellPage(props: ShellProps): string {
   <script>window.MC_WORKSPACE_DIR=${JSON.stringify(props.workspaceDir)}</script>
   <script src="/js/shell.js" type="module" defer></script>
   <script src="/js/shell-composer.js" type="module" defer></script>
+  <script src="/js/sidebar.js" type="module" defer></script>
   <script src="/js/chat.js" type="module" defer></script>
   <script src="/js/studio.js" type="module" defer></script>
   <script src="/js/terminals.js" type="module" defer></script>
