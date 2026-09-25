@@ -525,6 +525,14 @@ a.pill:hover { color: var(--accent); }
 .backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
 .activity-line { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
 .activity-line[data-running="true"]::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; vertical-align: 1px; }
+.step-tick { font-size: 12px; color: var(--muted); margin: -4px 0 8px; transition: opacity .3s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step-tick.out { opacity: 0; }
+.step-tick:empty { display: none; }
+.turn-steps { margin: 0 0 8px; }
+.turn-steps > summary.activity-line { display: block; margin: 0; padding: 0; font-size: 12px; font-weight: 400; cursor: pointer; }
+.turn-steps ol { list-style: none; padding: 0; margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.7; }
+.md-in { animation: md-in 220ms ease-out both; }
+@keyframes md-in { from { opacity: 0; transform: translateY(4px); } }
 .agent-report { font-size: 13px; color: var(--muted); max-width: 690px; }
 .agent-report summary { cursor: pointer; }
 .agent-report pre { margin: 6px 0 0; font: 12px Menlo, monospace; white-space: pre-wrap; color: #505e75; }

@@ -1,11 +1,13 @@
 import { renderMarkdown } from './markdown'
 import { errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
-import { chatSignal, historyAction, historyDay, historyLabel, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { chatSignal, historyAction, historyDay, historyLabel, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
-const RUNNING_POLL_MS = 2000
+const RUNNING_POLL_MS = 700
+const STEP_FADE_MS = 300
 const IDLE_POLL_MS = 5000
+const TICK_MS = 1000
 const ENGINE_COLORS: Record<string, string> = { claude: '#d4a091', glm: '#91b0dc', codex: '#bfd38b' }
 const composer = $('composer') as HTMLFormElement
 const message = $('message') as HTMLTextAreaElement
@@ -17,9 +19,11 @@ const stored = (key: string): string | null => { try { return localStorage.getIt
 let root: string | null = null
 let running = false
 let pollTimer = 0
+let tickTimer = 0
 let generation = 0
 let providers: LaunchProvider[] = []
 let agents: AgentJob[] = []
+let shownTurns: Turn[] = []
 
 function show(screen: 'welcome' | 'conversation' | 'history'): void {
   dispatchEvent(new CustomEvent('quiet:show', { detail: screen }))
@@ -139,29 +143,79 @@ function agentRow(turn: Turn): HTMLElement {
   return row
 }
 
+function activityNode(turn: Turn): HTMLElement {
+  const finishedWithSteps = !turn.running && turn.steps.length > 0
+  const line = document.createElement(finishedWithSteps ? 'summary' : 'p')
+  line.className = 'activity-line'
+  line.dataset.running = String(turn.running)
+  line.textContent = workedLine(turn, Date.now())
+  if (!finishedWithSteps) return line
+  const details = document.createElement('details'); details.className = 'turn-steps'
+  const list = document.createElement('ol'); list.append(...turn.steps.map(step => Object.assign(document.createElement('li'), { textContent: step })))
+  details.append(line, list)
+  return details
+}
+
+function fadeStep(tick: HTMLElement, step: string): void {
+  if (tick.dataset.step === step) return
+  tick.dataset.step = step
+  if (!tick.textContent) { tick.textContent = step; return }
+  tick.classList.add('out')
+  setTimeout(() => { tick.textContent = tick.dataset.step ?? ''; tick.classList.remove('out') }, STEP_FADE_MS)
+}
+
+function growText(md: Element, text: string): void {
+  const before = md.children.length
+  md.replaceChildren(renderMarkdown(text))
+  for (const block of [...md.children].slice(before)) block.classList.add('md-in')
+}
+
+function patchReply(reply: HTMLElement, turn: Turn): boolean {
+  if (turn.running) reply.querySelector('.activity-line')!.textContent = runningLabel(turn, Date.now())
+  const tick = reply.querySelector<HTMLElement>('.step-tick')
+  const step = turn.steps.at(-1)
+  if (tick && step) fadeStep(tick, step)
+  if (reply.dataset.text === String(turn.text.length)) return false
+  reply.dataset.text = String(turn.text.length)
+  growText(reply.querySelector('.md')!, turn.text)
+  return true
+}
+
+function tickRunning(): void {
+  const now = Date.now()
+  for (const turn of shownTurns) {
+    if (!turn.running) continue
+    const line = messages.querySelector(`[data-turn="${CSS.escape(turn.id)}"][data-part="reply"] .activity-line`)
+    if (line) line.textContent = runningLabel(turn, now)
+  }
+}
+
+function toBottom(): void {
+  stage.scrollTo({ top: stage.scrollHeight, behavior: 'smooth' })
+}
+
 function assistantRow(turn: Turn, rows: TeamRow[], project: string | null): HTMLElement {
   const row = ($('assistant-row') as HTMLTemplateElement).content.firstElementChild!.cloneNode(true) as HTMLElement
   row.querySelector('time')!.textContent = new Date(turn.started).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const body = row.querySelector('.msg-body')!
-  const activity = document.createElement('p')
-  activity.className = 'activity-line'
-  activity.dataset.running = String(turn.running)
-  activity.textContent = workedLine(turn, Date.now())
-  body.append(activity)
-  if (turn.text) { const md = document.createElement('div'); md.className = 'md'; md.append(renderMarkdown(turn.text)); body.append(md) }
+  body.append(activityNode(turn))
+  if (turn.running) { const tick = document.createElement('p'); tick.className = 'step-tick'; tick.textContent = tick.dataset.step = turn.steps.at(-1) ?? ''; body.append(tick) }
+  const md = document.createElement('div'); md.className = 'md'; md.append(renderMarkdown(turn.text)); body.append(md)
   for (const path of turn.edits) { const card = document.createElement('article'); card.className = 'edit-card'; card.append('Edited directly · '); const code = document.createElement('code'); code.textContent = path; card.append(code); body.append(card) }
   if (rows.length) body.append(teamCard(rows, project))
   return row
 }
 
 function signature(turn: Turn, rows: TeamRow[]): string {
-  return JSON.stringify([turn.text.length, turn.tools, turn.running, turn.edits.length, rows.map(row => [row.id, row.state, row.activity])])
+  return JSON.stringify([turn.running ? 0 : turn.tools, turn.running, turn.edits.length, rows.map(row => [row.id, row.state, row.activity])])
 }
 
 function paint(turns: Turn[], project: string | null): void {
   const existing = new Map([...messages.querySelectorAll<HTMLElement>('[data-turn]')].map(node => [`${node.dataset.turn}:${node.dataset.part}`, node]))
   const atBottom = stage.scrollHeight - stage.scrollTop - stage.clientHeight < 80
   const ordered: HTMLElement[] = []
+  let grew = false
+  shownTurns = turns
   for (const turn of turns) {
     const rows = teamRows(agents, turn.id)
     const prompt = existing.get(`${turn.id}:prompt`) ?? (turn.source === 'agent' ? agentRow(turn) : userRow(turn))
@@ -170,11 +224,18 @@ function paint(turns: Turn[], project: string | null): void {
     ordered.push(prompt)
     const sig = signature(turn, rows)
     let reply = existing.get(`${turn.id}:reply`)
-    if (!reply || reply.dataset.sig !== sig) { reply = assistantRow(turn, rows, project); reply.dataset.turn = turn.id; reply.dataset.part = 'reply'; reply.dataset.sig = sig }
+    if (!reply || reply.dataset.sig !== sig) {
+      const wasOpen = reply?.querySelector<HTMLDetailsElement>('.turn-steps')?.open === true
+      reply = assistantRow(turn, rows, project)
+      Object.assign(reply.dataset, { turn: turn.id, part: 'reply', sig, text: String(turn.text.length) })
+      const steps = reply.querySelector<HTMLDetailsElement>('.turn-steps')
+      if (steps) steps.open = wasOpen
+    } else if (patchReply(reply, turn)) grew = true
     ordered.push(reply)
   }
-  if (ordered.some((node, index) => messages.children[index] !== node) || messages.children.length !== ordered.length) messages.replaceChildren(...ordered)
-  if (atBottom) stage.scrollTop = stage.scrollHeight
+  const reordered = ordered.some((node, index) => messages.children[index] !== node) || messages.children.length !== ordered.length
+  if (reordered) messages.replaceChildren(...ordered)
+  if (atBottom && (reordered || grew)) toBottom()
 }
 
 async function refresh(): Promise<void> {
@@ -196,7 +257,15 @@ async function refresh(): Promise<void> {
 
 function schedule(): void {
   clearTimeout(pollTimer)
-  if (root && !$('conversation').hidden && document.visibilityState === 'visible') pollTimer = window.setTimeout(() => void refresh(), running ? RUNNING_POLL_MS : IDLE_POLL_MS)
+  if (!root || $('conversation').hidden || document.visibilityState !== 'visible') { stopPolling(); return }
+  pollTimer = window.setTimeout(() => void refresh(), running ? RUNNING_POLL_MS : IDLE_POLL_MS)
+  tickTimer ||= window.setInterval(tickRunning, TICK_MS)
+}
+
+function stopPolling(): void {
+  clearTimeout(pollTimer)
+  clearInterval(tickTimer)
+  tickTimer = 0
 }
 
 function askHome(why: string, candidates: string[]): Promise<string | null> {
@@ -246,11 +315,12 @@ async function startChat(prompt: string): Promise<void> {
 
 async function sendMessage(prompt: string): Promise<void> {
   show('conversation')
-  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], thinking: false, started: Date.now(), ended: null, running: true })); setRunning(true); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
+  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], thinking: false, started: Date.now(), ended: null, running: true })); setRunning(true); toBottom(); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
   const result = await postJson(`/api/jobs/${encodeURIComponent(root)}/reply`, { message: prompt })
   if (!result.ok) { chatError(errorText(result)); return }
   if (result.status !== 202) setRunning(true)
   await refresh()
+  toBottom()
 }
 
 type ListedJob = AgentJob & TurnJob & { threadRoot: string; purpose?: string; project?: string | null; chatId?: string; label: string }
@@ -317,6 +387,7 @@ async function pollJobs(): Promise<void> {
 export function openChat(id: string): void {
   root = id
   agents = []
+  shownTurns = []
   messages.replaceChildren()
   setUrl(id)
   show('conversation')
@@ -333,10 +404,10 @@ composer.onsubmit = (event) => {
   message.focus()
 }
 
-addEventListener('quiet:new-chat', () => { root = null; agents = []; messages.replaceChildren(); paintQueue([]); setRunning(false); clearTimeout(pollTimer); setUrl(null) })
+addEventListener('quiet:new-chat', () => { root = null; agents = []; shownTurns = []; messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null) })
 addEventListener('quiet:open-chat', (event) => openChat((event as CustomEvent<string>).detail))
-addEventListener('quiet:show', (event) => { if ((event as CustomEvent<string>).detail === 'conversation') schedule(); else clearTimeout(pollTimer) })
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') schedule(); else clearTimeout(pollTimer) })
+addEventListener('quiet:show', (event) => { if ((event as CustomEvent<string>).detail === 'conversation') schedule(); else stopPolling() })
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') schedule(); else stopPolling() })
 
 const providersReady = getJson('/api/providers').then(result => {
   if (result.ok) providers = (readArray(result.data.providers) as unknown as LaunchProvider[]).filter(item => typeof item.id === 'string')
