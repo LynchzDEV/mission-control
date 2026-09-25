@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { dragKind, dropCopy, findKeys, latestLine, nextActive, renameValue, sessionState, splitPlan } from '../client/terminal-state'
+import { dragKind, dropCopy, findCount, findKeys, latestLine, nextActive, renameValue, sessionState, splitPlan } from '../client/terminal-state'
 
 describe('sessionState', () => {
   test('working within 5 s of output, idle after, ended wins', () => {
@@ -77,5 +77,14 @@ describe('dropCopy', () => {
     expect(dropCopy(1)).toEqual({ title: 'Drop to add 1 file', toast: 'Added 1 file' })
     expect(dropCopy(3)).toEqual({ title: 'Drop to add 3 files', toast: 'Added 3 files' })
     expect(dropCopy(0)).toEqual({ title: 'Drop to add files', toast: 'Added files' })
+  })
+})
+
+describe('findCount', () => {
+  test('reads n of m, 0 of m before a match is chosen, and No matches', () => {
+    expect(findCount(1, 3)).toBe('2 of 3')
+    expect(findCount(-1, 3)).toBe('0 of 3')
+    expect(findCount(-1, 0)).toBe('No matches')
+    expect(findCount(-1, 0, '')).toBe('')
   })
 })

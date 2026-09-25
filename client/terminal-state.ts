@@ -57,3 +57,9 @@ export function dropCopy(count: number): { title: string; toast: string } {
   const files = count === 0 ? 'files' : `${count} file${count === 1 ? '' : 's'}`
   return { title: `Drop to add ${files}`, toast: `Added ${files}` }
 }
+
+export function findCount(index: number, count: number, term = 'x'): string {
+  if (term === '') return ''
+  if (count === 0) return 'No matches'
+  return `${index + 1} of ${count}`
+}

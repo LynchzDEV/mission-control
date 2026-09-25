@@ -1,9 +1,11 @@
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon } from '@xterm/addon-search'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import { providerName } from './terminal-view'
 import { errorText, getJson, pathsFromUriList, postJson, readArray, readRecord, shellQuote } from './shared'
 import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
-import { dragKind, dropCopy, latestLine, nextActive, renameValue, sessionState, splitPlan, type Session, type SessionState } from './terminal-state'
+import { dragKind, dropCopy, findCount, findKeys, latestLine, nextActive, renameValue, sessionState, splitPlan, type Session, type SessionState } from './terminal-state'
 import { createPanes, type PaneHeader } from './terminal-panes'
 
 type Provider = { id: string; name: string; models: string[] }
@@ -41,6 +43,7 @@ export class TerminalView {
   readonly host = document.createElement('div')
   readonly terminal: Terminal
   readonly fit = new FitAddon()
+  readonly search = new SearchAddon()
   socket: WebSocket | null = null
   lastOutputAt: number | null = null
   ended = false
@@ -52,8 +55,12 @@ export class TerminalView {
   constructor(public session: Session) {
     this.host.className = 'term-host'
     this.host.dataset.id = session.id
-    this.terminal = new Terminal({ fontFamily: 'Menlo, monospace', fontSize: 13, cursorBlink: !matchMedia('(prefers-reduced-motion: reduce)').matches, scrollback: 10000, macOptionIsMeta: true, theme: { background: '#eaedf6', foreground: '#344155', cursor: '#8062bd', selectionBackground: '#b5a5d866' } })
+    this.terminal = new Terminal({ allowProposedApi: true, fontFamily: 'Menlo, monospace', fontSize: 13, cursorBlink: !matchMedia('(prefers-reduced-motion: reduce)').matches, scrollback: 10000, macOptionIsMeta: true, theme: { background: '#eaedf6', foreground: '#344155', cursor: '#8062bd', selectionBackground: '#b5a5d866' } })
     this.terminal.loadAddon(this.fit)
+    this.terminal.loadAddon(this.search)
+    this.terminal.loadAddon(new WebLinksAddon())
+    this.terminal.attachCustomKeyEventHandler(event => { if (findKeys(event, false) !== 'open') return true; if (event.type === 'keydown') openFind(); return false })
+    this.search.onDidChangeResults(({ resultIndex, resultCount }) => { if (activeId === session.id) $('find-count').textContent = findCount(resultIndex, resultCount, findInput.value) })
     this.terminal.open(this.host)
     this.terminal.onData(data => { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(new TextEncoder().encode(data)) })
     this.observer = new ResizeObserver(() => { cancelAnimationFrame(this.resizeFrame); this.resizeFrame = requestAnimationFrame(() => this.resize()) })
@@ -149,8 +156,10 @@ function paneHeader(session: Session): PaneHeader {
 function setActiveState(id: string): void {
   const view = views.get(id)
   if (!view) return
+  if (!findBar.hidden && activeId !== null && activeId !== id) views.get(activeId)?.search.clearDecorations()
   activeId = id
   store(savedKey, id)
+  if (!findBar.hidden) findStep('next')
   if (canvas.dataset.live === 'true') { const url = new URL(location.href); url.searchParams.set('terminal', id); url.hash = 'terminal'; history.replaceState(null, '', url) }
   $('live-name').textContent = view.session.title
   $('live-directory').textContent = `${engineName(view.session.engine)}${view.session.model ? ` · ${view.session.model}` : ''} · ${view.session.cwd}`
@@ -183,6 +192,49 @@ function paintZones(zone: 'right' | 'bottom' | null, show: boolean): void {
   dropStage.dataset.dragging = String(show)
   for (const name of ['right', 'bottom'] as const) $(`drop-${name}`).dataset.hot = String(show && zone === name)
 }
+const findBar = $('find')
+const findInput = $('find-input') as HTMLInputElement
+const MATCH_DECORATIONS = { matchBackground: '#8062bd33', activeMatchBackground: '#8062bd88', matchOverviewRuler: '#8062bd88', activeMatchColorOverviewRuler: '#8062bd' }
+function findStep(direction: 'next' | 'prev'): void {
+  const view = activeId ? views.get(activeId) : null
+  if (!view) return
+  if (findInput.value === '') { view.search.clearDecorations(); $('find-count').textContent = ''; return }
+  const options = { decorations: MATCH_DECORATIONS, incremental: direction === 'next' }
+  if (direction === 'next') view.search.findNext(findInput.value, options)
+  else view.search.findPrevious(findInput.value, options)
+}
+function openFind(): void {
+  if (!activeId) return
+  $('find-open').hidden = true
+  findBar.hidden = false
+  findInput.focus()
+  findInput.select()
+  findStep('next')
+}
+function closeFind(): void {
+  const view = activeId ? views.get(activeId) : null
+  view?.search.clearDecorations()
+  findBar.hidden = true
+  $('find-open').hidden = false
+  $('find-count').textContent = ''
+  view?.terminal.focus()
+}
+$('find-open').onclick = openFind
+$('find-prev').onclick = () => findStep('prev')
+$('find-next').onclick = () => findStep('next')
+$('find-close').onclick = closeFind
+findInput.oninput = () => findStep('next')
+findInput.onkeydown = (event) => {
+  event.stopPropagation()
+  const action = findKeys(event, true)
+  if (action === null) return
+  event.preventDefault()
+  if (action === 'close') closeFind()
+  else if (action === 'prev') findStep('prev')
+  else findStep('next')
+}
+document.addEventListener('keydown', (event) => { if (canvas.dataset.live === 'true' && findKeys(event, false) === 'open') { event.preventDefault(); openFind() } })
+
 const dropOver = $('drop-over')
 function paintDropOver(transfer: DataTransfer | null, show: boolean): void {
   if (show) $('drop-over-title').textContent = dropCopy(Array.from(transfer?.items ?? []).filter(item => item.kind === 'file').length).title
@@ -210,16 +262,16 @@ async function uploadDrop(file: File): Promise<string> {
   return payload.path
 }
 async function dropFiles(transfer: DataTransfer | null, view: TerminalView): Promise<void> {
-  const socket = view.socket
-  if (!socket || socket.readyState !== WebSocket.OPEN) { toast('That terminal is not connected'); return }
+  if (view.socket?.readyState !== WebSocket.OPEN) { toast('That terminal is not connected'); return }
   let paths = pathsFromUriList(transfer?.getData('text/uri-list') ?? '')
   if (paths.length === 0 && transfer) {
     try { paths = await Promise.all(Array.from(transfer.files).map(uploadDrop)) }
     catch (error) { toast(error instanceof Error ? error.message : 'Upload failed'); return }
   }
   if (paths.length === 0) { toast('Nothing to add'); return }
-  socket.send(new TextEncoder().encode(`${paths.map(shellQuote).join(' ')} `))
-  view.terminal.focus()
+  if (view.socket?.readyState !== WebSocket.OPEN) { toast('That terminal disconnected before the files were added'); return }
+  view.socket.send(new TextEncoder().encode(`${paths.map(shellQuote).join(' ')} `))
+  activate(view.session.id)
   toast(dropCopy(paths.length).toast)
 }
 dropStage.addEventListener('dragover', (event) => {
