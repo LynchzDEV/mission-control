@@ -6,8 +6,7 @@
     "start": "bun server/index.ts",
     "test": "bun test",
     "postinstall": "bun scripts/postinstall.ts",
-    "typecheck:studio": "tsc -p tsconfig.studio.json",
-    "check:studio": "bun scripts/check-studio.ts"
+    "typecheck:studio": "tsc -p tsconfig.studio.json"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.5.0",

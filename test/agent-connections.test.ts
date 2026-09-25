@@ -44,3 +44,8 @@ test('removing a connection deletes it, tolerates repeats and protects built-ins
   await store.remove('qwen')
   await expect(store.remove('claude')).rejects.toThrow('Cannot remove a built-in connection')
 })
+
+test('a missing connection reads as not configured instead of a filesystem path', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'mc-conn-missing-'))
+  try { await expect(createConnectionStore(dir).get('ghost')).rejects.toThrow('Connection "ghost" is not configured') } finally { await rm(dir, { recursive: true, force: true }) }
+})

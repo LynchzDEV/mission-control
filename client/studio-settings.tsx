@@ -19,7 +19,7 @@ function GlmSettings({ report, onError }: { report: (text: string) => void; onEr
   const [baseUrl, setBaseUrl] = useState('')
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
-  const load = async () => { const response = await fetch('/api/secrets'); const data = await response.json() as SecretsView; setView(data); setBaseUrl(data.zaiBaseUrl) }
+  const load = async () => { const response = await fetch('/api/secrets'); const data = await response.json() as SecretsView & { error?: string }; if (!response.ok) throw new Error(data.error ?? 'Could not read the z.ai settings'); setView(data); setBaseUrl(data.zaiBaseUrl) }
   useEffect(() => { void load().catch(error => onError((error as Error).message)) }, [])
   const save = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true)
@@ -46,10 +46,11 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
   const [terminalArgs, setTerminalArgs] = useState('')
   const [probe, setProbe] = useState('')
   const [busy, setBusy] = useState(false)
+  const [advanced, setAdvanced] = useState(false)
   const removeDialog = useRef<HTMLDialogElement | null>(null)
-  const select = (value: Partial<AgentConnection>) => { setEditing({ ...value }); setArgs((value.args ?? []).join('\n')); setEnv(Object.entries(value.env ?? {}).map(([key, reference]) => `${key}=${reference}`).join('\n')); setTerminalArgs(value.terminalArgs ? value.terminalArgs.join('\n') : ''); setProbe('') }
+  const select = (value: Partial<AgentConnection>) => { setEditing({ ...value }); setArgs((value.args ?? []).join('\n')); setEnv(Object.entries(value.env ?? {}).map(([key, reference]) => `${key}=${reference}`).join('\n')); setTerminalArgs(value.terminalArgs ? value.terminalArgs.join('\n') : ''); setProbe(''); setAdvanced(!value.command) }
   const pick = (next: Choice) => { setChoice(next); if (next.kind === 'connection' || next.kind === 'preset') select(next.value) }
-  const configured = list.connections.some(connection => connection.id === editing.id)
+  const configured = choice.kind === 'connection'
   const save = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true)
     try {
@@ -71,14 +72,14 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
     </aside>
     <div className="connection-settings">
       {choice.kind === 'builtin' && <><h2>{BUILTIN[choice.id]?.name ?? choice.id}</h2><p className="muted">{BUILTIN[choice.id]?.description ?? 'Built-in integration.'}</p>
-        <div className="connection-example"><span className="status" data-state="done">Built in</span><button type="button" className="pill" disabled title="Built-in AIs are checked when a job starts">Check connection</button></div>
+        <p className="muted"><span className="status" data-state="done">Built in</span> Checked when a job starts.</p>
         {choice.id === 'glm' && <GlmSettings report={report} onError={onError} />}</>}
       {choice.kind === 'presets' && <><h2>Add a connection</h2><p className="muted">Choose the app you already use. Install it and sign in, then check the connection.</p>
         <div className="preset-list">{list.presets.map(preset => <button key={preset.id} type="button" className="preset-row" onClick={() => pick({ kind: 'preset', value: preset })}><span><strong>{preset.name}</strong><small>{preset.adapter === 'cli' ? 'Headless CLI with a {{prompt}} slot' : preset.adapter === 'opencode' ? 'OpenCode · API or local models' : preset.command ? `ACP agent · ${preset.command}` : 'ACP agent · your own command'}</small></span><Icon id="plus-icon" /></button>)}</div></>}
       {(choice.kind === 'preset' || choice.kind === 'connection') && <form className="field-stack" onSubmit={save}>
         <h2>{editing.name || 'New connection'}</h2><p className="muted">Install the app and sign in, then check the connection. Advanced settings are below.</p>
         <label>Name<input required value={editing.name ?? ''} onChange={event => setEditing({ ...editing, name: event.target.value })} /></label>
-        <details open={!editing.command}><summary>Advanced connection settings</summary>
+        <details open={advanced} onToggle={event => setAdvanced(event.currentTarget.open)}><summary>Advanced connection settings</summary>
           <label>Connection ID<input required value={editing.id ?? ''} disabled={configured} onChange={event => setEditing({ ...editing, id: event.target.value })} /></label>
           <label>Adapter<select value={editing.adapter ?? 'acp'} onChange={event => setEditing({ ...editing, adapter: event.target.value as AgentConnection['adapter'] })}><option value="acp">ACP coding agent</option><option value="opencode">OpenCode · API / local models</option><option value="cli">Headless CLI</option></select></label>
           <label>Executable<input required value={editing.command ?? ''} placeholder="qwen" onChange={event => setEditing({ ...editing, command: event.target.value })} /></label>
@@ -94,13 +95,13 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
         <label className="switch-label"><input type="checkbox" role="switch" checked={editing.autoApprove === true} onChange={event => setEditing({ ...editing, autoApprove: event.target.checked })} />Allow this AI to use tools without asking each time</label>
         <div className="connection-actions"><button className="pill" type="submit" disabled={busy}>Save connection</button><button type="button" className="pill" disabled={busy || editing.adapter === 'cli' || !configured} title={editing.adapter === 'cli' ? 'CLI connections have no capability probe' : !configured ? 'Save first' : undefined} onClick={() => void check()}>Check connection</button>{configured && <button type="button" className="text-button danger" disabled={busy} onClick={() => removeDialog.current?.showModal()}>Remove connection</button>}</div>
         {probe && <details open><summary>Connection details</summary><pre className="studio-output">{probe}</pre></details>}
-        <dialog ref={removeDialog} className="access-dialog flat confirm-dialog" aria-labelledby="remove-connection-title">
-          <header className="dialog-heading"><h2 id="remove-connection-title">Remove {editing.name}?</h2><form method="dialog"><button className="round" aria-label="Cancel"><Icon id="close-icon" /></button></form></header>
-          <p className="muted">Workflows that pin this AI will show it as unavailable until you pick another.</p>
-          <div className="editor-actions dialog-actions"><button type="button" className="pill" onClick={() => removeDialog.current?.close()}>Cancel</button><button type="button" className="pill danger" disabled={busy} onClick={() => void remove()}>Remove</button></div>
-        </dialog>
       </form>}
     </div>
+    <dialog ref={removeDialog} className="access-dialog flat confirm-dialog" aria-labelledby="remove-connection-title">
+      <header className="dialog-heading"><h2 id="remove-connection-title">Remove {editing.name}?</h2><form method="dialog"><button className="round" aria-label="Cancel"><Icon id="close-icon" /></button></form></header>
+      <p className="muted">Workflows that pin this AI will show it as unavailable until you pick another.</p>
+      <div className="editor-actions dialog-actions"><button type="button" className="pill" onClick={() => removeDialog.current?.close()}>Cancel</button><button type="button" className="pill danger" disabled={busy} onClick={() => void remove()}>Remove</button></div>
+    </dialog>
   </section>
 }
 

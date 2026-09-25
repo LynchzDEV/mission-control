@@ -63,6 +63,6 @@ Stop terminates the active job/check. Retry repeats the current step with the sa
 
 Private files live under the existing MC config directory: `connections/`, `workflows/`, `policies/`, and `workflow-runs/`. Revisions are immutable, content-addressed JSON records. Existing jobs and sequential plans use their original formats.
 
-Run `bun test` for the test suite, `bun run typecheck:studio` for the new modules, and `bun run check:studio` for the browser check. The browser check uses an isolated configuration and scratch Git repository with local fixture agents; it exercises AI generation and editing through the real drafting API, presets/custom steps, default/custom runs, and mobile layout. All agent responses are local fixtures; it does not validate live providers or Jev. It uses installed Chrome by default; set `MC_TEST_BROWSER` to another compatible browser executable if needed.
+Run `bun test` for the test suite and `bun run typecheck:studio` for the Studio modules. Studio is verified in a browser against a throwaway instance (`MISSION_CONTROL_PORT=7781 MISSION_CONTROL_CONFIG_DIR=<scratch> bun server/index.ts`) with Playwright; the old `check:studio` script targeted the pre-2.0 page and was removed.
 
 Studio reuses [React Flow](https://reactflow.dev/learn) (MIT), the [ACP TypeScript SDK](https://github.com/agentclientprotocol/typescript-sdk) (Apache-2.0), and an externally installed [OpenCode](https://opencode.ai/docs/acp/) runtime (MIT). React is isolated to Studio; existing pages keep their original rendering path.

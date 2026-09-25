@@ -75,7 +75,13 @@ export function connectionCommand(connection: AgentConnection, prompt: string, m
 export function createConnectionStore(base = configDir()) {
   const root = join(base, 'connections')
   async function get(id: string): Promise<AgentConnection> {
-    return connectionSchema.parse(JSON.parse(await readFile(join(root, `${identifier.parse(id)}.json`), 'utf8')))
+    const path = join(root, `${identifier.parse(id)}.json`)
+    let raw: string
+    try { raw = await readFile(path, 'utf8') } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`Connection "${id}" is not configured`)
+      throw error
+    }
+    return connectionSchema.parse(JSON.parse(raw))
   }
   async function list(): Promise<AgentConnection[]> {
     const files = await readdir(root).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
