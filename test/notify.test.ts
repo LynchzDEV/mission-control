@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { normalizeJobRecord } from '../server/jobs'
-import { notifySlowJob } from '../server/notify'
+import { notifyChat, notifySlowJob } from '../server/notify'
 
 const record = normalizeJobRecord({ label: 'Check loop', turns: 81, startedAt: 1000, slowAt: 961000 })
 
@@ -44,4 +44,15 @@ test('ignores spawn, exit, and nonzero failures', async () => {
   ]) {
     await expect(notifySlowJob(record, { platform: 'darwin', spawn })).resolves.toBeUndefined()
   }
+})
+
+test('notifyChat shows a titled macOS notification and skips other platforms', async () => {
+  const commands: string[][] = []
+  const spawn = mock((command: string[]) => { commands.push(command); return { exited: Promise.resolve(0) } })
+  await notifyChat('Needs you', 'Login fix · Build it', { platform: 'darwin', spawn })
+  expect(commands[0]?.[0]).toBe('osascript')
+  expect(commands[0]?.[2]).toContain('Needs you')
+  expect(commands[0]?.[2]).toContain('Login fix · Build it')
+  await notifyChat('Needs you', 'Login fix · Build it', { platform: 'linux', spawn })
+  expect(spawn).toHaveBeenCalledTimes(1)
 })

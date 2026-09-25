@@ -7,8 +7,10 @@ import { Elysia } from 'elysia'
 import { requireLocal } from '../auth'
 import { parseActivity } from '../activity'
 import type { ChatJobPatch, CreateJobParams, JobManager, JobRecord } from '../jobs'
-import { readLogFile, readLogSince, readLogTail, redactSecrets, createLogRedactor } from '../jobs'
-import { readConfig, readSecrets } from '../secrets'
+import { readLogSince, readLogTail } from '../jobs'
+import { readConfig } from '../secrets'
+import { createSecretsRedactor, logSecrets, readRedactedLog } from '../log-redaction'
+import { notifyChat } from '../notify'
 import { chatHome } from '../chat-home'
 import { validateWorkspaceCwd } from '../workspace'
 import type { EngineResolver } from '../jobs-engine-iface'
@@ -57,14 +59,16 @@ async function projectInChatHome(path: string, root: JobRecord): Promise<string 
   return check.path
 }
 
-function chatSpawnFields(payload: Record<string, unknown>, manager: JobManager): Pick<CreateJobParams, 'chatId' | 'chatTurn' | 'reason'> | Failure {
-  const { chat, chatTurn, reason } = payload
+function chatSpawnFields(payload: Record<string, unknown>, manager: JobManager): Pick<CreateJobParams, 'chatId' | 'chatTurn' | 'reason' | 'reviewOf'> | Failure {
+  const { chat, chatTurn, reason, reviewOf } = payload
   if (chat !== undefined && (typeof chat !== 'string' || !isChatRoot(manager.getJob(chat)))) return { status: 400, error: 'chat not found' }
+  if (reviewOf !== undefined && (typeof reviewOf !== 'string' || manager.getJob(reviewOf) === undefined)) return { status: 400, error: 'reviewOf must name an existing job' }
   if (reason !== undefined && (typeof reason !== 'string' || reason.length > SPAWN_REASON_MAX)) return { status: 400, error: `reason must be at most ${SPAWN_REASON_MAX} characters` }
   return {
     ...(typeof chat === 'string' ? { chatId: chat } : {}),
     ...(typeof chatTurn === 'string' && chatTurn !== '' ? { chatTurn } : {}),
     ...(typeof reason === 'string' && reason !== '' ? { reason } : {}),
+    ...(typeof reviewOf === 'string' ? { reviewOf } : {}),
   }
 }
 
@@ -111,12 +115,6 @@ export function safeEnqueue<T>(
   }
 }
 
-// Job logs are written raw by the child process, so every serving path redacts on read.
-async function readRedactedLog(path: string): Promise<string> {
-  const secrets = await readSecrets()
-  return redactSecrets(await readLogFile(path), secrets.zaiAuthToken)
-}
-
 function sseHeaders(): HeadersInit {
   return {
     'content-type': 'text/event-stream; charset=utf-8',
@@ -125,9 +123,9 @@ function sseHeaders(): HeadersInit {
   }
 }
 
-export function createLogStreamResponse(path: string, signal: AbortSignal, secret: string | null = null): Response {
+export function createLogStreamResponse(path: string, signal: AbortSignal, secrets: ReadonlyArray<string | null> = []): Response {
   const encoder = new TextEncoder()
-  const redactor = createLogRedactor(secret)
+  const redactor = createSecretsRedactor(secrets)
   let watcher: ReturnType<typeof watch> | null = null
   let heartbeat: ReturnType<typeof setInterval> | null = null
   let offset = 0
@@ -185,7 +183,10 @@ export function createLogStreamResponse(path: string, signal: AbortSignal, secre
   return new Response(stream, { headers: sseHeaders() })
 }
 
-export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysia {
+export type JobsRoutesOptions = { notify?: (title: string, body: string) => Promise<void> }
+
+export function jobsRoutes(manager: JobManager, resolver: EngineResolver, options: JobsRoutesOptions = {}): Elysia {
+  const notify = options.notify ?? notifyChat
   return new Elysia()
     .onBeforeHandle(requireLocal)
     .post('/api/jobs', async ({ body, set }) => {
@@ -299,8 +300,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
         set.status = 404
         return { error: 'job not found' }
       }
-      const secrets = await readSecrets()
-      return createLogStreamResponse(manager.logPath(params.id), request.signal, secrets.zaiAuthToken)
+      return createLogStreamResponse(manager.logPath(params.id), request.signal, await logSecrets())
     })
     .get('/api/jobs/:id/thread', async ({ params, set }) => {
       const job = manager.getJob(params.id)
@@ -383,6 +383,8 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver): Elysi
         set.status = result.status
         return { error: result.error, ...(result.files === undefined ? {} : { files: result.files }) }
       }
+      const landed = manager.getJob(params.id)
+      if (landed?.chatId) void notify('Landed', `${landed.label} · ${result.landed.length} commit${result.landed.length === 1 ? '' : 's'}`).catch(() => {})
       return { landed: result.landed, base: result.base }
     })
     .post('/api/jobs/:id/reviewed', async ({ params, set }) => {

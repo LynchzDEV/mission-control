@@ -11,6 +11,7 @@ import type { JobManager } from '../server/jobs'
 import type { EngineResolver, EngineResolverParams } from '../server/jobs-engine-iface'
 import { engineArgs } from '../server/jobs-engine-iface'
 import { jobsRoutes, safeEnqueue } from '../server/routes/jobs'
+import { readApiToken } from '../server/secrets'
 import { initScratchGitRepo, runGit } from './support/scratch-git-repo'
 import { executionPlan } from './support/execution-plan'
 
@@ -796,6 +797,43 @@ describe('chat jobs', () => {
     const fourth = await step()
     expect(fourth.status).toBe(409)
     expect((await fourth.json()).error).toContain('retry cap')
+  })
+
+  test('a review names an existing job, is marked reviewOf, and does not count toward the retry cap', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, echoResolver)
+    const root = await (await post(app, chatBody())).json()
+    const step = (extra: Record<string, unknown> = {}) => post(app, JSON.stringify({ engine: 'codex', cwd: repo, prompt: executionPlan('Build it'), label: 'Build it', chat: root.id, ...extra }))
+    const first = await (await step()).json()
+    for (let attempt = 0; attempt < 2; attempt += 1) expect((await step()).status).toBe(200)
+    for (const reviewOf of ['nope', 42]) expect((await step({ reviewOf })).status).toBe(400)
+    const review = await step({ reviewOf: first.id })
+    expect(review.status).toBe(200)
+    expect((await review.json()).reviewOf).toBe(first.id)
+    expect((await step()).status).toBe(409)
+  })
+
+  test('the API token a chat job carries is redacted from its served log', async () => {
+    const token = await readApiToken()
+    const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "token=$MC_TOKEN"'], env: {} })
+    const app = buildApp(createJobManager({ home: homedir() }), envResolver)
+    const root = await (await post(app, chatBody())).json()
+    await pollUntilDone(app, root.id)
+    const log = await (await app.handle(get(`/api/jobs/${root.id}/log`))).text()
+    expect(log).toContain('token=[REDACTED]')
+    expect(log).not.toContain(token)
+  })
+
+  test('landing a chat-spawned job notifies the chat', async () => {
+    const notes: string[] = []
+    const manager = createJobManager({ home: homedir() })
+    const app = new Elysia().use(jobsRoutes(manager, echoResolver, { notify: async (title, body) => { notes.push(`${title}|${body}`) } }))
+    const root = await (await post(app, chatBody())).json()
+    const job = await (await post(app, JSON.stringify({ engine: 'claude', cwd: repo, prompt: 'hello', label: 'land-me', worktree: true, chat: root.id }))).json()
+    await pollUntilDone(app, job.id)
+    await writeFile(join(job.cwd, 'result.txt'), 'first\n')
+    expect((await app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${job.id}/land`, { method: 'POST', headers: { host: '127.0.0.1:7777' } }))).status).toBe(200)
+    expect(notes).toEqual(['Landed|land-me · 1 commit'])
   })
 
   test('PATCH renames a chat, sets its project, and a locked title stays', async () => {
