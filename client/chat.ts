@@ -272,6 +272,7 @@ function paintHistory(items: HistoryItem[]): void {
     card.append(summary, line, footer)
     return card
   }))
+  dispatchEvent(new Event('quiet:history-painted'))
 }
 
 function paintAgentsCount(jobs: ListedJob[]): void {

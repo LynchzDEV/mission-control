@@ -5,7 +5,7 @@ import { type Clock, createQuotaCache, type ExternalSession, fetchExternalSessio
 import type { TerminalRecord } from './terminals'
 import type { SessionSummary } from './transcripts'
 
-export type HistoryAgent = { id: string; label: string; status: string; chatId: string; startedAt: number; landedAt: number | null; stoppedAt: number | null }
+export type HistoryAgent = { id: string; label: string; status: string; chatId: string; startedAt: number; landedAt: number | null; stoppedAt: number | null; reviewOf: string | null }
 
 export type HistoryItem =
   | { kind: 'chat'; id: string; title: string; updatedAt: number; project: string | null; running: boolean; agents: HistoryAgent[] }
@@ -46,7 +46,7 @@ function chatItems(jobs: readonly JobRecord[]): HistoryItem[] {
       updatedAt: Math.max(...turns.map(turn => turn.startedAt)),
       project: root.project ?? null,
       running: [...turns, ...agents].some(job => job.status === 'running'),
-      agents: agents.map(agent => ({ id: agent.id, label: agent.label, status: agent.status, chatId: root.id, startedAt: agent.startedAt, landedAt: agent.landedAt ?? null, stoppedAt: agent.stoppedAt ?? null })),
+      agents: agents.map(agent => ({ id: agent.id, label: agent.label, status: agent.status, chatId: root.id, startedAt: agent.startedAt, landedAt: agent.landedAt ?? null, stoppedAt: agent.stoppedAt ?? null, reviewOf: agent.reviewOf ?? null })),
     }
   })
 }
@@ -70,7 +70,8 @@ function transcriptItems(input: HistoryInput): HistoryItem[] {
 
 function outsideItem(session: ExternalSession, now: number): HistoryItem {
   const folder = session.cwdHint === null ? 'unknown folder' : basename(session.cwdHint)
-  return { kind: 'outside', id: String(session.pid), title: `${session.engine} · ${folder}`, updatedAt: now - etimeMs(session.etime), engine: session.engine, pid: session.pid, cwdHint: session.cwdHint, etime: session.etime }
+  const engine = session.engine === 'codex' ? 'Codex' : 'Claude'
+  return { kind: 'outside', id: String(session.pid), title: `${engine} · ${folder}`, updatedAt: session.startedAt ?? now - etimeMs(session.etime), engine: session.engine, pid: session.pid, cwdHint: session.cwdHint, etime: session.etime }
 }
 
 export function buildHistory(input: HistoryInput): HistoryItem[] {
@@ -83,11 +84,16 @@ export function buildHistory(input: HistoryInput): HistoryItem[] {
   ].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+const START_ROUNDING_MS = 10_000
+
 export function createExternalSessionsCache(
   currentOwnedPids: () => ReadonlySet<number>,
   fetch: (owned: ReadonlySet<number>) => Promise<ExternalSession[]> = fetchExternalSessions,
   ttlMs = 60_000,
   clock: Clock = Date.now,
 ): QuotaCache<ExternalSession[]> {
-  return createQuotaCache(() => fetch(currentOwnedPids()), ttlMs, clock)
+  return createQuotaCache(async () => {
+    const fetchedAt = clock()
+    return (await fetch(currentOwnedPids())).map(session => ({ ...session, startedAt: Math.round((fetchedAt - etimeMs(session.etime)) / START_ROUNDING_MS) * START_ROUNDING_MS }))
+  }, ttlMs, clock)
 }

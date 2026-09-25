@@ -87,6 +87,7 @@ function leaveHistory(): void {
 $('search').onclick = () => { if ($('history').hidden) showHistory(); else leaveHistory() }
 $('new-chat-menu').addEventListener('toggle', (event) => $('new-chat-more').setAttribute('aria-expanded', String((event as ToggleEvent).newState === 'open')))
 
+addEventListener('quiet:history-painted', () => $('chat-search').dispatchEvent(new Event('input')))
 $('chat-search').oninput = () => {
   const query = ($('chat-search') as HTMLInputElement).value.trim().toLowerCase()
   const items = [...document.querySelectorAll<HTMLElement>('#history .history-item')]

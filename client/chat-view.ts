@@ -40,11 +40,13 @@ export function workedLine(turn: Turn, now: number): string {
   return `Worked ${duration((turn.ended ?? now) - turn.started)} · used ${turn.tools} tool${turn.tools === 1 ? '' : 's'}`
 }
 
-function superseded(job: AgentJob, all: readonly AgentJob[]): boolean {
+export type SignalJob = Pick<AgentJob, 'id' | 'label' | 'status' | 'chatId' | 'startedAt' | 'landedAt' | 'stoppedAt' | 'reviewOf'>
+
+function superseded(job: SignalJob, all: readonly SignalJob[]): boolean {
   return all.some(other => other.id !== job.id && other.chatId === job.chatId && other.label === job.label && other.startedAt > job.startedAt)
 }
 
-function stateOf(job: AgentJob, all: readonly AgentJob[]): TeamState {
+function stateOf(job: SignalJob, all: readonly SignalJob[]): TeamState {
   if (job.status === 'running') return 'running'
   if (job.stoppedAt) return 'stopped'
   if (job.status === 'failed') return superseded(job, all) ? 'retried' : 'needs-you'
@@ -59,7 +61,7 @@ export function teamRows(jobs: readonly AgentJob[], turnId: string): TeamRow[] {
 
 export type ChatSignal = { state: 'running' | 'needs-you' | 'landed' | null; count: number }
 
-export function chatSignal(turnsRunning: boolean, agents: readonly AgentJob[]): ChatSignal {
+export function chatSignal(turnsRunning: boolean, agents: readonly SignalJob[]): ChatSignal {
   const rows = agents.map(job => stateOf(job, agents))
   const running = rows.filter(state => state === 'running').length
   if (turnsRunning || running > 0 || rows.includes('reviewing')) return { state: 'running', count: running }
@@ -84,7 +86,7 @@ export function historyDay(at: number, now: number): string {
 }
 
 export type HistoryItem =
-  | { kind: 'chat'; id: string; title: string; updatedAt: number; project: string | null; running: boolean; agents: AgentJob[] }
+  | { kind: 'chat'; id: string; title: string; updatedAt: number; project: string | null; running: boolean; agents: SignalJob[] }
   | { kind: 'terminal'; id: string; title: string; updatedAt: number; cwd: string; engine: string; sessionId: string | null }
   | { kind: 'claude-history'; id: string; title: string; updatedAt: number; cwd: string; bytes: number }
   | { kind: 'outside'; id: string; title: string; updatedAt: number; engine: string; pid: number; cwdHint: string | null; etime: string }

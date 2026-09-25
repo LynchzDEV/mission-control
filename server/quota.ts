@@ -30,7 +30,7 @@ export type PeakInfo = { peak: boolean; minutesToChange: number }
 
 export type ExternalEngine = 'claude' | 'codex'
 
-export type ExternalSession = { pid: number; engine: ExternalEngine; etime: string; cwdHint: string | null }
+export type ExternalSession = { pid: number; engine: ExternalEngine; etime: string; cwdHint: string | null; startedAt?: number }
 
 export type QuotaComposite = {
   claude: ClaudeQuota

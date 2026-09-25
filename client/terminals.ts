@@ -571,7 +571,7 @@ paintRail(stored(railOpenKey) !== '0')
 addEventListener('quiet:design', () => { if (canvas.dataset.live === 'true') visible(false) })
 addEventListener('quiet:open-terminal', (event) => {
   const detail = (event as CustomEvent<{ restore?: boolean; id?: string; cwd?: string; resume?: { sessionId: string; cwd: string; title: string } }>).detail
-  if (detail.id) { void load(false).then(() => { if (views.has(detail.id!)) { launch.close(); activate(detail.id!) } }); return }
+  if (detail.id) { void refreshSessions().then(() => { if (views.has(detail.id!)) activate(detail.id!); else toast('That terminal has ended.', 4000) }); return }
   if (detail.resume) { void resumeSession(detail.resume); return }
   void openTerminal(detail.restore === true, detail.cwd)
 })

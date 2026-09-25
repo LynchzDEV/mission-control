@@ -51,15 +51,15 @@ describe('buildHistory', () => {
   })
   test('a chat is its root with the latest turn time, its agents and running when an agent runs', () => {
     const chat = items.find(item => item.kind === 'chat')
-    expect(chat).toEqual({ kind: 'chat', id: 'c1', title: 'Fix login', updatedAt: 2_000, project: '/p', running: true, agents: [{ id: 'a1', label: 'Build it', status: 'running', chatId: 'c1', startedAt: 1_500, landedAt: null, stoppedAt: null }] })
+    expect(chat).toEqual({ kind: 'chat', id: 'c1', title: 'Fix login', updatedAt: 2_000, project: '/p', running: true, agents: [{ id: 'a1', label: 'Build it', status: 'running', chatId: 'c1', startedAt: 1_500, landedAt: null, stoppedAt: null, reviewOf: null }] })
   })
   test('a transcript owned by a terminal or job is not repeated', () => {
     expect(items.some(item => item.kind === 'claude-history' && item.id === 'sess-terminal')).toBe(false)
     expect(items.find(item => item.id === 'sess-free')).toEqual({ kind: 'claude-history', id: 'sess-free', title: 'Old question', updatedAt: 500, cwd: '/repo', bytes: 42 })
   })
   test('outside sessions are titled by engine and folder and dated by elapsed time', () => {
-    expect(items.find(item => item.id === '999')).toEqual({ kind: 'outside', id: '999', title: 'codex · elsewhere', updatedAt: now - 330_000, engine: 'codex', pid: 999, cwdHint: '/Users/x/elsewhere', etime: '05:30' })
-    expect(items.find(item => item.id === '998')?.title).toBe('claude · unknown folder')
+    expect(items.find(item => item.id === '999')).toEqual({ kind: 'outside', id: '999', title: 'Codex · elsewhere', updatedAt: now - 330_000, engine: 'codex', pid: 999, cwdHint: '/Users/x/elsewhere', etime: '05:30' })
+    expect(items.find(item => item.id === '998')?.title).toBe('Claude · unknown folder')
   })
   test('a finished chat is not running and outside sessions with our pids are dropped', () => {
     const quiet = buildHistory({ jobs: [root, { ...agent, status: 'done' }], terminals: [], transcripts: [], outside: [{ pid: 120, engine: 'claude', etime: '00:10', cwdHint: null }], now })
@@ -86,4 +86,14 @@ describe('createExternalSessionsCache', () => {
     await cache.get()
     expect(seen).toEqual([[1], [1, 2]])
   })
+})
+
+test('an outside session keeps one start time across polls within the cache window', async () => {
+  let clock = 1_000_000
+  const cache = createExternalSessionsCache(() => new Set(), async () => [{ pid: 9, engine: 'codex', etime: '01:00', cwdHint: '/Users/x/app' }], 60_000, () => clock)
+  const first = buildHistory({ jobs: [], terminals: [], transcripts: [], outside: await cache.get(), now: clock })
+  clock += 5_000
+  const second = buildHistory({ jobs: [], terminals: [], transcripts: [], outside: await cache.get(), now: clock })
+  expect(second[0]?.updatedAt).toBe(first[0]?.updatedAt)
+  expect(first[0]?.title).toBe('Codex · app')
 })
