@@ -1,39 +1,39 @@
 # Mission Control
 
-**Your terminals, coding agents, and work in one browser tab.**
+**Talk to one chat; it runs your coding agents.**
 
-Mission Control is a self-hosted workspace for Claude Code, GLM through an Anthropic-compatible endpoint, and OpenAI Codex CLI. Open sessions as readable transcripts or raw shells, follow the agents working on the selected session, check provider usage in the header, and review completed work without losing your terminal context.
+Mission Control is a self-hosted workspace for Claude Code, GLM through an Anthropic-compatible endpoint, OpenAI Codex CLI and any ACP agent you connect. You describe the work in a chat; the chat picks the AIs, spawns agents in isolated worktrees, has a different AI family review every change, and lands it. Live terminals, a workflow Studio and one History sit on the same screen.
 
-![Mission Control: split terminals, agent activity, and provider usage](docs/images/workspace.gif)
-
-*Recorded from the app with sample sessions, agent output, and usage values: a new session from the ⌘K composer, the transcript filling in, an agent conversation, a second pane, the raw shell, and the workspace folded down to the terminals. [View the still image](docs/images/workspace.png).*
+![Mission Control: the chat with a team card and the Agents drawer](docs/images/chat.png)
 
 ## Why
 
-When work spans several coding agents, terminal output, usage limits, and review results are easy to lose track of. Mission Control keeps them together:
-
-- **Stay in your terminal.** Visit Main, Review, or Settings and return to the same sessions and scrollback.
-- **Read the session, not the escape codes.** Claude Code and Codex sessions render as a transcript: prompts, thinking, tool calls with their results, and Markdown answers. The raw shell is one keystroke away.
-- **See the current work.** A branched flow above the panes and agent cards in the sidebar show the work linked to the selected terminal, and both fold out of the way.
-- **Find the results.** Search conversations and plans, inspect changes, and acknowledge reviews in one work navigator.
+- **One place to ask.** The chat answers directly and turns work into agents on its own; each reply shows its team as a card with live state.
+- **Nothing lands unreviewed.** Every code change is reviewed by a different AI family before the chat cherry-picks it onto your branch.
+- **Terminals when you want them.** Claude Code, GLM and Codex run as real terminals beside the chat: several at once, split side by side.
+- **Nothing gets lost.** History holds chats, live terminals, earlier Claude Code sessions and outside sessions in one list.
 
 ## Features
 
-### Terminal workspace
+### Chat
 
-The terminal takes the screen. Each pane has a one-line header (session, engine, connection state, directory) with quiet tools for find, reconnect, hide, and end, and the deck fills whatever height and width the window has.
+Write in the message box. The folder chip picks the project (or leave it on Auto and the chat works it out); opening it shows the AI chip and the pencil chip that lets the chat edit files directly. Answers stream with a quiet activity line ("Worked 18s · used 4 tools"). When the chat spawns agents, the reply grows a team card: one row per agent with its AI, model, reason, latest activity and state (Running, In review, Landed, Needs you). Agents report back into the chat by themselves; a failure or a question shows as **Needs you** and a macOS notification. **Open in Agents** shows the chat's agents in a drawer where you can reply to one or stop it. The chat retries a failed step up to three attempts, each on a different AI, and never pushes or deploys.
 
-Sessions open from a dock popover (⌘K or **New terminal**): pick Claude Code, GLM, or Codex with a chip, choose a model, and pick a recent directory or type one. The **Resume** tab lists earlier Claude Code sessions for a directory and reopens one in place. Arrange up to four panes side by side or stacked, drag the divider or double-click it to recentre, rename a session with F2, and switch sessions with ⌘1–9. Navigation preserves the live terminal connections, and narrow screens show the selected pane while keeping the saved split.
+### Terminals
 
-**Transcript and shell.** A Claude Code or Codex session renders as a transcript read from the session's own log: the prompt, collapsible thinking, tool rows that expand to their result, and Markdown answers with code blocks, lists, and headings. A working line shows the current tool and elapsed time, and the session strip labels each session Idle, Ready, Working, or Waiting for you. A composer under the transcript sends the next direction. ⌘J switches the same pane to the raw shell, an xterm.js terminal in JetBrains Mono with find (⌘F) and full scrollback; the choice is remembered per session.
+**New chat ▾ → Terminal** opens a terminal with any connected AI in any folder under your home. The rail on the left lists sessions with a live dot and the latest output line; double-click a name to rename, × to end (with a confirm). Drag a card onto the terminal to open it beside or below. ⌘F finds in the terminal, links are clickable, and dropping files types their quoted paths at the prompt. The rail folds away with its arrow.
 
-### Flow and agents
+### Studio
 
-Above the panes, a collapsible flow shows the plan attached to the selected terminal's work: steps light up as engine jobs run and settle when they finish, and a follow-up reply reactivates the step it belongs to. The agent sidebar on the right holds one card per running conversation with its latest tool and activity; it opens itself when agents are working on the selected terminal and folds when none are, and a manual close stays closed. Expanding a card opens the full conversation in a fullscreen modal where you can reply, and reviews stay with the conversation they review. Confirmations use in-app dialogs, never browser prompts.
+Studio (top right) builds workflows: describe one and an AI drafts it, or start from the default, a template or scratch. Steps sit on a canvas with success, failure and needs-help branches; each step says who does it (**Chat decides**, or a pinned AI and model), its tools, skills and acceptance checks. Runs shows every run with its attempts, evidence and checks; Rules holds the core prompt every step follows; Manage AIs adds ACP, OpenCode or headless-CLI agents and the z.ai settings for GLM.
+
+### History
+
+The spyglass opens one list of chats, live terminals, earlier Claude Code sessions (resume one in a terminal) and outside Claude or Codex sessions; Mission Control's own agents never show up as outside sessions. Click the spyglass again to go back.
 
 ### Provider usage
 
-The header shows every provider's usage in the same position: a five-hour window with weekly usage underneath for Claude and GLM, and the weekly window alone for Codex, which has no five-hour limit. Reset times appear on hover, and a value observed more than a few minutes ago carries its age.
+The header shows every provider's usage in the same position: a five-hour window with weekly usage underneath for Claude and GLM, and the weekly window alone for Codex, which has no five-hour limit. Reset times appear on hover, and a value observed more than a few minutes ago carries its age. More than three providers scroll slowly.
 
 | Provider | Usage source |
 |---|---|
@@ -41,15 +41,9 @@ The header shows every provider's usage in the same position: a five-hour window
 | GLM | Five-hour and monthly usage from the z.ai monitor API; weekly usage is unavailable |
 | Codex | Weekly window reported by the Codex CLI account API |
 
-Missing or unsupported windows draw an empty track instead of a number. Claude cost and token estimates remain separate from reported quota limits.
+### Access
 
-### One screen: chat, terminals, Studio, History
-
-Since 2.0 Mission Control is a single screen. The chat is where work starts: describe the task and the chat plans it, dispatches agents, and reports back when the cross-family review has passed. Live terminals sit beside it: a rail of session cards, a split view (drag a card beside or below the current terminal), find (⌘F) in the terminal heading, and dropping files types their quoted paths at the prompt. Studio builds and runs saved workflows and manages the AIs they use; History lists chats, terminals, Claude Code history and outside sessions in one feed. The old Main, Dispatch, Review, Terminals and Settings addresses redirect to this screen. The app answers only on this machine.
-
-### Settings
-
-Settings shares the terminal identity: engine chips assign the plan, execute, and review roles, a switch controls automatic review, and connection pills show Claude, Codex, GLM, and cockpit-token state with a test button beside each. Saved defaults refresh in the workspace while preserving forms you have already started editing.
+The lock button shows the address, the API token for scripts and the dispatch skill (reveal, copy, rotate) and **Chat home**, the folder that holds your projects (never your home folder itself). The old Main, Dispatch, Review, Terminals and Settings addresses redirect to the one screen.
 
 ## Quickstart
 
@@ -86,27 +80,27 @@ On `bun install` and every cockpit start, Mission Control translates Claude's gl
 
 ```
 Bun + Elysia (TypeScript end to end)
-├── server-rendered JSX views (@kitajs/html) — no client framework
+├── one server-rendered shell; Studio is a React island
 ├── client "islands" bundled on demand by Bun.build — no separate build step
 ├── bun-pty ↔ xterm.js over WebSocket for terminals
 ├── SSE for live job logs
 └── JSON state in ~/.config/mission-control — no database
 ```
 
-The application is written in TypeScript and CSS; client bundles are cached until their source changes. Transcripts come straight from the engines' own session logs (`~/.claude/projects` JSONL and `~/.codex/sessions` rollouts) and are parsed once per file change. JetBrains Mono ships with the app under the OFL. Standalone design studies and their capture tools live in `docs/design/ui-overhaul/`.
+The application is written in TypeScript and CSS; client bundles are cached until their source changes. Transcripts come straight from the engines' own session logs (`~/.claude/projects` JSONL and `~/.codex/sessions` rollouts) and are parsed once per file change. JetBrains Mono ships with the app under the OFL. Design studies live in `docs/design/` (`quiet-chat` is the source of the 2.0 look).
 
 ## Security
 
 - Binds `127.0.0.1` only; the port comes from `MISSION_CONTROL_PORT` (default 7777). Anyone who can open a connection to 127.0.0.1 on this machine has full control, including other OS user accounts and every agent job Mission Control spawns. Browsers are additionally limited by a Host/Origin/Fetch-Metadata guard, so a web page from another origin cannot read or drive the app. The API token is kept for scripts and the dispatch skill; it grants nothing extra to local callers. Health and static assets are public.
-- Credentials are stored in `~/.config/mission-control/` (`0700` dirs, `0600` files). Provider credentials are passed to engines through their environment. Settings can reveal or rotate the cockpit API token.
+- Credentials are stored in `~/.config/mission-control/` (`0700` dirs, `0600` files). Provider credentials are passed to engines through their environment. The Access dialog can reveal or rotate the cockpit API token.
 - Jobs and terminals only run in directories that resolve (post-symlink) under `$HOME`; traversal attempts are rejected.
 
 ## Docs
 
 - [`docs/SPEC.md`](docs/SPEC.md) — full engineering contract
 - [`docs/decisions/`](docs/decisions/) — recorded runtime decisions (e.g. why bun-pty over node-pty under Bun)
-- [`docs/design/ui-overhaul/terminal-components.html`](docs/design/ui-overhaul/terminal-components.html) — the approved terminal component study
-- [`docs/decisions/ui-overhaul-verification.md`](docs/decisions/ui-overhaul-verification.md) — visual checks, responsive behavior, and known differences from the study
+- [`docs/decisions/system-chat.md`](docs/decisions/system-chat.md) — how the chat works: engine, folders, autonomy, team, history
+- [`docs/superpowers/plans/2026-09-24-v2-roadmap.md`](docs/superpowers/plans/2026-09-24-v2-roadmap.md) — the 2.0 roadmap and its phase plans
 - [`docs/design/`](docs/design/) — design studies: the new quiet design (`quiet-chat`), its chat, launcher and Terminals studies, the earlier overhaul and Studio prototypes
 - [`docs/new-design-port-status.md`](docs/new-design-port-status.md) — every current feature tracked against the new design
 - [`assets/`](assets/) — theme tokens used by the design studies, and vendored scripts copied into `public/vendor/` on install
