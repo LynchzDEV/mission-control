@@ -1,14 +1,14 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { ReactFlow, Controls, Handle, Position, MarkerType, useNodesState, useEdgesState, type Node, type NodeProps, type Edge, type ReactFlowInstance } from '@xyflow/react'
+import { ReactFlow, Background, BackgroundVariant, Controls, Handle, Position, MarkerType, useNodesState, useEdgesState, type Node, type NodeProps, type Edge, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { Workflow, WorkflowNode, WorkflowRevision, PolicyRevision, Outcome } from '../server/workflows'
 import type { WorkflowRun } from '../server/workflow-runner'
 import type { DraftJob, WorkflowDraft } from '../server/workflow-builder'
 import { api } from './studio-api'
 import { Connections, StepAttachments, type ConnectionList } from './studio-settings'
-import { agentLabel, insertWorkflowStep, removeWorkflowStep, stepPresets, taskPreset, workflowTemplates, type Provider } from './studio-graph'
+import { agentLabel, insertWorkflowStep, kindIcon, roleWord, removeWorkflowStep, stepPresets, taskPreset, workflowTemplates, type Provider } from './studio-graph'
 
 type TaskNode = Node<WorkflowNode & { agentLabel: string; branches: Outcome[] }, 'task'>
 type Screen = 'home' | 'templates' | 'editor' | 'connections' | 'runs' | 'rules'
@@ -22,11 +22,15 @@ const EXAMPLES: Array<[string, string]> = [['Plan, implement, review', 'Plan the
 const SUGGESTIONS = ['Add a testing step before the final review', 'Use a different AI to review the work']
 const Icon = ({ id }: { id: string }) => <svg aria-hidden="true"><use href={`#${id}`} /></svg>
 
+const engineTints: Record<string, string> = { claude: '#d4a091', glm: '#91b0dc', codex: '#bfd38b' }
 const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>) {
+  const engine = data.agent.engine
   return <div className="workflow-node" data-selected={selected}>
     <Handle type="target" position={Position.Left} />
+    <Icon id={kindIcon(data.kind)} />
     <strong>{data.title}</strong>
-    <small>{data.agent.engine ? <img src={`/providers/${data.agent.engine}.svg`} alt="" /> : <Icon id="auto-icon" />}{data.agentLabel}</small>
+    <p>{data.instructions.split(/(?<=[.!?])\s/)[0]}</p>
+    <footer><small style={engine && engineTints[engine] ? { '--engine': engineTints[engine] } as CSSProperties : undefined}>{engine ? <img src={`/providers/${engine}.svg`} alt="" /> : <Icon id="auto-icon" />}{roleWord(data.agent.role)} AI · {data.agentLabel}</small></footer>
     <Handle type="source" id="pass" position={Position.Right} />
     {data.branches.filter(outcome => outcome !== 'pass').map((outcome, index) => <Handle key={outcome} title={outcomeLabels[outcome]} aria-label={outcomeLabels[outcome]} type="source" id={outcome} position={Position.Bottom} className={`handle-${outcome}`} style={{ left: index ? '70%' : '30%' }} />)}
   </div>
@@ -157,12 +161,12 @@ function Studio() {
       </header>
       <div className="editor-body">
         <div className="workflow-canvas">
-          <div className="canvas-tools"><button type="button" className="pill" disabled={disabled} onClick={() => { setQuery(''); setPanel('picker') }}><Icon id="plus-icon" />Add step</button>{aiSummary && <span className="draft-notice"><strong>AI draft</strong> {aiSummary} <button type="button" className="round" aria-label="Dismiss draft message" onClick={() => setAiSummary('')}><Icon id="close-icon" /></button></span>}<button type="button" className="text-button" aria-pressed={panel === 'assistant'} onClick={() => setPanel(panel === 'assistant' ? null : 'assistant')}><Icon id="spark-icon" />Ask AI</button></div>
           <div className="flow-host">
-            <ReactFlow<TaskNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onInit={instance => { flow.current = instance; fit() }} onNodesChange={changes => { onNodesChange(changes); if (changes.some(change => change.type === 'position' && change.dragging)) markDirty() }} onEdgesChange={changes => { onEdgesChange(changes); if (changes.some(change => change.type === 'remove')) markDirty() }} onNodeClick={(_, node) => { setSelected(node.id); setPanel('step') }} onSelectionChange={({ nodes: picked }) => { const id = picked[0]?.id; if (id && id !== selected) { setSelected(id); setPanel('step') } }} onConnect={connection => { if (connection.source && connection.target) wire(connection.source, (connection.sourceHandle ?? 'pass') as Outcome, connection.target) }} nodesDraggable={!disabled} nodesConnectable={!disabled} deleteKeyCode={null} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1 }} minZoom={0.25} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Controls showInteractive={false} /></ReactFlow>
+            <div className="canvas-tools"><button type="button" className="pill" disabled={disabled} onClick={() => { setQuery(''); setPanel('picker') }}><Icon id="plus-icon" />Add step</button>{aiSummary && <span className="draft-notice"><strong>AI draft</strong> {aiSummary} <button type="button" className="round" aria-label="Dismiss draft message" onClick={() => setAiSummary('')}><Icon id="close-icon" /></button></span>}<button type="button" className="text-button" aria-pressed={panel === 'assistant'} onClick={() => setPanel(panel === 'assistant' ? null : 'assistant')}><Icon id="spark-icon" />Ask AI</button></div>
+            <ReactFlow<TaskNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onInit={instance => { flow.current = instance; fit() }} onNodesChange={changes => { onNodesChange(changes); if (changes.some(change => change.type === 'position' && change.dragging)) markDirty() }} onEdgesChange={changes => { onEdgesChange(changes); if (changes.some(change => change.type === 'remove')) markDirty() }} onNodeClick={(_, node) => { setSelected(node.id); setPanel('step') }} onSelectionChange={({ nodes: picked }) => { const id = picked[0]?.id; if (id && id !== selected) { setSelected(id); setPanel('step') } }} onConnect={connection => { if (connection.source && connection.target) wire(connection.source, (connection.sourceHandle ?? 'pass') as Outcome, connection.target) }} nodesDraggable={!disabled} nodesConnectable={!disabled} deleteKeyCode={null} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1 }} minZoom={0.25} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cfd5e3" /><Controls showInteractive={false} /></ReactFlow>
             {!nodes.length && <div className="empty-canvas"><span className="welcome-mark"><Icon id="plus-icon" /></span><h3>Your workflow starts here</h3><p className="muted">Add a step, or describe the whole workflow to AI.</p><div><button type="button" className="pill" onClick={() => setPanel('picker')}>Add first step</button><button type="button" className="pill" onClick={() => setPanel('assistant')}><Icon id="spark-icon" />Build with AI</button></div></div>}
+            <p className="canvas-note">Drag to arrange · connect to set the order. <button type="button" className="text-button" onClick={() => setModal('rules')}><Icon id="lock-icon" />Core rules always apply</button></p>
           </div>
-          <p className="canvas-note">Drag to arrange · connect to set the order. <button type="button" className="text-button" onClick={() => setModal('rules')}><Icon id="lock-icon" />Core rules always apply</button></p>
         </div>
         <aside className="step-inspector" aria-label={panel === 'picker' ? 'Add a step' : panel === 'step' ? 'Edit step' : panel === 'history' ? 'Workflow history' : panel === 'assistant' ? 'Build with AI' : 'Step details'}>
           {panel === null && <p className="muted">Select a step to edit it.</p>}

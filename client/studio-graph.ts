@@ -34,3 +34,6 @@ export function agentLabel(node: Pick<WorkflowNode, 'agent'>, providers: readonl
   if (!engine) return 'Chat decides'
   return providers.find(provider => provider.id === engine)?.name ?? `Unavailable · ${engine}`
 }
+const kindIcons: Record<WorkflowNode['kind'], string> = { plan: 'plan-icon', 'verify-plan': 'check-circle-icon', implement: 'code-icon', review: 'eye-icon', task: 'spark-icon' }
+export function kindIcon(kind: WorkflowNode['kind']): string { return kindIcons[kind] }
+export function roleWord(role: 'plan' | 'execute' | 'review'): string { return role[0]!.toUpperCase() + role.slice(1) }

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { defaultWorkflow, validateWorkflow } from '../server/workflows'
-import { agentLabel, insertWorkflowStep, removeWorkflowStep, taskPreset, workflowTemplates } from '../client/studio-graph'
+import { agentLabel, insertWorkflowStep, kindIcon, roleWord, removeWorkflowStep, taskPreset, workflowTemplates } from '../client/studio-graph'
 
 test('adding a custom step keeps the following review connected and preserves failure routes',()=>{
   const graph=defaultWorkflow()
@@ -32,4 +32,18 @@ test('agentLabel reads Chat decides, the provider name, or Unavailable for a rem
   expect(agentLabel({agent:{role:'execute'}},providers)).toBe('Chat decides')
   expect(agentLabel({agent:{role:'execute',engine:'qwen'}},providers)).toBe('Qwen Code')
   expect(agentLabel({agent:{role:'execute',engine:'grok'}},providers)).toBe('Unavailable · grok')
+})
+
+test('kindIcon names the symbol drawn on each step kind',()=>{
+  expect(kindIcon('plan')).toBe('plan-icon')
+  expect(kindIcon('verify-plan')).toBe('check-circle-icon')
+  expect(kindIcon('implement')).toBe('code-icon')
+  expect(kindIcon('review')).toBe('eye-icon')
+  expect(kindIcon('task')).toBe('spark-icon')
+})
+
+test('roleWord capitalises the role shown on the AI tag',()=>{
+  expect(roleWord('plan')).toBe('Plan')
+  expect(roleWord('execute')).toBe('Execute')
+  expect(roleWord('review')).toBe('Review')
 })

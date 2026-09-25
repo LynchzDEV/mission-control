@@ -600,25 +600,43 @@ a.pill:hover { color: var(--accent); }
 .studio .workflow-prompt textarea { background: transparent; }
 .editor-heading input { background: transparent; }
 .editor-heading input:focus-visible { background: #e2e6f0; }
-.flow-host { position: relative; height: 460px; }
+.editor-heading > div:first-child { flex: 1; }
+.editor-body .workflow-canvas { box-shadow: none; border-radius: 0; }
+.flow-host { position: relative; flex: 1; min-height: 460px; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: color-mix(in srgb, #fff 25%, var(--paper)); }
 .flow-host .react-flow { background: transparent; }
+.flow-host .canvas-tools { position: absolute; top: 14px; left: 14px; right: 14px; z-index: 5; padding: 0; justify-content: flex-start; gap: 8px; pointer-events: none; }
+.flow-host .canvas-tools > * { pointer-events: auto; }
+.flow-host .canvas-tools > button { display: inline-flex; align-items: center; gap: 6px; min-height: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: none; padding: 6px 12px; font-size: 13px; color: #505e75; }
+.flow-host .canvas-tools > button:hover:not(:disabled), .flow-host .canvas-tools > button[aria-pressed="true"] { border-color: var(--accent); transform: none; }
+.flow-host .canvas-tools > button svg { width: 15px; height: 15px; }
+.flow-host .draft-notice { box-shadow: none; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+.flow-host .draft-notice .round, .flow-host .empty-canvas .pill { box-shadow: none; border: 1px solid var(--line); border-radius: 10px; }
+.flow-host .canvas-note { position: absolute; left: 14px; bottom: 10px; z-index: 5; margin: 0; }
 .canvas-note .text-button { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 0; }
 .canvas-note .text-button svg { width: 12px; height: 12px; }
 .flow-host .react-flow__node { padding: 0; border: 0; background: transparent; box-shadow: none; }
-.flow-host .workflow-node { width: 170px; min-height: 96px; padding: 18px; background: var(--paper); }
+.flow-host .workflow-node { width: 180px; height: 150px; min-height: 0; padding: 14px 14px 0; border: 1px solid var(--line); border-radius: 12px; background: #f6f7fb; box-shadow: 0 1px 2px #b4c1d633; }
+.flow-host .workflow-node:hover { border-color: #c9bfe6; }
+.flow-host .workflow-node[data-selected="true"] { border-color: var(--accent); box-shadow: 0 1px 2px #b4c1d633; }
 .flow-host .workflow-node::after { display: none; }
-.flow-host .workflow-node small { display: flex; align-items: center; gap: 6px; }
-.flow-host .workflow-node small img, .flow-host .workflow-node small svg { width: 14px; height: 14px; }
-.flow-host .react-flow__handle { width: 8px; height: 8px; border: 0; background: #c9c0e3; }
-.flow-host .react-flow__handle.handle-fail { background: #b0556a; }
-.flow-host .react-flow__handle.handle-blocked { background: #d4a091; }
+.flow-host .workflow-node > svg { display: block; width: 18px; height: 18px; margin-bottom: 8px; color: var(--accent); fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.flow-host .workflow-node strong { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+.flow-host .workflow-node p { font-size: 12px; line-height: 1.5; color: var(--muted); margin: 4px 0 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.flow-host .workflow-node footer { position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px solid var(--line); padding: 9px 14px; }
+.flow-host .workflow-node small { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 11.5px; color: color-mix(in srgb, var(--engine, var(--line)) 40%, #505e75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-host .workflow-node small img, .flow-host .workflow-node small svg { flex: none; width: 16px; height: 16px; padding: 2px; border-radius: 5px; background: color-mix(in srgb, var(--engine, var(--line)) 25%, #fff); }
+.flow-host .react-flow__handle { width: 9px; height: 9px; min-width: 0; min-height: 0; border: 1.5px solid #8a93a8; border-radius: 50%; background: #f6f7fb; }
+.flow-host .react-flow__handle.handle-fail { border-color: #b0556a; }
+.flow-host .react-flow__handle.handle-blocked { border-color: #d4a091; }
 .flow-host .react-flow__edge-path { stroke: #c9c0e3; stroke-width: 1.5; }
 .flow-host .outcome-fail .react-flow__edge-path { stroke: #b0556a; }
 .flow-host .outcome-blocked .react-flow__edge-path { stroke: #d4a091; }
 .flow-host .react-flow__edge-textbg { fill: var(--paper); }
 .flow-host .react-flow__edge-text { font-size: 11px; fill: var(--muted); }
-.flow-host .react-flow__controls { box-shadow: none; display: grid; gap: 8px; background: transparent; }
-.flow-host .react-flow__controls-button { width: 30px; height: 30px; border: 0; border-radius: 30px; background: var(--paper); box-shadow: var(--raised); color: #606d82; }
+.flow-host .react-flow__controls { bottom: 34px; display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--paper); box-shadow: none; }
+.flow-host .react-flow__controls-button { width: 30px; height: 28px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none; color: #505e75; }
+.flow-host .react-flow__controls-button:last-child { border-bottom: 0; }
+.flow-host .react-flow__controls-button:hover:not(:disabled) { transform: none; }
 .flow-host .react-flow__controls-button svg { fill: currentColor; max-width: 12px; max-height: 12px; }
 .empty-canvas { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 8px; text-align: center; pointer-events: none; }
 .empty-canvas h3 { font-size: 18px; font-weight: 500; }
