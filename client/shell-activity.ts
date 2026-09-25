@@ -42,14 +42,14 @@ function setActivityScope(next: Scope | null): void {
   agentSignature = ''
   closeDetail()
   $('live-agents').hidden = !next
-  $('live-flow').hidden = next?.kind !== 'session'
-  document.querySelectorAll<HTMLElement>('#agents .activity-empty').forEach(node => { node.hidden = !!next })
+  $('live-flow').hidden = !next
+  document.querySelectorAll<HTMLElement>('#agents .activity-empty, #flow .activity-empty').forEach(node => { node.hidden = !!next })
   $('live-agents-list').replaceChildren()
   $('agents-summary').textContent = ''
   $('live-flow-steps').replaceChildren()
   $('live-flow-select').hidden = true
   $('live-agents-status').textContent = next?.kind === 'chat' ? 'Loading the chat’s agents…' : 'Loading session activity…'
-  $('live-flow-status').textContent = 'Loading session flow…'
+  $('live-flow-status').textContent = next?.kind === 'chat' ? 'Loading the chat’s flow…' : 'Loading session flow…'
   if (next) void refresh()
 }
 
@@ -231,16 +231,30 @@ function chatDetail(job: ChatAgent): HTMLElement {
 }
 
 async function refreshChat(chat: string, request: number): Promise<void> {
-  const result = await getJson(`/api/jobs?chat=${encodeURIComponent(chat)}`)
+  const [jobsResult, flowResult] = await Promise.all([getJson(`/api/jobs?chat=${encodeURIComponent(chat)}`), getJson('/api/flow?includeArchived=1')])
   refreshing = false
   if (request !== generation) return
-  if (!result.ok) { $('live-agents-status').textContent = `Agents unavailable: ${errorText(result)}. Retrying…`; agentSignature = ''; return }
-  paintChatAgents((readArray(result.data.jobs) as unknown as ChatAgent[]).filter(job => job.purpose !== 'chat'))
+  if (!jobsResult.ok) { $('live-agents-status').textContent = `Agents unavailable: ${errorText(jobsResult)}. Retrying…`; agentSignature = ''; return }
+  const agents = (readArray(jobsResult.data.jobs) as unknown as ChatAgent[]).filter(job => job.purpose !== 'chat')
+  paintChatAgents(agents)
+  if (!flowResult.ok) { $('live-flow-status').textContent = `Flow unavailable: ${errorText(flowResult)}. Retrying…`; return }
+  const jobs = (agents as unknown as WorkJob[]).map(job => ({ ...job, threadRoot: job.threadRoot || job.id }))
+  showFlows(awarenessFlows(buildWork(jobs, readRecord(flowResult.data.sessions)).filter(item => item.job)))
+}
+
+function showFlows(next: WorkItem[]): void {
+  flows = next
+  current = selectFlow(flows, current)
+  const select = $('live-flow-select') as HTMLSelectElement
+  select.replaceChildren(...flows.map(item => new Option(item.label, item.id)))
+  select.value = current
+  select.hidden = flows.length < 2
+  paintFlow()
 }
 
 function paintFlow(): void {
   const item = flows.find(flow => flow.id === current)
-  $('live-flow-status').textContent = item ? item.label : 'No work linked to this session yet.'
+  $('live-flow-status').textContent = item ? item.label : scope?.kind === 'chat' ? 'No agents in this chat yet.' : 'No work linked to this session yet.'
   paintGraph()
 }
 
@@ -289,13 +303,7 @@ async function refresh(): Promise<void> {
   const jobs = (readArray(jobsResult.data.jobs) as WorkJob[]).map(job => ({ ...job, threadRoot: job.threadRoot || job.id }))
   const states = readRecord(flowResult.data.sessions)
   const linked = scopedWork(buildWork(jobs, {}), session.id, session.cwd).flatMap(item => item.members ?? [])
-  flows = awarenessFlows(scopedWork(buildWork(linked, states), session.id, session.cwd))
-  current = selectFlow(flows, current)
-  const select = $('live-flow-select') as HTMLSelectElement
-  select.replaceChildren(...flows.map(item => new Option(item.label, item.id)))
-  select.value = current
-  select.hidden = flows.length < 2
-  paintFlow()
+  showFlows(awarenessFlows(scopedWork(buildWork(linked, states), session.id, session.cwd)))
   paintAgents(activeAgents(linked, states, session.id, session.cwd))
 }
 
