@@ -37,4 +37,10 @@ describe('quiet shell', () => {
       expect((await response.text()).length).toBeGreaterThan(100)
     }
   })
+
+  test('the old tab pages link home to the shell and never to a gate', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/settings'))).text()
+    expect(markup).toContain('href="/" aria-label="Mission Control home"')
+    expect(markup).not.toContain('/api/login')
+  })
 })
