@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { AgentConnection } from '../server/agent-connections'
 import type { WorkflowNode } from '../server/workflows'
+import { normalizeUsage, weeklyOnly, type ProviderUsage, type QuotaWindow } from './provider-usage'
+import { readRecord } from './shared'
 import { api, apiDelete } from './studio-api'
+import { roleWord } from './studio-graph'
 
 export type ConnectionList = { builtins: string[]; connections: AgentConnection[]; presets: Array<Partial<AgentConnection>>; models: Record<string, string[]>; roles?: Record<string, { engine: string; model: string | null }> }
 type Choice = { kind: 'builtin'; id: string } | { kind: 'connection'; value: AgentConnection } | { kind: 'preset'; value: Partial<AgentConnection> } | { kind: 'presets' }
@@ -33,9 +36,25 @@ function GlmSettings({ report, onError }: { report: (text: string) => void; onEr
   return <form className="field-stack" onSubmit={save}>
     <label>Z.ai base URL<input type="url" required value={baseUrl} onChange={event => setBaseUrl(event.target.value)} /></label>
     <label>Z.ai token<input type="password" autoComplete="off" value={token} placeholder={view?.zaiAuthTokenConfigured ? 'Configured · type to replace' : 'Paste your z.ai token'} onChange={event => setToken(event.target.value)} /></label>
-    <p className="muted">The token is stored on this machine only and never shown again.</p>
-    <button className="pill" type="submit" disabled={busy || !view}>Save</button>
+    <p className="muted connection-small">The token is stored on this machine only and never shown again.</p>
+    <button className="connection-button primary" type="submit" disabled={busy || !view}>Save</button>
   </form>
+}
+
+const ENGINE_TINTS: Record<string, string> = { claude: '#d4a091', glm: '#91b0dc', codex: '#bfd38b' }
+const LOGOS = new Set(['claude', 'glm', 'codex', 'qwen'])
+const ROLES = ['plan', 'execute', 'review'] as const
+type Details = { usage: Record<string, unknown>; roles: Record<string, unknown>; models: Record<string, string[]>; glmConfigured: boolean }
+const adapterLine = (adapter: AgentConnection['adapter'] | undefined) => adapter === 'cli' ? 'Headless CLI' : adapter === 'opencode' ? 'OpenCode' : 'ACP agent'
+const tint = (id: string) => ({ '--engine': ENGINE_TINTS[id] ?? 'var(--line)' }) as CSSProperties
+
+function Logo({ id, size }: { id: string; size: number }) {
+  return <span className="connection-logo" style={{ ...tint(id), '--s': `${size}px` } as CSSProperties}>{LOGOS.has(id) ? <img src={`/providers/${id}.svg`} alt="" /> : <Icon id="auto-icon" />}</span>
+}
+
+function UsageBars({ usage }: { usage: ProviderUsage }) {
+  const windows: Array<[string, QuotaWindow]> = weeklyOnly(usage.provider) ? [['Weekly', usage.weekly]] : [['5h', usage.fiveHour], ['Weekly', usage.weekly]]
+  return <>{windows.map(([label, window]) => <div className="connection-bar" key={label} title={window.reset ? `Resets ${window.reset}` : usage.reason || undefined}><span>{label}</span><i><b style={{ width: `${window.percent ?? 0}%` }} /></i><em>{window.percent === null ? '—' : `${Math.round(window.percent)}%`}</em></div>)}</>
 }
 
 export function Connections({ list, refresh, report, onError, onConnect }: { list: ConnectionList; refresh: () => Promise<void>; report: (text: string) => void; onError: (text: string) => void; onConnect?: () => void }) {
@@ -47,7 +66,16 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
   const [probe, setProbe] = useState('')
   const [busy, setBusy] = useState(false)
   const [advanced, setAdvanced] = useState(false)
+  const [details, setDetails] = useState<Details>({ usage: {}, roles: {}, models: {}, glmConfigured: true })
   const removeDialog = useRef<HTMLDialogElement | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    const read = async (url: string) => { const response = await fetch(url); if (!response.ok) throw new Error(`Could not read ${url}`); return await response.json() as Record<string, never> }
+    Promise.all(['/api/quota', '/api/roles', '/api/models', '/api/secrets'].map(read))
+      .then(([usage, roles, models, secrets]) => { if (!cancelled) setDetails({ usage: usage!, roles: roles!, models: models!, glmConfigured: readRecord(secrets).zaiAuthTokenConfigured === true }) })
+      .catch(error => { if (!cancelled) onError((error as Error).message) })
+    return () => { cancelled = true }
+  }, [list])
   const select = (value: Partial<AgentConnection>) => { setEditing({ ...value }); setArgs((value.args ?? []).join('\n')); setEnv(Object.entries(value.env ?? {}).map(([key, reference]) => `${key}=${reference}`).join('\n')); setTerminalArgs(value.terminalArgs ? value.terminalArgs.join('\n') : ''); setProbe(''); setAdvanced(!value.command) }
   const pick = (next: Choice) => { setChoice(next); if (next.kind === 'connection' || next.kind === 'preset') select(next.value) }
   const configured = choice.kind === 'connection'
@@ -62,22 +90,32 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
   const check = async () => { setBusy(true); try { setProbe(JSON.stringify(await api(`/connections/${editing.id}/probe`, {}), null, 2)); report('Connection checked. No task was sent.') } catch (error) { onError((error as Error).message) } finally { setBusy(false) } }
   const remove = async () => { setBusy(true); try { await apiDelete(`/connections/${editing.id}`); removeDialog.current?.close(); await refresh(); pick({ kind: 'builtin', id: 'claude' }); report('Connection removed.') } catch (error) { onError((error as Error).message) } finally { setBusy(false) } }
   const current = (test: (item: Choice) => boolean) => test(choice)
+  const aiId = choice.kind === 'builtin' ? choice.id : choice.kind === 'presets' ? '' : editing.id ?? ''
+  const usedFor = ROLES.filter(role => readRecord(details.roles[role]).engine === aiId)
+  const models = choice.kind === 'builtin' || configured ? details.models[aiId] ?? [] : (editing.models ?? []).filter(Boolean)
+  const header = choice.kind === 'builtin'
+    ? { name: BUILTIN[choice.id]?.name ?? choice.id, line: BUILTIN[choice.id]?.line ?? 'Built in', description: BUILTIN[choice.id]?.description ?? 'Built-in integration.' }
+    : { name: editing.name || 'New connection', line: `${adapterLine(editing.adapter)}${configured ? '' : ' · not saved yet'}`, description: 'Install the app and sign in, then check the connection. Advanced settings are below.' }
 
   return <section className="studio-view connections-view">
     <aside className="connection-list" aria-label="AI connections">
-      <h2>Manage AIs</h2>
-      {list.builtins.map(id => <button key={id} type="button" className="connection-choice" aria-pressed={current(item => item.kind === 'builtin' && item.id === id)} onClick={() => pick({ kind: 'builtin', id })}><span>{BUILTIN[id]?.name ?? id}</span><small>{BUILTIN[id]?.line ?? 'Built in'}</small></button>)}
-      {list.connections.map(connection => <button key={connection.id} type="button" className="connection-choice" aria-pressed={current(item => item.kind === 'connection' && item.value.id === connection.id)} onClick={() => pick({ kind: 'connection', value: connection })}><span>{connection.name}</span><small>{connection.adapter === 'cli' ? 'Headless CLI' : connection.adapter === 'opencode' ? 'OpenCode' : 'ACP agent'} · configured</small></button>)}
-      <button type="button" className="text-button" aria-pressed={current(item => item.kind === 'presets' || item.kind === 'preset')} onClick={() => pick({ kind: 'presets' })}>+ Add a connection</button>
+      <h2>AIs <span className="muted">{list.builtins.length + list.connections.length} connected</span></h2>
+      {list.builtins.map(id => <button key={id} type="button" className="connection-choice" aria-pressed={current(item => item.kind === 'builtin' && item.id === id)} onClick={() => pick({ kind: 'builtin', id })}><Logo id={id} size={28} /><span><strong>{BUILTIN[id]?.name ?? id}</strong><small>{BUILTIN[id]?.line ?? 'Built in'}</small></span><i className="connection-dot" /></button>)}
+      {list.connections.map(connection => <button key={connection.id} type="button" className="connection-choice" aria-pressed={current(item => item.kind === 'connection' && item.value.id === connection.id)} onClick={() => pick({ kind: 'connection', value: connection })}><Logo id={connection.id} size={28} /><span><strong>{connection.name}</strong><small>{adapterLine(connection.adapter)}</small></span><i className="connection-dot" /></button>)}
+      <button type="button" className="connection-add" aria-pressed={current(item => item.kind === 'presets' || item.kind === 'preset')} onClick={() => pick({ kind: 'presets' })}><Icon id="plus-icon" />Add an AI</button>
     </aside>
-    <div className="connection-settings">
-      {choice.kind === 'builtin' && <><h2>{BUILTIN[choice.id]?.name ?? choice.id}</h2><p className="muted">{BUILTIN[choice.id]?.description ?? 'Built-in integration.'}</p>
-        <p className="muted"><span className="status" data-state="done">Built in</span> Checked when a job starts.</p>
-        {choice.id === 'glm' && <GlmSettings report={report} onError={onError} />}</>}
-      {choice.kind === 'presets' && <><h2>Add a connection</h2><p className="muted">Choose the app you already use. Install it and sign in, then check the connection.</p>
-        <div className="preset-list">{list.presets.map(preset => <button key={preset.id} type="button" className="preset-row" onClick={() => pick({ kind: 'preset', value: preset })}><span><strong>{preset.name}</strong><small>{preset.adapter === 'cli' ? 'Headless CLI with a {{prompt}} slot' : preset.adapter === 'opencode' ? 'OpenCode · API or local models' : preset.command ? `ACP agent · ${preset.command}` : 'ACP agent · your own command'}</small></span><Icon id="plus-icon" /></button>)}</div></>}
-      {(choice.kind === 'preset' || choice.kind === 'connection') && <form className="field-stack" onSubmit={save}>
-        <h2>{editing.name || 'New connection'}</h2><p className="muted">Install the app and sign in, then check the connection. Advanced settings are below.</p>
+    {choice.kind === 'presets' ? <div className="connection-settings"><header><h2>Add an AI</h2><p className="muted connection-small">Choose the app you already use. Install it and sign in, then check the connection.</p></header>
+      <div className="preset-list">{list.presets.map(preset => <button key={preset.id} type="button" className="preset-row" onClick={() => pick({ kind: 'preset', value: preset })}><span><strong>{preset.name}</strong><small>{preset.adapter === 'cli' ? 'Headless CLI with a {{prompt}} slot' : preset.adapter === 'opencode' ? 'OpenCode · API or local models' : preset.command ? `ACP agent · ${preset.command}` : 'ACP agent · your own command'}</small></span><Icon id="plus-icon" /></button>)}</div></div>
+    : <div className="connection-settings" style={tint(aiId)}>
+      <header className="connection-head"><Logo id={aiId} size={40} /><div><h2>{header.name}</h2><p className="muted">{header.line}</p></div>{(choice.kind === 'builtin' || configured) && (aiId === 'glm' && !details.glmConfigured ? <span className="connection-ready" data-state="setup">Needs setup</span> : <span className="connection-ready">Ready</span>)}</header>
+      <p className="connection-note">{header.description}</p>
+      <div className="connection-columns">
+        <div className="connection-section"><h3>Usage</h3><UsageBars usage={normalizeUsage(aiId, details.usage[aiId])} /></div>
+        <div className="connection-section"><h3>Used for</h3>{usedFor.length ? usedFor.map(role => <span className="connection-role" key={role}>{roleWord(role)}</span>) : <span className="muted connection-small">Not assigned</span>}<p className="muted connection-small">Change in Workflows · Roles</p></div>
+      </div>
+      {models.length > 0 && <div className="connection-section"><h3>Models</h3><div>{models.map(model => <span className="connection-chip" key={model}>{model}</span>)}</div></div>}
+      {choice.kind === 'builtin' && choice.id === 'glm' && <div className="connection-section"><h3>z.ai settings</h3><GlmSettings report={report} onError={onError} /></div>}
+      {choice.kind !== 'builtin' && <form className="connection-section field-stack" onSubmit={save}><h3>Connection settings</h3>
         <label>Name<input required value={editing.name ?? ''} onChange={event => setEditing({ ...editing, name: event.target.value })} /></label>
         <details open={advanced} onToggle={event => setAdvanced(event.currentTarget.open)}><summary>Advanced connection settings</summary>
           <label>Connection ID<input required value={editing.id ?? ''} disabled={configured} onChange={event => setEditing({ ...editing, id: event.target.value })} /></label>
@@ -93,10 +131,14 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
           <label>Interactive terminal arguments · one per line<textarea rows={2} value={terminalArgs} onChange={event => setTerminalArgs(event.target.value)} placeholder="Leave empty for the app's default interface" /><small className="muted">Lets this agent open in a Mission Control terminal. Use {'{{instructions}}'} to pass its workflow instructions.</small></label>
         </details>
         <label className="switch-label"><input type="checkbox" role="switch" checked={editing.autoApprove === true} onChange={event => setEditing({ ...editing, autoApprove: event.target.checked })} />Allow this AI to use tools without asking each time</label>
-        <div className="connection-actions"><button className="pill" type="submit" disabled={busy}>Save connection</button><button type="button" className="pill" disabled={busy || editing.adapter === 'cli' || !configured} title={editing.adapter === 'cli' ? 'CLI connections have no capability probe' : !configured ? 'Save first' : undefined} onClick={() => void check()}>Check connection</button>{configured && <button type="button" className="text-button danger" disabled={busy} onClick={() => removeDialog.current?.showModal()}>Remove connection</button>}</div>
-        {probe && <details open><summary>Connection details</summary><pre className="studio-output">{probe}</pre></details>}
+        <button className="connection-button primary" type="submit" disabled={busy}>Save connection</button>
       </form>}
-    </div>
+      <div className="connection-foot">
+        {choice.kind !== 'builtin' && <><button type="button" className="connection-button" disabled={busy || editing.adapter === 'cli' || !configured} title={editing.adapter === 'cli' ? 'CLI connections have no capability probe' : !configured ? 'Save first' : undefined} onClick={() => void check()}>Check connection</button>{configured && <button type="button" className="text-button danger" disabled={busy} onClick={() => removeDialog.current?.showModal()}>Remove connection</button>}</>}
+        <span className="muted connection-small">Checked when a job starts</span>
+      </div>
+      {probe && <details open><summary>Connection details</summary><pre className="studio-output">{probe}</pre></details>}
+    </div>}
     <dialog ref={removeDialog} className="access-dialog flat confirm-dialog" aria-labelledby="remove-connection-title">
       <header className="dialog-heading"><h2 id="remove-connection-title">Remove {editing.name}?</h2><form method="dialog"><button className="round" aria-label="Cancel"><Icon id="close-icon" /></button></form></header>
       <p className="muted">Workflows that pin this AI will show it as unavailable until you pick another.</p>
