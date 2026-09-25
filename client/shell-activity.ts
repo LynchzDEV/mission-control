@@ -5,10 +5,12 @@ import { errorText, getJson, postJson, providerName, readArray, readRecord } fro
 type Session = { id: string; cwd: string }
 type Scope = { kind: 'session'; session: Session } | { kind: 'chat'; chat: string }
 type ChatAgent = { id: string; label: string; engine: string; model: string | null; reason?: string; status: string; reviewedAt: number | null; currentActivity?: string | null; purpose?: string; startedAt?: number; endedAt?: number | null }
-type AgentRow = { id: string; label: string; engine: string; pill: string; pillState: string; line: string; lineState: 'live' | 'still' | 'none'; startedAt?: number; endedAt?: number | null }
+type AgentRow = { id: string; jobId?: string; label: string; engine: string; pill: string; pillState: string; line: string; lineState: 'live' | 'still' | 'none'; startedAt?: number; endedAt?: number | null }
 
 const PLAIN_STEPS: Record<string, string> = { Read: 'Reading', Edit: 'Editing', Write: 'Writing', Bash: 'Running', Grep: 'Searching', Glob: 'Searching' }
 const FADE_MS = 300
+const LOG_LINES = 40
+const LOG_POLL_MS = 3000
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 let scope: Scope | null = null
@@ -18,6 +20,11 @@ let refreshing = false
 let flows: WorkItem[] = []
 let current = ''
 let agentSignature = ''
+let openRow: string | null = null
+let logTimer: ReturnType<typeof setInterval> | undefined
+let openJob: string | undefined
+const replyForm = $('agent-reply') as HTMLFormElement
+const logBox = node('div', '', 'ag-log')
 
 function node(tag: string, text = '', className = ''): HTMLElement {
   const element = document.createElement(tag)
@@ -32,11 +39,10 @@ function setActivityScope(next: Scope | null): void {
   flows = []
   current = ''
   agentSignature = ''
-  replyTarget = null
+  closeDetail()
   $('live-agents').hidden = !next
   $('live-flow').hidden = next?.kind !== 'session'
   document.querySelectorAll<HTMLElement>('#agents .activity-empty').forEach(node => { node.hidden = !!next })
-  $('agent-reply').hidden = true
   $('live-agents-list').replaceChildren()
   $('agents-summary').textContent = ''
   $('live-flow-steps').replaceChildren()
@@ -54,11 +60,72 @@ function agentState(job: ChatAgent, all: ChatAgent[]): { text: string; state: st
   return { text: 'Done', state: 'done' }
 }
 
-function pickReply(job: ChatAgent): void {
-  replyTarget = job.id
-  $('agent-reply-label').textContent = `Message ${job.label}`
-  $('agent-reply').hidden = false
+function parkReply(): void {
+  replyTarget = null
+  replyForm.hidden = true
+  $('agents').append(replyForm)
 }
+
+function closeDetail(): void {
+  if (openRow === null) return
+  openRow = null
+  clearInterval(logTimer)
+  logTimer = undefined
+  logBox.replaceChildren()
+  logBox.remove()
+  parkReply()
+}
+
+function logLine(event: Record<string, unknown>): HTMLElement {
+  const line = node('div')
+  const time = typeof event.ts === 'number' ? new Date(event.ts).toTimeString().slice(0, 8) : ''
+  if (time) line.append(node('span', time, 't'), ' ')
+  if (event.kind === 'tool') line.append(node('span', String(event.title), 'k'), ' ')
+  line.append(String(event.detail || event.title || ''))
+  return line
+}
+
+async function loadLog(row: string, job: string): Promise<void> {
+  const result = await getJson(`/api/jobs/${encodeURIComponent(job)}/activity`)
+  if (row !== openRow) return
+  if (!result.ok) { logBox.replaceChildren(node('div', `Log unavailable: ${errorText(result)}`, 't')); return }
+  const events = readArray(result.data.events).slice(-LOG_LINES)
+  logBox.replaceChildren(...(events.length ? events.map(logLine) : [node('div', 'No activity yet.', 't')]))
+  logBox.scrollTop = logBox.scrollHeight
+}
+
+function showDetail(item: HTMLElement, row: AgentRow): void {
+  item.classList.add('open')
+  const detail = item.querySelector('.ag-detail') as HTMLElement
+  if (row.jobId) detail.prepend(logBox)
+  if (scope?.kind !== 'chat') return
+  replyTarget = row.id
+  $('agent-reply-label').textContent = `Message ${row.label}`
+  replyForm.hidden = false
+  ;(detail.querySelector('.ag-why') as HTMLElement).after(replyForm)
+}
+
+function openDetail(item: HTMLElement, row: AgentRow): void {
+  const wasOpen = openRow === row.id
+  $('live-agents-list').querySelectorAll('.ag-item.open').forEach(other => other.classList.remove('open'))
+  closeDetail()
+  if (wasOpen) return
+  openRow = row.id
+  showDetail(item, row)
+  openJob = row.jobId
+  watchLog()
+}
+
+function watchLog(): void {
+  clearInterval(logTimer)
+  logTimer = undefined
+  const row = openRow, job = openJob
+  if (!row || !job || !($('agents') as HTMLDialogElement).open) return
+  void loadLog(row, job)
+  logTimer = setInterval(() => { if (!document.hidden) void loadLog(row, job) }, LOG_POLL_MS)
+}
+$('agents').addEventListener('close', watchLog)
+$('open-agents').addEventListener('click', watchLog)
 
 function plainActivity(text: string): string {
   const match = /^(Read|Edit|Write|Bash|Grep|Glob) (.*)$/s.exec(text)
@@ -83,15 +150,19 @@ function fadeTo(tick: HTMLElement, text: string): void {
 
 function paintRows(rows: AgentRow[], detail: (row: AgentRow) => HTMLElement): void {
   const list = $('live-agents-list')
-  const open = new Set([...list.querySelectorAll<HTMLElement>('details[open]')].map(item => item.dataset.job))
   const shown = new Map([...list.querySelectorAll<HTMLElement>('.ag-tick')].map(tick => [tick.dataset.job, tick.textContent ?? '']))
+  const openNow = rows.find(row => row.id === openRow)
+  const box = $('reply') as HTMLTextAreaElement
+  const typing = openNow && replyForm.contains(document.activeElement) ? [box.selectionStart, box.selectionEnd] as const : null
+  if (openNow) { logBox.remove(); parkReply() } else if (openRow) closeDetail()
   list.replaceChildren()
   for (const row of rows) {
-    const item = node('details', '', 'ag-item') as HTMLDetailsElement
+    const item = node('div', '', 'ag-item')
     item.dataset.job = row.id
     item.dataset.engine = row.engine
-    item.open = open.has(row.id)
-    const summary = node('summary')
+    item.tabIndex = 0
+    item.onclick = (event) => { if (!(event.target as Element).closest('.ag-detail')) openDetail(item, row) }
+    item.onkeydown = (event) => { if (event.target === item && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openDetail(item, row) } }
     const line = node('div', '', 'ag-row')
     const disc = node('span', '', 'ag-disc')
     const logo = document.createElement('img')
@@ -103,14 +174,16 @@ function paintRows(rows: AgentRow[], detail: (row: AgentRow) => HTMLElement): vo
     const pill = node('span', row.pill, 'pill-state')
     pill.dataset.s = row.pillState
     line.append(disc, node('span', row.label, 'l'), time, pill)
-    summary.append(line)
+    item.append(line)
     const before = shown.get(row.id)
     const tick = row.lineState === 'none' ? null : node('p', row.lineState === 'live' && before ? before : row.line, row.lineState === 'still' ? 'ag-tick still' : 'ag-tick')
-    if (tick) { tick.dataset.job = row.id; summary.append(tick) }
-    item.append(summary, detail(row))
+    if (tick) { tick.dataset.job = row.id; item.append(tick) }
+    item.append(detail(row))
     list.append(item)
+    if (row === openNow) showDetail(item, row)
     if (tick && row.lineState === 'live' && before && before !== row.line) fadeTo(tick, row.line)
   }
+  if (typing) { box.focus(); box.setSelectionRange(...typing) }
 }
 
 function lastLine(text: string | null | undefined): string {
@@ -121,7 +194,7 @@ function chatRow(job: ChatAgent, all: ChatAgent[]): AgentRow {
   const { text, state } = agentState(job, all)
   const pill = state === 'landed' ? 'Done' : text
   const pillState = state === 'needs-you' ? 'needs' : state === 'running' || state === 'reviewing' ? 'running' : 'done'
-  const base = { id: job.id, label: job.label, engine: job.engine, pill, pillState, startedAt: job.startedAt, endedAt: job.endedAt }
+  const base = { id: job.id, jobId: job.id, label: job.label, engine: job.engine, pill, pillState, startedAt: job.startedAt, endedAt: job.endedAt }
   if (state === 'running') return { ...base, line: plainActivity(job.currentActivity || 'Starting…'), lineState: 'live' }
   if (state === 'needs-you') return { ...base, line: lastLine(job.currentActivity) || 'Needs you', lineState: 'still' }
   return { ...base, line: '', lineState: 'none' }
@@ -140,17 +213,12 @@ function paintChatAgents(agents: ChatAgent[]): void {
   agentSignature = signature
   const byId = new Map(agents.map(job => [job.id, job]))
   paintRows(agents.map(job => chatRow(job, agents)), row => chatDetail(byId.get(row.id) as ChatAgent))
-  if (replyTarget && !agents.some(job => job.id === replyTarget)) { replyTarget = null; $('agent-reply').hidden = true }
 }
 
 function chatDetail(job: ChatAgent): HTMLElement {
   const body = node('div', '', 'ag-detail')
   body.append(node('p', `${providerName(job.engine)}${job.model ? ` · ${job.model}` : ''}${job.reason ? ` — ${job.reason}` : ''}`, 'ag-why'))
   const actions = node('div', '', 'ag-actions0')
-  const message = node('button', 'Reply', 'ag-btn') as HTMLButtonElement
-  message.type = 'button'
-  message.onclick = () => { pickReply(job); ($('reply') as HTMLTextAreaElement).focus() }
-  actions.append(message)
   if (job.status === 'running') {
     const stop = node('button', 'Stop', 'ag-btn danger') as HTMLButtonElement
     stop.type = 'button'
@@ -194,7 +262,7 @@ function paintAgents(agents: WorkItem[]): void {
   if (signature === agentSignature) return
   agentSignature = signature
   paintRows(agents.map(item => ({
-    id: item.id, label: item.label, engine: item.provider,
+    id: item.id, jobId: item.job?.id, label: item.label, engine: item.provider,
     pill: item.state === 'running' ? 'Working' : 'Queued', pillState: item.state === 'running' ? 'running' : 'queued',
     line: plainActivity(item.activity || 'Starting…'), lineState: item.state === 'running' ? 'live' : 'none',
     startedAt: item.job?.startedAt, endedAt: item.job?.endedAt,
@@ -248,6 +316,7 @@ if (document.body.dataset.chat) setActivityScope({ kind: 'chat', chat: document.
   agentSignature = ''
   void refresh()
 }
+;($('reply') as HTMLTextAreaElement).placeholder = 'Message this agent…'
 setInterval(() => void refresh(), 3000)
 
 export { plainActivity }
