@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chatSignal, historyAction, historyDay, historyLabel, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
+import { chatSignal, historyAction, historyDay, historyLabel, runningLabel, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
 
 const thread = [
   { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Fix login' },
@@ -24,11 +24,42 @@ describe('turnsFrom', () => {
   })
 })
 
+describe('turn steps and running label', () => {
+  test('stepText names the action for known tools and falls back to the tool title', () => {
+    expect(stepText('Read', 'client/chat.ts')).toBe('Reading client/chat.ts')
+    expect(stepText('Bash', 'bun test')).toBe('Running bun test')
+    expect(stepText('Grep', 'scrollTop')).toBe('Searching scrollTop')
+    expect(stepText('WebFetch', 'x.com')).toBe('WebFetch x.com')
+  })
+  test('turnsFrom lists one step per tool message in order', () => {
+    const steps = [
+      { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Fix' },
+      { role: 'assistant', kind: 'tool', jobId: 't1', title: 'Read', detail: 'a.ts', input: '', result: '', resultIsError: false },
+      { role: 'assistant', kind: 'tool', jobId: 't1', title: 'Edit', detail: 'a.ts', input: '', result: '', resultIsError: false },
+    ]
+    expect(turnsFrom(steps as never, jobs as never)[0]?.steps).toEqual(['Reading a.ts', 'Editing a.ts'])
+  })
+  test('a running turn is thinking only while its last message is a partial thinking block', () => {
+    const open = [
+      { role: 'user', kind: 'prompt', jobId: 't2', ts: 5000, text: 'Hi' },
+      { role: 'assistant', kind: 'thinking', jobId: 't2', text: '', partial: true },
+    ]
+    expect(turnsFrom(open as never, jobs as never)[0]?.thinking).toBe(true)
+    expect(turnsFrom([...open, { role: 'assistant', kind: 'text', jobId: 't2', text: 'Hey', partial: true }] as never, jobs as never)[0]?.thinking).toBe(false)
+    expect(turnsFrom([{ ...open[0], jobId: 't1' }, { ...open[1], jobId: 't1' }] as never, jobs as never)[0]?.thinking).toBe(false)
+  })
+  test('runningLabel reads thinking before any text and writing once text exists', () => {
+    const [, running] = turnsFrom(thread as never, jobs as never)
+    expect(runningLabel({ ...running!, text: '', started: 1000 }, 5000)).toBe('Thinking · 4s')
+    expect(runningLabel({ ...running!, text: 'Hi', started: 1000 }, 5000)).toBe('Writing · 4s')
+  })
+})
+
 describe('workedLine', () => {
   test('working while running, worked with tool count after', () => {
     const [first, second] = turnsFrom(thread as never, jobs as never)
     expect(workedLine(first!, 20000)).toBe('Worked 18s · used 1 tool')
-    expect(workedLine(second!, 17000)).toBe('Working · 12s')
+    expect(workedLine(second!, 17000)).toBe('Writing · 12s')
     expect(workedLine({ ...first!, tools: 0 }, 20000)).toBe('Answered')
     expect(workedLine({ ...first!, tools: 3, ended: 1000 + 125_000 }, 200000)).toBe('Worked 2m 5s · used 3 tools')
   })

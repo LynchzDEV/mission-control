@@ -246,7 +246,7 @@ async function startChat(prompt: string): Promise<void> {
 
 async function sendMessage(prompt: string): Promise<void> {
   show('conversation')
-  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], started: Date.now(), ended: null, running: true })); setRunning(true); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
+  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], thinking: false, started: Date.now(), ended: null, running: true })); setRunning(true); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
   const result = await postJson(`/api/jobs/${encodeURIComponent(root)}/reply`, { message: prompt })
   if (!result.ok) { chatError(errorText(result)); return }
   if (result.status !== 202) setRunning(true)
