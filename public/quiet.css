@@ -419,3 +419,4 @@ body[data-live="true"] #agents > .activity-empty, body[data-live="true"] #agents
 .usage-week meter::-webkit-meter-optimum-value { opacity: .6; }
 a.pill { text-decoration: none; color: #606d82; }
 a.pill:hover { color: var(--accent); }
+.usage-item[data-unavailable="true"] strong { color: var(--muted); }
