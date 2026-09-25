@@ -652,3 +652,7 @@ a.pill:hover { color: var(--accent); }
 .field-stack small { display: block; font-size: 12px; margin-top: -4px; }
 .studio .workflow-prompt { box-shadow: none; background: #e2e6f0; }
 .studio .workflow-prompt select { background: var(--paper); }
+.token-row { display: flex; align-items: center; gap: 12px; }
+.token-row input { flex: 1; min-width: 0; font: 12px Menlo, monospace; }
+#access .field-stack input { box-shadow: none; background: #e2e6f0; border: 1px solid transparent; border-radius: 10px; }
+#access .field-stack input:focus-visible { border-color: #c9c0e3; outline: none; }
