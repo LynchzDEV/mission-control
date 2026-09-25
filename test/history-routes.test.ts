@@ -54,4 +54,14 @@ describe('GET /api/history', () => {
     const response = await app().handle(new Request('http://rebind.example/api/history'))
     expect(response.status).toBe(403)
   })
+
+  test('the transcript scan is cached for the route\'s TTL', async () => {
+    const instance = app()
+    const first = await (await instance.handle(local())).json() as { items: HistoryItem[] }
+    await writeFile(join(projectsDir, projectSlug(repo), 'sess-late.jsonl'), `${JSON.stringify({ type: 'user', message: { role: 'user', content: 'late one' }, timestamp: '2026-09-02T10:00:00.000Z' })}\n`)
+    const second = await (await instance.handle(local())).json() as { items: HistoryItem[] }
+    expect(second.items.filter(item => item.kind === 'claude-history')).toHaveLength(first.items.filter(item => item.kind === 'claude-history').length)
+    const fresh = await (await new Elysia().use(historyRoutes({ manager: { listJobs: () => [chatRoot] }, registry: { list: () => [] }, knownDirectories: () => [repo], external: async () => [], projectsDir, scanTtlMs: 0 })).handle(local())).json() as { items: HistoryItem[] }
+    expect(fresh.items.some(item => item.kind === 'claude-history' && item.id === 'sess-late')).toBe(true)
+  })
 })

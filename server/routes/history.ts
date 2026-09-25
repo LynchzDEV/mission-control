@@ -6,7 +6,7 @@ import { requireLocal } from '../auth'
 import { chatHome } from '../chat-home'
 import { buildHistory } from '../history'
 import type { JobManager } from '../jobs'
-import type { ExternalSession } from '../quota'
+import { createQuotaCache, type ExternalSession } from '../quota'
 import { readConfig } from '../secrets'
 import type { TerminalRegistry } from '../terminals'
 import { listSessions } from '../transcripts'
@@ -20,6 +20,7 @@ export type HistoryDeps = {
   external: () => Promise<ExternalSession[]>
   projectsDir?: string
   home?: string
+  scanTtlMs?: number
 }
 
 async function realHome(home: string): Promise<string> {
@@ -40,19 +41,19 @@ async function configuredChatHome(home: string): Promise<string[]> {
 }
 
 export function historyRoutes(deps: HistoryDeps) {
+  const scan = createQuotaCache(async () => {
+    const directories = [...new Set([...await configuredChatHome(deps.home ?? homedir()), ...deps.knownDirectories()])]
+    return Promise.all(directories.map(async cwd => ({
+      cwd,
+      sessions: await listSessions(cwd, { projectsDir: deps.projectsDir, limit: TRANSCRIPTS_PER_FOLDER }).catch(() => []),
+    })))
+  }, deps.scanTtlMs ?? 10_000)
   return new Elysia()
     .onBeforeHandle(requireLocal)
     .get('/api/history', async () => {
       const jobs = deps.manager.listJobs()
       const terminals = deps.registry.list()
-      const directories = [...new Set([...await configuredChatHome(deps.home ?? homedir()), ...deps.knownDirectories()])]
-      const [transcripts, outside] = await Promise.all([
-        Promise.all(directories.map(async cwd => ({
-          cwd,
-          sessions: await listSessions(cwd, { projectsDir: deps.projectsDir, limit: TRANSCRIPTS_PER_FOLDER }).catch(() => []),
-        }))),
-        deps.external().catch(() => []),
-      ])
+      const [transcripts, outside] = await Promise.all([scan.get(), deps.external().catch(() => [])])
       return { items: buildHistory({ jobs, terminals, transcripts, outside, now: Date.now() }) }
     })
 }

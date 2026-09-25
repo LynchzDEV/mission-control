@@ -1,7 +1,7 @@
 import { renderMarkdown } from './markdown'
 import { errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
-import { chatSignal, historyDay, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { chatSignal, historyAction, historyDay, historyLabel, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const RUNNING_POLL_MS = 2000
@@ -235,34 +235,42 @@ async function sendMessage(prompt: string): Promise<void> {
 
 type ListedJob = AgentJob & TurnJob & { threadRoot: string; purpose?: string; project?: string | null; chatId?: string; label: string }
 
-function paintHistory(jobs: ListedJob[]): void {
-  const roots = jobs.filter(job => job.purpose === 'chat' && job.threadRoot === job.id)
-  const latest = (rootId: string): ListedJob => jobs.filter(job => job.threadRoot === rootId).sort((a, b) => b.startedAt - a.startedAt)[0]!
-  roots.sort((a, b) => latest(b.id).startedAt - latest(a.id).startedAt)
-  $('history-count').textContent = roots.length ? `(${roots.length})` : ''
+function paintHistory(items: HistoryItem[]): void {
+  $('history-count').textContent = items.length ? `(${items.length})` : ''
   const list = $('history-list')
-  if (!roots.length) { list.replaceChildren(Object.assign(document.createElement('p'), { className: 'history-empty', textContent: 'No chats yet. Write a message to start one.' })); historySignature = ''; return }
-  const signature = JSON.stringify(roots.map(chat => [chat.id, chat.label, latest(chat.id).id, latest(chat.id).status, latest(chat.id).currentActivity, jobs.filter(job => job.chatId === chat.id).map(job => job.status)]))
+  if (!items.length) { list.replaceChildren(Object.assign(document.createElement('p'), { className: 'history-empty', textContent: 'Nothing yet. Write a message or open a terminal to start.' })); historySignature = ''; return }
+  const signature = JSON.stringify(items.map(item => [item.kind, item.id, item.title, item.updatedAt, item.kind === 'chat' ? [item.running, item.agents.map(job => [job.status, job.landedAt, job.stoppedAt])] : null]))
   if (signature === historySignature) return
   historySignature = signature
-  const openIds = new Set([...list.querySelectorAll<HTMLElement>('details[open]')].map(item => item.dataset.chat))
-  list.replaceChildren(...roots.map((chat, index) => {
-    const signal = chatSignal(jobs.some(job => job.threadRoot === chat.id && job.status === 'running'), jobs.filter(job => job.chatId === chat.id))
-    const state = signal.state
-    const item = document.createElement('details'); item.className = 'history-item'; item.dataset.chat = chat.id; item.open = openIds.size ? openIds.has(chat.id) : index === 0
+  const openIds = new Set([...list.querySelectorAll<HTMLElement>('details[open]')].map(item => item.dataset.item))
+  list.replaceChildren(...items.map((item, index) => {
+    const key = `${item.kind}:${item.id}`
+    const signal = item.kind === 'chat' ? chatSignal(item.running, item.agents) : item.kind === 'terminal' ? { state: 'running' as const, count: 0 } : { state: null, count: 0 }
+    const card = document.createElement('details'); card.className = 'history-item'; card.dataset.item = key; card.dataset.kind = item.kind; card.open = openIds.size ? openIds.has(key) : index === 0
     const summary = document.createElement('summary')
     const title = document.createElement('span')
-    if (state) { const dot = document.createElement('span'); dot.className = 'live-dot'; dot.dataset.state = state; dot.title = `${signal.count} ${state === 'running' ? 'running' : state === 'needs-you' ? 'need you' : 'landed'}`; title.append(dot); if (signal.count > 1) { const count = document.createElement('small'); count.className = 'dot-count'; count.textContent = String(signal.count); title.append(count) } }
-    title.append(chat.label)
-    const time = document.createElement('time'); time.textContent = historyDay(latest(chat.id).startedAt, Date.now())
+    if (signal.state) { const dot = document.createElement('span'); dot.className = 'live-dot'; dot.dataset.state = signal.state; dot.title = signal.count ? `${signal.count} ${signal.state === 'running' ? 'running' : signal.state === 'needs-you' ? 'need you' : 'landed'}` : signal.state; title.append(dot); if (signal.count > 1) { const count = document.createElement('small'); count.className = 'dot-count'; count.textContent = String(signal.count); title.append(count) } }
+    title.append(item.title)
+    const time = document.createElement('time'); time.textContent = historyDay(item.updatedAt, Date.now())
     summary.append(title, time)
-    const line = document.createElement('p'); line.textContent = latest(chat.id).currentActivity || (state === 'running' ? 'Working…' : 'Open to continue.')
+    const line = document.createElement('p'); line.textContent = historyLabel(item)
     const footer = document.createElement('footer')
-    const where = document.createElement('span'); where.textContent = chat.project ? chat.project.split('/').pop() ?? '' : 'Chat home'
-    const open = document.createElement('button'); open.type = 'button'; open.className = 'text-button'; open.textContent = 'Continue chat'; open.onclick = () => openChat(chat.id)
-    footer.append(where, open)
-    item.append(summary, line, footer)
-    return item
+    const kind = document.createElement('span'); kind.textContent = item.kind === 'chat' ? 'Chat' : item.kind === 'terminal' ? 'Terminal' : item.kind === 'claude-history' ? 'Claude history' : 'Outside session'
+    footer.append(kind)
+    const actionText = historyAction(item)
+    if (actionText) {
+      const action = document.createElement('button'); action.type = 'button'; action.className = 'text-button'; action.textContent = actionText
+      action.onclick = () => {
+        if (item.kind === 'chat') { openChat(item.id); return }
+        show('welcome')
+        if (item.kind === 'terminal') dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { id: item.id } }))
+        else if (item.kind === 'claude-history') dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { resume: { sessionId: item.id, cwd: item.cwd, title: item.title } } }))
+        else dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { restore: false, cwd: item.cwdHint } }))
+      }
+      footer.append(action)
+    }
+    card.append(summary, line, footer)
+    return card
   }))
 }
 
@@ -279,11 +287,8 @@ async function pollJobs(): Promise<void> {
   clearTimeout(jobsTimer)
   if (document.visibilityState === 'visible') {
     const result = await getJson('/api/jobs')
-    if (result.ok) {
-      const jobs = readArray(result.data.jobs) as unknown as ListedJob[]
-      paintAgentsCount(jobs)
-      if (!$('history').hidden) paintHistory(jobs)
-    }
+    if (result.ok) paintAgentsCount(readArray(result.data.jobs) as unknown as ListedJob[])
+    if (!$('history').hidden) { const feed = await getJson('/api/history'); if (feed.ok) paintHistory(readArray(feed.data.items) as unknown as HistoryItem[]) }
   }
   jobsTimer = window.setTimeout(() => void pollJobs(), IDLE_POLL_MS)
 }

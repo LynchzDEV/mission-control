@@ -510,11 +510,11 @@ async function load(restore = false): Promise<void> {
   $('live-error').textContent = 'Choose how and where to start.'
 }
 
-export async function openTerminal(restore = false): Promise<void> {
+export async function openTerminal(restore = false, cwd?: string): Promise<void> {
   if (opening) return
   opening = true
   if (!launch.open) launch.showModal()
-  try { await load(restore) } finally { opening = false }
+  try { await load(restore); if (cwd) cwdInput.value = cwd } finally { opening = false }
 }
 
 async function createTerminal(): Promise<void> {
@@ -541,6 +541,20 @@ async function createTerminal(): Promise<void> {
   } finally { opening = false; submit.disabled = false }
 }
 
+async function resumeSession(resume: { sessionId: string; cwd: string; title: string }): Promise<void> {
+  if (opening) return
+  opening = true
+  try {
+    const result = await postJson('/api/terminals', { engine: 'claude', cwd: resume.cwd, cols: 100, rows: 30, resumeSessionId: resume.sessionId, title: resume.title.slice(0, 60) })
+    if (!result.ok) { toast(`Could not resume: ${errorText(result)}`, 4000); return }
+    const session = result.data as unknown as Session
+    sessions = [...sessions.filter(item => item.id !== session.id), session]
+    ensureView(session)
+    launch.close()
+    activate(session.id)
+  } finally { opening = false }
+}
+
 ;($('live-create') as HTMLFormElement).onsubmit = (event) => { event.preventDefault(); void createTerminal() }
 engineSelect.onchange = () => { modelInput.value = ''; updateModelChoices() }
 $('rail-new').onclick = () => void openTerminal(false)
@@ -555,7 +569,12 @@ function paintRail(open: boolean): void {
 $('rail-toggle').onclick = () => { const open = (document.querySelector('.with-rail') as HTMLElement).dataset.rail === 'closed'; store(railOpenKey, open ? null : '0'); paintRail(open) }
 paintRail(stored(railOpenKey) !== '0')
 addEventListener('quiet:design', () => { if (canvas.dataset.live === 'true') visible(false) })
-addEventListener('quiet:open-terminal', (event) => { void openTerminal((event as CustomEvent<{ restore: boolean }>).detail.restore) })
+addEventListener('quiet:open-terminal', (event) => {
+  const detail = (event as CustomEvent<{ restore?: boolean; id?: string; cwd?: string; resume?: { sessionId: string; cwd: string; title: string } }>).detail
+  if (detail.id) { void load(false).then(() => { if (views.has(detail.id!)) { launch.close(); activate(detail.id!) } }); return }
+  if (detail.resume) { void resumeSession(detail.resume); return }
+  void openTerminal(detail.restore === true, detail.cwd)
+})
 reconnectButton.onclick = async () => {
   if (opening || !activeId) return
   const id = activeId

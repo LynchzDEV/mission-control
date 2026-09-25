@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chatSignal, historyDay, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
+import { chatSignal, historyAction, historyDay, historyLabel, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
 
 const thread = [
   { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Fix login' },
@@ -76,5 +76,17 @@ describe('historyDay', () => {
     expect(historyDay(new Date(2026, 8, 24, 1).getTime(), now)).toBe('Today')
     expect(historyDay(new Date(2026, 8, 23, 23).getTime(), now)).toBe('Yesterday')
     expect(historyDay(new Date(2026, 8, 20, 9).getTime(), now)).toBe(new Date(2026, 8, 20).toLocaleDateString([], { month: 'short', day: 'numeric' }))
+  })
+})
+
+describe('historyLabel and historyAction', () => {
+  test('label each kind and pick its action', () => {
+    expect(historyLabel({ kind: 'chat', id: 'c', title: 't', updatedAt: 1, project: '/Users/me/app', running: false, agents: [] })).toBe('Chat · app')
+    expect(historyLabel({ kind: 'terminal', id: 't', title: 't', updatedAt: 1, cwd: '/Users/me/app/', engine: 'claude', sessionId: null })).toBe('Terminal · live · app · claude')
+    expect(historyLabel({ kind: 'claude-history', id: 's', title: 't', updatedAt: 1, cwd: '/Users/me/app', bytes: 3000 })).toBe('Claude history · app · 3 KB')
+    expect(historyLabel({ kind: 'outside', id: 'o', title: 't', updatedAt: 1, engine: 'codex', pid: 1, cwdHint: null, etime: '05:30' })).toBe('Outside session · codex · unknown folder · running 05:30')
+    expect(historyAction({ kind: 'claude-history', id: 's', title: 't', updatedAt: 1, cwd: '/x', bytes: 1 })).toBe('Resume in a terminal')
+    expect(historyAction({ kind: 'outside', id: 'o', title: 't', updatedAt: 1, engine: 'claude', pid: 1, cwdHint: null, etime: '1:00' })).toBeNull()
+    expect(historyAction({ kind: 'outside', id: 'o', title: 't', updatedAt: 1, engine: 'claude', pid: 1, cwdHint: '/x', etime: '1:00' })).toBe('Open a terminal here')
   })
 })

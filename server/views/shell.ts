@@ -76,7 +76,7 @@ const BODY = `
       </section>
 
       <section id="history" class="history content-width" aria-labelledby="history-title" hidden>
-        <header class="history-heading"><h1 id="history-title">Chats <span id="history-count"></span></h1><label class="search-field"><svg aria-hidden="true"><use href="#search-icon"/></svg><input id="chat-search" type="search" placeholder="Search for chats" aria-label="Search chat history"></label></header>
+        <header class="history-heading"><h1 id="history-title">History <span id="history-count"></span></h1><label class="search-field"><svg aria-hidden="true"><use href="#search-icon"/></svg><input id="chat-search" type="search" placeholder="Search for chats" aria-label="Search chat history"></label></header>
         <div class="history-list" id="history-list"></div>
         <p id="no-results" class="muted" hidden>No chats found. Try another search.</p>
       </section>
