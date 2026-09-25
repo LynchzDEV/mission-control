@@ -122,12 +122,13 @@ function setStatus(text: string, canReconnect: boolean): void {
 }
 
 function visible(on: boolean): void {
+  const changed = (canvas.dataset.live === 'true') !== on
   canvas.dataset.live = String(on)
   document.body.dataset.live = String(on)
   $('live').hidden = !on
   $('flow').hidden = !on && $('flow').dataset.open !== 'true'
   const active = on && activeId ? views.get(activeId)?.session ?? null : null
-  dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: active }))
+  if (changed) dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: active }))
   const url = new URL(location.href)
   url.hash = on ? 'terminal' : ''
   if (!on) url.searchParams.delete('terminal')
