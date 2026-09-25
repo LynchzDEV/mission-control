@@ -97,8 +97,8 @@ The application is written in TypeScript and CSS; client bundles are cached unti
 
 ## Security
 
-- Binds `127.0.0.1` only; the port comes from `MISSION_CONTROL_PORT` (default 7777). Requests are served only to local browsers (Host/Origin/Fetch-Metadata guard) or with the API token; health and static assets are public.
-- Credentials are stored in `~/.config/mission-control/` (`0700` dirs, `0600` files). Provider credentials are passed to engines through their environment. Settings can explicitly reveal or rotate the separate cockpit API token after authentication.
+- Binds `127.0.0.1` only; the port comes from `MISSION_CONTROL_PORT` (default 7777). Anyone who can open a connection to 127.0.0.1 on this machine has full control, including other OS user accounts and every agent job Mission Control spawns. Browsers are additionally limited by a Host/Origin/Fetch-Metadata guard, so a web page from another origin cannot read or drive the app. The API token is kept for scripts and the dispatch skill; it grants nothing extra to local callers. Health and static assets are public.
+- Credentials are stored in `~/.config/mission-control/` (`0700` dirs, `0600` files). Provider credentials are passed to engines through their environment. Settings can reveal or rotate the cockpit API token.
 - Jobs and terminals only run in directories that resolve (post-symlink) under `$HOME`; traversal attempts are rejected.
 
 ## Docs
