@@ -85,7 +85,21 @@ function leaveHistory(): void {
   leaveTo(back)
 }
 $('search').onclick = () => { if ($('history').hidden) showHistory(); else leaveHistory() }
-$('new-chat-menu').addEventListener('toggle', (event) => $('new-chat-more').setAttribute('aria-expanded', String((event as ToggleEvent).newState === 'open')))
+$('all-history').onclick = () => { if ($('history').hidden) showHistory(); else $('chat-search').focus() }
+
+const sidebarShell = $('sb-shell')
+function setSidebarOpen(open: boolean): void {
+  sidebarShell.classList.toggle('collapsed', !open)
+  try { localStorage.setItem('mc.sidebar.open', open ? '1' : '0') } catch {}
+}
+const savedSidebar = (() => { try { return localStorage.getItem('mc.sidebar.open') } catch { return '1' } })()
+sidebarShell.classList.toggle('collapsed', savedSidebar === null ? matchMedia('(max-width: 900px)').matches : savedSidebar === '0')
+document.querySelectorAll<HTMLElement>('[data-sidebar-toggle]').forEach(button => {
+  button.onclick = () => setSidebarOpen(sidebarShell.classList.contains('collapsed'))
+})
+document.querySelectorAll<HTMLElement>('[data-click]').forEach(button => {
+  button.onclick = () => $(button.dataset.click ?? '').click()
+})
 
 addEventListener('quiet:history-painted', () => $('chat-search').dispatchEvent(new Event('input')))
 $('chat-search').oninput = () => {
@@ -114,7 +128,7 @@ message.oninput = () => {
 }
 
 document.querySelectorAll<HTMLElement>('[data-live]').forEach(button => {
-  button.onclick = () => { $('new-chat-menu').hidePopover(); dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { restore: false } })) }
+  button.onclick = () => dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { restore: false } }))
 })
 
 export {}

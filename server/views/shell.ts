@@ -4,6 +4,7 @@ const BODY = `
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <symbol id="search-icon" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.7"/><path d="m13 13 4 4"/></symbol>
     <symbol id="plus-icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+    <symbol id="sidebar-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M8 4v12"/></symbol>
     <symbol id="history-icon" viewBox="0 0 20 20"><path d="M3 7a7 7 0 1 1-1 5M3 3v4h4M10 6v4l3 2"/></symbol>
     <symbol id="arrow-icon" viewBox="0 0 20 20"><path d="M10 16V4M5 9l5-5 5 5"/></symbol>
     <symbol id="agents-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M11 4v12M6 8h2M6 11h2"/></symbol>
@@ -26,13 +27,27 @@ const BODY = `
     <symbol id="open-icon" viewBox="0 0 20 20"><path d="M11 4h5v5M16 4l-7 7M14 12v3.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5H8"/></symbol>
   </svg>
   <canvas id="backdrop" class="backdrop" aria-hidden="true"></canvas>
+  <div class="sb-shell" id="sb-shell">
+  <aside id="sidebar" class="sb" aria-label="Chats and terminals">
+    <div class="sb-open">
+      <div class="sb-top"><button type="button" class="sb-icon" data-sidebar-toggle aria-expanded="true" aria-controls="sidebar" aria-label="Hide sidebar" title="Hide sidebar"><svg><use href="#sidebar-icon"/></svg></button><span class="sp"></span><button type="button" id="search" class="sb-icon" aria-pressed="false" aria-label="Search chats" title="Search chats"><svg><use href="#search-icon"/></svg></button></div>
+      <button type="button" id="new-chat" class="sb-new"><svg><use href="#plus-icon"/></svg>New chat</button>
+      <button type="button" class="sb-new ghost" data-live><svg><use href="#terminal-icon"/></svg>New terminal</button>
+      <nav id="sidebar-list" class="sb-list" aria-label="Recent chats and terminals"></nav>
+      <div class="sb-foot"><button type="button" id="all-history" class="sb-link"><svg><use href="#history-icon"/></svg>All history</button></div>
+    </div>
+    <div class="sb-strip">
+      <button type="button" class="sb-icon" data-sidebar-toggle aria-expanded="false" aria-controls="sidebar" aria-label="Show sidebar" title="Show sidebar"><svg><use href="#sidebar-icon"/></svg></button>
+      <button type="button" class="sb-icon accent" data-click="new-chat" aria-label="New chat" title="New chat"><svg><use href="#plus-icon"/></svg></button>
+      <button type="button" class="sb-icon" data-click="search" aria-label="Search chats" title="Search chats"><svg><use href="#search-icon"/></svg></button>
+      <span class="sb-sep"></span>
+      <nav id="sidebar-mini" class="sb-mini-list" aria-label="Live chats and terminals"></nav>
+      <span class="sp"></span>
+      <button type="button" class="sb-icon" data-click="all-history" aria-label="All history" title="All history"><svg><use href="#history-icon"/></svg></button>
+    </div>
+  </aside>
   <main class="canvas">
     <header class="toolbar">
-      <nav aria-label="Chats">
-        <button id="search" class="round" aria-pressed="false" aria-label="Search chats" title="Search chats"><svg><use href="#search-icon"/></svg></button>
-        <span class="split"><button id="new-chat" class="pill"><svg><use href="#plus-icon"/></svg>New chat</button><button id="new-chat-more" class="caret" popovertarget="new-chat-menu" aria-label="More ways to start" aria-expanded="false"><svg><use href="#chevron-icon"/></svg></button></span>
-        <div id="new-chat-menu" popover aria-label="More ways to start"><button class="row" data-live><svg><use href="#terminal-icon"/></svg><span>Terminal<small>Live session with any connected AI</small></span></button></div>
-      </nav>
       <nav aria-label="Session activity">
         <section class="usage-card" aria-label="Provider usage">
           <div class="usage-track" id="usage-track"></div>
@@ -117,6 +132,7 @@ const BODY = `
 
     </div>
   </main>
+  </div>
 
   <dialog id="access" class="access-dialog" aria-labelledby="access-title"><header class="dialog-heading"><h2 id="access-title">Access</h2><form method="dialog"><button class="round" aria-label="Close access" autofocus><svg><use href="#close-icon"/></svg></button></form></header><p class="muted">This app answers only on this machine.</p><div class="field-stack"><label>Address<input id="access-host" value="" readonly></label>
     <label>API token<span class="token-row"><input id="access-token" value="" readonly aria-describedby="access-token-note"><button type="button" class="text-button" id="access-reveal">Reveal</button><button type="button" class="text-button" id="access-copy" hidden>Copy</button><button type="button" class="text-button danger" id="access-rotate">Rotate</button></span></label><p class="muted" id="access-token-note" role="status">For scripts and the dispatch skill. It grants nothing extra on this machine.</p></div>
