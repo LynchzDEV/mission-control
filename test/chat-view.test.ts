@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chatSignal, historyAction, historyDay, historyLabel, runningLabel, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
+import { chatSignal, historyAction, historyDay, historyLabel, parseAgentReport, runningLabel, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
 
 const thread = [
   { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Fix login' },
@@ -119,5 +119,15 @@ describe('historyLabel and historyAction', () => {
     expect(historyAction({ kind: 'claude-history', id: 's', title: 't', updatedAt: 1, cwd: '/x', bytes: 1 })).toBe('Resume in a terminal')
     expect(historyAction({ kind: 'outside', id: 'o', title: 't', updatedAt: 1, engine: 'claude', pid: 1, cwdHint: null, etime: '1:00' })).toBeNull()
     expect(historyAction({ kind: 'outside', id: 'o', title: 't', updatedAt: 1, engine: 'claude', pid: 1, cwdHint: '/x', etime: '1:00' })).toBe('Open a terminal here')
+  })
+})
+
+describe('parseAgentReport', () => {
+  test('splits the agent head line into label, engine and outcome with the rest as body', () => {
+    expect(parseAgentReport('[agent say-hi html · glm] done\nall good')).toEqual({ label: 'say-hi html', engine: 'glm', outcome: 'done', body: 'all good' })
+  })
+
+  test('a prompt without the agent head is not a report', () => {
+    expect(parseAgentReport('hello')).toBeNull()
   })
 })

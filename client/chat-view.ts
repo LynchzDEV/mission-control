@@ -82,6 +82,16 @@ export function chatSignal(turnsRunning: boolean, agents: readonly SignalJob[]):
   return { state: null, count: 0 }
 }
 
+export type AgentReport = { label: string; engine: string; outcome: string; body: string }
+
+export function parseAgentReport(prompt: string): AgentReport | null {
+  const [first = '', ...rest] = prompt.split('\n')
+  const match = /^\[agent (.+) · (\S+)\] (.+)$/.exec(first)
+  if (!match) return null
+  const [, label, engine, outcome] = match as unknown as [string, string, string, string]
+  return { label, engine, outcome, body: rest.join('\n').trim() }
+}
+
 export function titleFrom(prompt: string): string {
   const line = prompt.split('\n').map(part => part.trim()).find(Boolean) ?? ''
   return line === '' ? 'New chat' : line.slice(0, TITLE_MAX)

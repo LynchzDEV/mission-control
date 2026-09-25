@@ -1,7 +1,7 @@
 import { renderMarkdown } from './markdown'
 import { errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
-import { chatSignal, historyAction, historyDay, historyLabel, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { chatSignal, historyAction, historyDay, historyLabel, parseAgentReport, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const RUNNING_POLL_MS = 700
@@ -133,7 +133,40 @@ function userRow(turn: Turn): HTMLElement {
   return row
 }
 
+function outcomeTone(outcome: string): string {
+  if (outcome === 'done') return 'done'
+  return outcome.startsWith('failed') ? 'failed' : 'other'
+}
+
 function agentRow(turn: Turn): HTMLElement {
+  const report = parseAgentReport(turn.prompt)
+  if (!report) return rawAgentRow(turn)
+  const row = document.createElement('div')
+  row.className = 'agent-report compact'
+  row.style.setProperty('--engine', ENGINE_COLORS[report.engine] ?? '#b5a5d8')
+  const head = document.createElement('div'); head.className = 'agent-report-head'
+  const disc = document.createElement('span'); disc.className = 'engine-tile'
+  const logo = document.createElement('img'); logo.src = `/providers/${report.engine}.svg`; logo.alt = engineName(report.engine)
+  disc.append(logo)
+  const label = document.createElement('span'); label.className = 'agent-report-label'; label.textContent = report.label
+  const pill = document.createElement('span'); pill.className = 'outcome-pill'; pill.dataset.tone = outcomeTone(report.outcome)
+  pill.textContent = report.outcome.charAt(0).toUpperCase() + report.outcome.slice(1)
+  head.append(disc, label, pill)
+  row.append(head)
+  if (report.body === '') return row
+  const body = document.createElement('div'); body.className = 'md agent-report-body'; body.hidden = true
+  body.append(renderMarkdown(report.body))
+  const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'text-button'; toggle.textContent = 'Show report'
+  toggle.onclick = () => {
+    body.hidden = !body.hidden
+    toggle.textContent = body.hidden ? 'Show report' : 'Hide report'
+  }
+  head.append(toggle)
+  row.append(body)
+  return row
+}
+
+function rawAgentRow(turn: Turn): HTMLElement {
   const row = document.createElement('details')
   row.className = 'agent-report'
   const [first, ...rest] = turn.prompt.split('\n')
