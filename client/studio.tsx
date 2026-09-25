@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { ReactFlow, Background, BackgroundVariant, BaseEdge, Controls, Handle, Position, MarkerType, getBezierPath, useNodesState, useEdgesState, type Node, type NodeProps, type Edge, type EdgeProps, type ReactFlowInstance } from '@xyflow/react'
@@ -8,9 +8,9 @@ import type { WorkflowRun } from '../server/workflow-runner'
 import type { DraftJob, WorkflowDraft } from '../server/workflow-builder'
 import { api } from './studio-api'
 import { Connections, StepAttachments, type ConnectionList } from './studio-settings'
-import { agentLabel, insertWorkflowStep, kindIcon, roleWord, removeWorkflowStep, stepPresets, taskPreset, workflowTemplates, type Provider } from './studio-graph'
+import { agentLabel, insertWorkflowStep, kindIcon, nodeRunStates, roleWord, removeWorkflowStep, stepPresets, taskPreset, workflowTemplates, type NodeRunState, type Provider } from './studio-graph'
 
-type TaskNode = Node<WorkflowNode & { agentLabel: string; branches: Outcome[] }, 'task'>
+type TaskNode = Node<WorkflowNode & { agentLabel: string; branches: Outcome[]; runState?: NodeRunState; runSince?: number }, 'task'>
 type Screen = 'home' | 'templates' | 'editor' | 'connections' | 'runs' | 'rules'
 type Panel = 'assistant' | 'picker' | 'step' | 'history' | null
 type RunSummary = Pick<WorkflowRun, 'id' | 'label' | 'status' | 'error' | 'currentNodeId' | 'createdAt'> & { workflowName: string; revision: string }
@@ -22,14 +22,22 @@ const EXAMPLES: Array<[string, string]> = [['Plan, implement, review', 'Plan the
 const SUGGESTIONS = ['Add a testing step before the final review', 'Use a different AI to review the work']
 const Icon = ({ id }: { id: string }) => <svg aria-hidden="true"><use href={`#${id}`} /></svg>
 
+const runLabels: Record<NodeRunState, string> = { passed: 'Passed', running: 'Running', failed: 'Needs attention', waiting: 'Waiting' }
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer) }, [])
+  const seconds = Math.max(0, Math.floor((now - since) / 1000))
+  return <>{` · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}</>
+}
 const engineTints: Record<string, string> = { claude: '#d4a091', glm: '#91b0dc', codex: '#bfd38b' }
 const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>) {
   const engine = data.agent.engine
-  return <div className="workflow-node" data-selected={selected}>
+  return <div className="workflow-node" data-selected={selected} data-run={data.runState}>
     <Handle type="target" position={Position.Left} />
     <Icon id={kindIcon(data.kind)} />
     <strong>{data.title}</strong>
     <p>{data.instructions.split(/(?<=[.!?])\s/)[0]}</p>
+    {data.runState && <span className={`run-state run-${data.runState}`}>{runLabels[data.runState]}{data.runState === 'running' && data.runSince ? <Elapsed since={data.runSince} /> : null}</span>}
     <footer><small style={engine && engineTints[engine] ? { '--engine': engineTints[engine] } as CSSProperties : undefined}>{engine ? <img src={`/providers/${engine}.svg`} alt="" /> : <Icon id="auto-icon" />}{roleWord(data.agent.role)} AI · {data.agentLabel}</small></footer>
     <Handle type="source" id="pass" position={Position.Right} />
     {data.branches.filter(outcome => outcome !== 'pass').map((outcome, index) => <Handle key={outcome} title={outcomeLabels[outcome]} aria-label={outcomeLabels[outcome]} type="source" id={outcome} position={Position.Bottom} className={`handle-${outcome}`} style={{ left: index ? '70%' : '30%' }} />)}
@@ -77,6 +85,7 @@ function Studio() {
   const [revisions, setRevisions] = useState<WorkflowRevision[]>([])
   const [runs, setRuns] = useState<RunSummary[]>([])
   const [run, setRun] = useState<WorkflowRun | null>(null)
+  const [canvasRun, setCanvasRun] = useState<WorkflowRun | null>(null)
   const [policy, setPolicy] = useState<PolicyRevision | null>(null)
   const [policyText, setPolicyText] = useState('')
   const [policyRevisions, setPolicyRevisions] = useState<PolicyRevision[]>([])
@@ -94,6 +103,10 @@ function Studio() {
   const builtin = workflows.find(item => item.id === 'default')
   const templates = builtin ? workflowTemplates(builtin) : []
   const label = (node: Pick<WorkflowNode, 'agent'>) => agentLabel(node, providers)
+  const runStates = useMemo(() => nodeRunStates(canvasRun), [canvasRun])
+  const runSince = canvasRun?.attempts.findLast(attempt => attempt.nodeId === canvasRun.currentNodeId && attempt.status !== 'settled')?.startedAt
+  const shownNodes = useMemo(() => canvasRun?.status === 'running' ? nodes.map(node => ({ ...node, data: { ...node.data, runState: runStates[node.id] ?? 'waiting' as const, runSince } })) : nodes, [nodes, canvasRun, runStates, runSince])
+  const shownEdges = useMemo(() => edges.map(edge => edge.sourceHandle === 'pass' && runStates[edge.source] === 'passed' ? { ...edge, className: `${edge.className} run-passed`, markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: '#6f9c7e' } } : edge), [edges, runStates])
   const toast = (text: string) => dispatchEvent(new CustomEvent('quiet:toast', { detail: text }))
 
   function nodesFor(value: Workflow): TaskNode[] { return value.nodes.map(node => ({ id: node.id, type: 'task', position: node.position, ariaLabel: `${node.title} · ${label(node)}`, data: { ...node, agentLabel: label(node), branches: value.edges.filter(edge => edge.source === node.id).map(edge => edge.outcome) } })) }
@@ -115,6 +128,26 @@ function Studio() {
   useEffect(() => { setNodes(current => current.map(node => ({ ...node, data: { ...node.data, agentLabel: label(node.data) } }))) }, [providers])
   useEffect(() => { if (screen === 'runs') void refreshRuns().catch(error => setError(error.message)); if (screen === 'rules') void api<{ revisions: PolicyRevision[] }>('/policy/revisions').then(result => setPolicyRevisions(result.revisions)).catch(error => setError(error.message)) }, [screen, run?.status])
   useEffect(() => { if (panel === 'history' && graph?.revision) void api<{ revisions: WorkflowRevision[] }>(`/workflows/${graph.id}/revisions`).then(result => setRevisions(result.revisions)).catch(error => setError(error.message)) }, [panel, graph?.id, graph?.revision])
+  useEffect(() => {
+    const revision = graph?.revision
+    if (screen !== 'editor' || !revision) { setCanvasRun(null); return }
+    let stopped = false, pending = false, lastError = ''
+    const poll = async () => {
+      if (pending) return
+      pending = true
+      try {
+        const live = (await api<{ runs: RunSummary[] }>('/runs')).runs.filter(item => item.revision === revision && item.status === 'running').sort((a, b) => b.createdAt - a.createdAt)[0]
+        const result = live ? await api<WorkflowRun>(`/runs/${live.id}`) : null
+        if (stopped) return
+        lastError = ''
+        setCanvasRun(current => current?.id === result?.id && current?.updatedAt === result?.updatedAt ? current : result)
+      } catch (error) {
+        const message = (error as Error).message
+        if (!stopped && message !== lastError) { lastError = message; setError(message) }
+      } finally { pending = false }
+    }
+    void poll(); const timer = setInterval(() => { if (!document.hidden && !document.getElementById('studio')?.hidden) void poll() }, 3000); return () => { stopped = true; clearInterval(timer) }
+  }, [screen, graph?.revision])
   useEffect(() => { if (!run || run.status !== 'running') return; let stopped = false; const poll = async () => { try { const result = await api<WorkflowRun>(`/runs/${run.id}`); if (!stopped) setRun(result) } catch (error) { if (!stopped) setError((error as Error).message) } }; const timer = setInterval(() => { if (!document.hidden && !document.getElementById('studio')?.hidden) void poll() }, 1500); return () => { stopped = true; clearInterval(timer) } }, [run?.id, run?.status])
   useEffect(() => {
     if (!building || !draftJob) return
@@ -175,7 +208,7 @@ function Studio() {
         <div className="workflow-canvas">
           <div className="flow-host">
             <div className="canvas-tools"><button type="button" className="pill" disabled={disabled} onClick={() => { setQuery(''); setPanel('picker') }}><Icon id="plus-icon" />Add step</button>{aiSummary && <span className="draft-notice"><strong>AI draft</strong> {aiSummary} <button type="button" className="round" aria-label="Dismiss draft message" onClick={() => setAiSummary('')}><Icon id="close-icon" /></button></span>}<button type="button" className="text-button" aria-pressed={panel === 'assistant'} onClick={() => setPanel(panel === 'assistant' ? null : 'assistant')}><Icon id="spark-icon" />Ask AI</button></div>
-            <ReactFlow<TaskNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onInit={instance => { flow.current = instance; fit() }} onNodesChange={changes => { onNodesChange(changes); if (changes.some(change => change.type === 'position' && change.dragging)) markDirty() }} onEdgesChange={changes => { onEdgesChange(changes); if (changes.some(change => change.type === 'remove')) markDirty() }} onNodeClick={(_, node) => { setSelected(node.id); setPanel('step') }} onSelectionChange={({ nodes: picked }) => { const id = picked[0]?.id; if (id && id !== selected) { setSelected(id); setPanel('step') } }} onConnect={connection => { if (connection.source && connection.target) wire(connection.source, (connection.sourceHandle ?? 'pass') as Outcome, connection.target) }} nodesDraggable={!disabled} nodesConnectable={!disabled} deleteKeyCode={null} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1 }} minZoom={0.25} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cfd5e3" /><Controls showInteractive={false} /></ReactFlow>
+            <ReactFlow<TaskNode> nodes={shownNodes} edges={shownEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onInit={instance => { flow.current = instance; fit() }} onNodesChange={changes => { onNodesChange(changes); if (changes.some(change => change.type === 'position' && change.dragging)) markDirty() }} onEdgesChange={changes => { onEdgesChange(changes); if (changes.some(change => change.type === 'remove')) markDirty() }} onNodeClick={(_, node) => { setSelected(node.id); setPanel('step') }} onSelectionChange={({ nodes: picked }) => { const id = picked[0]?.id; if (id && id !== selected) { setSelected(id); setPanel('step') } }} onConnect={connection => { if (connection.source && connection.target) wire(connection.source, (connection.sourceHandle ?? 'pass') as Outcome, connection.target) }} nodesDraggable={!disabled} nodesConnectable={!disabled} deleteKeyCode={null} fitView fitViewOptions={{ padding: 0.18, maxZoom: 1 }} minZoom={0.25} maxZoom={1.4} proOptions={{ hideAttribution: true }}><Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cfd5e3" /><Controls showInteractive={false} /></ReactFlow>
             {!nodes.length && <div className="empty-canvas"><span className="welcome-mark"><Icon id="plus-icon" /></span><h3>Your workflow starts here</h3><p className="muted">Add a step, or describe the whole workflow to AI.</p><div><button type="button" className="pill" onClick={() => setPanel('picker')}>Add first step</button><button type="button" className="pill" onClick={() => setPanel('assistant')}><Icon id="spark-icon" />Build with AI</button></div></div>}
             <p className="canvas-note">Drag to arrange · connect to set the order. <button type="button" className="text-button" onClick={() => setModal('rules')}><Icon id="lock-icon" />Core rules always apply</button></p>
           </div>

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { defaultWorkflow, validateWorkflow } from '../server/workflows'
-import { agentLabel, insertWorkflowStep, kindIcon, roleWord, removeWorkflowStep, taskPreset, workflowTemplates } from '../client/studio-graph'
+import { agentLabel, insertWorkflowStep, kindIcon, nodeRunStates, roleWord, removeWorkflowStep, taskPreset, workflowTemplates } from '../client/studio-graph'
 
 test('adding a custom step keeps the following review connected and preserves failure routes',()=>{
   const graph=defaultWorkflow()
@@ -46,4 +46,25 @@ test('roleWord capitalises the role shown on the AI tag',()=>{
   expect(roleWord('plan')).toBe('Plan')
   expect(roleWord('execute')).toBe('Execute')
   expect(roleWord('review')).toBe('Review')
+})
+
+const settled=(nodeId:string,outcome:string,startedAt:number)=>({nodeId,status:'settled',result:{outcome},startedAt})
+
+test('nodeRunStates is empty when no run is running',()=>{
+  expect(nodeRunStates(null)).toEqual({})
+})
+
+test('nodeRunStates marks settled passes and the current step as running',()=>{
+  const run={status:'running',currentNodeId:'execute',attempts:[settled('plan','pass',1),settled('verify-plan','pass',2),{nodeId:'execute',status:'running',result:null,startedAt:3}]}
+  expect(nodeRunStates(run)).toEqual({plan:'passed','verify-plan':'passed',execute:'running'})
+})
+
+test('nodeRunStates marks a settled fail or blocked step as failed',()=>{
+  expect(nodeRunStates({status:'running',currentNodeId:'execute',attempts:[settled('review','fail',1)]}).review).toBe('failed')
+  expect(nodeRunStates({status:'running',currentNodeId:'execute',attempts:[settled('review','blocked',1)]}).review).toBe('failed')
+})
+
+test('nodeRunStates uses the newest settled attempt of a step',()=>{
+  const run={status:'running',currentNodeId:'review',attempts:[settled('execute','fail',1),settled('execute','pass',2)]}
+  expect(nodeRunStates(run).execute).toBe('passed')
 })

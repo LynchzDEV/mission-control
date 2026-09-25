@@ -782,3 +782,13 @@ a.pill:hover { color: var(--accent); }
 .team-card [data-state="done"] .state, .team-card [data-state="landed"] .state { color: #3f7352; background: #dcece1; }
 .team-card [data-state="needs-you"] .state { color: #a13f58; background: #f5dde3; }
 .team-card [data-state="retried"] .state, .team-card [data-state="stopped"] .state { color: var(--muted); background: #e4e7ef; }
+.flow-host .workflow-node[data-run] p { -webkit-line-clamp: 1; }
+.flow-host .workflow-node[data-run="passed"] { border-color: #bcd6c4; }
+.flow-host .workflow-node[data-run="running"] { border-color: var(--accent); box-shadow: 0 0 0 4px #8062bd1f; }
+.flow-host .workflow-node[data-run="failed"] { border-color: #e8c4cd; }
+.flow-host .run-state { display: block; margin-top: 6px; font-size: 11px; color: var(--muted); }
+.flow-host .run-state.run-passed { color: #3f7352; }
+.flow-host .run-state.run-running { color: #6b4fb0; }
+.flow-host .run-state.run-running::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.4s ease-in-out infinite; }
+.flow-host .run-state.run-failed { color: #b0556a; }
+.flow-host .run-passed .react-flow__edge-path:not(.edge-flow) { stroke: #6f9c7e; }
