@@ -434,7 +434,7 @@ a.pill:hover { color: var(--accent); }
 .chip .caret-sm { width: 11px; height: 11px; }
 .chip[aria-expanded="true"] { box-shadow: var(--inset); }
 .chip.off { color: var(--muted); }
-.chip.off[aria-pressed="true"] { color: #5b8a6a; box-shadow: var(--inset); }
+.chip.off[aria-pressed="true"] { color: #fff; background: #5b8a6a; box-shadow: var(--raised); }
 .chip-group { display: inline-flex; align-items: center; gap: 8px; }
 .chip-extra { display: inline-flex; align-items: center; gap: 8px; max-width: 0; opacity: 0; overflow: hidden; padding: 16px 0 16px 16px; margin: -16px 0 -16px -16px; transition: max-width 260ms cubic-bezier(.22, 1, .36, 1), opacity 180ms; }
 .chip-group[data-expanded="true"] .chip-extra { max-width: 300px; opacity: 1; padding-right: 16px; margin-right: -8px; }
