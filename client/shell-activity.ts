@@ -1,4 +1,5 @@
 import { activeAgents, awarenessFlows, flowColumns, scopedWork, selectFlow } from './awareness'
+import { renderFlowGraph } from './flow-graph'
 import { buildWork, type WorkItem, type WorkJob } from './work'
 import { errorText, getJson, postJson, providerName, readArray, readRecord } from './shared'
 
@@ -240,18 +241,16 @@ async function refreshChat(chat: string, request: number): Promise<void> {
 function paintFlow(): void {
   const item = flows.find(flow => flow.id === current)
   $('live-flow-status').textContent = item ? item.label : 'No work linked to this session yet.'
-  $('live-flow-steps').replaceChildren()
-  for (const column of flowColumns(item)) {
-    const group = node('div', '', 'live-flow-column')
-    for (const step of column) {
-      const card = node('div', '', 'live-flow-node')
-      card.dataset.status = step.status
-      card.setAttribute('role', 'listitem')
-      card.append(node('strong', step.title), node('small', step.detail))
-      group.append(card)
-    }
-    $('live-flow-steps').append(group)
-  }
+  paintGraph()
+}
+
+function paintGraph(): void {
+  if ($('flow').dataset.open !== 'true') { $('live-flow-steps').replaceChildren(); return }
+  renderFlowGraph($('live-flow-steps'), flowColumns(flows.find(flow => flow.id === current)), { animate: motionAllowed() })
+}
+
+function motionAllowed(): boolean {
+  try { return localStorage.getItem('mc.motion.paused') !== 'true' } catch { return true }
 }
 
 function paintAgents(agents: WorkItem[]): void {
@@ -302,6 +301,7 @@ async function refresh(): Promise<void> {
 
 ;($('live-flow-select') as HTMLSelectElement).onchange = () => { current = ($('live-flow-select') as HTMLSelectElement).value; paintFlow() }
 for (const id of ['open-agents', 'toggle-flow']) $(id).addEventListener('click', () => void refresh())
+for (const id of ['toggle-flow', 'close-flow']) $(id).addEventListener('click', paintGraph)
 addEventListener('quiet:activity-scope', (event) => { const session = (event as CustomEvent<Session | null>).detail; setActivityScope(session ? { kind: 'session', session } : null) })
 addEventListener('quiet:chat-agents', (event) => { const chat = (event as CustomEvent<string | null>).detail; if (chat) setActivityScope({ kind: 'chat', chat }) })
 if (document.body.dataset.chat) setActivityScope({ kind: 'chat', chat: document.body.dataset.chat })

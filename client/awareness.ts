@@ -32,7 +32,7 @@ export function awarenessFlows(items: WorkItem[]): WorkItem[] {
   }
   return [...groups.values()]
 }
-type FlowStep = { key?:string; title:string; status:string; detail:string; assignee?:string }
+export type FlowStep = { key?:string; title:string; status:string; detail:string; assignee?:string }
 export function flowSteps(item: WorkItem): FlowStep[] {
   if (item.plan) return item.plan.steps.map(step => ({...step,detail:({done:'Decided',active:'Working',pending:'Up next',error:'Needs attention'} as Record<string,string>)[step.status] ?? step.status}))
   if (item.members?.length) {

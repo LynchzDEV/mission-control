@@ -354,16 +354,29 @@ body[data-live="true"] #agents > .activity-empty, body[data-live="true"] #agents
 #live-flow { max-height: min(210px, 28dvh); overflow: auto; padding: 8px 0; }
 #live-flow-status, #live-agents-status { font-size: 13px; line-height: 1.6; margin: 10px 0; }
 #live-flow-select { width: 100%; padding: 8px; border-radius: 12px; box-shadow: var(--inset); font-size: 13px; margin-bottom: 12px; }
-.live-flow-steps { display: flex; gap: 18px; min-width: 0; }
-.live-flow-column { flex: 1; min-width: 90px; display: grid; align-content: center; gap: 10px; }
-.live-flow-node { padding: 12px; border-radius: 12px; box-shadow: var(--raised); min-width: 0; }
-.live-flow-node[data-status="active"] { box-shadow: var(--inset); color: var(--accent); }
-.live-flow-node strong, .live-flow-node small { display: block; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
-.live-flow-node small { font-size: 11px; color: var(--muted); margin-top: 5px; }
+.flow-graph { position: relative; flex: none; }
+.flow-graph svg { position: absolute; inset: 0; overflow: visible; }
+.flow-edge { fill: none; stroke: #8a93a8; stroke-width: 1.75px; }
+.flow-edge.done { stroke: #6f9c7e; }
+.flow-edge.flowing { stroke: var(--accent); stroke-dasharray: 6 14; animation: flow-dash 1.1s linear infinite; }
+.flow-arrow { fill: #8a93a8; }
+.flow-arrow.done { fill: #6f9c7e; }
+.flow-arrow.flowing { fill: var(--accent); }
+.flow-node { position: absolute; box-sizing: border-box; width: 168px; height: 64px; padding: 12px 12px 12px 15px; display: grid; align-content: center; gap: 3px; overflow: hidden; background: #f6f7fb; border: 1px solid var(--line); border-radius: 12px; }
+.flow-node::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--stripe); }
+.flow-node strong, .flow-node small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-node strong { font-size: 13px; font-weight: 500; }
+.flow-node small { font-size: 11px; color: var(--muted); }
+.flow-node[data-status="done"] { border-color: #bcd6c4; }
+.flow-node[data-status="active"] { border-color: var(--accent); animation: flow-pulse 1.6s ease-in-out infinite alternate; }
+.flow-node[data-status="failed"] { border-color: #e8c4cd; }
+.flow-node[data-status="failed"] small { color: #b0556a; }
+.flow-graph.still .flow-edge, .flow-graph.still .flow-node { animation: none; }
+.flow-graph.still .flow-node[data-status="active"] { box-shadow: 0 0 0 4px #8062bd1f; }
+@keyframes flow-dash { to { stroke-dashoffset: -20; } }
+@keyframes flow-pulse { from { box-shadow: 0 0 0 4px #8062bd1f; } to { box-shadow: 0 0 0 8px #8062bd00; } }
 @media (max-width: 600px) {
   .toolbar #new-chat > svg:first-child { display: none; }
-  .live-flow-steps { gap: 10px; }
-  .live-flow-node { padding: 10px 8px; }
 }
 
 .launcher-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
