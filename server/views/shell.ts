@@ -83,6 +83,7 @@ const BODY = `
 
       <section id="conversation" class="conversation content-width" aria-label="Conversation" hidden>
         <div id="messages" class="chat" role="log" aria-live="polite"></div>
+        <div id="queued" class="queued" aria-label="Queued messages"></div>
       </section>
       <section id="studio" class="studio" aria-label="Workflow Studio" hidden>
         <header class="studio-heading"><div><h1>Studio</h1><p class="muted">Give your AI team a way to work.</p></div><nav id="studio-nav" aria-label="Studio sections"></nav></header>

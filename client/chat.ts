@@ -34,8 +34,25 @@ function setUrl(chat: string | null): void {
 
 function setRunning(on: boolean): void {
   running = on
-  send.disabled = on
-  send.title = on ? 'Waiting for the reply' : 'Send message'
+  send.title = on ? 'Send · it waits until the reply finishes' : 'Send message'
+}
+
+type QueuedItem = { id: string; text: string; queuedAt: number }
+const queued = $('queued')
+function paintQueue(items: QueuedItem[]): void {
+  const signature = items.map(item => item.id).join()
+  if (queued.dataset.sig === signature) return
+  queued.dataset.sig = signature
+  queued.replaceChildren(...items.map(item => {
+    const row = document.createElement('div'); row.className = 'msg user queued-row'
+    const bubble = document.createElement('div'); bubble.className = 'user-message'; bubble.textContent = item.text
+    const meta = document.createElement('small'); meta.className = 'queued-meta'; meta.textContent = 'Queued · sends when the reply finishes'
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'round queued-x'; cancel.setAttribute('aria-label', 'Remove this queued message'); cancel.insertAdjacentHTML('afterbegin', '<svg><use href="#close-icon"/></svg>')
+    cancel.onclick = async () => { if (!root) return; await fetch(`/api/jobs/${encodeURIComponent(root)}/queue/${encodeURIComponent(item.id)}`, { method: 'DELETE' }); void refresh() }
+    const column = document.createElement('div'); column.className = 'queued-column'; column.append(bubble, meta)
+    row.append(column, cancel)
+    return row
+  }))
 }
 
 function chatError(text: string): void {
@@ -163,7 +180,7 @@ function paint(turns: Turn[], project: string | null): void {
 async function refresh(): Promise<void> {
   if (!root) return
   const mine = ++generation
-  const [thread, jobs] = await Promise.all([getJson(`/api/jobs/${encodeURIComponent(root)}/thread`), getJson(`/api/jobs?chat=${encodeURIComponent(root)}`)])
+  const [thread, jobs, queue] = await Promise.all([getJson(`/api/jobs/${encodeURIComponent(root)}/thread`), getJson(`/api/jobs?chat=${encodeURIComponent(root)}`), getJson(`/api/jobs/${encodeURIComponent(root)}/queue`)])
   if (mine !== generation || !root) return
   if (!thread.ok) { chatError(`Could not reach the chat: ${errorText(thread)}. Retrying…`); schedule(); return }
   clearChatError()
@@ -173,6 +190,7 @@ async function refresh(): Promise<void> {
   const project = all.find(job => job.id === root)?.project ?? null
   paint(turnsFrom(readArray(thread.data.messages) as unknown as ThreadMessage[], turnsJobs), project)
   setRunning(thread.data.running === true)
+  paintQueue(queue.ok ? readArray(queue.data.items) as unknown as QueuedItem[] : [])
   schedule()
 }
 
@@ -229,9 +247,9 @@ async function startChat(prompt: string): Promise<void> {
 async function sendMessage(prompt: string): Promise<void> {
   show('conversation')
   if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], started: Date.now(), ended: null, running: true })); setRunning(true); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
-  setRunning(true)
   const result = await postJson(`/api/jobs/${encodeURIComponent(root)}/reply`, { message: prompt })
-  if (!result.ok) { chatError(errorText(result)); setRunning(false); return }
+  if (!result.ok) { chatError(errorText(result)); return }
+  if (result.status !== 202) setRunning(true)
   await refresh()
 }
 
@@ -308,14 +326,14 @@ export function openChat(id: string): void {
 composer.onsubmit = (event) => {
   event.preventDefault()
   const prompt = message.value.trim()
-  if (!prompt || running) return
+  if (!prompt || (running && !root)) return
   message.value = ''
   message.style.height = ''
   void sendMessage(prompt)
   message.focus()
 }
 
-addEventListener('quiet:new-chat', () => { root = null; agents = []; messages.replaceChildren(); setRunning(false); clearTimeout(pollTimer); setUrl(null) })
+addEventListener('quiet:new-chat', () => { root = null; agents = []; messages.replaceChildren(); paintQueue([]); setRunning(false); clearTimeout(pollTimer); setUrl(null) })
 addEventListener('quiet:open-chat', (event) => openChat((event as CustomEvent<string>).detail))
 addEventListener('quiet:show', (event) => { if ((event as CustomEvent<string>).detail === 'conversation') schedule(); else clearTimeout(pollTimer) })
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') schedule(); else clearTimeout(pollTimer) })

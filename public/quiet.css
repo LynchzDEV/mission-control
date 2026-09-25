@@ -656,3 +656,11 @@ a.pill:hover { color: var(--accent); }
 .token-row input { flex: 1; min-width: 0; font: 12px Menlo, monospace; }
 #access .field-stack input { box-shadow: none; background: #e2e6f0; border: 1px solid transparent; border-radius: 10px; }
 #access .field-stack input:focus-visible { border-color: #c9c0e3; outline: none; }
+.queued { display: grid; gap: 14px; margin-top: 28px; }
+.queued:empty { display: none; }
+.queued-row { align-items: flex-start; gap: 10px; }
+.queued-column { display: grid; justify-items: end; gap: 6px; max-width: 85%; }
+.queued-row .user-message { opacity: .6; box-shadow: none; border: 1px dashed #c9c0e3; }
+.queued-meta { font-size: 11px; color: var(--muted); }
+.queued-x { width: 26px; min-height: 26px; flex: 0 0 26px; }
+.queued-x svg { width: 11px; height: 11px; }
