@@ -23,6 +23,8 @@ const BODY = `
     <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
     <symbol id="open-icon" viewBox="0 0 20 20"><path d="M11 4h5v5M16 4l-7 7M14 12v3.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5H8"/></symbol>
   </svg>
+  <canvas id="backdrop" class="backdrop" aria-hidden="true"></canvas>
+  <button class="pill motion-toggle" id="motion" type="button" aria-pressed="false">Pause motion</button>
   <main class="canvas">
     <header class="toolbar">
       <nav aria-label="Chats">
@@ -205,6 +207,7 @@ export function ShellPage(props: ShellProps): string {
   <script src="/js/terminals.js" type="module" defer></script>
   <script src="/js/shell-activity.js" type="module" defer></script>
   <script src="/js/usage-card.js" type="module" defer></script>
+  <script src="/js/backdrop.js" type="module" defer></script>
 </head>
 <body>${BODY}</body>
 </html>`
