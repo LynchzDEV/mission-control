@@ -1,5 +1,5 @@
 import { getJson, readArray } from './shared'
-import { launchChoice, readRecentDirectories, type LaunchProvider } from './shell-launch'
+import { customModelChoice, launchChoice, readRecentDirectories, type LaunchProvider } from './shell-launch'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const engineKey = 'mc.shell.engine', modelKey = 'mc.shell.model', editKey = 'mc.shell.edit', projectKey = 'mc.shell.project', recentKey = 'mc.term.recentCwd'
@@ -7,6 +7,7 @@ const group = $('chip-group')
 const projectChip = $('project-chip') as HTMLButtonElement
 const modelChip = $('model-chip') as HTMLButtonElement
 const editChip = $('edit-chip') as HTMLButtonElement
+const chipExtra = $('chip-extra')
 const projectMenu = $('project-menu')
 const modelMenu = $('model-menu')
 let providers: LaunchProvider[] = []
@@ -63,14 +64,18 @@ function fillModelMenu(): void {
     const logo = document.createElement('img'); logo.src = `/providers/${provider.id}.svg`; logo.alt = ''
     head.append(logo, document.createTextNode(provider.name))
     nodes.push(head)
-    const models = provider.models.length ? provider.models : ['']
+    const listed = provider.models.length ? provider.models : ['']
+    const models = provider.id === choice.engine && choice.model && !listed.includes(choice.model) ? [...listed, choice.model] : listed
     for (const model of models) nodes.push(row(model || `${provider.name} default`, '', null, null, provider.id === choice.engine && model === choice.model, () => { store(engineKey, provider.id); store(modelKey, model || null); paintModel() }))
   }
+  if (!providers.length) { modelMenu.replaceChildren(row('No AI providers available', '', null, null, false, () => {})); return }
   const divider = document.createElement('div'); divider.className = 'divider'
-  nodes.push(divider, row('Custom model…', '', null, null, false, () => {
-    const custom = prompt('Model ID', choice.model)
-    if (custom && custom.trim()) { store(modelKey, custom.trim()); paintModel() }
-  }))
+  const customRow = row('Custom model…', '', null, null, false, () => {
+    const custom = customModelChoice(providers, stored(engineKey), prompt('Model ID', choice.model) ?? '')
+    if (custom) { store(engineKey, custom.engine); store(modelKey, custom.model); paintModel() }
+  })
+  customRow.classList.add('muted')
+  nodes.push(divider, customRow)
   modelMenu.replaceChildren(...nodes)
 }
 
@@ -82,6 +87,7 @@ function toggleMenu(menu: HTMLElement, chip: HTMLButtonElement, fill: () => void
   const open = menu.hidden
   closeMenus()
   if (!open) return
+  paintModel()
   fill()
   menu.hidden = false
   chip.setAttribute('aria-expanded', 'true')
@@ -90,6 +96,7 @@ function toggleMenu(menu: HTMLElement, chip: HTMLButtonElement, fill: () => void
 projectChip.onclick = () => {
   const expand = group.dataset.expanded !== 'true'
   group.dataset.expanded = String(expand)
+  chipExtra.inert = !expand
   if (expand) toggleMenu(projectMenu, projectChip, fillProjectMenu)
   else closeMenus()
 }
@@ -106,7 +113,7 @@ paintEdit()
 paintModel()
 void getJson('/api/providers').then(result => {
   if (!result.ok) return
-  providers = (readArray(result.data.providers) as LaunchProvider[]).filter(item => typeof item.id === 'string' && typeof item.name === 'string')
+  providers = (readArray(result.data.providers) as LaunchProvider[]).filter(item => typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.models))
   paintModel()
 })
 

@@ -106,10 +106,6 @@ code { font-family: Menlo, monospace; font-size: 11px; }
 .flow-steps strong, .flow-steps small { display: block; font-size: 14px; font-weight: 400; }
 .flow-steps small { font-size: 12px; color: var(--muted); margin-top: 8px; }
 .active-step .step-mark { color: var(--accent); box-shadow: var(--inset); }
-.session-dialog { width: 350px; }
-.session-form { display: grid; gap: 20px; }
-.session-form label { display: grid; gap: 8px; color: var(--muted); font-size: 13px; }
-.session-form select { padding: 12px; border-radius: 12px; font-size: 15px; box-shadow: var(--inset); }
 .done { justify-self: end; }
 .preview-footer { position: fixed; bottom: 0; inset-inline: 0; background: var(--paper); display: flex; justify-content: center; align-items: center; gap: 14px; min-height: 26px; color: var(--muted); font-size: 11px; }
 .preview-footer a { color: inherit; text-underline-offset: 3px; }
@@ -337,10 +333,6 @@ body[data-live="true"] #agents > .activity-empty, body[data-live="true"] #agents
 }
 
 .launcher-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.launcher-list { display: grid; gap: 10px; max-height: 220px; overflow: auto; margin-bottom: 20px; }
-.launcher-list button { text-align: left; padding: 12px; border-radius: 12px; box-shadow: var(--raised); margin: 5px; font-size: 13px; overflow-wrap: anywhere; }
-.launcher-list small { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
-#live-recents summary { padding: 0 0 16px; font-size: 13px; }
 
 .chat { display: grid; gap: 28px; }
 .chat .msg.user { display: flex; justify-content: flex-end; }
@@ -390,10 +382,7 @@ body[data-live="true"] #agents > .activity-empty, body[data-live="true"] #agents
 @keyframes pulse { 50% { opacity: .25; } }
 .team-progress { height: 4px; margin-top: 12px; border-radius: 4px; box-shadow: var(--inset); overflow: hidden; }
 .team-progress span { display: block; height: 100%; background: var(--accent); opacity: .6; }
-.project-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 14px; box-shadow: var(--raised); font-size: 12px; color: var(--accent); white-space: nowrap; }
-.project-chip svg { width: 14px; height: 14px; }
-.canvas:has(#conversation[hidden]) .project-chip { display: none; }
-@media (max-width: 600px) { .chat .msg.assistant { grid-template-columns: minmax(0, 1fr); } .avatar { display: none; } .project-chip span { max-width: 80px; overflow: hidden; text-overflow: ellipsis; } }
+@media (max-width: 600px) { .chat .msg.assistant { grid-template-columns: minmax(0, 1fr); } .avatar { display: none; } #project-name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; } }
 
 .usage-card { --item: 104px; --gap: 18px; width: calc(var(--item) * 3 + var(--gap) * 2 + 28px); padding: 6px 14px; margin-right: 6px; border-radius: 16px; overflow: hidden; }
 .usage-track { display: flex; gap: var(--gap); width: max-content; }

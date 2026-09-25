@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { launchChoice, readRecentDirectories, restoreRequested } from '../client/shell-launch'
+import { customModelChoice, launchChoice, readRecentDirectories, restoreRequested } from '../client/shell-launch'
 
 const providers = [
   { id: 'claude', name: 'Claude', models: ['opus', 'sonnet'] },
@@ -40,5 +40,16 @@ describe('readRecentDirectories', () => {
     expect(readRecentDirectories(null)).toEqual([])
     expect(readRecentDirectories('{not json')).toEqual([])
     expect(readRecentDirectories('"/a"')).toEqual([])
+  })
+})
+
+describe('customModelChoice', () => {
+  test('pairs a custom model with the first provider when no engine was stored', () => {
+    expect(customModelChoice(providers, null, ' my-model ')).toEqual({ engine: 'claude', model: 'my-model' })
+  })
+  test('keeps the remembered engine, and yields null for an empty model or no providers', () => {
+    expect(customModelChoice(providers, 'glm', 'glm-x')).toEqual({ engine: 'glm', model: 'glm-x' })
+    expect(customModelChoice(providers, 'glm', '  ')).toBeNull()
+    expect(customModelChoice([], 'glm', 'glm-x')).toBeNull()
   })
 })

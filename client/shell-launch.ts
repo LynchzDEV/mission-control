@@ -7,6 +7,12 @@ export function launchChoice(providers: LaunchProvider[], lastEngine: string | n
   return { engine, model: remembered ? lastModel ?? '' : '' }
 }
 
+export function customModelChoice(providers: LaunchProvider[], lastEngine: string | null, custom: string): LaunchChoice | null {
+  const model = custom.trim()
+  const engine = launchChoice(providers, lastEngine, null).engine
+  return model && engine ? { engine, model } : null
+}
+
 export function readRecentDirectories(raw: string | null): string[] {
   try {
     const parsed: unknown = JSON.parse(raw ?? '[]')

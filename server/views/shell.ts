@@ -94,7 +94,7 @@ const BODY = `
       <form id="composer" class="composer nui-neuromorphic-inset">
         <span class="chip-group" id="chip-group" data-expanded="false">
           <button type="button" class="chip" id="project-chip" aria-expanded="false" aria-controls="project-menu" title="Project for this chat"><svg><use href="#folder-icon"/></svg><span id="project-name">Project</span></button>
-          <span class="chip-extra" id="chip-extra">
+          <span class="chip-extra" id="chip-extra" inert>
             <button type="button" class="chip" id="model-chip" aria-expanded="false" aria-controls="model-menu" title="AI for this chat"><img id="model-logo" src="/providers/claude.svg" alt=""><span id="model-name">Chat default</span><svg class="caret-sm"><use href="#chevron-icon"/></svg></button>
             <button type="button" class="chip off" id="edit-chip" aria-pressed="false" title="Let the chat edit directly"><svg><use href="#pencil-icon"/></svg></button>
           </span>
