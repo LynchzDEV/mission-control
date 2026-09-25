@@ -5,7 +5,6 @@ import { DispatchPage } from '../server/views/dispatch'
 import { ReviewPage } from '../server/views/review'
 import { LanesPage } from '../server/views/lanes'
 import { SettingsPage } from '../server/views/settings'
-import { LoginPage, SetupPage } from '../server/views/login'
 import type { ModelLists } from '../server/models'
 
 const output = join(import.meta.dir, '../public/ui-preview')
@@ -13,15 +12,14 @@ const models: ModelLists = { claude: [], glm: [], codex: [] }
 const engine = { defaultEngine: 'claude', defaultModel: null, models }
 const settings = {
   zaiBaseUrl: 'https://api.z.ai/api/anthropic', zaiAuthTokenConfigured: false, apiTokenConfigured: false,
-  bind: '127.0.0.1', roles: { plan: { engine: 'claude', model: null }, execute: { engine: 'codex', model: null }, review: { engine: 'codex', model: null } },
-  autoReview: false, models, minPasswordLength: 12,
+  roles: { plan: { engine: 'claude', model: null }, execute: { engine: 'codex', model: null }, review: { engine: 'codex', model: null } },
+  autoReview: false, models,
 }
 const pages: Record<string, () => string> = {
   terminals: () => TerminalsPage(engine), dispatch: () => TerminalsPage(engine), review: () => TerminalsPage(engine),
   lanes: () => TerminalsPage(engine), settings: () => TerminalsPage(engine),
   'lanes-content': () => LanesPage(true), 'dispatch-content': () => DispatchPage({ ...engine, embedded: true }),
   'review-content': () => ReviewPage(true), 'settings-content': () => SettingsPage({ ...settings, embedded: true }),
-  login: LoginPage, setup: () => SetupPage({ minPasswordLength: 12 }),
 }
 await mkdir(output, { recursive: true })
 const entries = [...new Bun.Glob('*.ts').scanSync(join(import.meta.dir, '../client'))].map((file) => join(import.meta.dir, '../client', file))
