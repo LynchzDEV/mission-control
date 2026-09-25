@@ -110,7 +110,7 @@ const BODY = `
     </div>
   </main>
 
-  <dialog id="access" class="access-dialog" aria-labelledby="access-title"><header class="dialog-heading"><h2 id="access-title">Access</h2><form method="dialog"><button class="round" aria-label="Close access" autofocus><svg><use href="#close-icon"/></svg></button></form></header><p class="muted">Workspace network and API access.</p><div class="field-stack"><label>Host and port<input value="127.0.0.1:3000" readonly></label><small class="muted">Example address. Changes in the live app take effect on its next start.</small><label>API token<input value="Not loaded in this preview" readonly></label><div class="editor-actions"><button class="pill" disabled>Copy token</button><button class="pill" disabled>Rotate token</button></div></div></dialog>
+  <dialog id="access" class="access-dialog" aria-labelledby="access-title"><header class="dialog-heading"><h2 id="access-title">Access</h2><form method="dialog"><button class="round" aria-label="Close access" autofocus><svg><use href="#close-icon"/></svg></button></form></header><p class="muted">This app answers only on this machine.</p><div class="field-stack"><label>Address<input id="access-host" value="" readonly></label><p class="muted">The API token for scripts and the dispatch skill lives in <a href="/settings">Settings</a>.</p></div></dialog>
 
   <dialog id="live-launch" class="access-dialog" aria-labelledby="live-launch-title">
     <header class="dialog-heading"><h2 id="live-launch-title">Open terminal</h2><form method="dialog"><button class="round" aria-label="Close terminal launcher"><svg><use href="#close-icon"/></svg></button></form></header>
