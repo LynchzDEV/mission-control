@@ -88,14 +88,8 @@ $('search').onclick = () => { if ($('history').hidden) showHistory(); else leave
 $('all-history').onclick = () => { if ($('history').hidden) showHistory(); else $('chat-search').focus() }
 
 const sidebarShell = $('sb-shell')
-function setSidebarOpen(open: boolean): void {
-  sidebarShell.classList.toggle('collapsed', !open)
-  try { localStorage.setItem('mc.sidebar.open', open ? '1' : '0') } catch {}
-}
-const savedSidebar = (() => { try { return localStorage.getItem('mc.sidebar.open') } catch { return '1' } })()
-sidebarShell.classList.toggle('collapsed', savedSidebar === null ? matchMedia('(max-width: 900px)').matches : savedSidebar === '0')
 document.querySelectorAll<HTMLElement>('[data-sidebar-toggle]').forEach(button => {
-  button.onclick = () => setSidebarOpen(sidebarShell.classList.contains('collapsed'))
+  button.onclick = () => sidebarShell.classList.toggle('collapsed')
 })
 document.querySelectorAll<HTMLElement>('[data-click]').forEach(button => {
   button.onclick = () => $(button.dataset.click ?? '').click()

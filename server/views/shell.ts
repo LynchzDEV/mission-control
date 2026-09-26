@@ -31,7 +31,7 @@ const BODY = `
     <symbol id="open-icon" viewBox="0 0 20 20"><path d="M11 4h5v5M16 4l-7 7M14 12v3.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5H8"/></symbol>
   </svg>
   <canvas id="backdrop" class="backdrop" aria-hidden="true"></canvas>
-  <div class="sb-shell" id="sb-shell">
+  <div class="sb-shell collapsed" id="sb-shell">
   <aside id="sidebar" class="sb" aria-label="Chats and terminals">
     <div class="sb-open">
       <div class="sb-top"><button type="button" class="sb-icon" data-sidebar-toggle aria-expanded="true" aria-controls="sidebar" aria-label="Hide sidebar" title="Hide sidebar"><svg><use href="#sidebar-icon"/></svg></button><span class="sp"></span><button type="button" id="search" class="sb-icon" aria-pressed="false" aria-label="Search chats" title="Search chats"><svg><use href="#search-icon"/></svg></button></div>

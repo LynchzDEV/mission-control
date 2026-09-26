@@ -38,6 +38,7 @@ describe('quiet shell', () => {
     expect(markup).not.toContain('aria-label="Chats"')
     expect(markup).not.toContain('id="new-chat-menu"')
     expect(markup.indexOf('id="sidebar"')).toBeLessThan(markup.indexOf('<main class="canvas">'))
+    expect(markup).toContain('class="sb-shell collapsed"')
   })
 
   test('neumo-ui loads once, layered beneath quiet.css', async () => {

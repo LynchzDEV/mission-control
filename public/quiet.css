@@ -836,3 +836,8 @@ a.pill:hover { color: var(--accent); }
 .flow-host .run-state.run-running::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.4s ease-in-out infinite; }
 .flow-host .run-state.run-failed { color: #b0556a; }
 .flow-host .run-passed .react-flow__edge-path:not(.edge-flow) { stroke: #6f9c7e; }
+.sb-shell { transition: grid-template-columns 260ms cubic-bezier(.22, 1, .36, 1); }
+.sb { overflow: hidden; }
+.sb-shell:not(.collapsed) .sb-open > *, .sb-shell.collapsed .sb-strip > * { animation: sb-in 220ms cubic-bezier(.22, 1, .36, 1) 60ms both; }
+@keyframes sb-in { from { opacity: 0; transform: translateX(-6px); } }
+@media (prefers-reduced-motion: reduce) { .sb-shell { transition: none; } .sb-shell .sb-open > *, .sb-shell .sb-strip > * { animation: none; } }
