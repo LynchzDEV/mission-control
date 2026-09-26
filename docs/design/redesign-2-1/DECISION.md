@@ -62,3 +62,13 @@
 - Find: clicking the icon (or ⌘F) widens the bar into the existing find field (input, count, prev/next, close) in place.
 - Split panes: each pane shows its own bar; the active pane's bar is full opacity, others 70%.
 **Rejected:** A — header row with status pill; B — always-visible find field.
+
+## 3c. Sidebar, neumorphism
+**Chosen:** Variant B — raised controls. Mockup: `sidebar-neu-b.html` (click the sidebar button to see collapsed).
+**Why:** User picked B over the floating raised panel (A) and the sunken list well (C).
+**Implemented:** `public/quiet.css` `.sb*` rules — no divider, raised icon buttons / New chat / New terminal / All history (inset on press), selected row and selected collapsed item raised.
+
+## 5. Corner radii
+**Chosen:** Apple-style scale with continuous corners, applied app-wide.
+**Why:** "change every border-radius to apple style — it's too round right now."
+**Implemented:** `public/quiet.css` tokens `--r-xs 6px`, `--r-sm 8px`, `--r-button 10px`, `--r-md 12px`, `--r-lg 16px`, `--corner: squircle` (CSS `corner-shape`). Circles kept only for dots and handles.
