@@ -6,6 +6,8 @@ Mission Control is a local workspace for AI coding agents: Claude Code, GLM (thr
 
 It runs on your machine, binds to `127.0.0.1`, and keeps its state in plain JSON files. No database, no cloud service, no build step.
 
+![Mission Control: one sentence in the chat, a team of AI agents does the work, and a different AI reviews it before it lands](docs/images/demo.gif)
+
 ## Quickstart
 
 Requires [Bun](https://bun.sh) 1.2 or newer.
