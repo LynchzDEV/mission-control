@@ -36,7 +36,7 @@ const BODY = `
     <div class="sb-open">
       <div class="sb-top"><button type="button" class="sb-icon" data-sidebar-toggle aria-expanded="true" aria-controls="sidebar" aria-label="Hide sidebar" title="Hide sidebar"><svg><use href="#sidebar-icon"/></svg></button><span class="sp"></span><button type="button" id="search" class="sb-icon" aria-pressed="false" aria-label="Search chats" title="Search chats"><svg><use href="#search-icon"/></svg></button></div>
       <button type="button" id="new-chat" class="sb-new"><svg><use href="#plus-icon"/></svg>New chat</button>
-      <button type="button" class="sb-new ghost" data-live><svg><use href="#terminal-icon"/></svg>New terminal</button>
+      <button type="button" class="sb-new" data-live><svg><use href="#terminal-icon"/></svg>New terminal</button>
       <nav id="sidebar-list" class="sb-list" aria-label="Recent chats and terminals"></nav>
       <div class="sb-foot"><button type="button" id="all-history" class="sb-link"><svg><use href="#history-icon"/></svg>All history</button></div>
     </div>
