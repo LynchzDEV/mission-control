@@ -750,3 +750,10 @@ a.pill:hover { color: var(--accent); }
 .sb-item:hover .sb-dot, .sb-item:focus-within .sb-dot { visibility: hidden; }
 .sb-item:has(.sb-rename) .sb-x { display: none; }
 .sb-rename { font: inherit; width: 100%; min-width: 0; padding: 2px 6px; margin: -2px 0; border-radius: 7px; background: #e2e6f0; border: 1px solid #c9c0e3; color: #505e75; outline: none; }
+.team-card { box-shadow: none; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, #fff 25%, var(--paper)); }
+.team-card li { background: none; border-radius: 0; padding: 10px 2px; align-items: center; }
+.team-card .engine-disc { box-shadow: none; width: 24px; height: 24px; flex-basis: 24px; border-radius: 7px; background: color-mix(in srgb, var(--engine) 22%, #fff); }
+.team-card .state { font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 20px; color: #6b4fb0; background: #e6def7; }
+.team-card [data-state="done"] .state, .team-card [data-state="landed"] .state { color: #3f7352; background: #dcece1; }
+.team-card [data-state="needs-you"] .state { color: #a13f58; background: #f5dde3; }
+.team-card [data-state="retried"] .state, .team-card [data-state="stopped"] .state { color: var(--muted); background: #e4e7ef; }
