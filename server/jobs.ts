@@ -282,6 +282,7 @@ export type JobManagerOptions = {
   now?: () => number
   onJobSlow?: (record: JobRecord) => void
   onJobSettled?: (record: JobRecord) => void
+  onJobStarted?: (record: JobRecord) => void
 }
 
 export function createJobManager(options: JobManagerOptions = {}): JobManager {
@@ -646,6 +647,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     }
     sessionScans.set(id, '')
     await persist(record)
+    options.onJobStarted?.(record)
 
     void finalizeJob(id, proc, record).catch(() => settleFailed(id, record).catch(() => {}))
 

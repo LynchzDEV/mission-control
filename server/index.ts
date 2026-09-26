@@ -38,6 +38,7 @@ import { rolesRoutes } from './routes/roles'
 import { claudeSkillsDir, describeSkillInstall, installSkills } from './skill-install'
 import { syncEngineAssets } from './engine-assets'
 import { ShellPage } from './views/shell'
+import { jobLine, log, requestLine, shouldLogRequest } from './server-log'
 
 const ROOT = resolve(import.meta.dir, '..')
 const CLIENT_DIR = join(ROOT, 'client')
@@ -148,7 +149,9 @@ export async function createApp(): Promise<Elysia> {
   const workflowStore = createWorkflowStore()
   const jobManager = createJobManager({
     onJobSlow: notifySlowJob,
+    onJobStarted: (record) => log(jobLine('started', record)),
     onJobSettled: (record) => {
+      log(jobLine(record.stoppedAt ? 'stopped' : record.status === 'done' ? 'done' : 'failed', record))
       if (record.purpose === 'workflow-design') {
         void workflowBuilder.cleanup(record).catch(error => console.error('Workflow designer cleanup failed', error))
         return
@@ -192,7 +195,15 @@ export async function createApp(): Promise<Elysia> {
   const knownDirectories = () => [...jobManager.listJobs().map(job => job.baseRepo ?? job.cwd), ...terminalRegistry.list().map(session => session.cwd)]
   const externalSessionsCache = createExternalSessionsCache(() => ownedPids(jobManager.listJobs(), terminalRegistry.list()))
 
+  const requestStarts = new WeakMap<Request, number>()
+  const verboseLog = process.env.MC_LOG === 'verbose'
   const app = new Elysia()
+    .onRequest(({ request }) => { requestStarts.set(request, performance.now()) })
+    .onAfterResponse(({ request, set }) => {
+      const status = typeof set.status === 'number' ? set.status : 200
+      if (!shouldLogRequest(request.method, status, verboseLog)) return
+      log(requestLine(request.method, request.url, status, performance.now() - (requestStarts.get(request) ?? performance.now())))
+    })
     .get('/', async ({ request, set }) => {
       if (!localRequestAllowed(request)) { set.status = 403; return 'local access only' }
       return appShellPage()
