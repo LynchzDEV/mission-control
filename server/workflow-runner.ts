@@ -342,7 +342,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   async function recover(): Promise<void> {
     for (const run of runs.values()) {
       const lastStatus = run.attempts.at(-1)?.status
-      if (run.status === 'awaiting-approval' || (run.status === 'paused' && lastStatus !== 'running' && lastStatus !== 'starting')) { if (!deps.manager.claimWorkspace(run.cwd, run.id)) await block(run, 'Another run owns this workspace'); continue }
+      if (run.status === 'awaiting-approval' || (run.status === 'paused' && (lastStatus === undefined || lastStatus === 'settled'))) { if (!deps.manager.claimWorkspace(run.cwd, run.id)) await block(run, 'Another run owns this workspace'); continue }
       if (run.status !== 'running' && run.status !== 'paused') { if (processAlive(run.attempts.at(-1)?.checkPid)) deps.manager.claimWorkspace(run.cwd, run.id); continue }
       if (!deps.manager.claimWorkspace(run.cwd, run.id)) { await block(run, 'Another run owns this workspace'); continue }
       const attempt = run.attempts.at(-1)

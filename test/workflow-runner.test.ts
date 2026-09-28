@@ -400,6 +400,23 @@ test('a run paused between steps survives a restart still paused', async () => {
   await reloaded.resume(started.id)
 })
 
+test('a paused run caught mid acceptance check is blocked on restart, not left paused', async () => {
+  const store = build(resolver, false)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  const done = await finished(started.id)
+  await settledStatuses()
+  const file = join(dir, 'workflow-runs', `${done.id}.json`)
+  const record = JSON.parse(await Bun.file(file).text()) as WorkflowRun
+  record.status = 'paused'
+  record.attempts.at(-1)!.status = 'checking'
+  await Bun.write(file, JSON.stringify(record))
+  const reloaded = createWorkflowRunner({ manager, resolver, store, base: dir, requireApproval: async () => false })
+  await reloaded.recover()
+  const recovered = reloaded.get(done.id)!
+  expect(recovered.status).toBe('blocked')
+  expect(recovered.error).toContain('Interrupted transition or acceptance check')
+})
+
 test('every persisted change is reported through onChange', async () => {
   const store = createWorkflowStore(dir)
   manager = createJobManager({ onJobSettled: job => { void runner.onJobSettled(job) } })
