@@ -13,6 +13,8 @@ const home = $('access-home') as HTMLInputElement
 const homeForm = $('access-home-form') as HTMLFormElement
 const homeNote = $('access-home-note')
 const tokenNote = $('access-token-note')
+const flowApproval = $('access-flow-approval') as HTMLInputElement
+const flowNote = $('access-flow-note')
 let copiedTimer = 0
 
 function label(text: string, copied = false): void {
@@ -74,8 +76,22 @@ homeForm.onsubmit = async (event) => {
   rollText(homeNote, 'Saved.')
 }
 
+async function loadFlowApproval(): Promise<void> {
+  const result = await getJson('/api/flow-approval')
+  if (!result.ok) { rollText(flowNote, errorText(result)); return }
+  flowApproval.checked = result.data.flowApproval === true
+}
+
+flowApproval.onchange = async () => {
+  const checked = flowApproval.checked
+  const response = await fetch('/api/flow-approval', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowApproval: checked }) })
+  const payload = (await response.json().catch(() => ({}))) as { flowApproval?: boolean; error?: string }
+  if (!response.ok || typeof payload.flowApproval !== 'boolean') { flowApproval.checked = !checked; rollText(flowNote, payload.error ?? 'That could not be saved.'); return }
+  rollText(flowNote, checked ? 'Flows wait for you.' : 'Flows start on their own.')
+}
+
 dialog.addEventListener('close', () => { hideToken(); tokenNote.textContent = '' })
-new MutationObserver(() => { if (dialog.open) void loadHome() }).observe(dialog, { attributes: true, attributeFilter: ['open'] })
+new MutationObserver(() => { if (dialog.open) { void loadHome(); void loadFlowApproval() } }).observe(dialog, { attributes: true, attributeFilter: ['open'] })
 hideToken()
 
 export {}

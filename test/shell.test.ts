@@ -51,7 +51,7 @@ describe('quiet shell', () => {
   test('the access dialog states only true facts', async () => {
     const markup = await (await app.handle(new Request('http://localhost/'))).text()
     expect(markup).toContain('id="access-host"')
-    for (const id of ['access-token', 'access-reveal', 'access-rotate', 'access-home']) expect(markup).toContain(`id="${id}"`)
+    for (const id of ['access-token', 'access-reveal', 'access-rotate', 'access-home', 'access-flow-approval']) expect(markup).toContain(`id="${id}"`)
     expect(markup).not.toContain('href="/settings"')
     for (const placeholder of ['127.0.0.1:3000', 'Not loaded in this preview', 'Rotate token']) expect(markup).not.toContain(placeholder)
   })
