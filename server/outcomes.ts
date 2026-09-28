@@ -59,19 +59,19 @@ export function sessionFileStem(key: string): string {
   return key.replace(/[^A-Za-z0-9_-]/g, '_')
 }
 
-async function readNewLines(path: string, offset: number, maxBytes: number): Promise<{ text: string; next: number; size: number } | null> {
+async function readNewLines(path: string, offset: number, maxBytes: number): Promise<{ text: string; next: number; size: number; modifiedAt: number } | null> {
   let handle
   try {
-    const { size } = await stat(path)
+    const { size, mtimeMs: modifiedAt } = await stat(path)
     const start = size < offset ? 0 : offset
-    if (size === start) return { text: '', next: start, size }
+    if (size === start) return { text: '', next: start, size, modifiedAt }
     const length = Math.min(size - start, maxBytes)
     const buffer = Buffer.alloc(length)
     handle = await open(path, 'r')
     await handle.read(buffer, 0, length, start)
     const end = buffer.lastIndexOf(NEWLINE)
-    if (end < 0) return { text: '', next: length === maxBytes ? start + length : start, size }
-    return { text: buffer.subarray(0, end + 1).toString('utf8'), next: start + end + 1, size }
+    if (end < 0) return { text: '', next: length === maxBytes ? start + length : start, size, modifiedAt }
+    return { text: buffer.subarray(0, end + 1).toString('utf8'), next: start + end + 1, size, modifiedAt }
   } catch {
     return null
   } finally {
@@ -140,7 +140,7 @@ export function createOutcomeLedger(deps: LedgerDeps): OutcomeLedger {
     if (cursor.closed) return cursor.state
     const chunk = await readNewLines(source.path, cursor.offset, readBytes)
     if (chunk === null) return null
-    const parsed = chunk.text === '' ? { outcomes: [], state: cursor.state } : PARSERS[source.parser](chunk.text, cursor.state, { source: source.id, actor: source.actor, now: now() })
+    const parsed = chunk.text === '' ? { outcomes: [], state: cursor.state } : PARSERS[source.parser](chunk.text, cursor.state, { source: source.id, actor: source.actor, now: Math.min(chunk.modifiedAt, now()) })
     drafts.push(...parsed.outcomes)
     session.cursors[source.id] = { offset: chunk.next, state: parsed.state, ...(source.final && chunk.next === chunk.size ? { closed: true } : {}) }
     return parsed.state
@@ -161,11 +161,12 @@ export function createOutcomeLedger(deps: LedgerDeps): OutcomeLedger {
   }
 
   async function syncNow(session: Session, sources: SessionSources): Promise<void> {
-    const drafts: OutcomeDraft[] = [...sources.records]
+    const drafts: OutcomeDraft[] = []
     for (const source of sources.files) {
       const state = await readFileSource(session, source, drafts)
       if (source.subagents && state) for (const agent of await subagentSources(source, state.agents)) await readFileSource(session, agent, drafts)
     }
+    drafts.push(...sources.records)
     const seen = new Set(session.keys)
     const fresh: OutcomeDraft[] = []
     for (const item of drafts) {

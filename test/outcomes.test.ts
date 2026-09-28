@@ -87,6 +87,19 @@ describe('outcome ledger', () => {
     expect((await store.read('chat:c1', 0, 50))?.items).toHaveLength(2)
   })
 
+  test('undated log lines take the log time, so a finished job lands after its own actions', async () => {
+    const log = join(root, 'job.log')
+    await writeFile(log, line({ type: 'item.completed', item: { id: 'i1', type: 'command_execution', command: 'make', exit_code: 1, status: 'failed' } }))
+    const written = new Date(1_000_000)
+    await utimes(log, written, written)
+    const actor: Actor = { by: 'spawned', label: 'Job · build', engine: 'codex' }
+    const settled: OutcomeDraft = { at: 1_000_000, ok: true, kind: 'job', tool: 'Job', target: 'build', result: 'Done', detail: '', actor, key: 'job:j1' }
+    sources = { files: [{ id: 'job:j1', parser: 'codex-exec', path: log, actor, final: true }], records: [settled] }
+    clock = 5_000_000
+    const page = await ledger().read('chat:c1', 0, 50)
+    expect(page?.items.map((item) => [item.key, item.at])).toEqual([['job:j1:i1', 1_000_000], ['job:j1', 1_000_000]])
+  })
+
   test('secrets in commands and details are redacted before they are stored', async () => {
     await appendFile(transcript, bash('a', 'curl -H "Authorization: sk-secret-token-123" x') + done('a', 'Exit code 1\ntoken sk-secret-token-123 rejected', true))
     const page = await ledger().read('terminal:t1', 0, 50)
