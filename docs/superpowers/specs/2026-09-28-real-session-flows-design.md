@@ -90,10 +90,10 @@ All through the existing token-allowed `/api/studio/*` routes (`server/auth.ts` 
 ### Drawer (variant D)
 
 - New `client/flow-drawer.ts` owns the drawer: scope (from the existing `quiet:activity-scope` / chat events), the SSE connection, header, banner and the no-flow list. `client/flow-graph.ts` becomes the canvas renderer: takes nodes with positions, edges with outcome + state, and draws per DECISION.md (arcs for back-edges, dashed conditional steps, ghost proposed steps, path bands in part 3). Node state comes from `nodeRunStates()` in `client/studio-graph.ts:40-47` (plain TS, reusable).
-- Layout: the graph's own Studio positions (`node.position`) are used when present; drafted graphs without positions get a left-to-right layered layout (longest-path layering, back-edges drawn as arcs). Zoom / pan and fit in part 4.
+- Layout: always a left-to-right layered layout computed in the drawer (breadth-first from the entry, pass edges first; a step reached only on failure sits under its source; back-edges drawn as arcs). Studio's canvas positions are not reused: they are hand-placed at a different scale, and the drawer should look the same for saved and drafted flows. Zoom / pan and fit in part 4.
 - Several runs in one session: the header title becomes a menu of the session's runs, newest first; the running one is selected by default.
-- Buttons: Pause / Resume (new runner state: running nodes finish, no new node dispatches), Open in Studio (existing canvas run view), Approve / Reject / Keep, Retry and Stop when a run is blocked or failed (existing routes).
-- Sub-agents: the step's detail line shows the count from the job's activity (`server/activity.ts` `Task`/`Agent` tool calls); clicking a step opens the existing job detail (Agents drawer row).
+- Buttons: Pause / Resume (runner state: running steps finish, no new step starts), Stop (with a confirm), Approve / Reject (sending the version number shown), Retry when a run is blocked or failed.
+- Deferred to part 4: "Open in Studio" for a run, clicking a step to open its job detail, and the sub-agent count in a step's detail line.
 
 ### Drafting and live edits (part 2)
 

@@ -17,7 +17,8 @@
 - No emoji anywhere (UI, copy, commits). Icons are SVG or provider logos (`/providers/<engine>.svg`).
 - Inputs in this app are flat (`#e2e6f0` background), never inset; neumorphic shadow only on cards and buttons.
 - Tests: `bun test` (whole suite) and `bun test test/<file>.test.ts` (one file). One test file per module in `test/`, `bun:test` API, existing fixture helpers (`test/support/scratch-git-repo.ts`).
-- Typecheck: `bun run typecheck` must pass before each commit (check `package.json` scripts for the exact names; also run `bun run typecheck:studio` if `client/studio*` files change).
+- Typecheck: there is no `bun run typecheck` script. Before each commit `bunx tsc -p tsconfig.shell.json` and `bun run typecheck:studio` must both exit 0. Wherever a step below says `bun run typecheck`, run these two. When a task adds a client module the shell loads (e.g. `client/flow-drawer.ts`, `client/flow-graph.ts`), add it to `tsconfig.shell.json`'s `include`.
+- Baseline on the branch before Task 1: `bun test` = 966 pass, 0 fail.
 - Commit messages: conventional (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`), no `Co-Authored-By` trailer.
 - Never `git merge`; never push. Each task ends with one commit.
 - Approval source rule: a request whose `sec-fetch-site` header equals `same-origin` came from the cockpit page in a browser → `'drawer'` (or `'user'` for a start). Anything else (curl from a session AI, with or without a Bearer token) → `'conversation'`. This records honestly; it is not a security boundary.
@@ -251,6 +252,37 @@ test('after a restart a waiting or paused run keeps its status and its workspace
   await expect(reloaded.start({ cwd: repo, request: 'Other', label: 'other' })).rejects.toThrow('Workspace already has running work')
 })
 
+test('a rejected first version cannot be retried into running', async () => {
+  build(resolver, true)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  await runner.reject(started.id, { via: 'drawer' })
+  await expect(runner.retry(started.id)).rejects.toMatchObject({ status: 409 })
+  expect(manager.listJobs()).toHaveLength(0)
+})
+
+test('pausing takes effect at once, even while a step is settling', async () => {
+  const slow: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `sleep 0.2; echo '${report()}'`], env: {} })
+  build(slow, false)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  const pausing = runner.pause(started.id)
+  expect(runner.get(started.id)!.status).toBe('paused')
+  await pausing
+  await until(started.id, run => run.attempts[0]?.status === 'settled')
+  await Bun.sleep(150)
+  expect(runner.get(started.id)!.attempts).toHaveLength(1)
+})
+
+test('a run paused between steps survives a restart still paused', async () => {
+  const store = build(resolver, false)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  await runner.pause(started.id)
+  await until(started.id, run => run.attempts.at(-1)?.status === 'settled')
+  const reloaded = createWorkflowRunner({ manager, resolver, store, base: dir, requireApproval: async () => false })
+  await reloaded.recover()
+  expect(reloaded.get(started.id)!.status).toBe('paused')
+  await reloaded.resume(started.id)
+})
+
 test('every persisted change is reported through onChange', async () => {
   const store = createWorkflowStore(dir)
   manager = createJobManager({ onJobSettled: job => { void runner.onJobSettled(job) } })
@@ -326,13 +358,10 @@ async function reject(id: string, context: ApprovalContext): Promise<WorkflowRun
   })
 }
 async function pause(id: string): Promise<WorkflowRun> {
-  return exclusive(id, async () => {
-    const run = mustGet(id)
-    if (run.status !== 'running') throw new RunActionError('Only a running flow can be paused', 409)
-    run.status = 'paused'
-    await persist(run)
-    return structuredClone(run)
-  })
+  const run = mustGet(id)
+  if (run.status !== 'running') throw new RunActionError('Only a running flow can be paused', 409)
+  run.status = 'paused'
+  return exclusive(id, async () => { await persist(run); return structuredClone(run) })
 }
 async function resume(id: string): Promise<WorkflowRun> {
   return exclusive(id, async () => {
@@ -347,14 +376,21 @@ async function resume(id: string): Promise<WorkflowRun> {
 }
 ```
 
+`pause` sets the status before entering `exclusive` on purpose: queued behind a settling step (and its acceptance checks), the step would dispatch the next one first. Its test "pausing takes effect at once" pins this.
+
 9. `settle`: first line becomes `if ((run.status !== 'running' && run.status !== 'paused') || stopping.has(run.id)) return`. In the `if (edge)` branch replace `await dispatch(run)` with `if (run.status === 'running') await dispatch(run)`.
 10. `onJobSettled`: `if (run.status !== 'running' && run.status !== 'paused') await persist(run); else await settle(run, record)`.
 11. `stop`: `if (!LIVE_STATUSES.has(run.status)) throw new Error('Run is not running')`. For a run awaiting approval also mark its pending version `rejected`.
-12. `retry`: `if (LIVE_STATUSES.has(run.status) || run.status === 'done') throw …` (message unchanged).
-13. `recover`: at the top of the loop: `if (run.status === 'awaiting-approval') { if (!deps.manager.claimWorkspace(run.cwd, run.id)) await block(run, 'Another run owns this workspace'); continue }`. Change the existing `run.status !== 'running'` guard to `run.status !== 'running' && run.status !== 'paused'`. The paused path then re-attaches the job as today; `onJobSettled` → `settle` will not dispatch because the run is paused.
+12. `retry`: `if (LIVE_STATUSES.has(run.status) || run.status === 'done') throw …` (message unchanged), then `if (run.versions[0]?.state !== 'approved') throw new RunActionError('Approve the flow before retrying', 409)`.
+13. `recover`: at the top of the loop: `if (run.status === 'awaiting-approval' || (run.status === 'paused' && run.attempts.at(-1)?.status !== 'running' && run.attempts.at(-1)?.status !== 'starting')) { if (!deps.manager.claimWorkspace(run.cwd, run.id)) await block(run, 'Another run owns this workspace'); continue }` — a run waiting for approval, or paused between steps, keeps its status. Change the existing `run.status !== 'running'` guard to `run.status !== 'running' && run.status !== 'paused'`. A run paused while a step was still running then re-attaches the job as today; `onJobSettled` → `settle` will not dispatch because the run is paused.
 14. Return object: add `approve, reject, pause, resume`.
 
-Then find every other reader of a run's status and keep "live" semantics: `rg -n "status === 'running'|status !== 'running'" server/chat-flusher.ts server/outcome*.ts server/routes client/studio.tsx`. Where the code means "run still in progress", use `LIVE_STATUSES.has(...)` (server) or `['awaiting-approval', 'running', 'paused'].includes(...)` (client). `client/studio.tsx` keeps its own `'running'` checks for the canvas highlight; only its run-list "live" filter at line ~139 changes.
+Then fix every other reader of a run's status (found by review, verified):
+- `server/chat-reports.ts:76` `runNeedsReport`: `run.status !== 'running'` → `!LIVE_STATUSES.has(run.status)`. Otherwise a waiting or paused run is reported to the chat as finished and marked reported, and its real completion is never reported. Add to its test file (`rg -ln "runNeedsReport" test/`): a run with `status: 'awaiting-approval'` or `'paused'` and `reportedAt: null` → `false`.
+- `client/studio-graph.ts:43` `nodeRunStates`: return `{}` only when the status is not `running` and not `paused` (pausing must keep the canvas highlights). Add a `test/studio-graph.test.ts` example for a paused run.
+- `client/studio.tsx:108` canvas highlight condition, `:139` live-run filter, `:151` detail poll: treat `running`, `paused` and `awaiting-approval` as live.
+- `client/studio.tsx:258` run actions: show "Stop run" for the three live statuses; "Retry current step" only for `failed`, `blocked` and `stopped`.
+- Then `rg -n "status === 'running'|status !== 'running'" server client` and check each remaining hit is about a job, not a run.
 
 - [ ] **Step 5: Run tests**
 
@@ -364,7 +400,7 @@ Expected: all pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add server/workflow-runner.ts test/workflow-runner.test.ts server/chat-flusher.ts client/studio.tsx
+git add server/workflow-runner.ts test/workflow-runner.test.ts server/chat-reports.ts client/studio.tsx client/studio-graph.ts test/studio-graph.test.ts <chat-reports test file>
 git commit -m "feat(runner): flows wait for one approval, can pause, report every change"
 ```
 
@@ -470,11 +506,21 @@ and replace the run routes (lines 63-71) with:
 with, at module level:
 
 ```ts
-const sessionBody = z.object({ chat: z.string().min(1).max(200).optional(), terminalId: identifier.optional() }).default({})
+const sessionBody = z.object({ chat: z.string().min(1).max(200).optional(), terminalId: identifier.optional(), version: z.number().int().min(1).optional() }).default({})
 function approvalContext(request: Request, body: unknown): ApprovalContext {
-  const session = sessionBody.parse(body ?? {})
-  return fromBrowser(request) ? { via: 'drawer' } : { via: 'conversation', ...session }
+  const { version, ...session } = sessionBody.parse(body ?? {})
+  return fromBrowser(request) ? { via: 'drawer', ...(version ? { version } : {}) } : { via: 'conversation', ...session, ...(version ? { version } : {}) }
 }
+```
+
+`ApprovalContext` (Task 2) gains `version?: number`. In Task 2's `pendingVersion(run)` callers (`approve`, `reject`), after finding the pending version: `if (context.version !== undefined && context.version !== version.number) throw new RunActionError('That version is no longer waiting', 409)`. The drawer always sends the version number it showed; a session AI may omit it. Add to `test/studio-routes.test.ts`:
+
+```ts
+test('approving a version that is not the pending one answers 409', async () => {
+  const run = await (await post('/api/studio/runs', body, {})).json()
+  expect((await post(`/api/studio/runs/${run.id}/approve`, { version: 2 }, { 'sec-fetch-site': 'same-origin' })).status).toBe(409)
+  expect((await post(`/api/studio/runs/${run.id}/approve`, { version: 1 }, { 'sec-fetch-site': 'same-origin' })).status).toBe(200)
+})
 ```
 
 - [ ] **Step 4: Run tests** — `bun test && bun run typecheck`
@@ -595,6 +641,19 @@ test('sends a snapshot at once, then again after a change, skipping identical on
   controller.abort()
 })
 
+test('a steady stream of changes still sends a snapshot within one window', async () => {
+  const events = createRunEvents()
+  let value = 0
+  const controller = new AbortController()
+  const response = eventStreamResponse(events, () => ({ value }), controller.signal, { debounceMs: 20 })
+  const frames = read(response, 2)
+  const noise = setInterval(() => { value++; events.changed() }, 5)
+  const got = await Promise.race([frames, Bun.sleep(200).then(() => null)])
+  clearInterval(noise)
+  controller.abort()
+  expect(got).not.toBeNull()
+})
+
 test('closing the connection unsubscribes and stops the heartbeat', async () => {
   const events = createRunEvents()
   const controller = new AbortController()
@@ -638,7 +697,7 @@ export function eventStreamResponse(events: RunEvents, snapshot: () => unknown, 
       const close = () => { unsubscribe(); clearTimeout(timer); clearInterval(heartbeat); try { controller.close() } catch {} }
       if (signal.aborted) { close(); return }
       send()
-      unsubscribe = events.subscribe(() => { clearTimeout(timer); timer = setTimeout(send, options.debounceMs ?? 100) })
+      unsubscribe = events.subscribe(() => { if (!timer) timer = setTimeout(() => { timer = undefined; send() }, options.debounceMs ?? 100) })
       heartbeat = setInterval(() => write(': ping\n\n'), options.heartbeatMs ?? 15000)
       signal.addEventListener('abort', close, { once: true })
     },
@@ -875,7 +934,7 @@ DOM (replace `server/views/shell.ts:69-75` inner markup; keep the section's id, 
     <header class="flow-head">
       <div class="flow-title"><h2 id="flow-title">Session flow</h2><select id="flow-runs" class="flow-runs" aria-label="Flows in this session" hidden></select><small id="flow-meta" class="flow-meta"></small></div>
       <div id="flow-pills" class="flow-pills"></div>
-      <div class="flow-actions"><button id="flow-pause" class="pill flow-sm" type="button" hidden>Pause</button><button id="close-flow" class="round" aria-label="Collapse flow"><svg><use href="#close-icon"/></svg></button></div>
+      <div class="flow-actions"><button id="flow-pause" class="pill flow-sm" type="button" hidden>Pause</button><button id="flow-stop" class="pill flow-sm" type="button" hidden><span>Stop</span><span>Stop flow</span></button><button id="close-flow" class="round" aria-label="Collapse flow"><svg><use href="#close-icon"/></svg></button></div>
     </header>
     <div id="flow-banner" class="flow-banner" role="status" hidden><span class="flow-mark"></span><p></p><div class="flow-banner-actions"></div></div>
     <div id="flow-stage" class="flow-stage" hidden></div>
@@ -888,7 +947,7 @@ DOM (replace `server/views/shell.ts:69-75` inner markup; keep the section's id, 
 Behaviour in `client/flow-drawer.ts`:
 - Scope: listen to `quiet:activity-scope` (detail `{ id, cwd } | null` → `terminal=<id>`) and `quiet:chat-agents` (detail chat id → `chat=<id>`), plus `document.body.dataset.chat` at load — same sources `shell-activity.ts` uses today.
 - Connection: open `new EventSource('/api/studio/events?' + params)` when the drawer is open and a scope is set (`quiet:flow-open` true); close it when the drawer closes or the scope changes. On `message`, parse `ScopeSnapshot` and paint.
-- Paint: no runs and no jobs → only `#flow-empty`. No runs, some jobs → `#flow-quick` list: each `li` has `span.flow-mark[data-state]` (done / active / failed from job status `done` / `running` / other), the engine logo, the label, and `<status> · <elapsed>` right-aligned; the header title becomes the newest job's label and the meta `Quick work · no flow needed`. Runs → header title = run label; `#flow-runs` select shown when there are 2+ runs (option text `label · status`); `#flow-meta` = engine logo `img` + `metaFor`; `#flow-pills` = three `.pill-state` spans (`running`, `done`, `queued` data-s) hiding zero counts; `#flow-pause` shown for `running` (text Pause → POST pause) and `paused` (text Resume → POST resume); banner from `bannerFor` (tone `ask` → class `flow-banner ask`, `problem` → `flow-banner problem`); approve button is `pill flow-sm flow-primary` "Approve and run"; reject uses `confirmButton` (from `./confirm-button`) "Reject" / "Reject flow"; retry "Retry step". Stage: `renderRunGraph(stage, stepsFor(run, Date.now()), edgesFor(run), run.entry, { animate: motionAllowed() })` (copy `motionAllowed` from `shell-activity.ts`).
+- Paint: no runs and no jobs → only `#flow-empty`. No runs, some jobs → `#flow-quick` list: each `li` has `span.flow-mark[data-state]` (done / active / failed from job status `done` / `running` / other), the engine logo, the label, and `<status> · <elapsed>` right-aligned; the header title becomes the newest job's label and the meta `Quick work · no flow needed`. Runs → header title = run label; `#flow-runs` select shown when there are 2+ runs (option text `label · status`); `#flow-meta` = engine logo `img` + `metaFor`; `#flow-pills` = three `.pill-state` spans (`running`, `done`, `queued` data-s) hiding zero counts; `#flow-pause` shown for `running` (text Pause → POST pause) and `paused` (text Resume → POST resume); `#flow-stop` shown for the three live statuses, wired with `confirmButton(stop, 'Stop flow', …)` → POST stop (same two-span pattern the Agents drawer's stop button uses in `client/shell-activity.ts`); approve / reject send `{ version: <the pending version's number> }`; banner from `bannerFor` (tone `ask` → class `flow-banner ask`, `problem` → `flow-banner problem`); approve button is `pill flow-sm flow-primary` "Approve and run"; reject uses `confirmButton` (from `./confirm-button`) "Reject" / "Reject flow"; retry "Retry step". Stage: `renderRunGraph(stage, stepsFor(run, Date.now()), edgesFor(run), run.entry, { animate: motionAllowed() })` (copy `motionAllowed` from `shell-activity.ts`).
 - Every 1 s while the drawer is open, update each `[data-since]` element's text to `Try n · elapsed` / `Working · elapsed` (recompute through `stepsFor` and repaint only the text; do not rebuild the graph).
 - Action errors: show the error text in the banner `p` via `rollText` (from `./morph`) and keep the buttons.
 
@@ -1030,7 +1089,7 @@ git commit -m "feat(access): switch for asking before a flow runs"
 
 **Files:**
 - Delete: `server/plans.ts`, `server/plan-runner.ts`, `server/routes/runs.ts`, `server/flow.ts`, `server/routes/flow.ts`, `client/plan-view.ts`, `test/plans.test.ts`, `test/plan-runner.test.ts`, `test/runs-routes.test.ts`, `test/flow.test.ts`, `test/flow-routes.test.ts`, `test/plan-view.test.ts`
-- Modify: `server/index.ts` (drop `createPlanStore`, `createPlanRunner`, `planRunner.onJobSettled`, `flowRoutes`, `runsRoutes`), `server/routes/meta.ts` (move `countPendingReviews` into this file from `server/flow.ts`, unchanged), `server/archive.ts` (remove the `Plan` import and whatever parameter used it — `rg -n "Plan" server/archive.ts`), `server/auth.ts` (remove `/api/flow` from `TOKEN_SCOPED_GET_ONLY_PATHS` and the three `/api/flow/...` regex blocks), `client/work.ts` (drop `plan`, `stages`, `flowLabel`, `archived` fields and the `flows` parameter: `buildWork(jobs: WorkJob[]): WorkItem[]`), `client/awareness.ts` (drop `awarenessFlows`, `selectFlow`, `flowSteps`, `flowColumns`, `workingLabel` if unused, `FlowStep`; `activeAgents(jobs, id, cwd)` loses the `flows` argument), `client/shell-activity.ts` (call sites), `test/work.test.ts`, `test/awareness.test.ts`, `test/api-token-auth.test.ts`, `test/auth.test.ts`, `test/views.test.ts` (assertions that used `/api/flow` switch to `/api/studio/runs`)
+- Modify: `server/index.ts` (drop `createPlanStore`, `createPlanRunner`, `planRunner.onJobSettled`, `flowRoutes`, `runsRoutes`), `server/routes/meta.ts` (move `countPendingReviews` into this file from `server/flow.ts`, unchanged), `server/archive.ts` (remove the `Plan` import and whatever parameter used it — `rg -n "Plan" server/archive.ts`), `server/auth.ts` (remove `/api/flow` from `TOKEN_SCOPED_GET_ONLY_PATHS` and the three `/api/flow/...` regex blocks), `client/work.ts` (drop `plan`, `stages`, `flowLabel`, `archived` fields and the `flows` parameter: `buildWork(jobs: WorkJob[]): WorkItem[]`), `client/awareness.ts` (drop `awarenessFlows`, `selectFlow`, `flowSteps`, `flowColumns`, `workingLabel` if unused, `FlowStep`; `activeAgents(jobs, id, cwd)` loses the `flows` argument), `client/shell-activity.ts` (call sites), `test/work.test.ts`, `test/awareness.test.ts`, `test/archive.test.ts` (imports `Plan` at :15 and calls `sessionLastActivity(jobs, null)` at :178/:183 — drop the plan fixture and the second argument), `test/api-token-auth.test.ts`, `test/auth.test.ts`, `test/views.test.ts` (assertions that used `/api/flow` switch to `/api/studio/runs`)
 - Docs: `docs/decisions/flow-derivation.md` gets a first line `Superseded by docs/superpowers/specs/2026-09-28-real-session-flows-design.md (2026-09-28).`
 
 - [ ] **Step 1: Find every reference before deleting**
@@ -1043,7 +1102,7 @@ Every hit is either deleted with its file or rewritten in this task. `skills/mc-
 
 - [ ] **Step 2: Delete and rewrite** per the file list. `countPendingReviews` keeps its exact body and its test moves into the meta routes test (`rg -n "countPendingReviews" test/`).
 
-- [ ] **Step 3: Run tests** — `bun test && bun run typecheck && bun run typecheck:studio`. Then `rg -n "/api/flow" server client test` must print nothing.
+- [ ] **Step 3: Run tests** — `bun test && bunx tsc -p tsconfig.shell.json && bun run typecheck:studio`. Then `rg -n "/api/flow([/'\"?\`]|$)" server client test` must print nothing (`/api/flow-approval` is expected and does not match).
 
 - [ ] **Step 4: Commit**
 
@@ -1117,7 +1176,19 @@ git commit -m "feat(instructions): session AIs pick a flow for multi-step work a
 
 ### Task 11: End-to-end check in the running app
 
-- [ ] Start a throwaway server as in Task 6 Step 5 (fake engines, temp config dir, port 7795). Never restart or kill the :7777 cockpit.
+The stock fake engines are `/bin/echo` (`server/engines.ts:47-51`): they never print `MC_RESULT`, so every step would end blocked. Add a dev-only override first.
+
+- [ ] **Step 0: Fake engine that passes.** In `server/engines.ts`, make each `FAKE_ENGINES` entry's `cmd` read `process.env.MC_FAKE_ENGINE_CMD || '/bin/echo'`. Create `scripts/fake-pass-engine.sh` (executable):
+
+```sh
+#!/bin/sh
+sleep "${MC_FAKE_STEP_SECONDS:-4}"
+printf '%s\n' '{"type":"result","result":"MC_RESULT {\"outcome\":\"pass\",\"summary\":\"Fake step passed\",\"evidence\":[\"fake engine\"]}"}'
+```
+
+Add one example to the engines test (`rg -ln "FAKE_ENGINES|fakeEnginesEnabled" test/`): with `MC_FAKE_ENGINES=1` and `MC_FAKE_ENGINE_CMD=/x/y`, `resolveEngine('glm').cmd` is `/x/y`; without the override it is `/bin/echo`. Commit `test(dev): fake engine command override for end-to-end runs`.
+
+- [ ] Start a throwaway server as in Task 6 Step 5 with `MC_FAKE_ENGINE_CMD=$PWD/scripts/fake-pass-engine.sh` (fake engines, temp config dir, port 7795). Never restart or kill the :7777 cockpit.
 - [ ] Terminal path: open a fake terminal, POST a run with its `terminalId`, confirm the drawer's draft state, approve from the drawer, watch steps go green live, check the meta line says "approved by you in the drawer".
 - [ ] Relay path: start another run, approve with `curl … /approve -d '{"terminalId":"<id>"}'` (no `sec-fetch-site`), check the meta says "approved in the conversation (relayed by …)"; repeat with a wrong `terminalId` and confirm 403.
 - [ ] Approval off: turn the Access switch off, start a run, confirm it starts at once and the meta says "started on its own".
