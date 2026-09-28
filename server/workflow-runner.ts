@@ -380,10 +380,12 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     }
   }
   async function continueAfterChange(run: WorkflowRun): Promise<void> {
-    const last = run.attempts.at(-1)
-    if (last?.status === 'settled' && last.result) return advance(run, last)
-    await persist(run)
-    if (!last) await dispatch(run)
+    try {
+      const last = run.attempts.at(-1)
+      if (last?.status === 'settled' && last.result) return await advance(run, last)
+      await persist(run)
+      if (!last) await dispatch(run)
+    } catch (error) { await block(run, error instanceof Error ? error.message : 'Workflow change failed to continue') }
   }
   async function onJobSettled(record: JobRecord): Promise<void> {
     if (!record.workflowRunId || record.status === 'running') return

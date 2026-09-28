@@ -712,3 +712,17 @@ test('an unrun step takes the agent the change gives it', async () => {
   expect(changed.agents.review).toMatchObject({ engine: 'codex' })
   expect(changed.agents.plan).toEqual(started.agents.plan)
 })
+
+test('a dispatch error after an approved change blocks the run and the approval still answers', async () => {
+  build(slow, true)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' }, { startedByUser: true })
+  await runner.propose(started.id, { graph: withMigrate(), reason: 'Needs a migration' }, { via: 'drawer' })
+  await until(started.id, run => run.attempts[0]?.status === 'settled')
+  const createJob = manager.createJob
+  manager.createJob = async () => { throw new Error('job creation exploded') }
+  try {
+    const approved = await runner.approve(started.id, { via: 'drawer' })
+    expect(approved.status).toBe('blocked')
+    expect(approved.error).toBe('job creation exploded')
+  } finally { manager.createJob = createJob }
+})
