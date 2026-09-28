@@ -81,7 +81,7 @@ $('open-studio').onclick = () => {
   if (!$('studio').hidden) { const back = beforeStudio ?? { screen: 'welcome' as const, live: false }; beforeStudio = null; leaveTo(back); return }
   enterStudio()
 }
-addEventListener('quiet:studio-run', () => { if ($('studio').hidden) enterStudio() })
+addEventListener('quiet:studio-run', () => { toggleFlow(false); if ($('studio').hidden) enterStudio() })
 function showHistory(): void {
   beforeHistory = currentView()
   showScreen('history')
