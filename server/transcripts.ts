@@ -119,10 +119,30 @@ export async function listSessions(
 }
 
 export type UserSession = SessionSummary & { cwd: string }
-type SessionHead = { entrypoint: string | null; cwd: string | null; prompt: Prompt | null }
+type SessionHead = { entrypoint: string | null; cwd: string | null; prompt: Prompt | null; aiTitle: string | null }
 type SessionFile = { path: string; id: string; mtimeMs: number; size: number }
 
 const INTERACTIVE_ENTRYPOINT = 'cli'
+const HOUSEKEEPING_COMMANDS = new Set(['/clear', '/compact', '/model', '/resume', '/config', '/status', '/cost', '/help', '/login', '/logout', '/permissions', '/doctor', '/fast', '/exit'])
+const COMMAND_NAME = /<command-name>\s*([^<]+?)\s*<\/command-name>/
+const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/
+
+function commandTitle(text: string): string | null {
+  const name = COMMAND_NAME.exec(text)?.[1]
+  if (!name) return null
+  const command = name.startsWith('/') ? name : `/${name}`
+  if (HOUSEKEEPING_COMMANDS.has(command)) return null
+  return `${command} ${COMMAND_ARGS.exec(text)?.[1]?.trim() ?? ''}`.trim()
+}
+
+function typedPrompt(entry: JsonRecord, line: string): Prompt | null {
+  if (entry.type !== 'user' || entry.isMeta === true) return null
+  const prompt = promptFromLine(line)
+  if (prompt === null) return null
+  const command = commandTitle(prompt.text)
+  if (command !== null) return { ...prompt, text: command }
+  return prompt.text.startsWith('<') ? null : prompt
+}
 const heads = new Map<string, { size: number; head: SessionHead }>()
 
 function recordFromLine(line: string): JsonRecord | null {
@@ -135,7 +155,7 @@ function recordFromLine(line: string): JsonRecord | null {
 }
 
 async function readSessionHead(filePath: string): Promise<SessionHead> {
-  const head: SessionHead = { entrypoint: null, cwd: null, prompt: null }
+  const head: SessionHead = { entrypoint: null, cwd: null, prompt: null, aiTitle: null }
   const stream = createReadStream(filePath, { start: 0, end: SCAN_LIMIT_BYTES - 1 })
   const lines = createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY })
   try {
@@ -145,8 +165,8 @@ async function readSessionHead(filePath: string): Promise<SessionHead> {
       if (head.entrypoint === null && typeof entry.entrypoint === 'string') head.entrypoint = entry.entrypoint
       if (head.cwd === null && typeof entry.cwd === 'string') head.cwd = entry.cwd
       if (head.entrypoint !== null && head.entrypoint !== INTERACTIVE_ENTRYPOINT) break
-      const prompt = promptFromLine(line)
-      if (prompt !== null && !prompt.text.startsWith('<')) head.prompt = prompt
+      if (head.aiTitle === null && entry.type === 'ai-title' && typeof entry.aiTitle === 'string') head.aiTitle = entry.aiTitle
+      if (head.prompt === null) head.prompt = typedPrompt(entry, line)
       if (head.prompt !== null && head.entrypoint !== null && head.cwd !== null) break
     }
   } finally {
@@ -193,7 +213,7 @@ export async function listUserSessions(opts: { projectsDir?: string; since: numb
     if (sessions.length >= opts.limit) break
     const head = await sessionHead(file).catch(() => null)
     if (head?.entrypoint !== INTERACTIVE_ENTRYPOINT || head.prompt === null || head.cwd === null) continue
-    sessions.push({ id: file.id, title: head.prompt.text.replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX), startedAt: head.prompt.timestamp, updatedAt: file.mtimeMs, bytes: file.size, cwd: head.cwd })
+    sessions.push({ id: file.id, title: (head.aiTitle ?? head.prompt.text).replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX), startedAt: head.prompt.timestamp, updatedAt: file.mtimeMs, bytes: file.size, cwd: head.cwd })
   }
   return sessions
 }

@@ -167,6 +167,25 @@ describe('listUserSessions', () => {
     expect((await listUserSessions({ projectsDir, since, limit: 10 })).map((item) => item.title)).toEqual(['now a real prompt'])
   })
 
+  test('titles come from Claude Code\'s own title, else the slash command typed, never injected skill text', async () => {
+    const line = (value: unknown) => JSON.stringify(value)
+    const user = (content: string, extra: Record<string, unknown> = {}) => line({ type: 'user', entrypoint: 'cli', cwd: '/Users/x/api', message: { role: 'user', content }, timestamp: TS, ...extra })
+    const skill = [user('<command-message>inv-prod</command-message> <command-name>/inv-prod</command-name> <command-args>why is kood slow</command-args>'), user('Base directory for this skill: /Users/x/.claude/skills/inv-prod', { isMeta: true })].join('\n')
+    const bare = [user('<command-message>loop</command-message> <command-name>/loop</command-name>'), user('# /loop — autonomous default', { isMeta: true })].join('\n')
+    const housekeeping = [user('<command-name>/clear</command-name> <command-args></command-args>'), user('<local-command-stdout></local-command-stdout>'), user('fix the export button')].join('\n')
+    const titled = [line({ type: 'ai-title', aiTitle: 'shell-lane-quota-fix' }), user('from latest work, currently the quota lane is broken')].join('\n')
+    await write('-Users-x-api', 'skill', `${skill}\n`, now - 1_000)
+    await write('-Users-x-api', 'bare', `${bare}\n`, now - 2_000)
+    await write('-Users-x-api', 'housekeeping', `${housekeeping}\n`, now - 3_000)
+    await write('-Users-x-api', 'titled', `${titled}\n`, now - 4_000)
+    expect((await listUserSessions({ projectsDir, since: now - 86_400_000, limit: 10 })).map((item) => [item.id, item.title])).toEqual([
+      ['skill', '/inv-prod why is kood slow'],
+      ['bare', '/loop'],
+      ['housekeeping', 'fix the export button'],
+      ['titled', 'shell-lane-quota-fix'],
+    ])
+  })
+
   test('a missing projects folder is empty', async () => {
     expect(await listUserSessions({ projectsDir: join(projectsDir, 'nope'), since: 0, limit: 10 })).toEqual([])
   })
