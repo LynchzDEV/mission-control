@@ -1,33 +1,21 @@
-import { basename } from 'node:path'
-
 import type { JobRecord } from './jobs'
 import { type Clock, createQuotaCache, type ExternalSession, fetchExternalSessions, type QuotaCache } from './quota'
+import type { PastTerminal } from './terminal-log'
 import type { TerminalRecord } from './terminals'
-import type { SessionSummary } from './transcripts'
+import type { UserSession } from './transcripts'
 
 export type HistoryAgent = { id: string; label: string; status: string; chatId: string; startedAt: number; landedAt: number | null; stoppedAt: number | null; reviewOf: string | null }
 
 export type HistoryItem =
   | { kind: 'chat'; id: string; title: string; updatedAt: number; project: string | null; running: boolean; agents: HistoryAgent[] }
-  | { kind: 'terminal'; id: string; title: string; updatedAt: number; cwd: string; engine: string; sessionId: string | null }
+  | { kind: 'terminal'; id: string; title: string; updatedAt: number; cwd: string; engine: string; sessionId: string | null; live: boolean }
   | { kind: 'claude-history'; id: string; title: string; updatedAt: number; cwd: string; bytes: number }
-  | { kind: 'outside'; id: string; title: string; updatedAt: number; engine: 'claude' | 'codex'; pid: number; cwdHint: string | null; etime: string }
 
 export type HistoryInput = {
   jobs: readonly JobRecord[]
   terminals: readonly TerminalRecord[]
-  transcripts: Array<{ cwd: string; sessions: SessionSummary[] }>
-  outside: ExternalSession[]
-  now: number
-}
-
-const ETIME_PATTERN = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/
-
-export function etimeMs(etime: string): number {
-  const match = ETIME_PATTERN.exec(etime.trim())
-  if (match === null) return 0
-  const [, days = '0', hours = '0', minutes = '0', seconds = '0'] = match
-  return (((Number(days) * 24 + Number(hours)) * 60 + Number(minutes)) * 60 + Number(seconds)) * 1000
+  ended: readonly PastTerminal[]
+  sessions: readonly UserSession[]
 }
 
 export function ownedPids(jobs: readonly JobRecord[], terminals: readonly TerminalRecord[]): Set<number> {
@@ -52,39 +40,26 @@ function chatItems(jobs: readonly JobRecord[]): HistoryItem[] {
 }
 
 function terminalItem(terminal: TerminalRecord): HistoryItem {
-  return { kind: 'terminal', id: terminal.id, title: terminal.title, updatedAt: terminal.createdAt, cwd: terminal.cwd, engine: terminal.engine, sessionId: terminal.sessionId }
+  return { kind: 'terminal', id: terminal.id, title: terminal.title, updatedAt: terminal.createdAt, cwd: terminal.cwd, engine: terminal.engine, sessionId: terminal.sessionId, live: true }
 }
 
-function transcriptItems(input: HistoryInput): HistoryItem[] {
-  const seen = new Set([...input.jobs, ...input.terminals].map(owner => owner.sessionId).filter((id): id is string => id !== null))
-  const items: HistoryItem[] = []
-  for (const { cwd, sessions } of input.transcripts) {
-    for (const session of sessions) {
-      if (seen.has(session.id)) continue
-      seen.add(session.id)
-      items.push({ kind: 'claude-history', id: session.id, title: session.title, updatedAt: session.updatedAt, cwd, bytes: session.bytes })
-    }
-  }
-  return items
+function endedTerminalItem(terminal: PastTerminal): HistoryItem {
+  return { kind: 'terminal', id: terminal.id, title: terminal.title, updatedAt: terminal.endedAt ?? terminal.createdAt, cwd: terminal.cwd, engine: terminal.engine, sessionId: terminal.sessionId, live: false }
 }
 
-function outsideItem(session: ExternalSession, now: number): HistoryItem {
-  const folder = session.cwdHint === null ? 'unknown folder' : basename(session.cwdHint)
-  const engine = session.engine === 'codex' ? 'Codex' : 'Claude'
-  return { kind: 'outside', id: String(session.pid), title: `${engine} · ${folder}`, updatedAt: session.startedAt ?? now - etimeMs(session.etime), engine: session.engine, pid: session.pid, cwdHint: session.cwdHint, etime: session.etime }
+function sessionItems(input: HistoryInput): HistoryItem[] {
+  const owned = new Set([...input.jobs, ...input.terminals, ...input.ended].map(owner => owner.sessionId).filter((id): id is string => id !== null))
+  return input.sessions.filter(session => !owned.has(session.id)).map(session => ({ kind: 'claude-history', id: session.id, title: session.title, updatedAt: session.updatedAt, cwd: session.cwd, bytes: session.bytes }))
 }
 
 export function buildHistory(input: HistoryInput): HistoryItem[] {
-  const owned = ownedPids(input.jobs, input.terminals)
   return [
     ...chatItems(input.jobs),
     ...input.terminals.map(terminalItem),
-    ...transcriptItems(input),
-    ...input.outside.filter(session => !owned.has(session.pid)).map(session => outsideItem(session, input.now)),
+    ...input.ended.map(endedTerminalItem),
+    ...sessionItems(input),
   ].sort((a, b) => b.updatedAt - a.updatedAt)
 }
-
-const START_ROUNDING_MS = 10_000
 
 export function createExternalSessionsCache(
   currentOwnedPids: () => ReadonlySet<number>,
@@ -92,8 +67,5 @@ export function createExternalSessionsCache(
   ttlMs = 60_000,
   clock: Clock = Date.now,
 ): QuotaCache<ExternalSession[]> {
-  return createQuotaCache(async () => {
-    const fetchedAt = clock()
-    return (await fetch(currentOwnedPids())).map(session => ({ ...session, startedAt: Math.round((fetchedAt - etimeMs(session.etime)) / START_ROUNDING_MS) * START_ROUNDING_MS }))
-  }, ttlMs, clock)
+  return createQuotaCache(() => fetch(currentOwnedPids()), ttlMs, clock)
 }

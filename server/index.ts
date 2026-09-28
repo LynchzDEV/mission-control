@@ -233,7 +233,7 @@ export async function createApp(): Promise<Elysia> {
     .use(metaRoutes(jobManager))
     .use(jobsRoutes(jobManager, realEngineResolver, { queue: chatQueue }))
     .use(chatRoutes({ knownDirectories }))
-    .use(historyRoutes({ manager: jobManager, registry: terminalRegistry, knownDirectories, external: () => externalSessionsCache.get() }))
+    .use(historyRoutes({ manager: jobManager, registry: terminalRegistry }))
     .use(terminalsRoutes(terminalRegistry))
     .use(outcomesRoutes(outcomeLedger))
     .use(flowRoutes(jobManager, terminalRegistry, planStore))

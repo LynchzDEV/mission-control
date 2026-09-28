@@ -1,24 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 
-import { buildHistory, createExternalSessionsCache, etimeMs, ownedPids } from '../server/history'
+import { buildHistory, createExternalSessionsCache, ownedPids } from '../server/history'
 import type { JobRecord } from '../server/jobs'
-import type { ExternalSession } from '../server/quota'
+import type { PastTerminal } from '../server/terminal-log'
 import type { TerminalRecord } from '../server/terminals'
 
 const job: JobRecord = { id: 'j', engine: 'claude', cwd: '/p', worktree: null, baseRepo: null, baseBranch: null, label: 'job', prompt: 'x', pid: 100, status: 'done', startedAt: 1, turns: 1, slowAt: null, lastTool: null, endedAt: 2, exitCode: 0, diffStat: null, reviewedAt: null, sessionId: null, parentJobId: null, threadRoot: 'j', terminalId: null, reviewOf: null, model: null }
 const terminal: TerminalRecord = { id: 't1', engine: 'claude', cwd: '/repo', pid: 300, createdAt: 3_000, title: 'Shell work', sessionId: 'sess-terminal' }
-
-describe('etimeMs', () => {
-  test('reads MM:SS, HH:MM:SS and D-HH:MM:SS', () => {
-    expect(etimeMs('05:30')).toBe(330_000)
-    expect(etimeMs('01:02:03')).toBe(3_723_000)
-    expect(etimeMs('2-00:00:10')).toBe(172_810_000)
-  })
-  test('an unreadable etime counts as zero', () => {
-    expect(etimeMs('')).toBe(0)
-    expect(etimeMs('abc')).toBe(0)
-  })
-})
 
 describe('ownedPids', () => {
   test('collects every job and terminal pid', () => {
@@ -27,49 +15,41 @@ describe('ownedPids', () => {
 })
 
 describe('buildHistory', () => {
-  const now = 10_000_000
-  const root: JobRecord = { ...job, id: 'c1', purpose: 'chat', threadRoot: 'c1', label: 'Fix login', startedAt: 1_000, project: '/p', pid: 110 }
+  const root: JobRecord = { ...job, id: 'c1', purpose: 'chat', threadRoot: 'c1', label: 'Fix login', startedAt: 1_000, project: '/p', pid: 110, sessionId: 'sess-chat' }
   const turn: JobRecord = { ...job, id: 'c1-2', purpose: 'chat', threadRoot: 'c1', label: 'Fix login', startedAt: 2_000, pid: 111 }
   const agent: JobRecord = { ...job, id: 'a1', label: 'Build it', status: 'running', startedAt: 1_500, chatId: 'c1', pid: 120, landedAt: undefined }
-  const outside: ExternalSession[] = [
-    { pid: 999, engine: 'codex', etime: '05:30', cwdHint: '/Users/x/elsewhere' },
-    { pid: 998, engine: 'claude', etime: '1-00:00:00', cwdHint: null },
-  ]
+  const ended: PastTerminal = { id: 't0', engine: 'claude', cwd: '/repo', title: 'Yesterday work', sessionId: 'sess-ended', createdAt: 500, endedAt: 2_500 }
+  const session = (id: string, updatedAt: number, cwd = '/repo') => ({ id, title: `about ${id}`, startedAt: 1, updatedAt, bytes: 42, cwd })
   const items = buildHistory({
     jobs: [root, turn, agent],
     terminals: [terminal],
-    transcripts: [{ cwd: '/repo', sessions: [
-      { id: 'sess-terminal', title: 'dup', startedAt: 1, updatedAt: 4_000, bytes: 10 },
-      { id: 'sess-free', title: 'Old question', startedAt: 1, updatedAt: 500, bytes: 42 },
-    ] }],
-    outside,
-    now,
+    ended: [ended],
+    sessions: [session('sess-terminal', 4_000), session('sess-ended', 2_600), session('sess-chat', 2_700), session('sess-ghostty', 3_500, '/Users/x')],
   })
 
-  test('lists every kind newest first', () => {
-    expect(items.map(item => `${item.kind}:${item.id}`)).toEqual(['outside:999', 'terminal:t1', 'chat:c1', 'claude-history:sess-free', 'outside:998'])
+  test('lists chats, live and ended terminals and the sessions a person started, newest first', () => {
+    expect(items.map(item => `${item.kind}:${item.id}`)).toEqual(['claude-history:sess-ghostty', 'terminal:t1', 'terminal:t0', 'chat:c1'])
   })
   test('a chat is its root with the latest turn time, its agents and running when an agent runs', () => {
     const chat = items.find(item => item.kind === 'chat')
     expect(chat).toEqual({ kind: 'chat', id: 'c1', title: 'Fix login', updatedAt: 2_000, project: '/p', running: true, agents: [{ id: 'a1', label: 'Build it', status: 'running', chatId: 'c1', startedAt: 1_500, landedAt: null, stoppedAt: null, reviewOf: null }] })
   })
-  test('a transcript owned by a terminal or job is not repeated', () => {
-    expect(items.some(item => item.kind === 'claude-history' && item.id === 'sess-terminal')).toBe(false)
-    expect(items.find(item => item.id === 'sess-free')).toEqual({ kind: 'claude-history', id: 'sess-free', title: 'Old question', updatedAt: 500, cwd: '/repo', bytes: 42 })
+  test('live terminals are marked live; ended ones keep their own name and date from when they ended', () => {
+    expect(items.find(item => item.id === 't1')).toEqual({ kind: 'terminal', id: 't1', title: 'Shell work', updatedAt: 3_000, cwd: '/repo', engine: 'claude', sessionId: 'sess-terminal', live: true })
+    expect(items.find(item => item.id === 't0')).toEqual({ kind: 'terminal', id: 't0', title: 'Yesterday work', updatedAt: 2_500, cwd: '/repo', engine: 'claude', sessionId: 'sess-ended', live: false })
   })
-  test('outside sessions are titled by engine and folder and dated by elapsed time', () => {
-    expect(items.find(item => item.id === '999')).toEqual({ kind: 'outside', id: '999', title: 'Codex · elsewhere', updatedAt: now - 330_000, engine: 'codex', pid: 999, cwdHint: '/Users/x/elsewhere', etime: '05:30' })
-    expect(items.find(item => item.id === '998')?.title).toBe('Claude · unknown folder')
+  test('a session that belongs to a live terminal, an ended terminal or a job is not listed again', () => {
+    expect(items.filter(item => item.kind === 'claude-history').map(item => item.id)).toEqual(['sess-ghostty'])
+    expect(items.find(item => item.id === 'sess-ghostty')).toEqual({ kind: 'claude-history', id: 'sess-ghostty', title: 'about sess-ghostty', updatedAt: 3_500, cwd: '/Users/x', bytes: 42 })
   })
-  test('a finished chat is not running and outside sessions with our pids are dropped', () => {
-    const quiet = buildHistory({ jobs: [root, { ...agent, status: 'done' }], terminals: [], transcripts: [], outside: [{ pid: 120, engine: 'claude', etime: '00:10', cwdHint: null }], now })
+  test('an ended terminal that never ended cleanly dates from when it opened, and no sources means no items', () => {
+    expect(buildHistory({ jobs: [], terminals: [], ended: [{ ...ended, endedAt: null }], sessions: [] })[0]).toMatchObject({ id: 't0', updatedAt: 500, live: false })
+    expect(buildHistory({ jobs: [], terminals: [], ended: [], sessions: [] })).toEqual([])
+  })
+  test('a finished chat is not running', () => {
+    const quiet = buildHistory({ jobs: [root, { ...agent, status: 'done' }], terminals: [], ended: [], sessions: [] })
     expect(quiet).toHaveLength(1)
     expect(quiet[0]).toMatchObject({ kind: 'chat', running: false, updatedAt: 1_000 })
-  })
-  test('the same transcript seen from two folders appears once and no sources means no items', () => {
-    const session = { id: 's', title: 't', startedAt: 1, updatedAt: 1, bytes: 1 }
-    expect(buildHistory({ jobs: [], terminals: [], transcripts: [{ cwd: '/a', sessions: [session] }, { cwd: '/a', sessions: [session] }], outside: [], now })).toHaveLength(1)
-    expect(buildHistory({ jobs: [], terminals: [], transcripts: [], outside: [], now })).toEqual([])
   })
 })
 
@@ -86,14 +66,4 @@ describe('createExternalSessionsCache', () => {
     await cache.get()
     expect(seen).toEqual([[1], [1, 2]])
   })
-})
-
-test('an outside session keeps one start time across polls within the cache window', async () => {
-  let clock = 1_000_000
-  const cache = createExternalSessionsCache(() => new Set(), async () => [{ pid: 9, engine: 'codex', etime: '01:00', cwdHint: '/Users/x/app' }], 60_000, () => clock)
-  const first = buildHistory({ jobs: [], terminals: [], transcripts: [], outside: await cache.get(), now: clock })
-  clock += 5_000
-  const second = buildHistory({ jobs: [], terminals: [], transcripts: [], outside: await cache.get(), now: clock })
-  expect(second[0]?.updatedAt).toBe(first[0]?.updatedAt)
-  expect(first[0]?.title).toBe('Codex · app')
 })
