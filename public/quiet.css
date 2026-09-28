@@ -206,7 +206,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .flow-actions .round { width: 28px; min-height: 28px; flex: none; }
 .flow-actions .round svg { width: 14px; height: 14px; }
 .flow-sm { min-height: 30px; padding: 0 12px; font-size: 12px; }
-.flow-primary { background: var(--accent); color: #fff; box-shadow: 0 2px 6px #8062bd40; }
+.flow-primary, .flow-primary:hover { background: var(--accent); color: #fff; box-shadow: 0 2px 6px #8062bd40; }
 .flow-ghost { box-shadow: none; border: 1px solid var(--line); }
 .flow-confirm { display: inline-grid; place-items: center; }
 .flow-confirm > span { grid-area: 1 / 1; white-space: nowrap; transition: opacity 240ms cubic-bezier(.2, .8, .2, 1), translate 240ms cubic-bezier(.2, .8, .2, 1); }

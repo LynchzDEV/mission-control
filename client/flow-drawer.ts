@@ -121,15 +121,24 @@ function clock(at: number): string {
   return new Date(at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-function approvalPhrase(run: RunView): string {
-  if (run.versions.some(version => version.state === 'pending')) return 'waiting for your approval'
-  const version = run.versions.filter(item => item.approvedVia !== null || item.state === 'rejected').at(-1)
-  if (!version) return ''
+function startPhrase(run: RunView): string {
+  const version = run.versions[0]
+  if (!version || version.state === 'pending') return ''
   if (version.state === 'rejected') return `rejected, ${clock(version.at)}`
   if (version.approvedVia === 'user') return 'started by you'
   if (version.approvedVia === 'drawer') return `approved by you in the drawer, ${clock(version.at)}`
   if (version.approvedVia === 'conversation') return `approved in the conversation (relayed by ${providerName(version.relayedBy ?? run.origin.by)}), ${clock(version.at)}`
   return 'started on its own (approval is off)'
+}
+
+function approvalPhrase(run: RunView): string {
+  const pending = run.versions.find(version => version.state === 'pending')
+  const active = run.versions.filter(version => version.number > 1 && version.state === 'approved').at(-1)
+  return [
+    startPhrase(run),
+    active ? `now on v${active.number}` : '',
+    pending ? `${pending.number > 1 ? `v${pending.number} ` : ''}waiting for your approval` : '',
+  ].filter(Boolean).join(' · ')
 }
 
 export function metaFor(run: RunView): string {

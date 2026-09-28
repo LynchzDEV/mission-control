@@ -62,6 +62,14 @@ test('meta says how the flow was approved', () => {
   expect(metaFor({ ...base, origin: { ...base.origin, where: 'studio' }, versions: [{ ...base.versions[0]!, approvedVia: 'user' }] })).toBe('Saved workflow Feature build · started from Studio · started by you')
 })
 
+test('meta keeps how the flow started and names the active and waiting versions', () => {
+  const started = { ...base.versions[0]!, approvedVia: 'drawer' as const, at: 0 }
+  const small = { ...started, number: 2, size: 'small' as const, approvedVia: 'auto' as const }
+  const big = { ...started, number: 3, size: 'big' as const, state: 'pending' as const, approvedVia: null }
+  expect(metaFor({ ...base, versions: [started, small] })).toMatch(/approved by you in the drawer, .+ · now on v2$/)
+  expect(metaFor({ ...base, versions: [started, small, big] })).toMatch(/approved by you in the drawer, .+ · now on v2 · v3 waiting for your approval$/)
+})
+
 test('a blocked run offers a retry with the reason', () => {
   expect(bannerFor({ ...base, status: 'blocked', error: 'Engine out of quota' })).toEqual({ tone: 'problem', text: 'Blocked: Engine out of quota', actions: ['retry'] })
   expect(bannerFor(base)).toEqual({ tone: null, text: '', actions: [] })
