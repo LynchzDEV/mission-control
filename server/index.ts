@@ -32,6 +32,9 @@ import { metaRoutes } from './routes/meta'
 import { modelsRoutes } from './routes/models'
 import { providersRoutes } from './routes/providers'
 import { terminalsRoutes } from './routes/terminals'
+import { outcomesRoutes } from './routes/outcomes'
+import { createOutcomeLedger, OUTCOME_RETENTION_MS } from './outcomes'
+import { createSessionResolver } from './outcome-session'
 import { flowRoutes } from './routes/flow'
 import { secretsRoutes } from './routes/secrets'
 import { rolesRoutes } from './routes/roles'
@@ -194,6 +197,8 @@ export async function createApp(): Promise<Elysia> {
   void chatFlusher.recoverAll().catch(error => console.error('Chat catch-up failed', error))
   const knownDirectories = () => [...jobManager.listJobs().map(job => job.baseRepo ?? job.cwd), ...terminalRegistry.list().map(session => session.cwd)]
   const externalSessionsCache = createExternalSessionsCache(() => ownedPids(jobManager.listJobs(), terminalRegistry.list()))
+  const outcomeLedger = createOutcomeLedger({ resolve: createSessionResolver({ terminals: terminalRegistry, jobs: jobManager, runs: workflowRunner }) })
+  void outcomeLedger.prune(OUTCOME_RETENTION_MS).catch(error => console.error('Outcome prune failed', error))
 
   const requestStarts = new WeakMap<Request, number>()
   const verboseLog = process.env.MC_LOG === 'verbose'
@@ -229,6 +234,7 @@ export async function createApp(): Promise<Elysia> {
     .use(chatRoutes({ knownDirectories }))
     .use(historyRoutes({ manager: jobManager, registry: terminalRegistry, knownDirectories, external: () => externalSessionsCache.get() }))
     .use(terminalsRoutes(terminalRegistry))
+    .use(outcomesRoutes(outcomeLedger))
     .use(flowRoutes(jobManager, terminalRegistry, planStore))
     .use(runsRoutes(planRunner))
     .use(studioRoutes(workflowStore, workflowRunner, workflowBuilder))

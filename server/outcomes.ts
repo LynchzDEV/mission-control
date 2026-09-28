@@ -43,6 +43,7 @@ type Session = {
 export const RECENT_OUTCOMES = 500
 export const SYNC_THROTTLE_MS = 2_000
 export const READ_BYTES_PER_SYNC = 4 * 1024 * 1024
+export const OUTCOME_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 const NEWLINE = 10
 const PARSERS: Record<OutcomeParser, (text: string, state: ParseState, context: ParseContext) => ParseResult> = {
   'claude': parseClaudeOutcomes,
