@@ -430,3 +430,27 @@ test('every persisted change is reported through onChange', async () => {
   expect(seen).toContain('running')
   expect(seen.at(-1)).toBe('done')
 })
+
+test('a drafted graph runs as a drafted flow and is not saved', async () => {
+  const store = build(resolver, true)
+  const graph = { ...defaultWorkflow(), id: 'drafted-export', name: 'Drafted export' }
+  const started = await runner.start({ cwd: repo, request: 'Add export', label: 'export', graph })
+  expect(started.origin.source).toBe('drafted')
+  expect(started.workflow.name).toBe('Drafted export')
+  expect(started.status).toBe('awaiting-approval')
+  expect((await store.list()).map(workflow => workflow.id)).not.toContain('drafted-export')
+})
+
+test('a drafted graph that breaks a rule is refused and claims nothing', async () => {
+  build(resolver, true)
+  const graph = { ...defaultWorkflow(), id: 'unsafe', name: 'Unsafe', edges: [{ source: 'plan', target: 'execute', outcome: 'pass' }] }
+  await expect(runner.start({ cwd: repo, request: 'x', label: 'x', graph })).rejects.toThrow('requires a verified plan')
+  expect(runner.list()).toHaveLength(0)
+  const ok = await runner.start({ cwd: repo, request: 'x', label: 'x' })
+  expect(ok.status).toBe('awaiting-approval')
+})
+
+test('a saved workflow and a drafted graph cannot both be named', async () => {
+  build(resolver, true)
+  await expect(runner.start({ cwd: repo, request: 'x', label: 'x', workflowId: 'default', graph: defaultWorkflow() })).rejects.toThrow('Use either a saved workflow or a drafted graph')
+})

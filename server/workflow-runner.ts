@@ -15,10 +15,10 @@ import type { TerminalRegistry } from './terminals'
 import { threadRootOf } from './threads'
 import { configDir, readConfig, readSecrets } from './secrets'
 import { validateWorkspaceCwd } from './workspace'
-import { atomicJson, composeWorkflowPrompt, identifier, type Outcome, type PolicyRevision, type WorkflowNode, type WorkflowRevision, type WorkflowStore } from './workflows'
+import { atomicJson, composeWorkflowPrompt, draftRevision, identifier, type Outcome, type PolicyRevision, type WorkflowNode, type WorkflowRevision, type WorkflowStore } from './workflows'
 
 const jobId = z.string().min(1).max(200)
-const startSchema = z.object({ terminalId: identifier.optional(), workflowId: identifier.optional(), revision: identifier.optional(), cwd: z.string().min(1).max(2048), request: z.string().trim().min(1).max(32000), label: z.string().trim().min(1).max(120), chat: jobId.optional(), chatTurn: jobId.optional(), engine: identifier.optional(), model: z.string().min(1).max(200).optional() })
+const startSchema = z.object({ terminalId: identifier.optional(), workflowId: identifier.optional(), revision: identifier.optional(), cwd: z.string().min(1).max(2048), request: z.string().trim().min(1).max(32000), label: z.string().trim().min(1).max(120), chat: jobId.optional(), chatTurn: jobId.optional(), engine: identifier.optional(), model: z.string().min(1).max(200).optional(), graph: z.unknown().optional() })
 const resultSchema = z.object({ outcome: z.enum(['pass', 'fail', 'blocked']), summary: z.string().trim().min(1).max(16000), evidence: z.array(z.string().min(1).max(4000)).max(100) })
 type NodeResult = z.infer<typeof resultSchema>
 export type ResolvedAgent = { engine: string; model: string | null; family: string | null; connection?: AgentConnection }
@@ -208,6 +208,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   async function start(value: unknown, context: { startedByUser: boolean } = { startedByUser: false }): Promise<WorkflowRun> {
     const action = starts.then(async () => {
       const input = startSchema.parse(value)
+      if (input.graph !== undefined && input.workflowId) throw new Error('Use either a saved workflow or a drafted graph')
       const chatDefault = chatDefaultFor(input)
       const cwd = await validateWorkspaceCwd(input.cwd)
       if (!cwd.ok) throw new Error(cwd.error)
@@ -216,8 +217,8 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       if (terminal && terminal.cwd !== cwd.path) throw new Error('Use this terminal’s project directory')
       const selection = terminal?.workflow
       if (terminal && !selection) throw new Error('This terminal has no pinned workflow; open a new terminal')
+      const workflow = input.graph !== undefined ? draftRevision(input.graph) : input.workflowId ? await deps.store.get(input.workflowId, input.revision) : selection ? await deps.store.get(selection.id, selection.revision) : await deps.store.selected()
       if (workspaceBusy(cwd.path)) throw new Error('Workspace already has running work')
-      const workflow = input.workflowId ? await deps.store.get(input.workflowId, input.revision) : selection ? await deps.store.get(selection.id, selection.revision) : await deps.store.selected()
       const agents = await agentsFor(workflow, chatDefault)
       const policy = await deps.store.policy()
       const skills = Object.fromEntries(await Promise.all(workflow.nodes.map(async node => [node.id, await snapshotSkills(node, cwd.path)])))
@@ -226,7 +227,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       const where = terminal ? 'terminal' : input.chat ? 'chat' : 'studio'
       const waits = !context.startedByUser && await requireApproval()
       const version: RunVersion = { number: 1, revision: workflow.revision, reason: 'Initial flow', size: 'initial', state: waits ? 'pending' : 'approved', approvedVia: waits ? null : context.startedByUser ? 'user' : 'auto', relayedBy: null, at: Date.now() }
-      const run: WorkflowRun = { id: crypto.randomUUID(), ...(input.terminalId ? { terminalId: input.terminalId } : {}), ...chat, label: input.label, cwd: cwd.path, request: input.request, workflow, policy, agents, skills, status: waits ? 'awaiting-approval' : 'running', error: null, origin: { source: 'saved', by, where }, versions: [version], currentNodeId: workflow.entry, attempts: [], createdAt: Date.now(), updatedAt: Date.now() }
+      const run: WorkflowRun = { id: crypto.randomUUID(), ...(input.terminalId ? { terminalId: input.terminalId } : {}), ...chat, label: input.label, cwd: cwd.path, request: input.request, workflow, policy, agents, skills, status: waits ? 'awaiting-approval' : 'running', error: null, origin: { source: input.graph !== undefined ? 'drafted' : 'saved', by, where }, versions: [version], currentNodeId: workflow.entry, attempts: [], createdAt: Date.now(), updatedAt: Date.now() }
       if (!deps.manager.claimWorkspace(run.cwd, run.id)) throw new Error('Workspace already has running work')
       await persist(run)
       if (!waits) await exclusive(run.id, () => dispatch(run))

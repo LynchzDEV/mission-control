@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createWorkflowStore, defaultWorkflow, validateWorkflow, composeWorkflowPrompt } from '../server/workflows'
+import { createWorkflowStore, defaultWorkflow, draftRevision, validateWorkflow, composeWorkflowPrompt } from '../server/workflows'
 
 let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'mc-workflows-')) })
@@ -65,4 +65,12 @@ test('graph validation rejects stale verification after replanning and unreachab
   graph.edges.push({ source: 'plan', target: 'execute', outcome: 'fail' })
   expect(validateWorkflow(graph).join(' ')).toContain('verified plan')
   expect(validateWorkflow({ ...defaultWorkflow(), nodes: [...defaultWorkflow().nodes, { id: 'lost', title: 'Lost', instructions: 'Inspect' }] }).join(' ')).toContain('reachable')
+})
+
+test('draftRevision stamps a valid graph and rejects one that breaks a safety rule', () => {
+  const draft = draftRevision({ ...defaultWorkflow(), id: 'drafted', name: 'Drafted' })
+  expect(draft.revision).toMatch(/^[a-f0-9]{24}$/)
+  expect(draft.name).toBe('Drafted')
+  const unsafe = { ...defaultWorkflow(), id: 'unsafe', name: 'Unsafe', edges: [{ source: 'plan', target: 'execute', outcome: 'pass' }] }
+  expect(() => draftRevision(unsafe)).toThrow('requires a verified plan')
 })

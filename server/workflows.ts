@@ -102,6 +102,13 @@ export function validateWorkflow(value: unknown): string[] {
 
 function hash(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24) }
 
+export function draftRevision(value: unknown): WorkflowRevision {
+  const errors = validateWorkflow(value)
+  if (errors.length) throw new Error(errors.join('\n'))
+  const parsed = workflowSchema.parse(value)
+  return { ...parsed, revision: hash(parsed), createdAt: Date.now() }
+}
+
 export async function atomicJson(path: string, value: unknown): Promise<void> {
   const temporary = `${path}.${crypto.randomUUID()}.tmp`
   await writeFile(temporary, JSON.stringify(value, null, 2), { mode: 0o600 })
