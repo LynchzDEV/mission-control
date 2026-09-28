@@ -1,6 +1,7 @@
 import { renderMarkdown } from './markdown'
 import { errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
+import { createOutcomeStrip } from './outcome-strip'
 import { chatSignal, historyAction, historyDay, historyLabel, parseAgentReport, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
@@ -14,6 +15,8 @@ const message = $('message') as HTMLTextAreaElement
 const send = composer.querySelector('.send') as HTMLButtonElement
 const messages = $('messages')
 const stage = document.querySelector('.stage') as HTMLElement
+const outcomes = createOutcomeStrip()
+composer.before(outcomes.element)
 const stored = (key: string): string | null => { try { return localStorage.getItem(key) } catch { return null } }
 
 let root: string | null = null
@@ -442,7 +445,8 @@ composer.onsubmit = (event) => {
   message.focus()
 }
 
-addEventListener('quiet:new-chat', () => { root = null; agents = []; shownTurns = []; messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null); delete document.body.dataset.chat; dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null })) })
+addEventListener('quiet:chat-agents', (event) => outcomes.setSource(`chat=${encodeURIComponent((event as CustomEvent<string>).detail)}`))
+addEventListener('quiet:new-chat', () => { outcomes.setSource(null); root = null; agents = []; shownTurns = []; messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null); delete document.body.dataset.chat; dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null })) })
 addEventListener('quiet:open-chat', (event) => openChat((event as CustomEvent<string>).detail))
 addEventListener('quiet:show', (event) => { if ((event as CustomEvent<string>).detail === 'conversation') schedule(); else stopPolling() })
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') schedule(); else stopPolling() })
