@@ -106,8 +106,15 @@ function showDetail(item: HTMLElement, row: AgentRow, animate = false): void {
   else replyForm.hidden = false
 }
 
+function dropExtra(): void {
+  if (!extra) return
+  extra = null
+  repaint?.()
+}
+
 function openDetail(item: HTMLElement, row: AgentRow): void {
   const wasOpen = openRow === row.id
+  const closingExtra = extra !== null && openRow === extra.row.id
   morph(item, () => {
     $('live-agents-list').querySelectorAll('.ag-item.open').forEach(other => other.classList.remove('open'))
     closeDetail()
@@ -115,6 +122,7 @@ function openDetail(item: HTMLElement, row: AgentRow): void {
     openRow = row.id
     showDetail(item, row, true)
   })
+  if (closingExtra) dropExtra()
   if (wasOpen) return
   openJob = row.jobId
   watchLog()
@@ -128,7 +136,7 @@ function watchLog(): void {
   void loadLog(row, job)
   logTimer = setInterval(() => { if (!document.hidden) void loadLog(row, job) }, LOG_POLL_MS)
 }
-$('agents').addEventListener('close', watchLog)
+$('agents').addEventListener('close', () => { dropExtra(); watchLog() })
 $('open-agents').addEventListener('click', watchLog)
 
 function plainActivity(text: string): string {
@@ -153,8 +161,9 @@ function fadeTo(tick: HTMLElement, text: string): void {
 }
 
 function paintRows(shownRows: AgentRow[], shownDetail: (row: AgentRow) => HTMLElement): void {
+  if (extra && shownRows.some(row => row.jobId === extra?.row.jobId)) extra = null
   const kept = extra
-  const rows = kept && !shownRows.some(row => row.jobId === kept.row.jobId) ? [...shownRows, kept.row] : shownRows
+  const rows = kept ? [...shownRows, kept.row] : shownRows
   const detail = (row: AgentRow): HTMLElement => row === kept?.row ? chatDetail(kept.job) : shownDetail(row)
   paintedRows = rows
   repaint = () => paintRows(shownRows, shownDetail)
@@ -220,7 +229,7 @@ function paintChatAgents(agents: ChatAgent[]): void {
   rollText($('live-agents-status'), agents.length ? '' : 'No agents in this chat yet.')
   summarize(agents.filter(job => job.status === 'running').length, agents.length)
   tickTimes()
-  const signature = JSON.stringify(agents.map(item => [item.id, item.label, item.status, item.currentActivity, item.reviewedAt]))
+  const signature = JSON.stringify([agents.map(item => [item.id, item.label, item.status, item.currentActivity, item.reviewedAt]), extraSignature()])
   if (signature === agentSignature) return
   agentSignature = signature
   const byId = new Map(agents.map(job => [job.id, job]))
@@ -244,9 +253,11 @@ function chatDetail(job: ChatAgent): HTMLElement {
 }
 
 async function refreshChat(chat: string, request: number): Promise<void> {
-  const jobsResult = await getJson(`/api/jobs?chat=${encodeURIComponent(chat)}`)
+  const shownExtra = extra?.job.id
+  const [jobsResult, allResult] = await Promise.all([getJson(`/api/jobs?chat=${encodeURIComponent(chat)}`), shownExtra ? getJson('/api/jobs') : null])
   if (request !== generation) return
   if (!jobsResult.ok) { rollText($('live-agents-status'), `Agents unavailable: ${errorText(jobsResult)}. Retrying…`); agentSignature = ''; return }
+  if (shownExtra && allResult?.ok) rebuildExtra(shownExtra, readArray(allResult.data.jobs) as unknown as ChatAgent[])
   paintChatAgents((readArray(jobsResult.data.jobs) as unknown as ChatAgent[]).filter(job => job.purpose !== 'chat'))
 }
 
@@ -254,7 +265,7 @@ function paintAgents(agents: WorkItem[]): void {
   rollText($('live-agents-status'), agents.length ? '' : 'No active agents linked to this session.')
   summarize(agents.filter(item => item.state === 'running').length, agents.length)
   tickTimes()
-  const signature = JSON.stringify(agents.map(item => [item.id, item.label, item.provider, item.state, item.activity]))
+  const signature = JSON.stringify([agents.map(item => [item.id, item.label, item.provider, item.state, item.activity]), extraSignature()])
   if (signature === agentSignature) return
   agentSignature = signature
   paintRows(agents.map(item => ({
@@ -282,9 +293,22 @@ async function refreshSession(session: Session, request: number): Promise<void> 
     agentSignature = ''
     return
   }
+  if (extra) rebuildExtra(extra.job.id, readArray(jobsResult.data.jobs) as unknown as ChatAgent[])
   const jobs = (readArray(jobsResult.data.jobs) as WorkJob[]).map(job => ({ ...job, threadRoot: job.threadRoot || job.id }))
   const linked = scopedWork(buildWork(jobs), session.id, session.cwd).flatMap(item => item.members ?? [])
   paintAgents(activeAgents(linked, session.id, session.cwd))
+}
+
+function extraSignature(): unknown[] | null {
+  if (!extra) return null
+  const { job, row } = extra
+  return [job.id, job.label, job.status, job.currentActivity, job.reviewedAt, row.pill]
+}
+
+function rebuildExtra(jobId: string, all: ChatAgent[]): void {
+  if (extra?.job.id !== jobId) return
+  const job = all.find(candidate => candidate.id === jobId)
+  extra = job ? { row: chatRow(job, all), job } : null
 }
 
 async function jobFromServer(jobId: string): Promise<ChatAgent | undefined> {
