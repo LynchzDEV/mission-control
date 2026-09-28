@@ -817,7 +817,7 @@ a.pill:hover { color: var(--accent); }
 .sb-row.sel { background: var(--paper); box-shadow: var(--raised); }
 .sb-ic { display: grid; place-items: center; flex: 0 0 18px; color: var(--muted); }
 .sb-ic svg { width: 17px; height: 17px; }
-.sb-row[data-kind="terminal"] .sb-ic, .sb-mini[data-kind="terminal"] .sb-ic { color: #6b7ea3; }
+.sb-row[data-kind="terminal"] .sb-ic, .sb-row[data-kind="claude-history"] .sb-ic, .sb-mini[data-kind="terminal"] .sb-ic { color: #6b7ea3; }
 .sb-t { flex: 1; min-width: 0; display: grid; white-space: nowrap; }
 .sb-t, .sb-t small { overflow: hidden; text-overflow: ellipsis; }
 .sb-t small { font-size: 11.5px; color: var(--muted); }

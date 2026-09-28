@@ -2,7 +2,7 @@ import { renderMarkdown } from './markdown'
 import { errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
 import { createOutcomeStrip } from './outcome-strip'
-import { chatSignal, historyAction, historyDay, historyLabel, parseAgentReport, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { chatSignal, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const RUNNING_POLL_MS = 700
@@ -373,7 +373,7 @@ function paintHistory(items: HistoryItem[]): void {
   const openIds = new Set([...list.querySelectorAll<HTMLElement>('details[open]')].map(item => item.dataset.item))
   list.replaceChildren(...items.map((item, index) => {
     const key = `${item.kind}:${item.id}`
-    const signal = item.kind === 'chat' ? chatSignal(item.running, item.agents) : item.kind === 'terminal' ? { state: 'running' as const, count: 0 } : { state: null, count: 0 }
+    const signal = item.kind === 'chat' ? chatSignal(item.running, item.agents) : item.kind === 'terminal' && item.live ? { state: 'running' as const, count: 0 } : { state: null, count: 0 }
     const card = document.createElement('details'); card.className = 'history-item'; card.dataset.item = key; card.dataset.kind = item.kind; card.open = openIds.size ? openIds.has(key) : index === 0
     const summary = document.createElement('summary')
     const title = document.createElement('span')
@@ -383,17 +383,17 @@ function paintHistory(items: HistoryItem[]): void {
     summary.append(title, time)
     const line = document.createElement('p'); line.textContent = historyLabel(item)
     const footer = document.createElement('footer')
-    const kind = document.createElement('span'); kind.textContent = item.kind === 'chat' ? 'Chat' : item.kind === 'terminal' ? 'Terminal' : item.kind === 'claude-history' ? 'Claude history' : 'Outside session'
+    const kind = document.createElement('span'); kind.textContent = item.kind === 'chat' ? 'Chat' : item.kind === 'terminal' ? 'Terminal' : 'Claude Code'
     footer.append(kind)
     const actionText = historyAction(item)
     if (actionText) {
       const action = document.createElement('button'); action.type = 'button'; action.className = 'text-button'; action.textContent = actionText
       action.onclick = () => {
-        if (item.kind === 'chat') { openChat(item.id); return }
+        const target = historyOpen(item)
+        if (target === null) return
+        if ('chat' in target) { openChat(target.chat); return }
         show('welcome')
-        if (item.kind === 'terminal') dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { id: item.id } }))
-        else if (item.kind === 'claude-history') dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { resume: { sessionId: item.id, cwd: item.cwd, title: item.title } } }))
-        else dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { restore: false, cwd: item.cwdHint } }))
+        dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: target.terminal }))
       }
       footer.append(action)
     }

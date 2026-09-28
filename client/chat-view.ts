@@ -107,22 +107,31 @@ export function historyDay(at: number, now: number): string {
 
 export type HistoryItem =
   | { kind: 'chat'; id: string; title: string; updatedAt: number; project: string | null; running: boolean; agents: SignalJob[] }
-  | { kind: 'terminal'; id: string; title: string; updatedAt: number; cwd: string; engine: string; sessionId: string | null }
+  | { kind: 'terminal'; id: string; title: string; updatedAt: number; cwd: string; engine: string; sessionId: string | null; live: boolean }
   | { kind: 'claude-history'; id: string; title: string; updatedAt: number; cwd: string; bytes: number }
-  | { kind: 'outside'; id: string; title: string; updatedAt: number; engine: string; pid: number; cwdHint: string | null; etime: string }
+
+export type ResumeRequest = { sessionId: string; cwd: string; title: string; engine: string }
+export type HistoryOpen = { chat: string } | { terminal: { id: string } | { resume: ResumeRequest } } | null
 
 const folderName = (path: string | null): string => path ? path.replace(/\/+$/, '').split('/').pop() || path : ''
+const RESUMABLE_ENGINES = new Set(['claude', 'glm'])
 
 export function historyLabel(item: HistoryItem): string {
   if (item.kind === 'chat') return `Chat${item.project ? ` · ${folderName(item.project)}` : ''}`
-  if (item.kind === 'terminal') return `Terminal · live · ${folderName(item.cwd)} · ${item.engine}`
-  if (item.kind === 'claude-history') return `Claude history · ${folderName(item.cwd)} · ${Math.max(1, Math.round(item.bytes / 1024))} KB`
-  return `Outside session · ${item.engine} · ${item.cwdHint ? folderName(item.cwdHint) : 'unknown folder'} · running ${item.etime}`
+  if (item.kind === 'terminal') return `Terminal · ${item.live ? 'live' : 'ended'} · ${folderName(item.cwd)} · ${item.engine}`
+  return `Claude Code · ${folderName(item.cwd)} · ${Math.max(1, Math.round(item.bytes / 1024))} KB`
+}
+
+export function historyOpen(item: HistoryItem): HistoryOpen {
+  if (item.kind === 'chat') return { chat: item.id }
+  if (item.kind === 'claude-history') return { terminal: { resume: { sessionId: item.id, cwd: item.cwd, title: item.title, engine: 'claude' } } }
+  if (item.live) return { terminal: { id: item.id } }
+  if (item.sessionId === null || !RESUMABLE_ENGINES.has(item.engine)) return null
+  return { terminal: { resume: { sessionId: item.sessionId, cwd: item.cwd, title: item.title, engine: item.engine } } }
 }
 
 export function historyAction(item: HistoryItem): string | null {
   if (item.kind === 'chat') return 'Continue chat'
-  if (item.kind === 'terminal') return 'Open terminal'
-  if (item.kind === 'claude-history') return 'Resume in a terminal'
-  return item.cwdHint ? 'Open a terminal here' : null
+  if (item.kind === 'terminal' && item.live) return 'Open terminal'
+  return historyOpen(item) === null ? null : 'Resume in a terminal'
 }

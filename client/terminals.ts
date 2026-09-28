@@ -7,6 +7,7 @@ import { launchChoice, readRecentDirectories, restoreRequested } from './shell-l
 import { dragKind, dropCopy, findCount, findKeys, restoreTarget, nextActive, sessionSlot, sessionState, splitPlan, statusPill, terminalKeys, type Session, type TerminalKey, type SessionState } from './terminal-state'
 import { createPanes, type PaneHeader } from './terminal-panes'
 import { createOutcomeStrip } from './outcome-strip'
+import type { ResumeRequest } from './chat-view'
 
 type Provider = { id: string; name: string; models: string[] }
 
@@ -281,8 +282,6 @@ findInput.onkeydown = (event) => {
 }
 document.addEventListener('keydown', (event) => {
   if (event.defaultPrevented || document.querySelector('dialog[open]')) return
-  const session = sessions[sessionSlot(event) ?? -1]
-  if (session) { event.preventDefault(); activate(session.id); return }
   if (canvas.dataset.live !== 'true') return
   if (findKeys(event, false, MAC) === 'open' && openFind()) event.preventDefault()
   else if (terminalKeys(event) === 'clear') { event.preventDefault(); void openTerminal() }
@@ -478,11 +477,11 @@ async function createTerminal(): Promise<void> {
   } finally { opening = false; submit.disabled = false }
 }
 
-async function resumeSession(resume: { sessionId: string; cwd: string; title: string }): Promise<void> {
+async function resumeSession(resume: ResumeRequest): Promise<void> {
   if (opening) return
   opening = true
   try {
-    const result = await postJson('/api/terminals', { engine: 'claude', cwd: resume.cwd, cols: 100, rows: 30, resumeSessionId: resume.sessionId, title: resume.title.slice(0, 60) })
+    const result = await postJson('/api/terminals', { engine: resume.engine, cwd: resume.cwd, cols: 100, rows: 30, resumeSessionId: resume.sessionId, title: resume.title.slice(0, 60) })
     if (!result.ok) { toast(`Could not resume: ${errorText(result)}`, 4000); return }
     const session = result.data as unknown as Session
     sessions = [...sessions.filter(item => item.id !== session.id), session]
@@ -499,7 +498,7 @@ addEventListener('quiet:terminal-rename', (event) => { const { id, title } = (ev
 document.addEventListener('dragend', () => paintZones(null, false))
 addEventListener('quiet:design', () => { if (canvas.dataset.live === 'true') visible(false) })
 addEventListener('quiet:open-terminal', (event) => {
-  const detail = (event as CustomEvent<{ restore?: boolean; id?: string; cwd?: string; resume?: { sessionId: string; cwd: string; title: string } }>).detail
+  const detail = (event as CustomEvent<{ restore?: boolean; id?: string; cwd?: string; resume?: ResumeRequest }>).detail
   if (detail.id) { void refreshSessions().then(() => { if (views.has(detail.id!)) activate(detail.id!); else toast('That terminal has ended.', 4000) }); return }
   if (detail.resume) { void resumeSession(detail.resume); return }
   void openTerminal(detail.restore === true, detail.cwd)

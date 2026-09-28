@@ -1,31 +1,36 @@
 import { getJson, readArray } from './shared'
-import { chatSignal, historyDay, type HistoryItem } from './chat-view'
-import { renameValue, type Session } from './terminal-state'
+import { chatSignal, historyDay, historyOpen, type HistoryItem } from './chat-view'
+import { renameValue, sessionSlot, type Session } from './terminal-state'
 
 type Day = 'Today' | 'Yesterday' | 'Earlier'
-type Listed = Extract<HistoryItem, { kind: 'chat' | 'terminal' }>
-type Row = { item: Listed; state: 'running' | 'live' | 'landed' | 'needs' | null; note: string }
+type Row = { item: HistoryItem; state: 'running' | 'live' | 'landed' | 'needs' | null; note: string }
 
 const POLL_MS = 5000
 const DAYS: Day[] = ['Today', 'Yesterday', 'Earlier']
 const CHAT_ICON = '<svg viewBox="0 0 20 20"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3h0A1.5 1.5 0 0 1 4 11.5z"/></svg>'
 const TERMINAL_ICON = '<svg><use href="#terminal-icon"/></svg>'
+const SHORTCUT_SLOTS = 9
+const keyOf = (item: HistoryItem): string => `${item.kind}:${item.id}`
+const isLiveTerminal = (item: HistoryItem): boolean => item.kind === 'terminal' && item.live
 
 export function sidebarGroups(items: HistoryItem[], now: number): { day: Day; items: HistoryItem[] }[] {
-  const listed = items.filter(item => item.kind === 'chat' || item.kind === 'terminal')
   const dayOf = (item: HistoryItem): Day => { const day = historyDay(item.updatedAt, now); return day === 'Today' || day === 'Yesterday' ? day : 'Earlier' }
-  return DAYS.map(day => ({ day, items: listed.filter(item => dayOf(item) === day) })).filter(group => group.items.length > 0)
+  return DAYS.map(day => ({ day, items: items.filter(item => dayOf(item) === day) })).filter(group => group.items.length > 0)
 }
 
 export function withLiveTerminals(items: HistoryItem[], sessions: Session[] | null, now: number): HistoryItem[] {
   if (!sessions) return items
   const known = new Map(items.flatMap(item => item.kind === 'terminal' ? [[item.id, item] as const] : []))
-  const live = sessions.map((session): HistoryItem => ({ kind: 'terminal', id: session.id, title: session.title, updatedAt: known.get(session.id)?.updatedAt ?? now, cwd: session.cwd, engine: session.engine, sessionId: known.get(session.id)?.sessionId ?? null }))
-  return [...items.filter(item => item.kind !== 'terminal'), ...live].sort((a, b) => b.updatedAt - a.updatedAt)
+  const live = sessions.map((session): HistoryItem => ({ kind: 'terminal', id: session.id, title: session.title, updatedAt: known.get(session.id)?.updatedAt ?? now, cwd: session.cwd, engine: session.engine, sessionId: known.get(session.id)?.sessionId ?? null, live: true }))
+  return [...items.filter(item => !isLiveTerminal(item)), ...live].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-function rowOf(item: Listed): Row {
-  if (item.kind === 'terminal') return { item, state: 'live', note: '' }
+export function numberedKeys(items: readonly HistoryItem[]): string[] {
+  return items.filter(item => item.kind === 'chat' || isLiveTerminal(item)).slice(0, SHORTCUT_SLOTS).map(keyOf)
+}
+
+function rowOf(item: HistoryItem): Row {
+  if (item.kind !== 'chat') return { item, state: isLiveTerminal(item) ? 'live' : null, note: '' }
   const signal = chatSignal(item.running, item.agents)
   if (signal.state === 'needs-you') return { item, state: 'needs', note: `${signal.count} needs you` }
   return { item, state: signal.state, note: signal.state === 'running' && signal.count > 0 ? `${signal.count} agent${signal.count === 1 ? '' : 's'}` : '' }
@@ -35,6 +40,7 @@ let openChatId: string | null = null
 let signature = ''
 let historyItems: HistoryItem[] = []
 let liveTerminals: Session[] | null = null
+let numbered: HistoryItem[] = []
 let renaming = false
 
 function selectedKey(): string | null {
@@ -42,12 +48,14 @@ function selectedKey(): string | null {
   return openChatId && !document.getElementById('conversation')?.hidden ? `chat:${openChatId}` : null
 }
 
-function open(item: Listed): void {
-  if (item.kind === 'chat') dispatchEvent(new CustomEvent('quiet:open-chat', { detail: item.id }))
-  else dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { id: item.id } }))
+function open(item: HistoryItem): void {
+  const target = historyOpen(item)
+  if (target === null) return
+  if ('chat' in target) dispatchEvent(new CustomEvent('quiet:open-chat', { detail: target.chat }))
+  else dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: target.terminal }))
 }
 
-function startRename(item: Listed, text: HTMLElement): void {
+function startRename(item: HistoryItem, text: HTMLElement): void {
   if (renaming) return
   renaming = true
   const input = Object.assign(document.createElement('input'), { className: 'sb-rename', value: item.title, maxLength: 60 })
@@ -75,7 +83,7 @@ function startRename(item: Listed, text: HTMLElement): void {
   input.select()
 }
 
-function terminalActions(item: Listed, element: HTMLElement, text: HTMLElement | null): HTMLElement {
+function terminalActions(item: HistoryItem, element: HTMLElement, text: HTMLElement | null): HTMLElement {
   element.draggable = true
   element.ondragstart = (event) => { event.dataTransfer?.setData('text/x-mc-terminal', item.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move' }
   if (!text) return element
@@ -94,8 +102,8 @@ function rowElement(row: Row, className: 'sb-row' | 'sb-mini'): HTMLElement {
   const element = document.createElement('a')
   element.className = className
   element.dataset.kind = row.item.kind
-  element.dataset.key = `${row.item.kind}:${row.item.id}`
-  element.href = row.item.kind === 'chat' ? `?chat=${encodeURIComponent(row.item.id)}` : `?terminal=${encodeURIComponent(row.item.id)}#terminal`
+  element.dataset.key = keyOf(row.item)
+  element.href = row.item.kind === 'chat' ? `?chat=${encodeURIComponent(row.item.id)}` : isLiveTerminal(row.item) ? `?terminal=${encodeURIComponent(row.item.id)}#terminal` : '#'
   element.onclick = (event) => { event.preventDefault(); open(row.item) }
   const icon = document.createElement('span'); icon.className = 'sb-ic'; icon.innerHTML = row.item.kind === 'chat' ? CHAT_ICON : TERMINAL_ICON
   element.append(icon)
@@ -105,10 +113,10 @@ function rowElement(row: Row, className: 'sb-row' | 'sb-mini'): HTMLElement {
     if (row.note) text.append(Object.assign(document.createElement('small'), { textContent: row.note }))
     element.append(text)
   } else element.title = row.item.title
-  const slot = row.item.kind === 'terminal' ? liveTerminals?.findIndex(session => session.id === row.item.id) ?? -1 : -1
-  if (slot >= 0 && slot < 9) element.append(Object.assign(document.createElement('kbd'), { className: 'sb-key', textContent: `⌘${slot + 1}`, title: `Switch to this terminal · ⌘${slot + 1}` }))
+  const slot = numbered.findIndex(item => keyOf(item) === keyOf(row.item))
+  if (slot >= 0) element.append(Object.assign(document.createElement('kbd'), { className: 'sb-key', textContent: `⌘${slot + 1}`, title: `Switch to this terminal · ⌘${slot + 1}` }))
   if (row.state) { const dot = document.createElement('i'); dot.className = 'sb-dot'; dot.dataset.s = row.state; element.append(dot) }
-  return row.item.kind === 'terminal' ? terminalActions(row.item, element, text) : element
+  return isLiveTerminal(row.item) ? terminalActions(row.item, element, text) : element
 }
 
 function markSelected(): void {
@@ -124,14 +132,16 @@ function paint(items: HistoryItem[]): void {
   historyItems = items
   if (renaming) return
   const groups = sidebarGroups(withLiveTerminals(items, liveTerminals, Date.now()), Date.now())
-  const rows = groups.flatMap(group => group.items.map(item => rowOf(item as Listed)))
-  const next = JSON.stringify([groups.map(group => [group.day, group.items.length]), rows.map(row => [row.item.kind, row.item.id, row.item.title, row.state, row.note]), liveTerminals?.map(session => session.id)])
+  const rows = groups.flatMap(group => group.items.map(rowOf))
+  const keys = numberedKeys(rows.map(row => row.item))
+  numbered = keys.map(key => rows.find(row => keyOf(row.item) === key)!.item)
+  const next = JSON.stringify([groups.map(group => [group.day, group.items.length]), rows.map(row => [row.item.kind, row.item.id, row.item.title, row.state, row.note]), keys])
   if (next === signature) return
   signature = next
   const list = document.getElementById('sidebar-list')!
   list.replaceChildren(...groups.flatMap(group => [
     Object.assign(document.createElement('p'), { className: 'sb-day', textContent: group.day }),
-    ...group.items.map(item => rowElement(rowOf(item as Listed), 'sb-row')),
+    ...group.items.map(item => rowElement(rowOf(item), 'sb-row')),
   ]))
   document.getElementById('sidebar-mini')!.replaceChildren(...rows.filter(row => row.state === 'running' || row.state === 'live').map(row => rowElement(row, 'sb-mini')))
   markSelected()
@@ -153,5 +163,12 @@ if (typeof document !== 'undefined') {
   addEventListener('quiet:new-chat', () => { openChatId = null; markSelected() })
   for (const name of ['quiet:screen', 'quiet:activity-scope']) addEventListener(name, markSelected)
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void poll() })
+  document.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented || document.querySelector('dialog[open]')) return
+    const item = numbered[sessionSlot(event) ?? -1]
+    if (!item) return
+    event.preventDefault()
+    open(item)
+  })
   void poll()
 }

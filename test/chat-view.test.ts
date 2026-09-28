@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chatSignal, historyAction, historyDay, historyLabel, parseAgentReport, runningLabel, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
+import { chatSignal, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, runningLabel, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
 
 const thread = [
   { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Fix login' },
@@ -110,15 +110,28 @@ describe('historyDay', () => {
   })
 })
 
-describe('historyLabel and historyAction', () => {
-  test('label each kind and pick its action', () => {
+describe('historyLabel, historyAction and historyOpen', () => {
+  const liveTerminal = { kind: 'terminal' as const, id: 't', title: 'api work', updatedAt: 1, cwd: '/Users/me/app/', engine: 'claude', sessionId: 's1', live: true }
+  const endedTerminal = { ...liveTerminal, live: false }
+  const session = { kind: 'claude-history' as const, id: 's', title: 'fix specs', updatedAt: 1, cwd: '/Users/me/app', bytes: 3000 }
+  test('labels say what each item is and where it ran', () => {
     expect(historyLabel({ kind: 'chat', id: 'c', title: 't', updatedAt: 1, project: '/Users/me/app', running: false, agents: [] })).toBe('Chat · app')
-    expect(historyLabel({ kind: 'terminal', id: 't', title: 't', updatedAt: 1, cwd: '/Users/me/app/', engine: 'claude', sessionId: null })).toBe('Terminal · live · app · claude')
-    expect(historyLabel({ kind: 'claude-history', id: 's', title: 't', updatedAt: 1, cwd: '/Users/me/app', bytes: 3000 })).toBe('Claude history · app · 3 KB')
-    expect(historyLabel({ kind: 'outside', id: 'o', title: 't', updatedAt: 1, engine: 'codex', pid: 1, cwdHint: null, etime: '05:30' })).toBe('Outside session · codex · unknown folder · running 05:30')
-    expect(historyAction({ kind: 'claude-history', id: 's', title: 't', updatedAt: 1, cwd: '/x', bytes: 1 })).toBe('Resume in a terminal')
-    expect(historyAction({ kind: 'outside', id: 'o', title: 't', updatedAt: 1, engine: 'claude', pid: 1, cwdHint: null, etime: '1:00' })).toBeNull()
-    expect(historyAction({ kind: 'outside', id: 'o', title: 't', updatedAt: 1, engine: 'claude', pid: 1, cwdHint: '/x', etime: '1:00' })).toBe('Open a terminal here')
+    expect(historyLabel(liveTerminal)).toBe('Terminal · live · app · claude')
+    expect(historyLabel(endedTerminal)).toBe('Terminal · ended · app · claude')
+    expect(historyLabel(session)).toBe('Claude Code · app · 3 KB')
+  })
+  test('a chat continues, a live terminal opens, ended terminals and sessions resume with their own engine and title', () => {
+    expect(historyAction(liveTerminal)).toBe('Open terminal')
+    expect(historyAction(endedTerminal)).toBe('Resume in a terminal')
+    expect(historyAction(session)).toBe('Resume in a terminal')
+    expect(historyOpen({ kind: 'chat', id: 'c', title: 't', updatedAt: 1, project: null, running: false, agents: [] })).toEqual({ chat: 'c' })
+    expect(historyOpen(liveTerminal)).toEqual({ terminal: { id: 't' } })
+    expect(historyOpen({ ...endedTerminal, engine: 'glm' })).toEqual({ terminal: { resume: { sessionId: 's1', cwd: '/Users/me/app/', title: 'api work', engine: 'glm' } } })
+    expect(historyOpen(session)).toEqual({ terminal: { resume: { sessionId: 's', cwd: '/Users/me/app', title: 'fix specs', engine: 'claude' } } })
+  })
+  test('an ended terminal with no resumable session has no action', () => {
+    expect(historyAction({ ...endedTerminal, sessionId: null })).toBeNull()
+    expect(historyOpen({ ...endedTerminal, engine: 'codex' })).toBeNull()
   })
 })
 
