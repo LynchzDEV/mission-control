@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Session flow drawer — redesign</title>
+<link rel="stylesheet" href="assets/quiet.css">
+<style>
+  body { padding: 40px 48px; min-height: 100vh; background: var(--paper); color: #344155; }
+  h1 { font-size: 22px; font-weight: 500; margin: 0 0 6px; }
+  p.lead { margin: 0 0 28px; color: var(--muted); max-width: 760px; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; max-width: 1200px; }
+  .card { display: grid; align-content: start; gap: 10px; padding: 18px; border-radius: var(--r-lg); corner-shape: var(--corner); background: var(--paper); box-shadow: var(--raised); color: inherit; text-decoration: none; }
+  .card h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .card p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+<h1>Session flow drawer — redesign</h1>
+<p class="lead">Real workflow runs, not the old 3-box drawing. Same sample on every screen: a feature split into an api path and a UI path running at once (each in its own git worktree), API tests failed once and looped back (attempt 2 running), a join step, a cross review with a "fix notes" loop if it fails, then your review. Codex has proposed a big change (add a DB migration step), so an approve bar is showing. The terminal is resized on each screen to show what it keeps.</p>
+<div class="grid">
+  <a class="card" href="now-terminal.html"><h2>NOW</h2><p>Heading floats with no panel, flow name shown twice, 3 made-up boxes.</p></a>
+  <a class="card" href="d-terminal.html"><h2>D — Canvas panel</h2><p>Full-width graph above the terminal. Every step shows engine, try number and time; paths are shaded bands labelled with their worktree; loops are drawn as arcs; zoom controls. Most readable, but takes about 45% of the screen height.</p></a>
+  <a class="card" href="e-terminal.html"><h2>E — Side dock</h2><p>Vertical graph on the right, full height, scrolls for big flows. Clicking a step shows its details below (worktree, files changed, sub-agents). Never pushes the terminal down, but makes it about 30% narrower.</p></a>
+  <a class="card" href="f-terminal.html"><h2>F — Compact lanes</h2><p>One row per path (main, api, UI, fix loop). Retries shown as a "↺ 2" badge instead of arcs. Smallest push-down (about 290px), but no times or details without hovering.</p></a>
+</div>
+<h1 style="margin-top:36px">D — every state</h1>
+<p class="lead">The chosen layout in each situation the drawer has to handle.</p>
+<div class="grid">
+  <a class="card" href="d-draft.html"><h2>Waiting for first approval</h2><p>The AI drafted a new flow. Everything is grey, and the planned loops show as dotted wiring. The bar reads "Approve and run" / "Reject". Saying "go" to the AI also works.</p></a>
+  <a class="card" href="d-terminal.html"><h2>Running, big change proposed</h2><p>Mid-run the AI wants to add a step because the scope grew. The ghost step shows where it would go, with "Approve v2" / "Keep v1".</p></a>
+  <a class="card" href="d-auto.html"><h2>Approval turned off</h2><p>Started on its own. The same big change was applied without waiting, with a green notice and a shortcut to turn approval back on.</p></a>
+  <a class="card" href="d-none.html"><h2>Quick work, no flow</h2><p>The AI decided a flow was not needed. Short panel with the agents as a plain list.</p></a>
+</div>
+</body>
+</html>
