@@ -1,4 +1,5 @@
 import { getJson, readArray, readRecord } from './shared'
+import { MORPH_EASE, MORPH_MS, reveal, rollText } from './morph'
 
 export type Outcome = {
   seq: number
@@ -78,12 +79,14 @@ function paintTip(box: HTMLElement, outcome: Outcome): void {
 function showTip(cell: HTMLElement, outcome: Outcome): void {
   const box = tooltip()
   paintTip(box, outcome)
+  const appearing = box.hidden
   box.hidden = false
   const rect = cell.getBoundingClientRect()
   const left = Math.min(Math.max(8, rect.left + rect.width / 2 - box.offsetWidth / 2), innerWidth - box.offsetWidth - 8)
   const above = rect.top - box.offsetHeight - 10
   box.style.left = `${left}px`
   box.style.top = `${above > 8 ? above : rect.bottom + 10}px`
+  if (appearing) box.animate?.([{ opacity: 0, transform: 'translateY(4px) scale(.96)' }, { opacity: 1, transform: 'none' }], { duration: MORPH_MS * .6, easing: MORPH_EASE })
 }
 
 function hideTip(): void {
@@ -114,6 +117,7 @@ export function createOutcomeStrip(): OutcomeStrip {
   let fits = 0
   let polling = false
   let destroyed = false
+  let paintedUpTo = 0
 
   function paint(): void {
     const shown = fits > 0 ? items.slice(-fits) : []
@@ -122,8 +126,10 @@ export function createOutcomeStrip(): OutcomeStrip {
       const cell = square(outcome)
       cell.onmouseenter = () => showTip(cell, outcome)
       cell.onmouseleave = hideTip
+      if (paintedUpTo > 0 && outcome.seq > paintedUpTo) cell.animate?.([{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1.35)', opacity: 1, offset: .7 }, { transform: 'scale(1)' }], { duration: 320, easing: MORPH_EASE })
       return cell
     }))
+    paintedUpTo = items.at(-1)?.seq ?? 0
   }
 
   async function fetchOnce(mine: number): Promise<void> {
@@ -136,9 +142,9 @@ export function createOutcomeStrip(): OutcomeStrip {
     const totals = readRecord(response.data.totals)
     items = mergeOutcomes(items, readArray(response.data.items) as unknown as Outcome[])
     last = typeof response.data.last === 'number' ? response.data.last : last
-    passed.textContent = String(totals.passed ?? 0)
-    failed.textContent = String(totals.failed ?? 0)
-    element.hidden = false
+    rollText(passed, String(totals.passed ?? 0))
+    rollText(failed, String(totals.failed ?? 0))
+    reveal(element, true, 'center bottom')
     paint()
   }
 
@@ -171,6 +177,7 @@ export function createOutcomeStrip(): OutcomeStrip {
       generation += 1
       source = next
       items = []
+      paintedUpTo = 0
       last = 0
       element.hidden = true
       hideTip()
