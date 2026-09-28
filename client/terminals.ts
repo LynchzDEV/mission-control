@@ -6,6 +6,7 @@ import { errorText, getJson, pathsFromUriList, postJson, providerName, readArray
 import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
 import { dragKind, dropCopy, findCount, findKeys, restoreTarget, nextActive, sessionSlot, sessionState, splitPlan, statusPill, terminalKeys, type Session, type TerminalKey, type SessionState } from './terminal-state'
 import { createPanes, type PaneHeader } from './terminal-panes'
+import { createOutcomeStrip } from './outcome-strip'
 
 type Provider = { id: string; name: string; models: string[] }
 
@@ -49,6 +50,8 @@ export class TerminalView {
   readonly terminal: Terminal
   readonly fit = new FitAddon()
   readonly search = new SearchAddon()
+  readonly screen = document.createElement('div')
+  readonly outcomes = createOutcomeStrip()
   socket: WebSocket | null = null
   lastOutputAt: number | null = null
   ended = false
@@ -60,7 +63,8 @@ export class TerminalView {
   constructor(public session: Session) {
     this.host.className = 'term-host'
     this.host.dataset.id = session.id
-    this.host.append(this.bar)
+    this.screen.className = 'term-screen'
+    this.host.append(this.bar, this.screen, this.outcomes.element)
     this.paintBar()
     const find = this.bar.querySelector('.term-bar-find') as HTMLButtonElement
     find.title = `Find · ${MAC ? '⌘F' : 'Ctrl+F'}`
@@ -83,10 +87,11 @@ export class TerminalView {
       return false
     })
     this.search.onDidChangeResults(({ resultIndex, resultCount }) => { if (activeId === session.id) findPart('find-count').textContent = findCount(resultIndex, resultCount, findInput.value) })
-    this.terminal.open(this.host)
+    this.terminal.open(this.screen)
+    this.outcomes.setSource(`terminal=${encodeURIComponent(session.id)}`)
     this.terminal.onData(data => this.send(data))
     this.observer = new ResizeObserver(() => { cancelAnimationFrame(this.resizeFrame); this.resizeFrame = requestAnimationFrame(() => this.resize()) })
-    this.observer.observe(this.host)
+    this.observer.observe(this.screen)
   }
 
   send(data: string): void {
@@ -156,6 +161,7 @@ export class TerminalView {
     this.socket?.close()
     this.socket = null
     this.terminal.dispose()
+    this.outcomes.destroy()
     this.host.remove()
   }
 }
@@ -217,6 +223,7 @@ export function activate(id: string): void {
   panes.show(id, view.host, paneHeader(view.session))
   setActiveState(id)
   visible(true)
+  view.outcomes.refresh()
 }
 
 panes.onActive(id => { if (id !== activeId) setActiveState(id) })
