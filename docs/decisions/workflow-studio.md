@@ -24,7 +24,7 @@ Core policy, workflow instructions, and node inputs are separate. Core policy ha
 
 ## Execution and policy boundaries
 
-Graphs route one execution token through pass/fail/blocked edges. Each node has at most one edge per outcome; this is explicit conditional routing, not parallel fan-out. Cycles have finite visit limits. Concurrent runs cannot write the same workspace. Unknown or interrupted completion is blocked for inspection rather than silently rerunning side effects.
+Graphs route one execution token through pass/fail/blocked edges. Each node has at most one fail and one blocked edge. Several pass edges fork parallel paths that must meet at exactly one join step. Each path runs in its own worktree outside the repository, made from a snapshot commit that is on no branch; the join applies each path's diff back to the workspace in path order and never commits on the user's branch. A conflict takes the join's fail edge. Cycles have finite visit limits. Concurrent runs cannot write the same workspace. Unknown or interrupted completion is blocked for inspection rather than silently rerunning side effects.
 
 Implementation nodes require successful plan verification before editing and a later successful review by a different declared model family before completion. Generic research/test nodes do not require commits. Mandatory worker scope, evidence honesty, and tool/workspace boundaries are composed into every node. Runtime guards enforce orchestration and result rules; unrestricted native CLIs are not an OS sandbox.
 

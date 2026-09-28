@@ -106,10 +106,13 @@ All through the existing token-allowed `/api/studio/*` routes (`server/auth.ts` 
 
 ### Parallel paths (part 3)
 
-- Schema: a node may have several `pass` edges (a fork). New node kind `join` with no agent: it waits until every path from its fork has arrived, then cherry-picks each path's commits onto the run's main workspace, in path order. Fail and blocked keep one edge per node.
+- Schema: a node may have several `pass` edges (a fork). New node kind `join` with no agent: it waits until every path from its fork has arrived, then applies each path's diff to the run's workspace, in path order, without committing. Fail and blocked keep one edge per node.
 - Validation adds: every fork's paths meet at exactly one join; no edge crosses from one open path into another; loops stay inside one path or wrap the whole fork-join section; nested forks are allowed.
-- Runner: `currentNodeId` becomes `tokens: { id, nodeId, pathId, workspace }[]` (keep `currentNodeId` as the first token's node for older readers). Each path gets its own worktree via `prepareWorktree()` on a branch named `flow/<run-label>-<path-id>`; the workspace-exclusivity check (`claimWorkspace`) applies per worktree.
-- Join conflicts: the cherry-pick is aborted (same as `server/jobs.ts:744`) and the join's outcome is `fail` with the conflicting files as evidence, so the graph's fail edge (normally a fix step) takes over. No fail edge → the run is blocked with the file list.
+- Runner: `currentNodeId` becomes `tokens: { id, nodeId, pathId, workspace }[]` (keep `currentNodeId` as the first token's node for older readers). The run's workspace is path `main`; a fork creates paths `a<k>-1`, `a<k>-2`… (nested: `<parent>.a<k>-1`). The workspace-exclusivity check (`claimWorkspace`) applies per path worktree.
+- Fork: a snapshot commit of the workspace (tracked and untracked files, via a temporary index, `git write-tree` and `git commit-tree -p HEAD`) that is on no branch; nothing is committed or staged in the user's checkout. Each path gets a worktree at `<configDir>/workflow-runs/<runId>/<pathId>` (must be under the home directory) on a branch `flow-<runId first 8>-<pathId>` made from that snapshot, then the fork's `setup` commands run in each path workspace (a failure blocks the fork).
+- Join: each path worktree's changes are committed on its `flow-*` branch; then, per path in order, `git diff --binary <snapshot> <branch>` is checked with `git apply --check` in the workspace and applied. Nothing is ever committed on the user's branch. All paths joined → outcome `pass`, path worktrees and branches removed.
+- Join conflicts: a patch that does not apply stops the join with outcome `fail` and the conflicting files as evidence; the unjoined paths' branches are kept and listed on the run, so the graph's fail edge (normally a fix step) takes over. No fail edge → the run is blocked with the file list.
+- A failed, blocked or stopped run keeps its path worktrees, branches and tokens, so Retry resumes every path; a finished run removes its path worktrees.
 - `docs/decisions/workflow-studio.md` is updated: fan-out is now supported with the rules above.
 
 ### Drawer for big graphs (part 4)
@@ -129,7 +132,7 @@ Existing saved plans in `plans.jsonl` are not migrated; they were display-only.
 
 1. **Real runs in the drawer.** Run record + approval + `flowApproval` setting + pause/resume + SSE + drawer D for runs (saved workflows, one path) and the no-flow list + instruction updates for picking saved workflows + removals. Accepted when: a Codex terminal and the chat each start a saved workflow; the drawer shows it waiting, approve works from the drawer and from a relayed "go" with the right source shown; steps change state in the drawer within 1 s of the job settling; with approval off the run starts at once; quick work shows the plain list; nothing reads `/api/flow` any more.
 2. **Drafting and live edits.** Inline `graph` on start, "Save as workflow", `/changes` with the small/big classifier, pending-version banner and ghost steps. Accepted when: a drafted flow that breaks a safety rule is rejected with the rule named; a fix loop added mid-run applies silently; an added engine waits for approval while running steps continue.
-3. **Parallel paths.** Fork/join schema and validation, per-path worktrees, token runner, join cherry-pick with conflict → fail edge. Accepted when: two paths run at the same time in two worktrees; the join lands both; a forced conflict routes to the fix step.
+3. **Parallel paths.** Fork/join schema and validation, per-path worktrees from a snapshot, token runner, join that applies each path's diff with a check, conflict → fail edge. Accepted when: two paths run at the same time in two worktrees; the join applies both to the workspace with no new commit on the user's branch; a forced conflict routes to the fix step (no fail edge → blocked with the file list).
 4. **Drawer for big graphs.** Zoom/pan/fit, path bands, collapse, follow. Accepted against a 20+ step flow with two forks and loops.
 
 ## Error handling
@@ -147,5 +150,5 @@ Existing saved plans in `plans.jsonl` are not migrated; they were display-only.
 ## Risks
 
 - `skills/mc-dispatch/SKILL.md` has uncommitted changes from another session in the working tree. Part 1 rewrites sections of that file; those changes must be committed or set aside by their owner first.
-- Parallel paths raise the chance of cherry-pick conflicts at the join; the fix-step route keeps that inside the flow rather than failing the run.
+- Parallel paths raise the chance of conflicts when the join applies the paths; the fix-step route keeps that inside the flow rather than failing the run.
 - Relayed approval trusts the session AI to relay the user's intent. The recorded source keeps it visible, and the 403 rule stops one session approving another's run.

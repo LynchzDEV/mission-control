@@ -32,6 +32,9 @@ describe('chat rules', () => {
   test('chat rules explain how to draft a flow and change a running one', () => {
     for (const phrase of ['"graph" instead of "workflowId"', '/changes', 'Never mark scopeGrew false to avoid approval']) expect(CHAT_RULES).toContain(phrase)
   })
+  test('chat rules explain how to split a flow into parallel paths', () => {
+    for (const phrase of ['kind "join"', 'its own git worktree', '"setup" commands', 'Keep fail edges inside their own path']) expect(CHAT_RULES).toContain(phrase)
+  })
   test('state the chat\'s own engine and model', () => {
     expect(chatRules({ chatId: 'r', home: '/h', project: null, edit: false, memory: '', engine: 'claude', model: 'claude-opus-4' })).toContain('Your AI: engine claude, model claude-opus-4.')
     expect(chatRules({ chatId: 'r', home: '/h', project: null, edit: false, memory: '', engine: 'glm', model: null })).toContain('Your AI: engine glm, default model.')
