@@ -32,3 +32,32 @@ test('chat scope matches runs by chat id and skips the chat turns themselves', (
 test('an empty scope sees nothing', () => {
   expect(scopeSnapshot([run({})], [job({ terminalId: 't1' })], {})).toEqual({ runs: [], jobs: [] })
 })
+
+test('a pending change shows as a proposal with engines resolved, and versions travel without graphs', () => {
+  const graph = { ...workflow, revision: 'r2', nodes: [...workflow.nodes, { id: 'check', title: 'API check', kind: 'task' as const, instructions: 'Run the API tests' }], edges: [...workflow.edges.filter(edge => !(edge.source === 'execute' && edge.target === 'review')), { source: 'execute', target: 'check', outcome: 'pass' as const }, { source: 'check', target: 'review', outcome: 'pass' as const }] }
+  const agents = { ...run({}).agents, check: { engine: 'glm', model: null, family: null } }
+  const versions: WorkflowRun['versions'] = [
+    { number: 1, revision: 'r1', reason: 'Initial flow', size: 'initial', state: 'approved', approvedVia: 'drawer', relayedBy: null, at: 1 },
+    { number: 2, revision: 'r2', reason: 'Tests first', size: 'big', state: 'pending', approvedVia: null, relayedBy: null, at: 2, graph, agents, skills: { check: [{ path: 'SKILL.md', content: 'skill body' }] } },
+  ]
+  const view = runView(run({ versions }))
+  expect(view.proposal!.number).toBe(2)
+  expect(view.proposal!.reason).toBe('Tests first')
+  expect(view.proposal!.nodes.find(node => node.id === 'check')).toEqual({ id: 'check', title: 'API check', kind: 'task', engine: 'glm' })
+  expect(view.proposal!.edges).toContainEqual({ source: 'execute', target: 'check', outcome: 'pass' })
+  expect(view.latestChange).toEqual({ number: 2, reason: 'Tests first', size: 'big', approvedVia: null, state: 'pending' })
+  expect(view.versions.map(version => Object.keys(version).filter(key => ['graph', 'agents', 'skills'].includes(key)))).toEqual([[], []])
+  expect(JSON.stringify(view)).not.toContain('skill body')
+  expect(JSON.stringify(view)).not.toContain('Run the API tests')
+})
+
+test('an applied change leaves no proposal but is still the latest change; a first version alone is neither', () => {
+  const applied = runView(run({ versions: [
+    { number: 1, revision: 'r1', reason: 'Initial flow', size: 'initial', state: 'approved', approvedVia: 'auto', relayedBy: null, at: 1 },
+    { number: 2, revision: 'r2', reason: 'Added a check', size: 'big', state: 'approved', approvedVia: 'auto', relayedBy: null, at: 2, graph: workflow, agents: run({}).agents, skills: {} },
+  ] }))
+  expect(applied.proposal).toBeNull()
+  expect(applied.latestChange).toEqual({ number: 2, reason: 'Added a check', size: 'big', approvedVia: 'auto', state: 'approved' })
+  const first = runView(run({ versions: [{ number: 1, revision: 'r1', reason: 'Initial flow', size: 'initial', state: 'pending', approvedVia: null, relayedBy: null, at: 1 }] }))
+  expect([first.proposal, first.latestChange]).toEqual([null, null])
+})

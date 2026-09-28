@@ -1,5 +1,5 @@
-export type StepState = 'done' | 'active' | 'failed' | 'pending' | 'conditional'
-export type EdgeState = 'done' | 'flowing' | 'failed' | 'idle'
+export type StepState = 'done' | 'active' | 'failed' | 'pending' | 'conditional' | 'proposed'
+export type EdgeState = 'done' | 'flowing' | 'failed' | 'idle' | 'proposed'
 export type GraphStep = { id: string; title: string; detail: string; state: StepState; engine: string; kind: string; since?: number }
 export type GraphEdge = { source: string; target: string; outcome: 'pass' | 'fail' | 'blocked'; state: EdgeState; label?: string }
 export type Placed = { id: string; x: number; y: number }
@@ -12,7 +12,7 @@ const ARROW = 6
 const DRAW_MS = 700
 const DRAW_STAGGER_MS = 140
 const SVG = 'http://www.w3.org/2000/svg'
-const EDGE_STATES: EdgeState[] = ['done', 'flowing', 'failed', 'idle']
+const EDGE_STATES: EdgeState[] = ['done', 'flowing', 'failed', 'idle', 'proposed']
 const GLYPHS: Record<string, string> = {
   join: '<circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="8" r="1.6"/><path d="M4 5.1v5.8M5.4 4.3c3 .6 4.6 1.8 5.1 2.6M5.4 11.7c3-.6 4.6-1.8 5.1-2.6"/>',
   review: '<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>',

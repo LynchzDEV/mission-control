@@ -71,7 +71,7 @@ const BODY = `
         <header class="flow-head">
           <div class="flow-title"><h2 id="flow-title">Session flow</h2><select id="flow-runs" class="flow-runs" aria-label="Flows in this session" hidden></select><small id="flow-meta" class="flow-meta"></small></div>
           <div id="flow-pills" class="flow-pills"></div>
-          <div class="flow-actions"><button id="flow-pause" class="pill flow-sm" type="button" hidden>Pause</button><button id="flow-stop" class="pill flow-sm flow-confirm" type="button" aria-label="Stop" hidden><span>Stop</span><span>Stop flow</span></button><button id="close-flow" class="round" aria-label="Collapse flow"><svg><use href="#close-icon"/></svg></button></div>
+          <div class="flow-actions"><button id="flow-save" class="pill flow-sm" type="button" hidden>Save as workflow</button><button id="flow-pause" class="pill flow-sm" type="button" hidden>Pause</button><button id="flow-stop" class="pill flow-sm flow-confirm" type="button" aria-label="Stop" hidden><span>Stop</span><span>Stop flow</span></button><button id="close-flow" class="round" aria-label="Collapse flow"><svg><use href="#close-icon"/></svg></button></div>
         </header>
         <div id="flow-banner" class="flow-banner" role="status" hidden><span class="flow-mark"></span><p></p><div class="flow-banner-actions"></div></div>
         <div id="flow-stage" class="flow-stage" hidden></div>

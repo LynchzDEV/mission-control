@@ -14,7 +14,7 @@ const base: RunView = {
     { nodeId: 'test', number: 2, jobId: 'c', status: 'settled', outcome: 'fail', summary: 'Tests failed in export_spec', startedAt: 200_000, endedAt: 260_000 },
     { nodeId: 'build', number: 3, jobId: 'd', status: 'running', outcome: null, summary: null, startedAt: 260_000, endedAt: null },
   ],
-  createdAt: 0, updatedAt: 260_000,
+  createdAt: 0, updatedAt: 260_000, proposal: null, latestChange: null,
 }
 
 test('elapsed reads like a person would say it', () => {
@@ -82,4 +82,52 @@ test('pickRun keeps a run the user picked, else follows the newest live run, els
   expect(pickRun([live, newerLive], null)!.id).toBe('newer')
   expect(pickRun([blocked, done], null)!.id).toBe('done')
   expect(pickRun([], null)).toBeNull()
+})
+
+const change = { number: 2, revision: 'v2', reason: 'The export needs a new column.', size: 'big' as const, state: 'pending' as const, approvedVia: null, relayedBy: null, at: 0 }
+const proposing: RunView = {
+  ...base,
+  versions: [base.versions[0]!, change],
+  proposal: {
+    number: 2, reason: 'The export needs a new column.',
+    nodes: [...base.nodes, { id: 'migrate', title: 'DB migration', kind: 'implement', engine: 'claude' }],
+    edges: [{ source: 'plan', target: 'build', outcome: 'pass' }, { source: 'build', target: 'migrate', outcome: 'pass' }, { source: 'migrate', target: 'test', outcome: 'pass' }, { source: 'test', target: 'build', outcome: 'fail' }, { source: 'test', target: 'fix', outcome: 'blocked' }, { source: 'migrate', target: 'fix', outcome: 'fail' }],
+  },
+  latestChange: { number: 2, reason: 'The export needs a new column.', size: 'big', approvedVia: null, state: 'pending' },
+}
+
+test('a proposed change adds ghost steps and keeps the real states of existing steps', () => {
+  const steps = Object.fromEntries(stepsFor(proposing, 308_000).map(step => [step.id, step]))
+  expect(Object.keys(steps)).toEqual(['plan', 'build', 'test', 'fix', 'migrate'])
+  expect(steps.migrate).toEqual({ id: 'migrate', title: 'DB migration', engine: 'claude', kind: 'implement', state: 'proposed', detail: 'Proposed' })
+  expect([steps.plan!.state, steps.build!.state, steps.test!.state]).toEqual(['done', 'active', 'failed'])
+  expect(pillsFor(proposing)).toEqual({ running: 1, done: 1, waiting: 1 })
+})
+
+test('a proposed change draws new routes as proposed and routes it drops as idle', () => {
+  const edges = Object.fromEntries(edgesFor(proposing).map(edge => [`${edge.source}>${edge.target}`, edge]))
+  expect(Object.keys(edges)).toEqual(['plan>build', 'build>test', 'test>build', 'test>fix', 'build>migrate', 'migrate>test', 'migrate>fix'])
+  expect(edges['build>migrate']!.state).toBe('proposed')
+  expect(edges['migrate>test']!.state).toBe('proposed')
+  expect(edges['migrate>fix']!).toEqual(expect.objectContaining({ state: 'proposed', label: 'if DB migration fails' }))
+  expect(edges['build>test']!.state).toBe('idle')
+  expect(edges['plan>build']!.state).toBe('done')
+  expect(edges['test>build']!).toEqual(expect.objectContaining({ state: 'failed', label: 'API tests failed · retried' }))
+})
+
+test('a proposed change asks to keep the current version or approve the new one', () => {
+  expect(bannerFor(proposing)).toEqual({ tone: 'ask', text: 'Codex wants to change the flow. The export needs a new column.', actions: ['keep', 'approve'] })
+})
+
+test('a big change applied because approval is off says so and offers to turn approval on', () => {
+  const auto: RunView = { ...base, versions: [base.versions[0]!, { ...change, reason: 'Added a DB migration because the scope grew.', state: 'approved', approvedVia: 'auto' }], latestChange: { number: 2, reason: 'Added a DB migration because the scope grew.', size: 'big', approvedVia: 'auto', state: 'approved' } }
+  expect(bannerFor(auto)).toEqual({ tone: 'notice', text: 'v2 applied automatically. Added a DB migration because the scope grew. Approval is off, so it did not wait.', actions: ['approval-on'] })
+  expect(bannerFor({ ...auto, status: 'done' })).toEqual({ tone: null, text: '', actions: [] })
+  expect(bannerFor({ ...auto, latestChange: { ...auto.latestChange!, size: 'small' } })).toEqual({ tone: null, text: '', actions: [] })
+  expect(bannerFor({ ...auto, latestChange: { ...auto.latestChange!, approvedVia: 'drawer' } })).toEqual({ tone: null, text: '', actions: [] })
+})
+
+test('a drafted flow waiting for approval says the AI drafted it', () => {
+  const drafted: RunView = { ...base, status: 'awaiting-approval', attempts: [], origin: { ...base.origin, source: 'drafted' }, versions: [{ ...base.versions[0]!, state: 'pending', approvedVia: null }] }
+  expect(bannerFor(drafted)).toEqual({ tone: 'ask', text: 'Codex drafted a flow for this task. Nothing runs until you approve, or say "go" to Codex.', actions: ['reject', 'approve'] })
 })

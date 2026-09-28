@@ -230,6 +230,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .flow-mark[data-state="failed"]::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 2.2v3.4M5 7.6v.1'/%3E%3C/svg%3E"); }
 .flow-mark[data-state="pending"] { box-shadow: inset 0 0 0 1.5px #b9c2d3; }
 .flow-mark[data-state="conditional"] { box-shadow: inset 0 0 0 1.5px #d3d9e4; }
+.flow-mark[data-state="proposed"] { color: var(--accent); background: #fff; box-shadow: inset 0 0 0 1.5px var(--accent); }
+.flow-mark[data-state="proposed"]::before { content: ''; width: 10px; height: 10px; background: currentColor; mask: center / 10px 10px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 2.2v5.6M2.2 5h5.6'/%3E%3C/svg%3E"); }
 .flow-stage { position: relative; margin-top: 12px; max-height: min(320px, 40dvh); overflow: auto; border-radius: var(--r-md); corner-shape: var(--corner); background: color-mix(in srgb, #fff 30%, var(--paper)); border: 1px solid var(--line); }
 .flow-run { position: relative; margin: 18px auto 44px; }
 .flow-run-edges { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
@@ -237,9 +239,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .flow-route[data-state="done"] { stroke: #6f9c7e; }
 .flow-route[data-state="flowing"] { stroke: var(--accent); stroke-dasharray: 6 10; animation: flow-dash 1.1s linear infinite; }
 .flow-route[data-state="failed"] { stroke: #c9798b; stroke-dasharray: 4 4; }
+.flow-route[data-state="proposed"] { stroke: var(--accent); stroke-dasharray: 3 4; }
 .flow-tip { fill: #b9c2d3; }
 .flow-tip[data-state="done"] { fill: #6f9c7e; }
 .flow-tip[data-state="flowing"] { fill: var(--accent); }
+.flow-tip[data-state="proposed"] { fill: var(--accent); }
 .flow-tip[data-state="failed"] { fill: #c9798b; }
 .flow-route-label { position: absolute; transform: translateY(-50%); font-size: 10.5px; color: var(--muted); white-space: nowrap; background: color-mix(in srgb, #fff 30%, var(--paper)); padding: 0 4px; }
 .flow-route-label[data-state="failed"] { color: #a13f58; }
@@ -253,6 +257,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .flow-step[data-state="failed"] { border-color: #e8c4cd; }
 .flow-step[data-state="failed"] small { color: #a13f58; }
 .flow-step[data-state="conditional"] { opacity: .62; border-style: dashed; }
+.flow-step[data-state="proposed"] { border: 1.5px dashed var(--accent); background: #fbfaff; }
+.flow-step[data-state="proposed"] small { color: #6b4fb0; }
+#flow-save[data-saved]:disabled { opacity: 1; cursor: default; }
 .flow-step-logo { flex: none; width: 14px; height: 14px; }
 .flow-step-glyph { width: 14px; height: 14px; fill: none; stroke: #7a869b; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .flow-run.still .flow-route, .flow-run.still .flow-step { animation: none; }

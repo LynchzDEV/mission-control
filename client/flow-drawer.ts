@@ -2,16 +2,19 @@ import type { QuickJobView, RunAttemptView, RunView, ScopeSnapshot } from '../se
 import { confirmButton } from './confirm-button'
 import { renderRunGraph, type EdgeState, type GraphEdge, type GraphStep, type StepState } from './flow-graph'
 import { rollText } from './morph'
-import { errorText, postJson, providerName } from './shared'
+import { errorText, postJson, providerName, type ApiResult, type JsonRecord } from './shared'
 
 type RunAction = 'approve' | 'reject' | 'retry' | 'stop' | 'pause' | 'resume'
-type Banner = { tone: 'ask' | 'problem' | null; text: string; actions: ('approve' | 'reject' | 'retry' | 'stop')[] }
+type BannerAction = 'approve' | 'reject' | 'retry' | 'stop' | 'keep' | 'approval-on'
+type Banner = { tone: 'ask' | 'problem' | 'notice' | null; text: string; actions: BannerAction[] }
+type Edge = RunView['edges'][number]
 type StepStatus = { state: StepState; detail: string; since?: number }
 
 const LIVE = new Set(['awaiting-approval', 'running', 'paused'])
 const SUMMARY_CHARS = 60
 const TICK_MS = 1000
 const EMPTY_TITLE = 'Session flow'
+const NO_BANNER: Banner = { tone: null, text: '', actions: [] }
 
 const isLive = (run: RunView): boolean => LIVE.has(run.status)
 const pad = (value: number): string => String(value).padStart(2, '0')
@@ -40,7 +43,13 @@ function reachableByPass(run: RunView): Set<string> {
 }
 
 function titleOf(run: RunView, id: string): string {
-  return run.nodes.find(node => node.id === id)?.title ?? id
+  return [...run.nodes, ...(run.proposal?.nodes ?? [])].find(node => node.id === id)?.title ?? id
+}
+
+const sameEdge = (a: Edge, b: Edge): boolean => a.source === b.source && a.target === b.target && a.outcome === b.outcome
+
+export function activeVersion(run: RunView): number {
+  return run.versions.filter(version => version.state === 'approved').at(-1)?.number ?? 1
 }
 
 function unstartedStatus(run: RunView, nodeId: string, engine: string, reachable: Set<string>): StepStatus {
@@ -68,14 +77,18 @@ function attemptStatus(run: RunView, tries: RunAttemptView[], now: number): Step
 export function stepsFor(run: RunView, now: number): GraphStep[] {
   const reachable = reachableByPass(run)
   const attempts = inOrder(run)
-  return run.nodes.map(node => {
+  const current = run.nodes.map(node => {
     const tries = attempts.filter(attempt => attempt.nodeId === node.id)
     const status = tries.length ? attemptStatus(run, tries, now) : unstartedStatus(run, node.id, node.engine, reachable)
     return { id: node.id, title: node.title, engine: node.engine, kind: node.kind, ...status }
   })
+  const known = new Set(run.nodes.map(node => node.id))
+  const ghosts = (run.proposal?.nodes ?? []).filter(node => !known.has(node.id))
+    .map(node => ({ id: node.id, title: node.title, engine: node.engine, kind: node.kind, state: 'proposed' as const, detail: 'Proposed' }))
+  return [...current, ...ghosts]
 }
 
-function takenPairs(run: RunView, edge: RunView['edges'][number]): [RunAttemptView, RunAttemptView][] {
+function takenPairs(run: RunView, edge: Edge): [RunAttemptView, RunAttemptView][] {
   const attempts = inOrder(run)
   return attempts.slice(1).flatMap((next, index): [RunAttemptView, RunAttemptView][] => {
     const previous = attempts[index]!
@@ -84,20 +97,24 @@ function takenPairs(run: RunView, edge: RunView['edges'][number]): [RunAttemptVi
   })
 }
 
-function edgeState(run: RunView, edge: RunView['edges'][number]): EdgeState {
+function edgeState(run: RunView, edge: Edge): EdgeState {
   const pairs = takenPairs(run, edge)
   if (!pairs.length) return 'idle'
   if (edge.outcome !== 'pass') return 'failed'
   return pairs.at(-1)![1].status !== 'settled' && isLive(run) ? 'flowing' : 'done'
 }
 
+function labelled(run: RunView, edge: Edge, state: EdgeState): GraphEdge {
+  if (edge.outcome === 'pass') return { ...edge, state }
+  const source = titleOf(run, edge.source)
+  return { ...edge, state, label: state === 'failed' ? `${source} failed · retried` : `if ${source} fails` }
+}
+
 export function edgesFor(run: RunView): GraphEdge[] {
-  return run.edges.map(edge => {
-    const state = edgeState(run, edge)
-    if (edge.outcome === 'pass') return { ...edge, state }
-    const source = titleOf(run, edge.source)
-    return { ...edge, state, label: state === 'idle' ? `if ${source} fails` : `${source} failed · retried` }
-  })
+  const proposed = run.proposal?.edges
+  const current = run.edges.map(edge => labelled(run, edge, proposed && !proposed.some(other => sameEdge(other, edge)) ? 'idle' : edgeState(run, edge)))
+  const added = (proposed ?? []).filter(edge => !run.edges.some(other => sameEdge(other, edge))).map(edge => labelled(run, edge, 'proposed'))
+  return [...current, ...added]
 }
 
 function clock(at: number): string {
@@ -131,13 +148,29 @@ export function pillsFor(run: RunView): { running: number; done: number; waiting
 export function bannerFor(run: RunView): Banner {
   const by = providerName(run.origin.by)
   if (run.status === 'awaiting-approval' && run.versions.some(version => version.state === 'pending')) {
-    return { tone: 'ask', text: `${by} picked "${run.workflowName}" for this task. Nothing runs until you approve, or say "go" to ${by}.`, actions: ['reject', 'approve'] }
+    const asked = run.origin.source === 'drafted' ? `${by} drafted a flow for this task.` : `${by} picked "${run.workflowName}" for this task.`
+    return { tone: 'ask', text: `${asked} Nothing runs until you approve, or say "go" to ${by}.`, actions: ['reject', 'approve'] }
   }
+  if (run.proposal) return { tone: 'ask', text: `${by} wants to change the flow. ${run.proposal.reason}`, actions: ['keep', 'approve'] }
   if (run.status === 'blocked' || run.status === 'failed') {
     const word = run.status === 'blocked' ? 'Blocked' : 'Failed'
     return { tone: 'problem', text: run.error ? `${word}: ${run.error}` : word, actions: ['retry'] }
   }
-  return { tone: null, text: '', actions: [] }
+  const change = run.latestChange
+  if (change?.size === 'big' && change.approvedVia === 'auto' && isLive(run)) {
+    return { tone: 'notice', text: `v${change.number} applied automatically. ${change.reason} Approval is off, so it did not wait.`, actions: ['approval-on'] }
+  }
+  return NO_BANNER
+}
+
+async function putJson(url: string, body: JsonRecord): Promise<ApiResult> {
+  try {
+    const response = await fetch(url, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const data: unknown = await response.json().catch(() => ({}))
+    return { ok: response.ok, status: response.status, data: data && typeof data === 'object' && !Array.isArray(data) ? data as JsonRecord : {} }
+  } catch {
+    return { ok: false, status: 0, data: {} }
+  }
 }
 
 export function pickRun(runs: RunView[], pinned: string | null): RunView | null {
@@ -154,7 +187,7 @@ function motionAllowed(): boolean {
 function mountFlowDrawer(): void {
   const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
   const title = $('flow-title'), meta = $('flow-meta'), pills = $('flow-pills'), runsSelect = $('flow-runs') as HTMLSelectElement
-  const pause = $('flow-pause') as HTMLButtonElement, stop = $('flow-stop') as HTMLButtonElement
+  const pause = $('flow-pause') as HTMLButtonElement, stop = $('flow-stop') as HTMLButtonElement, save = $('flow-save') as HTMLButtonElement
   const banner = $('flow-banner'), stage = $('flow-stage'), quick = $('flow-quick'), quickList = $('flow-quick-list'), empty = $('flow-empty')
   let scopeQuery: string | null = null
   let open = false
@@ -164,6 +197,9 @@ function mountFlowDrawer(): void {
   let selected: string | null = null
   let current: RunView | null = null
   let bannerKey = ''
+  let saving: string | null = null
+  const savedAs = new Map<string, string>()
+  const approvalRestored = new Set<string>()
 
   const make = (tag: string, text = '', className = ''): HTMLElement => {
     const element = document.createElement(tag)
@@ -184,22 +220,75 @@ function mountFlowDrawer(): void {
     return span
   }
 
-  async function act(action: RunAction, runId: string | undefined): Promise<void> {
+  function showError(text: string): void {
+    if (banner.hidden) { banner.className = 'flow-banner problem'; banner.querySelector<HTMLElement>('.flow-mark')!.dataset.state = 'failed'; banner.hidden = false }
+    rollText(banner.querySelector('p') as HTMLElement, text)
+  }
+
+  async function act(action: RunAction, runId: string | undefined, label: string = action): Promise<boolean> {
     const target = snapshot.runs.find(run => run.id === runId)
-    if (!target) return
+    if (!target) return false
     const pending = target.versions.find(version => version.state === 'pending')
     const body = (action === 'approve' || action === 'reject') && pending ? { version: pending.number } : {}
     const result = await postJson(`/api/studio/runs/${encodeURIComponent(target.id)}/${action}`, body)
-    if (result.ok) return
-    if (banner.hidden) { banner.className = 'flow-banner problem'; banner.querySelector<HTMLElement>('.flow-mark')!.dataset.state = 'failed'; banner.hidden = false }
-    rollText(banner.querySelector('p') as HTMLElement, `Could not ${action}: ${errorText(result)}`)
+    if (!result.ok) showError(`Could not ${label}: ${errorText(result)}`)
+    return result.ok
   }
 
-  function actionButton(action: Banner['actions'][number], runId: string | undefined): HTMLButtonElement {
+  async function whileBusy(button: HTMLButtonElement, task: () => Promise<boolean>): Promise<void> {
+    button.disabled = true
+    button.setAttribute('aria-busy', 'true')
+    const succeeded = await task()
+    button.removeAttribute('aria-busy')
+    if (!succeeded) button.disabled = false
+  }
+
+  async function restoreApproval(run: RunView): Promise<boolean> {
+    const result = await putJson('/api/flow-approval', { flowApproval: true })
+    if (!result.ok) { showError(`Could not turn approval on: ${errorText(result)}`); return false }
+    approvalRestored.add(`${run.id}:${run.latestChange?.number}`)
+    paintBanner(current, true)
+    return true
+  }
+
+  async function saveRun(runId: string | undefined): Promise<void> {
+    if (!runId || saving) return
+    saving = runId
+    save.setAttribute('aria-busy', 'true')
+    paintSave(current)
+    const result = await postJson(`/api/studio/runs/${encodeURIComponent(runId)}/save`, {})
+    saving = null
+    save.removeAttribute('aria-busy')
+    if (result.ok) { savedAs.set(runId, typeof result.data.name === 'string' ? result.data.name : 'a workflow'); paintBanner(current, true) }
+    else showError(`Could not save: ${errorText(result)}`)
+    paintSave(current)
+  }
+
+  function actionButton(action: BannerAction, run: RunView | null): HTMLButtonElement {
+    const runId = run?.id
     const button = make('button', '', 'pill flow-sm') as HTMLButtonElement
     button.type = 'button'
-    if (action === 'approve') { button.classList.add('flow-primary'); button.textContent = 'Approve and run'; button.onclick = () => void act('approve', runId); return button }
-    if (action === 'retry') { button.textContent = 'Retry step'; button.onclick = () => void act('retry', runId); return button }
+    const busy = (task: () => Promise<boolean>) => () => void whileBusy(button, task)
+    if (action === 'approve') {
+      button.classList.add('flow-primary')
+      button.textContent = run?.proposal ? `Approve v${run.proposal.number}` : 'Approve and run'
+      button.onclick = busy(() => act('approve', runId))
+      return button
+    }
+    if (action === 'keep') {
+      const label = `Keep v${run ? activeVersion(run) : 1}`
+      button.classList.add('flow-ghost')
+      button.textContent = label
+      button.onclick = busy(() => act('reject', runId, label.toLowerCase()))
+      return button
+    }
+    if (action === 'approval-on') {
+      button.classList.add('flow-ghost')
+      button.textContent = 'Turn approval on'
+      button.onclick = busy(() => run ? restoreApproval(run) : Promise.resolve(false))
+      return button
+    }
+    if (action === 'retry') { button.textContent = 'Retry step'; button.onclick = busy(() => act('retry', runId)); return button }
     const [idle, armed] = action === 'reject' ? ['Reject', 'Reject flow'] : ['Stop', 'Stop flow']
     button.classList.add('flow-ghost', 'flow-confirm')
     button.setAttribute('aria-label', idle)
@@ -208,17 +297,29 @@ function mountFlowDrawer(): void {
     return button
   }
 
-  function paintBanner(run: RunView | null): void {
-    const next = run ? bannerFor(run) : { tone: null, text: '', actions: [] }
+  function bannerShown(run: RunView | null): Banner {
+    const next = run ? bannerFor(run) : NO_BANNER
+    if (run && next.tone === 'notice' && approvalRestored.has(`${run.id}:${run.latestChange?.number}`)) return { tone: 'notice', text: 'Approval is on again.', actions: [] }
+    return next
+  }
+
+  function bannerMark(run: RunView | null, next: Banner): string {
+    if (next.tone === 'problem') return 'failed'
+    if (next.tone === 'notice') return 'done'
+    return run?.proposal ? 'proposed' : 'active'
+  }
+
+  function paintBanner(run: RunView | null, force = false): void {
+    const next = bannerShown(run)
     const key = JSON.stringify([run?.id, next])
-    if (key === bannerKey) return
+    if (key === bannerKey && !force) return
     bannerKey = key
     banner.hidden = !next.tone
     banner.className = next.tone ? `flow-banner ${next.tone}` : 'flow-banner'
-    banner.querySelector<HTMLElement>('.flow-mark')!.dataset.state = next.tone === 'problem' ? 'failed' : 'active'
+    banner.querySelector<HTMLElement>('.flow-mark')!.dataset.state = bannerMark(run, next)
     ;(banner.querySelector('p') as HTMLElement).textContent = next.text
     const actions = banner.querySelector('.flow-banner-actions') as HTMLElement
-    actions.replaceChildren(...next.actions.map(action => actionButton(action, run?.id)))
+    actions.replaceChildren(...next.actions.map(action => actionButton(action, run)))
     actions.querySelectorAll<HTMLButtonElement>('.flow-confirm').forEach(button => confirmButton(button, button.lastElementChild!.textContent ?? '', () => void act(button.dataset.action as RunAction, run?.id)))
   }
 
@@ -237,6 +338,16 @@ function mountFlowDrawer(): void {
     pause.hidden = run?.status !== 'running' && run?.status !== 'paused'
     pause.textContent = run?.status === 'paused' ? 'Resume' : 'Pause'
     stop.hidden = !run || !isLive(run)
+    paintSave(run)
+  }
+
+  function paintSave(run: RunView | null): void {
+    save.hidden = run?.origin.source !== 'drafted'
+    if (!run || save.hidden) return
+    const name = savedAs.get(run.id)
+    save.textContent = name ? `Saved as ${name}` : 'Save as workflow'
+    save.toggleAttribute('data-saved', !!name)
+    save.disabled = !!name || saving === run.id
   }
 
   function quickRow(job: QuickJobView, now: number): HTMLElement {
@@ -313,6 +424,7 @@ function mountFlowDrawer(): void {
   let stopTarget: string | undefined
   stop.addEventListener('click', () => { if (stop.dataset.armed !== 'true') stopTarget = current?.id }, { capture: true })
   confirmButton(stop, 'Stop flow', () => void act('stop', stopTarget))
+  save.onclick = () => void saveRun(current?.id)
   addEventListener('quiet:flow-open', (event) => { open = (event as CustomEvent<boolean>).detail; connect() })
   addEventListener('quiet:activity-scope', (event) => { const session = (event as CustomEvent<{ id: string; cwd: string } | null>).detail; setScope(session ? `terminal=${encodeURIComponent(session.id)}` : null) })
   addEventListener('quiet:chat-agents', (event) => { const chat = (event as CustomEvent<string | null>).detail; if (chat) setScope(`chat=${encodeURIComponent(chat)}`) })

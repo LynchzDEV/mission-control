@@ -49,3 +49,17 @@ test('render draws one step per node and one route per edge, with states', () =>
   expect(host.querySelector('.flow-step img')!.getAttribute('src')).toBe('/providers/claude.svg')
   expect(host.querySelector('[data-since]')).not.toBeNull()
 })
+
+test('a proposed step and its proposed route render as proposed, with their own arrow tip', () => {
+  const host = document.createElement('div')
+  renderRunGraph(host, [
+    { id: 'build', title: 'Build API', detail: 'Working · 10s', state: 'active', engine: 'codex', kind: 'implement' },
+    { id: 'migrate', title: 'DB migration', detail: 'Proposed', state: 'proposed', engine: 'claude', kind: 'implement' },
+  ], [{ source: 'build', target: 'migrate', outcome: 'pass', state: 'proposed' }], 'build', { animate: false })
+  const proposed = host.querySelector<HTMLElement>('.flow-step[data-state="proposed"]')!
+  expect(proposed.querySelector('strong')!.textContent).toBe('DB migration')
+  expect(proposed.querySelector<HTMLElement>('.flow-mark')!.dataset.state).toBe('proposed')
+  const route = host.querySelector('path.flow-route[data-state="proposed"]')!
+  expect(route.getAttribute('marker-end')).toBe('url(#flow-tip-proposed)')
+  expect(host.querySelector('#flow-tip-proposed')).not.toBeNull()
+})
