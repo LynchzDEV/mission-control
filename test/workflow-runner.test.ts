@@ -4,8 +4,8 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createJobManager, type JobManager } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
-import { createWorkflowStore, defaultWorkflow } from '../server/workflows'
-import { createWorkflowRunner, RunActionError, type WorkflowRun, type WorkflowRunner } from '../server/workflow-runner'
+import { createWorkflowStore, defaultWorkflow, draftRevision, type Workflow } from '../server/workflows'
+import { changeSize, createWorkflowRunner, RunActionError, type ResolvedAgent, type WorkflowRun, type WorkflowRunner } from '../server/workflow-runner'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 import type { TerminalRecord } from '../server/terminals'
 
@@ -453,4 +453,175 @@ test('a drafted graph that breaks a rule is refused and claims nothing', async (
 test('a saved workflow and a drafted graph cannot both be named', async () => {
   build(resolver, true)
   await expect(runner.start({ cwd: repo, request: 'x', label: 'x', workflowId: 'default', graph: defaultWorkflow() })).rejects.toThrow('Use either a saved workflow or a drafted graph')
+})
+
+const slow: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `sleep 0.3; echo '${report()}'`], env: {} })
+const family = (engine: string, name: string): ResolvedAgent => ({ engine, model: null, family: name })
+const defaultAgents = { plan: family('claude', 'claude'), 'verify-plan': family('codex', 'gpt'), execute: family('glm', 'glm'), review: family('codex', 'gpt') }
+function withCheck(): Workflow {
+  const graph = defaultWorkflow()
+  graph.nodes.push({ ...graph.nodes[3]!, id: 'check', title: 'Run tests', kind: 'task', instructions: 'Run the test suite' })
+  graph.edges = graph.edges.filter(edge => edge.source !== 'execute').concat({ source: 'execute', target: 'check', outcome: 'pass' }, { source: 'check', target: 'review', outcome: 'pass' })
+  return graph
+}
+function withMigrate(base = defaultWorkflow()): Workflow {
+  const graph = structuredClone(base)
+  graph.nodes.push({ ...graph.nodes[2]!, id: 'migrate', title: 'Migrate', instructions: 'Write the migration' })
+  graph.edges = graph.edges.filter(edge => edge.source !== 'verify-plan').concat({ source: 'verify-plan', target: 'migrate', outcome: 'pass' }, { source: 'migrate', target: 'execute', outcome: 'pass' })
+  return graph
+}
+
+test('changeSize: a check step on the review family is small', () => {
+  const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
+  expect(changeSize(run, draftRevision(withCheck()), { ...defaultAgents, check: family('codex', 'gpt') }, false)).toBe('small')
+})
+
+test('changeSize: a new implementation step on the pass path is big', () => {
+  const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
+  expect(changeSize(run, draftRevision(withMigrate()), { ...defaultAgents, migrate: family('glm', 'glm') }, false)).toBe('big')
+})
+
+test('changeSize: a fix loop reached only through a failed review is small', () => {
+  const graph = defaultWorkflow()
+  graph.nodes.push({ ...graph.nodes[2]!, id: 'fix', title: 'Fix', instructions: 'Fix the review findings' })
+  graph.edges.push({ source: 'review', target: 'fix', outcome: 'fail' }, { source: 'fix', target: 'review', outcome: 'pass' })
+  const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
+  expect(changeSize(run, draftRevision(graph), { ...defaultAgents, fix: family('glm', 'glm') }, false)).toBe('small')
+})
+
+test('changeSize: dropping a second review, or a grown scope, is big', () => {
+  const twin = defaultWorkflow()
+  twin.nodes.push({ ...twin.nodes[3]!, id: 'review-2', title: 'Second review' })
+  twin.edges.push({ source: 'review', target: 'review-2', outcome: 'pass' })
+  const run = { workflow: draftRevision(twin), agents: { ...defaultAgents, 'review-2': family('codex', 'gpt') } }
+  expect(changeSize(run, draftRevision(defaultWorkflow()), defaultAgents, false)).toBe('big')
+  const plain = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
+  expect(changeSize(plain, draftRevision(withCheck()), { ...defaultAgents, check: family('codex', 'gpt') }, true)).toBe('big')
+})
+
+test('a small change to a running flow applies at once and the flow runs through it', async () => {
+  build(slow, false)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  const changed = await runner.propose(started.id, { graph: withCheck(), reason: 'Run the tests before review' }, { via: 'drawer' })
+  expect(changed.workflow.nodes.map(node => node.id)).toContain('check')
+  expect(changed.versions.at(-1)).toEqual(expect.objectContaining({ number: 2, size: 'small', state: 'approved', approvedVia: 'auto', reason: 'Run the tests before review' }))
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['plan', 'verify-plan', 'execute', 'check', 'review'])
+})
+
+test('a big change waits for approval while the running step finishes, then runs the new graph', async () => {
+  build(slow, true)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' }, { startedByUser: true })
+  await until(started.id, run => run.attempts[1]?.status === 'running')
+  const proposed = await runner.propose(started.id, { graph: withMigrate(), reason: 'Needs a migration' }, { via: 'drawer' })
+  expect(proposed.versions.at(-1)).toEqual(expect.objectContaining({ number: 2, size: 'big', state: 'pending', approvedVia: null }))
+  expect(proposed.workflow.revision).toBe(started.workflow.revision)
+  await until(started.id, run => run.attempts[1]?.status === 'settled')
+  await Bun.sleep(200)
+  expect(runner.get(started.id)!.attempts).toHaveLength(2)
+  const approved = await runner.approve(started.id, { via: 'drawer', version: 2 })
+  expect(approved.versions.at(-1)).toEqual(expect.objectContaining({ state: 'approved', approvedVia: 'drawer' }))
+  expect(approved.attempts.map(attempt => attempt.nodeId)).toEqual(['plan', 'verify-plan', 'migrate'])
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['plan', 'verify-plan', 'migrate', 'execute', 'review'])
+})
+
+test('a proposal made while a step is settling keeps its result and holds the next step', async () => {
+  const store = build(resolver, true)
+  const graph = defaultWorkflow()
+  graph.id = 'checked'
+  graph.nodes[0]!.checks = [{ command: '/bin/sleep', args: ['0.4'], timeoutSeconds: 30 }]
+  await store.save(graph)
+  const started = await runner.start({ workflowId: 'checked', cwd: repo, request: 'Implement', label: 'fixture' }, { startedByUser: true })
+  await until(started.id, run => run.attempts[0]?.status === 'checking')
+  const proposed = await runner.propose(started.id, { graph: withMigrate(graph), reason: 'Needs a migration' }, { via: 'drawer' })
+  expect(proposed.versions.at(-1)!.state).toBe('pending')
+  expect(proposed.attempts).toHaveLength(1)
+  expect(proposed.attempts[0]).toEqual(expect.objectContaining({ status: 'settled', result: expect.objectContaining({ outcome: 'pass' }) }))
+  expect(proposed.attempts[0]!.checks).toHaveLength(1)
+  await Bun.sleep(200)
+  expect(runner.get(started.id)!.attempts).toHaveLength(1)
+  await runner.approve(started.id, { via: 'drawer' })
+  const done = await finished(started.id)
+  expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['plan', 'verify-plan', 'migrate', 'execute', 'review'])
+})
+
+test('keeping the old version rejects the change and the old graph carries on', async () => {
+  build(slow, true)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' }, { startedByUser: true })
+  await runner.propose(started.id, { graph: withMigrate(), reason: 'Needs a migration' }, { via: 'drawer' })
+  await until(started.id, run => run.attempts[0]?.status === 'settled')
+  await runner.reject(started.id, { via: 'drawer' })
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(done.versions[1]!.state).toBe('rejected')
+  expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['plan', 'verify-plan', 'execute', 'review'])
+})
+
+test('with approval off a big change applies at once', async () => {
+  build(slow, false)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  const changed = await runner.propose(started.id, { graph: withMigrate(), reason: 'Needs a migration' }, { via: 'drawer' })
+  expect(changed.versions.at(-1)).toEqual(expect.objectContaining({ number: 2, size: 'big', state: 'approved', approvedVia: 'auto' }))
+  expect(changed.workflow.nodes.map(node => node.id)).toContain('migrate')
+  const done = await finished(started.id)
+  expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['plan', 'verify-plan', 'migrate', 'execute', 'review'])
+})
+
+test('a change may not move the entry, drop a step that ran, or rewrite one', async () => {
+  const store = build(slow, false)
+  const node = (id: string, title: string) => ({ id, title, instructions: `Do ${title}` })
+  const chain = { ...defaultWorkflow(), id: 'chain', entry: 'a', nodes: [node('a', 'Alpha'), node('b', 'Bravo'), node('c', 'Charlie')], edges: [{ source: 'a', target: 'b', outcome: 'pass' as const }, { source: 'b', target: 'c', outcome: 'pass' as const }] }
+  await store.save(chain)
+  const started = await runner.start({ workflowId: 'chain', cwd: repo, request: 'Walk', label: 'chain' })
+  await until(started.id, run => run.attempts[1]?.status === 'running')
+  const before = runner.get(started.id)!
+  const moved = { ...chain, entry: 'b', nodes: chain.nodes.slice(1), edges: chain.edges.slice(1) }
+  await expect(runner.propose(started.id, { graph: moved, reason: 'x' }, { via: 'drawer' })).rejects.toThrow('Alpha must stay the first step')
+  const dropped = { ...chain, nodes: [chain.nodes[0]!, chain.nodes[2]!], edges: [{ source: 'a', target: 'c', outcome: 'pass' as const }] }
+  await expect(runner.propose(started.id, { graph: dropped, reason: 'x' }, { via: 'drawer' })).rejects.toThrow('Bravo already ran and cannot be removed')
+  const rewritten = { ...chain, nodes: [{ ...chain.nodes[0]!, instructions: 'Something else' }, ...chain.nodes.slice(1)] }
+  const refusal = await runner.propose(started.id, { graph: rewritten, reason: 'x' }, { via: 'drawer' }).catch(error => error)
+  expect(refusal).not.toBeInstanceOf(RunActionError)
+  expect(refusal.message).toContain('Alpha already ran')
+  const after = runner.get(started.id)!
+  expect(after.workflow).toEqual(before.workflow)
+  expect(after.versions).toEqual(before.versions)
+  expect((await finished(started.id)).attempts.map(attempt => attempt.nodeId)).toEqual(['a', 'b', 'c'])
+})
+
+test('a second proposal while one waits is a conflict', async () => {
+  build(slow, true)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' }, { startedByUser: true })
+  await runner.propose(started.id, { graph: withMigrate(), reason: 'Needs a migration' }, { via: 'drawer' })
+  await expect(runner.propose(started.id, { graph: withCheck(), reason: 'Run the tests' }, { via: 'drawer' })).rejects.toMatchObject({ status: 409, message: 'A change is already waiting' })
+  expect(runner.get(started.id)!.versions).toHaveLength(2)
+})
+
+test('a relayed change must come from the session that owns the run', async () => {
+  build(slow, false)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  await expect(runner.propose(started.id, { graph: withCheck(), reason: 'Run the tests' }, { via: 'conversation', terminalId: 'terminal-b' })).rejects.toMatchObject({ status: 403 })
+  expect(runner.get(started.id)!.versions).toHaveLength(1)
+})
+
+test('a pending change survives a restart, still holds dispatch, and approving it afterwards runs the new graph', async () => {
+  const store = build(slow, true)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' }, { startedByUser: true })
+  await runner.propose(started.id, { graph: withMigrate(), reason: 'Needs a migration' }, { via: 'drawer' })
+  await until(started.id, run => run.attempts[0]?.status === 'settled')
+  runner = createWorkflowRunner({ manager, resolver: slow, store, base: dir, requireApproval: async () => true })
+  await runner.recover()
+  const reloaded = runner.get(started.id)!
+  expect(reloaded.status).toBe('running')
+  expect(reloaded.versions[1]!.state).toBe('pending')
+  await Bun.sleep(200)
+  expect(runner.get(started.id)!.attempts).toHaveLength(1)
+  expect(manager.listJobs()).toHaveLength(1)
+  await runner.approve(started.id, { via: 'drawer' })
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['plan', 'verify-plan', 'migrate', 'execute', 'review'])
 })
