@@ -868,6 +868,7 @@ a.pill:hover { color: var(--accent); }
 .confirm-morph[data-armed="true"] > span:first-child { opacity: 0; translate: -6px 0; }
 .confirm-morph[data-armed="true"] > span:last-child { opacity: 1; translate: 0 0; }
 .morphing { overflow: hidden; white-space: nowrap; }
+.text-button.copied { padding: 4px 10px; border-radius: var(--r-xs); corner-shape: var(--corner); background: #dcece1; color: #3f7352; font-weight: 600; }
 .morphing * { white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .sb-morph, .sb-morph svg, .sb-morph span, .sb-key, .confirm-morph, .confirm-morph > span { transition: none; animation: none; } }
 .sb-rename { font: inherit; width: 100%; min-width: 0; padding: 2px 6px; margin: -2px 0; border-radius: var(--r-xs); corner-shape: var(--corner); background: #e2e6f0; border: 1px solid #c9c0e3; color: #505e75; outline: none; }
