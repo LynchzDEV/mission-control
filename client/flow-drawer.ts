@@ -47,7 +47,9 @@ function unstartedStatus(run: RunView, nodeId: string, engine: string, reachable
   const onFailure = run.edges.find(edge => edge.target === nodeId && edge.outcome !== 'pass')
   if (!reachable.has(nodeId) && onFailure) return { state: 'conditional', detail: `If ${titleOf(run, onFailure.source)} fails` }
   if (run.status === 'awaiting-approval') return { state: 'pending', detail: providerName(engine) }
-  const upNext = isLive(run) && run.edges.some(edge => edge.source === run.currentNodeId && edge.target === nodeId && edge.outcome === 'pass')
+  if (isLive(run) && nodeId === run.currentNodeId) return { state: 'pending', detail: run.status === 'paused' ? 'Paused here' : 'Up next' }
+  const currentBusy = run.attempts.some(attempt => attempt.nodeId === run.currentNodeId && attempt.status !== 'settled')
+  const upNext = isLive(run) && currentBusy && run.edges.some(edge => edge.source === run.currentNodeId && edge.target === nodeId && edge.outcome === 'pass')
   return { state: 'pending', detail: upNext ? 'Up next' : 'Waiting' }
 }
 
@@ -137,12 +139,11 @@ export function bannerFor(run: RunView): Banner {
   return { tone: null, text: '', actions: [] }
 }
 
-export function pickRun(runs: RunView[], previous: string | null): RunView | null {
-  const kept = runs.find(run => run.id === previous)
+export function pickRun(runs: RunView[], pinned: string | null): RunView | null {
+  const kept = runs.find(run => run.id === pinned)
   if (kept) return kept
-  const live = runs.find(isLive)
-  if (live) return live
-  return runs.reduce<RunView | null>((newest, run) => (!newest || run.createdAt > newest.createdAt ? run : newest), null)
+  const newestFirst = [...runs].sort((a, b) => b.createdAt - a.createdAt)
+  return newestFirst.find(isLive) ?? newestFirst[0] ?? null
 }
 
 function motionAllowed(): boolean {
@@ -222,6 +223,7 @@ function mountFlowDrawer(): void {
   function paintHeader(run: RunView | null, heading: string): void {
     rollText(title, heading)
     runsSelect.hidden = snapshot.runs.length < 2 || !run
+    title.hidden = !runsSelect.hidden
     if (!runsSelect.hidden) {
       runsSelect.replaceChildren(...snapshot.runs.map(item => new Option(`${item.label} · ${item.status}`, item.id)))
       runsSelect.value = run!.id
@@ -253,7 +255,6 @@ function mountFlowDrawer(): void {
   function paint(): void {
     const run = pickRun(snapshot.runs, selected)
     current = run
-    selected = run?.id ?? null
     stage.hidden = !run
     quick.hidden = !!run || !snapshot.jobs.length
     empty.hidden = !!run || !!snapshot.jobs.length

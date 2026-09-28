@@ -31,6 +31,15 @@ test('steps show done, a second try in progress, a failed test and a conditional
   expect([steps.fix!.state, steps.fix!.detail]).toEqual(['conditional', 'If API tests fails'])
 })
 
+test('a run paused between steps names the step that starts on resume', () => {
+  const paused: RunView = { ...base, status: 'paused', currentNodeId: 'build', attempts: base.attempts.slice(0, 1) }
+  const steps = Object.fromEntries(stepsFor(paused, 0).map(step => [step.id, step]))
+  expect([steps.build!.state, steps.build!.detail]).toEqual(['pending', 'Paused here'])
+  expect(steps.test!.detail).toBe('Waiting')
+  const between: RunView = { ...paused, status: 'running' }
+  expect(stepsFor(between, 0).find(step => step.id === 'build')!.detail).toBe('Up next')
+})
+
 test('edges mark the taken retry loop and the running hand-off', () => {
   const edges = Object.fromEntries(edgesFor(base).map(edge => [`${edge.source}>${edge.target}`, edge]))
   expect(edges['plan>build']!.state).toBe('done')
@@ -61,11 +70,15 @@ test('pills count running, done and waiting steps', () => {
   expect(pillsFor(base)).toEqual({ running: 1, done: 1, waiting: 1 })
 })
 
-test('pickRun keeps the selection, else prefers a live run, else the newest', () => {
-  const done = { ...base, id: 'done', status: 'done' }
-  const live = { ...base, id: 'live' }
+test('pickRun keeps a run the user picked, else follows the newest live run, else the newest', () => {
+  const done = { ...base, id: 'done', status: 'done', createdAt: 5 }
+  const blocked = { ...base, id: 'blocked', status: 'blocked', createdAt: 1 }
+  const live = { ...base, id: 'live', createdAt: 3 }
+  const newerLive = { ...base, id: 'newer', status: 'awaiting-approval', createdAt: 4 }
   expect(pickRun([done, live], 'done')!.id).toBe('done')
   expect(pickRun([done, live], 'gone')!.id).toBe('live')
-  expect(pickRun([done], null)!.id).toBe('done')
+  expect(pickRun([blocked, live], null)!.id).toBe('live')
+  expect(pickRun([live, newerLive], null)!.id).toBe('newer')
+  expect(pickRun([blocked, done], null)!.id).toBe('done')
   expect(pickRun([], null)).toBeNull()
 })
