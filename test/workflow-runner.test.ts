@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createJobManager, type JobManager } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
 import { createWorkflowStore, defaultWorkflow, draftRevision, type Workflow } from '../server/workflows'
-import { changeSize, createWorkflowRunner, RunActionError, type ResolvedAgent, type WorkflowRun, type WorkflowRunner } from '../server/workflow-runner'
+import { changeSize, covers, createWorkflowRunner, lineage, RunActionError, type ResolvedAgent, type WorkflowRun, type WorkflowRunner } from '../server/workflow-runner'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 import type { TerminalRecord } from '../server/terminals'
 
@@ -725,4 +725,62 @@ test('a dispatch error after an approved change blocks the run and the approval 
     expect(approved.status).toBe('blocked')
     expect(approved.error).toBe('job creation exploded')
   } finally { manager.createJob = createJob }
+})
+
+test('a run without forks moves one main token and every attempt records where it came from', async () => {
+  build()
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(done.tokens).toHaveLength(1)
+  expect(done.tokens[0]).toMatchObject({ pathId: 'main', workspace: repo })
+  for (const attempt of done.attempts) {
+    expect(attempt.pathId).toBe('main')
+    expect(attempt.tokenId).toBe(done.tokens[0]!.id)
+    if (attempt.number > 0) expect(attempt.from).toEqual([attempt.number - 1])
+  }
+  expect(done.sections).toEqual([])
+  expect(done.keptBranches).toEqual([])
+})
+
+test('a run file from before tokens loads as one main token and a blocked copy retries to done', async () => {
+  const store = build()
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  const done = await finished(started.id)
+  await settledStatuses()
+  const file = join(dir, 'workflow-runs', `${done.id}.json`)
+  const record = JSON.parse(await Bun.file(file).text()) as Record<string, unknown> & { attempts: Record<string, unknown>[] }
+  delete record.tokens; delete record.sections; delete record.keptBranches
+  for (const attempt of record.attempts) { delete attempt.tokenId; delete attempt.pathId; delete attempt.from }
+  Object.assign(record, { status: 'blocked', error: 'Old blocked run' })
+  await Bun.write(file, JSON.stringify(record))
+  runner = createWorkflowRunner({ manager, resolver, store, base: dir, requireApproval: async () => false })
+  const loaded = runner.get(done.id)!
+  expect(loaded.tokens).toEqual([expect.objectContaining({ pathId: 'main', nodeId: loaded.currentNodeId, state: 'ready', workspace: repo })])
+  expect(loaded.sections).toEqual([])
+  expect(loaded.keptBranches).toEqual([])
+  expect(loaded.attempts.map(attempt => [attempt.pathId, attempt.tokenId, attempt.from])).toEqual(loaded.attempts.map(attempt => ['main', loaded.tokens[0]!.id, attempt.number ? [attempt.number - 1] : []]))
+  await runner.retry(done.id)
+  expect((await finished(done.id)).status).toBe('done')
+})
+
+test('lineage relates a path to its ancestors and descendants, and covers only looks downward', () => {
+  expect(lineage('main', 'a3-1.a7-2')).toBe(true)
+  expect(lineage('a3-1', 'a3-1.a7-2')).toBe(true)
+  expect(lineage('a3-1', 'a3-2')).toBe(false)
+  expect(covers('main', 'a3-1')).toBe(true)
+  expect(covers('a3-1', 'a3-1.a7-1')).toBe(true)
+  expect(covers('a3-2', 'a3-1')).toBe(false)
+  expect(covers('a3-1.a7-1', 'a3-1')).toBe(false)
+})
+
+test('stop answers at once while an acceptance check is still running', async () => {
+  const store = build()
+  await store.save({ ...defaultWorkflow(), id: 'sleepy-check', entry: 'test', nodes: [{ id: 'test', title: 'Check', instructions: 'Check', checks: [{ command: '/bin/sh', args: ['-c', 'trap "" TERM; sleep 2'], timeoutSeconds: 30 }] }], edges: [] })
+  const run = await runner.start({ workflowId: 'sleepy-check', cwd: repo, request: 'Inspect', label: 'stop-fast' })
+  await until(run.id, current => !!current.attempts[0]?.checkPid)
+  const began = performance.now()
+  const stopped = await runner.stop(run.id)
+  expect(performance.now() - began).toBeLessThan(1000)
+  expect(stopped.status).toBe('stopped')
 })
