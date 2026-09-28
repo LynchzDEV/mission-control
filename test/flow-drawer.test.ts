@@ -58,6 +58,7 @@ test('a flow waiting for approval asks, names the AI and greys every step', () =
 test('meta says how the flow was approved', () => {
   expect(metaFor({ ...base, versions: [{ ...base.versions[0]!, approvedVia: 'conversation', relayedBy: 'codex' }] })).toContain('approved in the conversation (relayed by Codex)')
   expect(metaFor({ ...base, versions: [{ ...base.versions[0]!, approvedVia: 'auto' }] })).toContain('started on its own (approval is off)')
+  expect(metaFor({ ...base, status: 'stopped', versions: [{ ...base.versions[0]!, state: 'rejected', approvedVia: null }] })).toMatch(/^Saved workflow Feature build · picked by Codex in terminal · rejected, \d{1,2}:\d{2}\s?(AM|PM)$/)
   expect(metaFor({ ...base, origin: { ...base.origin, where: 'studio' }, versions: [{ ...base.versions[0]!, approvedVia: 'user' }] })).toBe('Saved workflow Feature build · started from Studio · started by you')
 })
 

@@ -106,8 +106,9 @@ function clock(at: number): string {
 
 function approvalPhrase(run: RunView): string {
   if (run.versions.some(version => version.state === 'pending')) return 'waiting for your approval'
-  const version = run.versions.filter(item => item.approvedVia !== null).at(-1)
+  const version = run.versions.filter(item => item.approvedVia !== null || item.state === 'rejected').at(-1)
   if (!version) return ''
+  if (version.state === 'rejected') return `rejected, ${clock(version.at)}`
   if (version.approvedVia === 'user') return 'started by you'
   if (version.approvedVia === 'drawer') return `approved by you in the drawer, ${clock(version.at)}`
   if (version.approvedVia === 'conversation') return `approved in the conversation (relayed by ${providerName(version.relayedBy ?? run.origin.by)}), ${clock(version.at)}`
