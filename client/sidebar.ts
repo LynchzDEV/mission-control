@@ -2,19 +2,25 @@ import { getJson, readArray } from './shared'
 import { chatSignal, historyDay, historyOpen, type HistoryItem } from './chat-view'
 import { renameValue, sessionSlot, type Session } from './terminal-state'
 
-type Day = 'Today' | 'Yesterday' | 'Earlier'
+type Day = 'Today' | 'Yesterday'
 type Row = { item: HistoryItem; state: 'running' | 'live' | 'landed' | 'needs' | null; note: string }
 
 const POLL_MS = 5000
-const DAYS: Day[] = ['Today', 'Yesterday', 'Earlier']
+const DAYS: Day[] = ['Today', 'Yesterday']
 const CHAT_ICON = '<svg viewBox="0 0 20 20"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3h0A1.5 1.5 0 0 1 4 11.5z"/></svg>'
 const TERMINAL_ICON = '<svg><use href="#terminal-icon"/></svg>'
 const SHORTCUT_SLOTS = 9
 const keyOf = (item: HistoryItem): string => `${item.kind}:${item.id}`
 const isLiveTerminal = (item: HistoryItem): boolean => item.kind === 'terminal' && item.live
 
+const isActive = (item: HistoryItem): boolean => isLiveTerminal(item) || (item.kind === 'chat' && item.running)
+
 export function sidebarGroups(items: HistoryItem[], now: number): { day: Day; items: HistoryItem[] }[] {
-  const dayOf = (item: HistoryItem): Day => { const day = historyDay(item.updatedAt, now); return day === 'Today' || day === 'Yesterday' ? day : 'Earlier' }
+  const dayOf = (item: HistoryItem): Day | null => {
+    const day = historyDay(item.updatedAt, now)
+    if (day === 'Today' || day === 'Yesterday') return day
+    return isActive(item) ? 'Today' : null
+  }
   return DAYS.map(day => ({ day, items: items.filter(item => dayOf(item) === day) })).filter(group => group.items.length > 0)
 }
 
@@ -22,7 +28,8 @@ export function withLiveTerminals(items: HistoryItem[], sessions: Session[] | nu
   if (!sessions) return items
   const known = new Map(items.flatMap(item => item.kind === 'terminal' ? [[item.id, item] as const] : []))
   const live = sessions.map((session): HistoryItem => ({ kind: 'terminal', id: session.id, title: session.title, updatedAt: known.get(session.id)?.updatedAt ?? now, cwd: session.cwd, engine: session.engine, sessionId: known.get(session.id)?.sessionId ?? null, live: true }))
-  return [...items.filter(item => !isLiveTerminal(item)), ...live].sort((a, b) => b.updatedAt - a.updatedAt)
+  const liveIds = new Set(sessions.map(session => session.id))
+  return [...items.filter(item => !isLiveTerminal(item) && !(item.kind === 'terminal' && liveIds.has(item.id))), ...live].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 export function numberedKeys(items: readonly HistoryItem[]): string[] {

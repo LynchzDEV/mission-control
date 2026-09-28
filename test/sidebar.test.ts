@@ -9,9 +9,15 @@ const terminal = (id: string, updatedAt: number, live = true): HistoryItem => ({
 const session = (id: string, updatedAt: number): HistoryItem => ({ kind: 'claude-history', id, title: id, updatedAt, cwd: '/Users/x', bytes: 10 })
 
 describe('sidebarGroups', () => {
-  test('items updated today, yesterday and 5 days ago land in Today, Yesterday and Earlier', () => {
-    const groups = sidebarGroups([chat('today', now - 60_000), terminal('yesterday', now - DAY), chat('older', now - 5 * DAY)], now)
-    expect(groups.map(group => [group.day, group.items.map(item => item.id)])).toEqual([['Today', ['today']], ['Yesterday', ['yesterday']], ['Earlier', ['older']]])
+  test('only today and yesterday are shown; older items stay in All history', () => {
+    const groups = sidebarGroups([chat('today', now - 60_000), terminal('yesterday', now - DAY, false), chat('older', now - 5 * DAY), session('old-session', now - 3 * DAY)], now)
+    expect(groups.map(group => [group.day, group.items.map(item => item.id)])).toEqual([['Today', ['today']], ['Yesterday', ['yesterday']]])
+  })
+
+  test('a live terminal or running chat stays in Today however old it is', () => {
+    const running: HistoryItem = { ...chat('busy', now - 6 * DAY), kind: 'chat', running: true } as HistoryItem
+    const groups = sidebarGroups([chat('today', now), terminal('long-lived', now - 4 * DAY), running], now)
+    expect(groups).toEqual([{ day: 'Today', items: [chat('today', now), terminal('long-lived', now - 4 * DAY), running] }])
   })
 
   test('chats, live and ended terminals and the Claude Code sessions a person started are all listed', () => {
@@ -20,7 +26,8 @@ describe('sidebarGroups', () => {
   })
 
   test('empty groups are omitted', () => {
-    expect(sidebarGroups([chat('older', now - 5 * DAY)], now).map(group => group.day)).toEqual(['Earlier'])
+    expect(sidebarGroups([chat('y', now - DAY)], now).map(group => group.day)).toEqual(['Yesterday'])
+    expect(sidebarGroups([chat('older', now - 5 * DAY)], now)).toEqual([])
     expect(sidebarGroups([], now)).toEqual([])
   })
 })
@@ -41,6 +48,11 @@ describe('withLiveTerminals', () => {
   test('live sessions keep their history time and take the renamed title', () => {
     const merged = withLiveTerminals([terminal('t1', now - DAY)], [live('t1', 'Renamed')], now)
     expect(merged).toEqual([{ kind: 'terminal', id: 't1', title: 'Renamed', updatedAt: now - DAY, cwd: '/work', engine: 'codex', sessionId: null, live: true }])
+  })
+
+  test('a live terminal never shows twice, even when the history row lacks the live marker', () => {
+    const stale = { kind: 'terminal', id: 't1', title: 't1', updatedAt: now, cwd: '/tmp', engine: 'claude', sessionId: null } as unknown as HistoryItem
+    expect(withLiveTerminals([stale, chat('c1', now - 1)], [live('t1')], now).map(item => `${item.kind}:${item.id}`)).toEqual(['terminal:t1', 'chat:c1'])
   })
 
   test('a terminal that ended drops out even while history still lists it as live; ended ones and sessions stay', () => {
