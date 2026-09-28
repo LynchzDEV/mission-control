@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createJobManager, type JobManager } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
 import { createWorkflowStore, defaultWorkflow } from '../server/workflows'
-import { createWorkflowRunner, type WorkflowRun, type WorkflowRunner } from '../server/workflow-runner'
+import { createWorkflowRunner, RunActionError, type WorkflowRun, type WorkflowRunner } from '../server/workflow-runner'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 import type { TerminalRecord } from '../server/terminals'
 
@@ -31,17 +31,21 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
   await rm(repo, { recursive: true, force: true })
 })
-function build(agent: EngineResolver = resolver) {
+function build(agent: EngineResolver = resolver, approval = false) {
   const store = createWorkflowStore(dir)
   const settled: WorkflowRun[] = []
   settledRuns = settled
   manager = createJobManager({ onJobSettled: job => { void runner.onJobSettled(job) } })
-  runner = createWorkflowRunner({ manager, resolver: agent, store, base: dir, onRunSettled: run => { settled.push(run) } })
+  runner = createWorkflowRunner({ manager, resolver: agent, store, base: dir, requireApproval: async () => approval, onRunSettled: run => { settled.push(run) } })
   return store
 }
 async function finished(id: string) {
-  for (let i = 0; i < 200; i++) { const run = runner.get(id)!; if (run.status !== 'running') return run; await Bun.sleep(20) }
+  for (let i = 0; i < 200; i++) { const run = runner.get(id)!; if (!['running', 'paused', 'awaiting-approval'].includes(run.status)) return run; await Bun.sleep(20) }
   throw new Error('Run did not settle')
+}
+async function until(id: string, predicate: (run: WorkflowRun) => boolean) {
+  for (let i = 0; i < 200; i++) { const run = runner.get(id)!; if (predicate(run)) return run; await Bun.sleep(20) }
+  throw new Error('Run never reached the expected state')
 }
 
 test('default workflow executes four nodes with pinned policy and no mandatory commits', async () => {
@@ -54,23 +58,24 @@ test('default workflow executes four nodes with pinned policy and no mandatory c
   expect(manager.listJobs().every(job => job.workflowRunId === done.id)).toBe(true)
 })
 
-test('terminal runs use their pinned workflow and reject conflicting or unknown terminal selections', async () => {
+test('terminal runs default to their pinned workflow, let a named workflow override it, and reject unknown terminals', async () => {
   const store = build()
   const first = await store.save({ ...defaultWorkflow(), id: 'terminal-workflow', name: 'Original terminal workflow' })
   const terminal: TerminalRecord = { id: 'terminal-a', engine: 'claude', cwd: repo, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, workflow: { id: first.id, name: first.name, revision: first.revision, selectedDefault: true } }
-  runner = createWorkflowRunner({ manager, resolver, store, base: dir, terminals: { get: id => id === terminal.id ? terminal : undefined } })
+  runner = createWorkflowRunner({ manager, resolver, store, base: dir, terminals: { get: id => id === terminal.id ? terminal : undefined }, requireApproval: async () => false })
   const next = await store.save({ ...first, name: 'Changed after terminal opened' }, first.revision)
   await store.setDefault(next.id, next.revision)
   const input = { terminalId: terminal.id, cwd: repo, request: 'Inspect this project', label: 'terminal task' }
   await expect(runner.start({ ...input, terminalId: 'unknown' })).rejects.toThrow('Terminal not found')
-  await expect(runner.start({ ...input, revision: next.revision })).rejects.toThrow('pinned workflow')
-  await expect(runner.start({ ...input, workflowId: 'default' })).rejects.toThrow('pinned workflow')
   expect(manager.listJobs()).toHaveLength(0)
   const started = await runner.start(input)
   expect(started.workflow.revision).toBe(first.revision)
   expect(started.terminalId).toBe(terminal.id)
   expect((await finished(started.id)).status).toBe('done')
   expect(manager.listJobs().every(job => job.terminalId === terminal.id)).toBe(true)
+  const named = await runner.start({ ...input, workflowId: 'default' })
+  expect(named.workflow.id).toBe('default')
+  await finished(named.id)
 })
 
 test('free-form E2E nodes require real checks; a failing check overrides AI pass', async () => {
@@ -275,4 +280,136 @@ test('stopping a chat run settles it once, and a report mark survives a restart'
   expect(await settledStatuses()).toEqual(['stopped'])
   await runner.markReported(run.id, 1234)
   expect(createWorkflowRunner({ manager, resolver, store, base: dir }).get(run.id)?.reportedAt).toBe(1234)
+})
+
+test('a run started by a session AI waits for approval and dispatches nothing', async () => {
+  build(resolver, true)
+  const started = await runner.start({ cwd: repo, request: 'Implement the fixture', label: 'fixture' })
+  expect(started.status).toBe('awaiting-approval')
+  expect(started.versions).toEqual([expect.objectContaining({ number: 1, state: 'pending', approvedVia: null, size: 'initial' })])
+  expect(started.origin).toEqual({ source: 'saved', by: 'you', where: 'studio' })
+  await Bun.sleep(100)
+  expect(manager.listJobs()).toHaveLength(0)
+})
+
+test('approving from the drawer records the source and runs the flow', async () => {
+  build(resolver, true)
+  const started = await runner.start({ cwd: repo, request: 'Implement the fixture', label: 'fixture' })
+  const approved = await runner.approve(started.id, { via: 'drawer' })
+  expect(approved.versions[0]).toEqual(expect.objectContaining({ state: 'approved', approvedVia: 'drawer', relayedBy: null }))
+  expect((await finished(started.id)).status).toBe('done')
+})
+
+test('a second approval of the same version is a conflict and dispatches once', async () => {
+  build(resolver, true)
+  const started = await runner.start({ cwd: repo, request: 'Implement the fixture', label: 'fixture' })
+  const results = await Promise.allSettled([runner.approve(started.id, { via: 'drawer' }), runner.approve(started.id, { via: 'drawer' })])
+  expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+  const rejected = results.find(result => result.status === 'rejected') as PromiseRejectedResult
+  expect((rejected.reason as RunActionError).status).toBe(409)
+  const done = await finished(started.id)
+  expect(done.attempts.filter(attempt => attempt.nodeId === 'plan')).toHaveLength(1)
+})
+
+test('a relayed approval must come from the session that owns the run', async () => {
+  const store = build(resolver, true)
+  const first = await store.save({ ...defaultWorkflow(), id: 'terminal-workflow', name: 'Terminal workflow' })
+  const terminal: TerminalRecord = { id: 'terminal-a', engine: 'codex', cwd: repo, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, workflow: { id: first.id, name: first.name, revision: first.revision, selectedDefault: true } }
+  runner = createWorkflowRunner({ manager, resolver, store, base: dir, terminals: { get: id => id === terminal.id ? terminal : undefined }, requireApproval: async () => true })
+  const started = await runner.start({ terminalId: 'terminal-a', cwd: repo, request: 'Implement', label: 'fixture' })
+  expect(started.origin).toEqual({ source: 'saved', by: 'codex', where: 'terminal' })
+  await expect(runner.approve(started.id, { via: 'conversation', terminalId: 'terminal-b' })).rejects.toMatchObject({ status: 403 })
+  const approved = await runner.approve(started.id, { via: 'conversation', terminalId: 'terminal-a' })
+  expect(approved.versions[0]).toEqual(expect.objectContaining({ approvedVia: 'conversation', relayedBy: 'codex' }))
+})
+
+test('rejecting the first version stops the run and frees the workspace', async () => {
+  build(resolver, true)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  const rejected = await runner.reject(started.id, { via: 'drawer' })
+  expect(rejected.status).toBe('stopped')
+  expect(rejected.versions[0]!.state).toBe('rejected')
+  const next = await runner.start({ cwd: repo, request: 'Again', label: 'second' })
+  expect(next.status).toBe('awaiting-approval')
+})
+
+test('runs the user starts from the browser, or with approval off, start at once', async () => {
+  build(resolver, true)
+  const byUser = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' }, { startedByUser: true })
+  expect(byUser.versions[0]).toEqual(expect.objectContaining({ state: 'approved', approvedVia: 'user' }))
+  await finished(byUser.id)
+  await settledStatuses()
+  build(resolver, false)
+  const auto = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  expect(auto.versions[0]).toEqual(expect.objectContaining({ state: 'approved', approvedVia: 'auto' }))
+  await finished(auto.id)
+})
+
+test('a paused run records the finished step but starts nothing new until resumed', async () => {
+  const slow: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `sleep 0.3; echo '${report()}'`], env: {} })
+  build(slow, false)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  const paused = await runner.pause(started.id)
+  expect(paused.status).toBe('paused')
+  const moved = await until(started.id, run => run.attempts[0]?.status === 'settled')
+  expect(moved.status).toBe('paused')
+  expect(moved.currentNodeId).toBe('verify-plan')
+  await Bun.sleep(200)
+  expect(runner.get(started.id)!.attempts).toHaveLength(1)
+  await runner.resume(started.id)
+  expect((await finished(started.id)).status).toBe('done')
+})
+
+test('after a restart a waiting or paused run keeps its status and its workspace', async () => {
+  const store = build(resolver, true)
+  const waiting = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  const reloaded = createWorkflowRunner({ manager, resolver, store, base: dir, requireApproval: async () => true })
+  await reloaded.recover()
+  expect(reloaded.get(waiting.id)!.status).toBe('awaiting-approval')
+  await expect(reloaded.start({ cwd: repo, request: 'Other', label: 'other' })).rejects.toThrow('Workspace already has running work')
+})
+
+test('a rejected first version cannot be retried into running', async () => {
+  build(resolver, true)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  await runner.reject(started.id, { via: 'drawer' })
+  await expect(runner.retry(started.id)).rejects.toMatchObject({ status: 409 })
+  expect(manager.listJobs()).toHaveLength(0)
+})
+
+test('pausing takes effect at once, even while a step is settling', async () => {
+  const slow: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `sleep 0.2; echo '${report()}'`], env: {} })
+  build(slow, false)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  const pausing = runner.pause(started.id)
+  expect(runner.get(started.id)!.status).toBe('paused')
+  await pausing
+  await until(started.id, run => run.attempts[0]?.status === 'settled')
+  await Bun.sleep(150)
+  expect(runner.get(started.id)!.attempts).toHaveLength(1)
+})
+
+test('a run paused between steps survives a restart still paused', async () => {
+  const store = build(resolver, false)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  await runner.pause(started.id)
+  await until(started.id, run => run.attempts.at(-1)?.status === 'settled')
+  const reloaded = createWorkflowRunner({ manager, resolver, store, base: dir, requireApproval: async () => false })
+  await reloaded.recover()
+  expect(reloaded.get(started.id)!.status).toBe('paused')
+  await reloaded.resume(started.id)
+})
+
+test('every persisted change is reported through onChange', async () => {
+  const store = createWorkflowStore(dir)
+  manager = createJobManager({ onJobSettled: job => { void runner.onJobSettled(job) } })
+  const seen: string[] = []
+  runner = createWorkflowRunner({ manager, resolver, store, base: dir, requireApproval: async () => true, onChange: run => { seen.push(run.status) } })
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  await runner.approve(started.id, { via: 'drawer' })
+  await finished(started.id)
+  for (let i = 0; i < 100 && seen.at(-1) !== 'done'; i++) await Bun.sleep(10)
+  expect(seen[0]).toBe('awaiting-approval')
+  expect(seen).toContain('running')
+  expect(seen.at(-1)).toBe('done')
 })

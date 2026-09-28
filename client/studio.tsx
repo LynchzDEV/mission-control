@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { ReactFlow, Background, BackgroundVariant, BaseEdge, Controls, Handle, Position, MarkerType, getBezierPath, useNodesState, useEdgesState, type Node, type NodeProps, type Edge, type EdgeProps, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { Workflow, WorkflowNode, WorkflowRevision, PolicyRevision, Outcome } from '../server/workflows'
-import type { WorkflowRun } from '../server/workflow-runner'
+import type { RunStatus, WorkflowRun } from '../server/workflow-runner'
 import type { DraftJob, WorkflowDraft } from '../server/workflow-builder'
 import { api } from './studio-api'
 import { Connections, StepAttachments, type ConnectionList } from './studio-settings'
@@ -13,6 +13,7 @@ import { agentLabel, insertWorkflowStep, kindIcon, nodeRunStates, roleWord, remo
 type TaskNode = Node<WorkflowNode & { agentLabel: string; branches: Outcome[]; runState?: NodeRunState; runSince?: number }, 'task'>
 type Screen = 'home' | 'templates' | 'editor' | 'connections' | 'runs' | 'rules'
 type Panel = 'assistant' | 'picker' | 'step' | 'history' | null
+const isLiveRun = (status: RunStatus | undefined) => status === 'running' || status === 'paused' || status === 'awaiting-approval'
 type RunSummary = Pick<WorkflowRun, 'id' | 'label' | 'status' | 'error' | 'currentNodeId' | 'createdAt'> & { workflowName: string; revision: string }
 const outcomes: Outcome[] = ['pass', 'fail', 'blocked']
 const outcomeLabels: Record<Outcome, string> = { pass: 'When it succeeds', fail: 'If it fails', blocked: 'If it needs help' }
@@ -105,7 +106,7 @@ function Studio() {
   const label = (node: Pick<WorkflowNode, 'agent'>) => agentLabel(node, providers)
   const runStates = useMemo(() => nodeRunStates(canvasRun), [canvasRun])
   const runSince = canvasRun?.attempts.findLast(attempt => attempt.nodeId === canvasRun.currentNodeId && attempt.status !== 'settled')?.startedAt
-  const shownNodes = useMemo(() => canvasRun?.status === 'running' ? nodes.map(node => ({ ...node, data: { ...node.data, runState: runStates[node.id] ?? 'waiting' as const, runSince } })) : nodes, [nodes, canvasRun, runStates, runSince])
+  const shownNodes = useMemo(() => isLiveRun(canvasRun?.status) ? nodes.map(node => ({ ...node, data: { ...node.data, runState: runStates[node.id] ?? 'waiting' as const, runSince } })) : nodes, [nodes, canvasRun, runStates, runSince])
   const shownEdges = useMemo(() => edges.map(edge => edge.sourceHandle === 'pass' && runStates[edge.source] === 'passed' ? { ...edge, className: `${edge.className} run-passed`, markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: '#6f9c7e' } } : edge), [edges, runStates])
   const toast = (text: string) => dispatchEvent(new CustomEvent('quiet:toast', { detail: text }))
 
@@ -136,7 +137,7 @@ function Studio() {
       if (pending) return
       pending = true
       try {
-        const live = (await api<{ runs: RunSummary[] }>('/runs')).runs.filter(item => item.revision === revision && item.status === 'running').sort((a, b) => b.createdAt - a.createdAt)[0]
+        const live = (await api<{ runs: RunSummary[] }>('/runs')).runs.filter(item => item.revision === revision && isLiveRun(item.status)).sort((a, b) => b.createdAt - a.createdAt)[0]
         const result = live ? await api<WorkflowRun>(`/runs/${live.id}`) : null
         if (stopped) return
         lastError = ''
@@ -148,7 +149,7 @@ function Studio() {
     }
     void poll(); const timer = setInterval(() => { if (!document.hidden && !document.getElementById('studio')?.hidden) void poll() }, 3000); return () => { stopped = true; clearInterval(timer) }
   }, [screen, graph?.revision])
-  useEffect(() => { if (!run || run.status !== 'running') return; let stopped = false; const poll = async () => { try { const result = await api<WorkflowRun>(`/runs/${run.id}`); if (!stopped) setRun(result) } catch (error) { if (!stopped) setError((error as Error).message) } }; const timer = setInterval(() => { if (!document.hidden && !document.getElementById('studio')?.hidden) void poll() }, 1500); return () => { stopped = true; clearInterval(timer) } }, [run?.id, run?.status])
+  useEffect(() => { if (!run || !isLiveRun(run.status)) return; let stopped = false; const poll = async () => { try { const result = await api<WorkflowRun>(`/runs/${run.id}`); if (!stopped) setRun(result) } catch (error) { if (!stopped) setError((error as Error).message) } }; const timer = setInterval(() => { if (!document.hidden && !document.getElementById('studio')?.hidden) void poll() }, 1500); return () => { stopped = true; clearInterval(timer) } }, [run?.id, run?.status])
   useEffect(() => {
     if (!building || !draftJob) return
     let stopped = false, pending = false
@@ -255,7 +256,7 @@ function Studio() {
       <div className="history-list">{runs.map(item => <details key={item.id} className="history-item" open={run?.id === item.id} onToggle={event => { if (event.currentTarget.open && run?.id !== item.id) void action(async () => setRun(await api<WorkflowRun>(`/runs/${item.id}`))) }}>
         <summary><span>{item.label}</span><span className="status" data-state={item.status}>{item.status}</span></summary>
         {run?.id === item.id ? <div className="run-detail">
-          <div className="run-actions"><span className="muted">{run.workflow.name} · {dateLabel(run.createdAt)}</span>{run.status === 'running' ? <button type="button" className="text-button danger" disabled={busy} onClick={() => void action(async () => setRun(await api<WorkflowRun>(`/runs/${run.id}/stop`, {})))}>Stop run</button> : run.status !== 'done' && <button type="button" className="text-button" disabled={busy} onClick={() => void action(async () => setRun(await api<WorkflowRun>(`/runs/${run.id}/retry`, {})))}>Retry current step</button>}</div>
+          <div className="run-actions"><span className="muted">{run.workflow.name} · {dateLabel(run.createdAt)}</span>{isLiveRun(run.status) ? <button type="button" className="text-button danger" disabled={busy} onClick={() => void action(async () => setRun(await api<WorkflowRun>(`/runs/${run.id}/stop`, {})))}>Stop run</button> : ['failed', 'blocked', 'stopped'].includes(run.status) && <button type="button" className="text-button" disabled={busy} onClick={() => void action(async () => setRun(await api<WorkflowRun>(`/runs/${run.id}/retry`, {})))}>Retry current step</button>}</div>
           <p>{run.request}</p><p className="muted"><code>{run.cwd}</code></p>
           {run.error && <p role="alert" className="chat-error">{run.error}</p>}
           <ol className="attempts">{run.attempts.map(attempt => <li key={`${attempt.nodeId}-${attempt.number}`}>

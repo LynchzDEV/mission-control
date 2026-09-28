@@ -59,6 +59,11 @@ test('nodeRunStates marks settled passes and the current step as running',()=>{
   expect(nodeRunStates(run)).toEqual({plan:'passed','verify-plan':'passed',execute:'running'})
 })
 
+test('nodeRunStates keeps the highlights of a paused run',()=>{
+  const run={status:'paused',currentNodeId:'execute',attempts:[settled('plan','pass',1),{nodeId:'execute',status:'running',result:null,startedAt:2}]}
+  expect(nodeRunStates(run)).toEqual({plan:'passed',execute:'running'})
+})
+
 test('nodeRunStates marks a settled fail or blocked step as failed',()=>{
   expect(nodeRunStates({status:'running',currentNodeId:'execute',attempts:[settled('review','fail',1)]}).review).toBe('failed')
   expect(nodeRunStates({status:'running',currentNodeId:'execute',attempts:[settled('review','blocked',1)]}).review).toBe('failed')

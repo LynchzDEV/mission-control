@@ -3,7 +3,7 @@ import type { ChatQueue, ChatQueueItem } from './chat-queue'
 import type { JobManager, JobRecord } from './jobs'
 import type { EngineResolver } from './jobs-engine-iface'
 import { replySessionId, threadChain, threadIsRunning, threadRootOf } from './threads'
-import type { WorkflowRun } from './workflow-runner'
+import { LIVE_STATUSES, type WorkflowRun } from './workflow-runner'
 
 const REPORT_TEXT_MAX = 1200
 const MEMORY_TEXT_MAX = 160
@@ -73,7 +73,7 @@ export function workflowReport(run: WorkflowRun): AgentReport {
 }
 
 export function runNeedsReport(run: WorkflowRun): boolean {
-  return Boolean(run.chatId) && run.status !== 'running' && run.reportedAt === null
+  return Boolean(run.chatId) && !LIVE_STATUSES.has(run.status) && run.reportedAt === null
 }
 
 function relativeDay(at: number, now: number): string {

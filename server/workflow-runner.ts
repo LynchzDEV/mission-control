@@ -29,12 +29,20 @@ export type WorkflowAttempt = {
   prompt: string; startedAt: number; endedAt: number | null; result: NodeResult | null; checks: CheckResult[];
   output: string; checkPid?: number; workspace: { head: string; diffHash: string } | null;
 }
+export type RunStatus = 'awaiting-approval' | 'running' | 'paused' | 'done' | 'failed' | 'blocked' | 'stopped'
+export type ApprovalVia = 'user' | 'drawer' | 'conversation' | 'auto'
+export type RunVersion = { number: number; revision: string; reason: string; size: 'initial' | 'small' | 'big'; state: 'pending' | 'approved' | 'rejected'; approvedVia: ApprovalVia | null; relayedBy: string | null; at: number }
+export type RunOrigin = { source: 'saved' | 'drafted'; by: string; where: 'chat' | 'terminal' | 'studio' }
+export type ApprovalContext = { via: 'drawer' | 'conversation'; chat?: string; terminalId?: string }
+export class RunActionError extends Error { constructor(message: string, readonly status: 403 | 404 | 409) { super(message) } }
+export const LIVE_STATUSES: ReadonlySet<RunStatus> = new Set<RunStatus>(['awaiting-approval', 'running', 'paused'])
+type SettledStatus = Exclude<RunStatus, 'awaiting-approval' | 'running' | 'paused'>
 export type WorkflowRun = {
   terminalId?: string
   chatId?: string; chatTurn?: string; reportedAt?: number | null
   id: string; label: string; cwd: string; request: string; workflow: WorkflowRevision; policy: PolicyRevision;
   agents: Record<string, ResolvedAgent>; skills: Record<string, Array<{ path: string; content: string }>>;
-  status: 'running' | 'done' | 'failed' | 'blocked' | 'stopped'; error: string | null;
+  status: RunStatus; error: string | null; origin: RunOrigin; versions: RunVersion[];
   currentNodeId: string; attempts: WorkflowAttempt[]; createdAt: number; updatedAt: number;
 }
 
@@ -73,12 +81,15 @@ async function workspaceSnapshot(cwd: string): Promise<{ head: string; diffHash:
   return { head, diffHash: hash.digest('hex') }
 }
 
-export function createWorkflowRunner(deps: { manager: JobManager; resolver: EngineResolver; store: WorkflowStore; base?: string; terminals?: Pick<TerminalRegistry, 'get'>; onRunSettled?: (run: WorkflowRun) => void }) {
+export function createWorkflowRunner(deps: { manager: JobManager; resolver: EngineResolver; store: WorkflowStore; base?: string; terminals?: Pick<TerminalRegistry, 'get'>; onRunSettled?: (run: WorkflowRun) => void; requireApproval?: () => Promise<boolean>; onChange?: (run: WorkflowRun) => void }) {
   const root = join(deps.base ?? configDir(), 'workflow-runs')
+  const requireApproval = deps.requireApproval ?? (async () => (await readConfig()).flowApproval)
   const runs = new Map<string, WorkflowRun>()
   try {
     for (const file of readdirSync(root).filter(file => /^[a-zA-Z0-9-]+\.json$/.test(file))) {
       const record = JSON.parse(readFileSync(join(root, file), 'utf8')) as WorkflowRun
+      record.origin ??= { source: 'saved', by: 'you', where: record.terminalId ? 'terminal' : record.chatId ? 'chat' : 'studio' }
+      record.versions ??= [{ number: 1, revision: record.workflow.revision, reason: 'Initial flow', size: 'initial', state: 'approved', approvedVia: 'user', relayedBy: null, at: record.createdAt }]
       runs.set(record.id, record)
     }
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
@@ -96,23 +107,24 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     await mkdir(root, { recursive: true, mode: 0o700 })
     await atomicJson(join(root, `${run.id}.json`), run)
     runs.set(run.id, run)
-    if (run.status !== 'running' && !processAlive(run.attempts.at(-1)?.checkPid) && !deps.manager.listJobs().some(job => job.workflowRunId === run.id && job.status === 'running')) deps.manager.releaseWorkspace(run.cwd, run.id)
+    deps.onChange?.(structuredClone(run))
+    if (!LIVE_STATUSES.has(run.status) && !processAlive(run.attempts.at(-1)?.checkPid) && !deps.manager.listJobs().some(job => job.workflowRunId === run.id && job.status === 'running')) deps.manager.releaseWorkspace(run.cwd, run.id)
   }
   function processAlive(pid?: number): boolean {
     if (!pid) return false
     try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' }
   }
-  async function finish(run: WorkflowRun, status: Exclude<WorkflowRun['status'], 'running'>, error: string | null): Promise<void> {
-    const wasRunning = run.status === 'running'
+  async function finish(run: WorkflowRun, status: SettledStatus, error: string | null): Promise<void> {
+    const wasLive = LIVE_STATUSES.has(run.status)
     run.status = status; run.error = error
     await persist(run)
-    if (wasRunning) deps.onRunSettled?.(structuredClone(run))
+    if (wasLive) deps.onRunSettled?.(structuredClone(run))
   }
   async function block(run: WorkflowRun, error: string): Promise<void> {
     await finish(run, 'blocked', error)
   }
   function workspaceBusy(cwd: string, except?: string): boolean {
-    return [...runs.values()].some(run => run.id !== except && run.cwd === cwd && run.status === 'running') || deps.manager.listJobs().some(job => job.cwd === cwd && job.status === 'running' && job.purpose !== 'chat' && job.workflowRunId !== except)
+    return [...runs.values()].some(run => run.id !== except && run.cwd === cwd && LIVE_STATUSES.has(run.status)) || deps.manager.listJobs().some(job => job.cwd === cwd && job.status === 'running' && job.purpose !== 'chat' && job.workflowRunId !== except)
   }
   async function agentsFor(workflow: WorkflowRevision, chatDefault?: ChatDefault): Promise<Record<string, ResolvedAgent>> {
     const roles = (await readConfig()).roles
@@ -193,7 +205,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     if (!turn || threadRootOf(turn) !== root.id) throw new Error('Chat turn not found in this chat')
     return input.engine ? { engine: input.engine, model: input.model ?? null } : { engine: root.engine, model: root.model }
   }
-  async function start(value: unknown): Promise<WorkflowRun> {
+  async function start(value: unknown, context: { startedByUser: boolean } = { startedByUser: false }): Promise<WorkflowRun> {
     const action = starts.then(async () => {
       const input = startSchema.parse(value)
       const chatDefault = chatDefaultFor(input)
@@ -204,17 +216,20 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       if (terminal && terminal.cwd !== cwd.path) throw new Error('Use this terminal’s project directory')
       const selection = terminal?.workflow
       if (terminal && !selection) throw new Error('This terminal has no pinned workflow; open a new terminal')
-      if (selection && ((input.workflowId && input.workflowId !== selection.id) || (input.revision && input.revision !== selection.revision))) throw new Error('This terminal uses a pinned workflow; open a new terminal to select a different workflow or version')
       if (workspaceBusy(cwd.path)) throw new Error('Workspace already has running work')
-      const workflow = selection ? await deps.store.get(selection.id, selection.revision) : input.workflowId ? await deps.store.get(input.workflowId, input.revision) : await deps.store.selected()
+      const workflow = input.workflowId ? await deps.store.get(input.workflowId, input.revision) : selection ? await deps.store.get(selection.id, selection.revision) : await deps.store.selected()
       const agents = await agentsFor(workflow, chatDefault)
       const policy = await deps.store.policy()
       const skills = Object.fromEntries(await Promise.all(workflow.nodes.map(async node => [node.id, await snapshotSkills(node, cwd.path)])))
       const chat = input.chat ? { chatId: input.chat, ...(input.chatTurn ? { chatTurn: input.chatTurn } : {}), reportedAt: null } : {}
-      const run: WorkflowRun = { id: crypto.randomUUID(), ...(input.terminalId ? { terminalId: input.terminalId } : {}), ...chat, label: input.label, cwd: cwd.path, request: input.request, workflow, policy, agents, skills, status: 'running', error: null, currentNodeId: workflow.entry, attempts: [], createdAt: Date.now(), updatedAt: Date.now() }
+      const by = terminal?.engine ?? (input.chat ? deps.manager.getJob(input.chat)?.engine : undefined) ?? 'you'
+      const where = terminal ? 'terminal' : input.chat ? 'chat' : 'studio'
+      const waits = !context.startedByUser && await requireApproval()
+      const version: RunVersion = { number: 1, revision: workflow.revision, reason: 'Initial flow', size: 'initial', state: waits ? 'pending' : 'approved', approvedVia: waits ? null : context.startedByUser ? 'user' : 'auto', relayedBy: null, at: Date.now() }
+      const run: WorkflowRun = { id: crypto.randomUUID(), ...(input.terminalId ? { terminalId: input.terminalId } : {}), ...chat, label: input.label, cwd: cwd.path, request: input.request, workflow, policy, agents, skills, status: waits ? 'awaiting-approval' : 'running', error: null, origin: { source: 'saved', by, where }, versions: [version], currentNodeId: workflow.entry, attempts: [], createdAt: Date.now(), updatedAt: Date.now() }
       if (!deps.manager.claimWorkspace(run.cwd, run.id)) throw new Error('Workspace already has running work')
       await persist(run)
-      await exclusive(run.id, () => dispatch(run))
+      if (!waits) await exclusive(run.id, () => dispatch(run))
       return structuredClone(run)
     })
     starts = action.catch(() => {})
@@ -247,7 +262,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     } finally { clearTimeout(timer); checks.delete(run.id); delete attempt.checkPid }
   }
   async function settle(run: WorkflowRun, record: JobRecord): Promise<void> {
-    if (run.status !== 'running' || stopping.has(run.id)) return
+    if ((run.status !== 'running' && run.status !== 'paused') || stopping.has(run.id)) return
     const attempt = run.attempts.at(-1)
     if (!attempt || attempt.jobId !== record.id || attempt.status === 'settled') return
     const node = run.workflow.nodes.find(node => node.id === attempt.nodeId)!
@@ -276,7 +291,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     if (edge) {
       run.currentNodeId = edge.target
       await persist(run)
-      await dispatch(run)
+      if (run.status === 'running') await dispatch(run)
     } else {
       await finish(run, result.outcome === 'pass' ? 'done' : result.outcome === 'fail' ? 'failed' : 'blocked', result.outcome === 'pass' ? null : result.summary)
     }
@@ -286,14 +301,15 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const run = runs.get(record.workflowRunId)
     if (!run) return
     await exclusive(run.id, async () => {
-      try { if (run.status !== 'running') await persist(run); else await settle(run, record) }
+      try { if (run.status !== 'running' && run.status !== 'paused') await persist(run); else await settle(run, record) }
       catch (error) { await block(run, error instanceof Error ? error.message : 'Workflow settlement failed') }
     })
   }
   async function stop(id: string): Promise<WorkflowRun> {
     const run = runs.get(id)
     if (!run) throw new Error('Run not found')
-    if (run.status !== 'running') throw new Error('Run is not running')
+    if (!LIVE_STATUSES.has(run.status)) throw new Error('Run is not running')
+    if (run.status === 'awaiting-approval') for (const version of run.versions.filter(version => version.state === 'pending')) Object.assign(version, { state: 'rejected', at: Date.now() })
     stopping.add(id)
     checks.get(id)?.()
     const jobId = run.attempts.at(-1)?.jobId
@@ -309,7 +325,8 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     return exclusive(id, async () => {
       const run = runs.get(id)
       if (!run) throw new Error('Run not found')
-      if (run.status === 'running' || run.status === 'done') throw new Error('Only failed, blocked or stopped runs can be retried')
+      if (LIVE_STATUSES.has(run.status) || run.status === 'done') throw new Error('Only failed, blocked or stopped runs can be retried')
+      if (run.versions[0]?.state !== 'approved') throw new RunActionError('Approve the flow before retrying', 409)
       if (workspaceBusy(run.cwd, id) || deps.manager.listJobs().some(job => job.workflowRunId === id && job.status === 'running')) throw new Error('Workspace still has running work')
       const previous = run.attempts.at(-1)
       if (processAlive(previous?.checkPid)) throw new Error('The interrupted acceptance process may still be running; inspect it before retrying')
@@ -324,7 +341,9 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   }
   async function recover(): Promise<void> {
     for (const run of runs.values()) {
-      if (run.status !== 'running') { if (processAlive(run.attempts.at(-1)?.checkPid)) deps.manager.claimWorkspace(run.cwd, run.id); continue }
+      const lastStatus = run.attempts.at(-1)?.status
+      if (run.status === 'awaiting-approval' || (run.status === 'paused' && lastStatus !== 'running' && lastStatus !== 'starting')) { if (!deps.manager.claimWorkspace(run.cwd, run.id)) await block(run, 'Another run owns this workspace'); continue }
+      if (run.status !== 'running' && run.status !== 'paused') { if (processAlive(run.attempts.at(-1)?.checkPid)) deps.manager.claimWorkspace(run.cwd, run.id); continue }
       if (!deps.manager.claimWorkspace(run.cwd, run.id)) { await block(run, 'Another run owns this workspace'); continue }
       const attempt = run.attempts.at(-1)
       const job = attempt ? deps.manager.listJobs().find(job => job.workflowRunId === run.id && job.workflowAttempt === attempt.number) : undefined
@@ -334,6 +353,59 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       if (job.status !== 'running') await onJobSettled(job)
     }
   }
+  function owned(run: WorkflowRun, context: ApprovalContext): void {
+    if (context.via !== 'conversation') return
+    const matches = (context.chat && context.chat === run.chatId) || (context.terminalId && context.terminalId === run.terminalId)
+    if (!matches) throw new RunActionError('This flow belongs to a different session', 403)
+  }
+  function pendingVersion(run: WorkflowRun): RunVersion {
+    const version = run.versions.find(version => version.state === 'pending')
+    if (!version) throw new RunActionError('Nothing is waiting for approval', 409)
+    return version
+  }
+  function mustGet(id: string): WorkflowRun {
+    const run = runs.get(id)
+    if (!run) throw new RunActionError('Run not found', 404)
+    return run
+  }
+  async function approve(id: string, context: ApprovalContext): Promise<WorkflowRun> {
+    return exclusive(id, async () => {
+      const run = mustGet(id)
+      owned(run, context)
+      const version = pendingVersion(run)
+      Object.assign(version, { state: 'approved', approvedVia: context.via, relayedBy: context.via === 'conversation' ? run.origin.by : null, at: Date.now() })
+      if (run.status === 'awaiting-approval') { run.status = 'running'; await persist(run); await dispatch(run) } else await persist(run)
+      return structuredClone(run)
+    })
+  }
+  async function reject(id: string, context: ApprovalContext): Promise<WorkflowRun> {
+    return exclusive(id, async () => {
+      const run = mustGet(id)
+      owned(run, context)
+      const version = pendingVersion(run)
+      Object.assign(version, { state: 'rejected', at: Date.now() })
+      if (run.status === 'awaiting-approval') await finish(run, 'stopped', 'Flow rejected')
+      else await persist(run)
+      return structuredClone(run)
+    })
+  }
+  async function pause(id: string): Promise<WorkflowRun> {
+    const run = mustGet(id)
+    if (run.status !== 'running') throw new RunActionError('Only a running flow can be paused', 409)
+    run.status = 'paused'
+    return exclusive(id, async () => { await persist(run); return structuredClone(run) })
+  }
+  async function resume(id: string): Promise<WorkflowRun> {
+    return exclusive(id, async () => {
+      const run = mustGet(id)
+      if (run.status !== 'paused') throw new RunActionError('Only a paused flow can be resumed', 409)
+      run.status = 'running'
+      await persist(run)
+      const last = run.attempts.at(-1)
+      if (!last || last.status === 'settled') await dispatch(run)
+      return structuredClone(run)
+    })
+  }
   async function markReported(id: string, at: number): Promise<void> {
     await exclusive(id, async () => {
       const run = runs.get(id)
@@ -342,6 +414,6 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       await persist(run)
     })
   }
-  return { start, stop, retry, recover, onJobSettled, markReported, get: (id: string) => { const run = runs.get(id); return run ? structuredClone(run) : undefined }, list: () => [...runs.values()].map(run => structuredClone(run)).sort((a, b) => b.createdAt - a.createdAt) }
+  return { start, stop, retry, recover, approve, reject, pause, resume, onJobSettled, markReported, get: (id: string) => { const run = runs.get(id); return run ? structuredClone(run) : undefined }, list: () => [...runs.values()].map(run => structuredClone(run)).sort((a, b) => b.createdAt - a.createdAt) }
 }
 export type WorkflowRunner = ReturnType<typeof createWorkflowRunner>

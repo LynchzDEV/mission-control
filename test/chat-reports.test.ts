@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { JobManager, JobRecord } from '../server/jobs'
 import { createJobManager, JOBS_FILE, LOGS_DIR, readLogFile } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
-import { agentReport, createChatFlusher, projectMemory, RESTART_CATCH_UP, workflowReport } from '../server/chat-reports'
+import { agentReport, createChatFlusher, projectMemory, RESTART_CATCH_UP, runNeedsReport, workflowReport } from '../server/chat-reports'
 import type { ChatFlusherOptions } from '../server/chat-reports'
 import { createChatQueue } from '../server/chat-queue'
 import type { ChatQueue } from '../server/chat-queue'
@@ -72,6 +72,14 @@ describe('workflowReport', () => {
     const stopped = workflowReport(runFixture({ status: 'stopped', error: 'Stopped by user', attempts: [attempt('execute', null)] }))
     expect(stopped.message).toBe('[workflow Shipping · stopped]\nExecute · unfinished\nReason: Stopped by user')
     expect(stopped.needsYou).toBe(false)
+  })
+})
+
+describe('runNeedsReport', () => {
+  test('a run waiting for approval or paused is still live and is not reported yet', () => {
+    expect(runNeedsReport(runFixture({ status: 'awaiting-approval' }))).toBe(false)
+    expect(runNeedsReport(runFixture({ status: 'paused' }))).toBe(false)
+    expect(runNeedsReport(runFixture({ status: 'done' }))).toBe(true)
   })
 })
 

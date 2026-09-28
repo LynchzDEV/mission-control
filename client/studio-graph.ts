@@ -40,7 +40,7 @@ export function roleWord(role: 'plan' | 'execute' | 'review'): string { return r
 export type NodeRunState = 'passed' | 'running' | 'failed' | 'waiting'
 export type CanvasRun = { status: string; currentNodeId: string; attempts: { nodeId: string; status: string; result: { outcome: string } | null; startedAt: number }[] }
 export function nodeRunStates(run: CanvasRun | null): Record<string, NodeRunState> {
-  if (run?.status !== 'running') return {}
+  if (run?.status !== 'running' && run?.status !== 'paused') return {}
   const settled = run.attempts.filter(attempt => attempt.status === 'settled' && attempt.result).sort((a, b) => a.startedAt - b.startedAt)
   const states: Record<string, NodeRunState> = Object.fromEntries(settled.map(attempt => [attempt.nodeId, attempt.result!.outcome === 'pass' ? 'passed' : 'failed']))
   return { ...states, [run.currentNodeId]: 'running' }
