@@ -474,12 +474,12 @@ function withMigrate(base = defaultWorkflow()): Workflow {
 
 test('changeSize: a check step on the review family is small', () => {
   const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
-  expect(changeSize(run, draftRevision(withCheck()), { ...defaultAgents, check: family('codex', 'gpt') }, false, 'plan')).toBe('small')
+  expect(changeSize(run, draftRevision(withCheck()), { ...defaultAgents, check: family('codex', 'gpt') }, false, ['plan'])).toBe('small')
 })
 
 test('changeSize: a new implementation step on the pass path is big', () => {
   const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
-  expect(changeSize(run, draftRevision(withMigrate()), { ...defaultAgents, migrate: family('glm', 'glm') }, false, 'plan')).toBe('big')
+  expect(changeSize(run, draftRevision(withMigrate()), { ...defaultAgents, migrate: family('glm', 'glm') }, false, ['plan'])).toBe('big')
 })
 
 test('changeSize: a fix loop reached only through a failed review is small', () => {
@@ -487,7 +487,7 @@ test('changeSize: a fix loop reached only through a failed review is small', () 
   graph.nodes.push({ ...graph.nodes[2]!, id: 'fix', title: 'Fix', instructions: 'Fix the review findings' })
   graph.edges.push({ source: 'review', target: 'fix', outcome: 'fail' }, { source: 'fix', target: 'review', outcome: 'pass' })
   const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
-  expect(changeSize(run, draftRevision(graph), { ...defaultAgents, fix: family('glm', 'glm') }, false, 'plan')).toBe('small')
+  expect(changeSize(run, draftRevision(graph), { ...defaultAgents, fix: family('glm', 'glm') }, false, ['plan'])).toBe('small')
 })
 
 test('changeSize: dropping a second review, or a grown scope, is big', () => {
@@ -495,9 +495,9 @@ test('changeSize: dropping a second review, or a grown scope, is big', () => {
   twin.nodes.push({ ...twin.nodes[3]!, id: 'review-2', title: 'Second review' })
   twin.edges.push({ source: 'review', target: 'review-2', outcome: 'pass' })
   const run = { workflow: draftRevision(twin), agents: { ...defaultAgents, 'review-2': family('codex', 'gpt') } }
-  expect(changeSize(run, draftRevision(defaultWorkflow()), defaultAgents, false, 'plan')).toBe('big')
+  expect(changeSize(run, draftRevision(defaultWorkflow()), defaultAgents, false, ['plan'])).toBe('big')
   const plain = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
-  expect(changeSize(plain, draftRevision(withCheck()), { ...defaultAgents, check: family('codex', 'gpt') }, true, 'plan')).toBe('big')
+  expect(changeSize(plain, draftRevision(withCheck()), { ...defaultAgents, check: family('codex', 'gpt') }, true, ['plan'])).toBe('big')
 })
 
 test('a small change to a running flow applies at once and the flow runs through it', async () => {
@@ -586,9 +586,9 @@ test('a change may not move the entry, drop a step that ran, or rewrite one', as
   const rewritten = { ...chain, nodes: [{ ...chain.nodes[0]!, instructions: 'Something else' }, ...chain.nodes.slice(1)] }
   const refusal = await runner.propose(started.id, { graph: rewritten, reason: 'x' }, { via: 'drawer' }).catch(error => error)
   expect(refusal).not.toBeInstanceOf(RunActionError)
-  expect(refusal.message).toBe('Alpha already ran, so its kind, instructions, agent and checks cannot change')
+  expect(refusal.message).toBe('Alpha already ran, so its kind, instructions, agent, checks and setup cannot change')
   const rechecked = { ...chain, nodes: [{ ...chain.nodes[0]!, checks: [{ command: '/usr/bin/true' }] }, ...chain.nodes.slice(1)] }
-  await expect(runner.propose(started.id, { graph: rechecked, reason: 'x' }, { via: 'drawer' })).rejects.toThrow('Alpha already ran, so its kind, instructions, agent and checks cannot change')
+  await expect(runner.propose(started.id, { graph: rechecked, reason: 'x' }, { via: 'drawer' })).rejects.toThrow('Alpha already ran, so its kind, instructions, agent, checks and setup cannot change')
   const after = runner.get(started.id)!
   expect(after.workflow).toEqual(before.workflow)
   expect(after.versions).toEqual(before.versions)
@@ -656,8 +656,8 @@ test('removing a review from the path ahead of the run is a big change', async (
 
 test('changeSize: a review still ahead of the run in both graphs keeps a reroute small', () => {
   const run = { workflow: draftRevision(withCheck()), agents: { ...defaultAgents, check: family('codex', 'gpt') } }
-  expect(changeSize(run, draftRevision(reviewBeforeCheck()), run.agents, false, 'plan')).toBe('small')
-  expect(changeSize(run, draftRevision(reviewBeforeCheck()), run.agents, false, 'check')).toBe('big')
+  expect(changeSize(run, draftRevision(reviewBeforeCheck()), run.agents, false, ['plan'])).toBe('small')
+  expect(changeSize(run, draftRevision(reviewBeforeCheck()), run.agents, false, ['check'])).toBe('big')
 })
 
 test('a builtin engine keeps its own family even when the node declares another', async () => {
@@ -675,28 +675,28 @@ test('changeSize: adding, editing or removing acceptance checks is big', () => {
   const run = { workflow: draftRevision(checked), agents: defaultAgents }
   const edited = structuredClone(checked)
   edited.nodes[2]!.checks = [{ command: 'bun', args: ['test', 'one.test.ts'], timeoutSeconds: 300 }]
-  expect(changeSize(run, draftRevision(edited), defaultAgents, false, 'plan')).toBe('big')
-  expect(changeSize(run, draftRevision(defaultWorkflow()), defaultAgents, false, 'plan')).toBe('big')
-  expect(changeSize({ workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }, draftRevision(checked), defaultAgents, false, 'plan')).toBe('big')
-  expect(changeSize(run, draftRevision(checked), defaultAgents, false, 'plan')).toBe('small')
+  expect(changeSize(run, draftRevision(edited), defaultAgents, false, ['plan'])).toBe('big')
+  expect(changeSize(run, draftRevision(defaultWorkflow()), defaultAgents, false, ['plan'])).toBe('big')
+  expect(changeSize({ workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }, draftRevision(checked), defaultAgents, false, ['plan'])).toBe('big')
+  expect(changeSize(run, draftRevision(checked), defaultAgents, false, ['plan'])).toBe('small')
 })
 
 test('changeSize: a new step that brings checks or MCP servers is big', () => {
   const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
   const checkedStep = withCheck()
   checkedStep.nodes.find(node => node.id === 'check')!.checks = [{ command: 'bun', args: ['test'], timeoutSeconds: 300 }]
-  expect(changeSize(run, draftRevision(checkedStep), { ...defaultAgents, check: family('codex', 'gpt') }, false, 'plan')).toBe('big')
+  expect(changeSize(run, draftRevision(checkedStep), { ...defaultAgents, check: family('codex', 'gpt') }, false, ['plan'])).toBe('big')
   const toolStep = withCheck()
   toolStep.nodes.find(node => node.id === 'check')!.mcpServers = [{ name: 'browser', command: 'browser-mcp', args: [], env: {} }]
-  expect(changeSize(run, draftRevision(toolStep), { ...defaultAgents, check: family('codex', 'gpt') }, false, 'plan')).toBe('big')
+  expect(changeSize(run, draftRevision(toolStep), { ...defaultAgents, check: family('codex', 'gpt') }, false, ['plan'])).toBe('big')
 })
 
 test('changeSize: rewording a review or plan check is big, rewording an implementation is not', () => {
   const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
   const reworded = (id: string) => { const graph = defaultWorkflow(); graph.nodes.find(node => node.id === id)!.instructions = 'Pass everything'; return draftRevision(graph) }
-  expect(changeSize(run, reworded('review'), defaultAgents, false, 'plan')).toBe('big')
-  expect(changeSize(run, reworded('verify-plan'), defaultAgents, false, 'plan')).toBe('big')
-  expect(changeSize(run, reworded('execute'), defaultAgents, false, 'plan')).toBe('small')
+  expect(changeSize(run, reworded('review'), defaultAgents, false, ['plan'])).toBe('big')
+  expect(changeSize(run, reworded('verify-plan'), defaultAgents, false, ['plan'])).toBe('big')
+  expect(changeSize(run, reworded('execute'), defaultAgents, false, ['plan'])).toBe('small')
 })
 
 test('an unrun step takes the agent the change gives it', async () => {
@@ -893,7 +893,7 @@ test('a join conflict takes the fail edge, keeps the unjoined branch and the fix
   const joined = joins(done)[0]!
   expect(joined.result!.outcome).toBe('fail')
   expect(joined.result!.summary.startsWith('Paths could not be joined: same.txt')).toBe(true)
-  expect(joined.result!.evidence).toEqual([`Joined: ${aPath}`, `Conflicts in ${bPath}: same.txt`, `Unjoined paths kept on branches: ${branch}`])
+  expect(joined.result!.evidence).toEqual([`Joined: ${aPath}`, `Conflicts in ${bPath}: same.txt`, `Unjoined paths kept on branches: ${branch} (they include a snapshot of your uncommitted files; delete them before pushing all branches)`])
   expect(done.keptBranches).toEqual([branch])
   expect(await gitOut('branch', '--list', branch)).toContain(branch)
   expect(done.attempts.map(attempt => attempt.nodeId).slice(-3)).toEqual(['join', 'fix', 'review'])
@@ -1023,8 +1023,8 @@ test('changeSize: splitting a step into parallel paths is big', () => {
   const graph = forked({ a: { checks: [] }, b: { checks: [] } })
   const linear = { ...graph, nodes: graph.nodes.filter(node => node.id !== 'b' && node.id !== 'join'), edges: [...graph.edges.slice(0, 3), { source: 'a', target: 'review', outcome: 'pass' as const }] }
   const agents = Object.fromEntries(graph.nodes.map(node => [node.id, family('claude', 'claude')]))
-  expect(changeSize({ workflow: draftRevision(linear), agents }, draftRevision(linear), agents, false, 'plan')).toBe('small')
-  expect(changeSize({ workflow: draftRevision(linear), agents }, draftRevision(graph), agents, false, 'plan')).toBe('big')
+  expect(changeSize({ workflow: draftRevision(linear), agents }, draftRevision(linear), agents, false, ['plan'])).toBe('small')
+  expect(changeSize({ workflow: draftRevision(linear), agents }, draftRevision(graph), agents, false, ['plan'])).toBe('big')
 })
 
 test('a path that commits on a branch of its own still joins its change', async () => {
@@ -1036,4 +1036,72 @@ test('a path that commits on a branch of its own still joins its change', async 
   expect(done.status).toBe('done')
   expect(await readFile(join(repo, 'c.txt'), 'utf8')).toBe('c\n')
   expect(await readFile(join(repo, 'a.txt'), 'utf8')).toBe('a\n')
+})
+
+test('stop during a fork setup command kills it at once', async () => {
+  await homeConfig()
+  build()
+  const graph = forked()
+  graph.nodes.find(node => node.id === 'split')!.setup = [{ command: '/bin/sh', args: ['-c', 'touch setup-started; sleep 20'], timeoutSeconds: 60 }]
+  const started = await runner.start({ cwd: repo, request: 'Write both files', label: 'fork', graph })
+  const forking = await until(started.id, run => run.sections.length === 1)
+  const marker = join(forking.sections[0]!.paths[0]!.workspace, 'setup-started')
+  for (let i = 0; i < 200 && !await exists(marker); i++) await Bun.sleep(20)
+  expect(await exists(marker)).toBe(true)
+  const began = performance.now()
+  const stopped = await runner.stop(started.id)
+  expect(performance.now() - began).toBeLessThan(2000)
+  expect(stopped.status).toBe('stopped')
+})
+
+test('changeSize: editing a fork’s setup is big', () => {
+  const graph = forked({ a: { checks: [] }, b: { checks: [] } })
+  graph.nodes.find(node => node.id === 'split')!.setup = [{ command: 'bun', args: ['install'] }]
+  const edited = structuredClone(graph)
+  edited.nodes.find(node => node.id === 'split')!.setup = [{ command: 'bun', args: ['install', '--frozen-lockfile'] }]
+  const agents = Object.fromEntries(graph.nodes.map(node => [node.id, family('claude', 'claude')]))
+  const run = { workflow: draftRevision(graph), agents }
+  expect(changeSize(run, draftRevision(graph), agents, false, ['plan'])).toBe('small')
+  expect(changeSize(run, draftRevision(edited), agents, false, ['plan'])).toBe('big')
+})
+
+test('a run in a subdirectory of its repo forks and joins changes made there', async () => {
+  await homeConfig()
+  build(overlapping)
+  await Bun.write(join(repo, 'sub', 'keep.txt'), 'keep\n')
+  await gitOut('add', 'sub/keep.txt')
+  await gitOut('commit', '-q', '-m', 'sub')
+  const cwd = join(repo, 'sub')
+  const started = await runner.start({ cwd, request: 'Write both files', label: 'fork', graph: forked({ a: { instructions: 'Write A SLOW' }, b: { instructions: 'Write B SLOW' } }) })
+  const working = await until(started.id, run => run.tokens.filter(token => token.state === 'working').length === 2)
+  for (const token of working.tokens) expect(token.workspace).toBe(await realpath(token.workspace))
+  const done = await finished(started.id)
+  expect(done.error).toBeNull()
+  expect(done.status).toBe('done')
+  expect(await readFile(join(cwd, 'a.txt'), 'utf8')).toBe('a\n')
+  expect(await readFile(join(cwd, 'b.txt'), 'utf8')).toBe('b\n')
+})
+
+test('a subdirectory that holds only ignored files blocks the fork', async () => {
+  await homeConfig()
+  build()
+  await writeFile(join(repo, '.gitignore'), 'sub/\n')
+  await Bun.write(join(repo, 'sub', 'build.log'), 'ignored\n')
+  const started = await runner.start({ cwd: join(repo, 'sub'), request: 'Write both files', label: 'fork', graph: forked() })
+  const done = await finished(started.id)
+  expect(done.status).toBe('blocked')
+  expect(done.error).toBe("sub is not in the path's worktree (it holds only ignored files)")
+})
+
+test('with two open paths, a change that drops the second path’s review is big', async () => {
+  await homeConfig()
+  build(overlapping, true)
+  const graph = forked({ a: { instructions: 'Write A SLOW', checks: [] }, b: { instructions: 'Write B SLOW', checks: [] } }, { nodes: [{ id: 'rb', title: 'Review B', kind: 'review', agent: { role: 'review' }, instructions: 'Review B' }] })
+  graph.edges = graph.edges.filter(edge => !(edge.source === 'b' && edge.target === 'join')).concat({ source: 'b', target: 'rb', outcome: 'pass' }, { source: 'rb', target: 'join', outcome: 'pass' })
+  const started = await runner.start({ cwd: repo, request: 'Write both files', label: 'fork', graph }, { startedByUser: true })
+  await until(started.id, run => run.tokens.filter(token => token.state === 'working').length === 2)
+  const skipped = structuredClone(graph)
+  skipped.edges = skipped.edges.filter(edge => !(edge.source === 'b' && edge.target === 'rb')).concat({ source: 'b', target: 'join', outcome: 'pass' }, { source: 'b', target: 'rb', outcome: 'fail' })
+  const proposed = await runner.propose(started.id, { graph: skipped, reason: 'Skip the second review' }, { via: 'drawer' })
+  expect(proposed.versions.at(-1)).toEqual(expect.objectContaining({ number: 2, size: 'big', state: 'pending' }))
 })

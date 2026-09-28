@@ -83,8 +83,8 @@ function passReachable(graph: WorkflowRevision, from = graph.entry): Set<string>
   return reached
 }
 
-function reviewsAhead(graph: WorkflowRevision, from: string): Set<string> {
-  const ahead = passReachable(graph, from)
+function reviewsAhead(graph: WorkflowRevision, from: string[]): Set<string> {
+  const ahead = new Set(from.flatMap(id => [...passReachable(graph, id)]))
   return new Set(graph.nodes.filter(node => node.kind === 'review' && ahead.has(node.id)).map(node => node.id))
 }
 
@@ -96,13 +96,14 @@ function weakensGates(before: WorkflowRevision, after: WorkflowRevision): boolea
     const old = before.nodes.find(node => node.id === id)
     const next = after.nodes.find(node => node.id === id)
     if (JSON.stringify(old?.checks ?? []) !== JSON.stringify(next?.checks ?? [])) return true
+    if (JSON.stringify(old?.setup ?? []) !== JSON.stringify(next?.setup ?? [])) return true
     if (JSON.stringify(old?.mcpServers ?? []) !== JSON.stringify(next?.mcpServers ?? [])) return true
     if (old && next && GATING_KINDS.has(old.kind) && old.instructions !== next.instructions) return true
   }
   return false
 }
 
-export function changeSize(run: Pick<WorkflowRun, 'workflow' | 'agents'>, next: WorkflowRevision, nextAgents: Record<string, ResolvedAgent>, scopeGrew: boolean, from: string): 'small' | 'big' {
+export function changeSize(run: Pick<WorkflowRun, 'workflow' | 'agents'>, next: WorkflowRevision, nextAgents: Record<string, ResolvedAgent>, scopeGrew: boolean, from: string[]): 'small' | 'big' {
   if (scopeGrew) return 'big'
   const families = new Set(Object.values(run.agents).map(agent => agent.family))
   if (next.nodes.some(node => node.kind !== 'join' && !families.has(nextAgents[node.id]?.family ?? null))) return 'big'
@@ -124,8 +125,8 @@ function guardChange(run: WorkflowRun, next: WorkflowRevision): void {
     const before = run.workflow.nodes.find(node => node.id === id)!
     const after = next.nodes.find(node => node.id === id)
     if (!after) throw new Error(`${before.title} already ran and cannot be removed`)
-    const frozen = (node: WorkflowNode) => JSON.stringify([node.kind, node.instructions, node.agent, node.checks])
-    if (frozen(after) !== frozen(before)) throw new Error(`${before.title} already ran, so its kind, instructions, agent and checks cannot change`)
+    const frozen = (node: WorkflowNode) => JSON.stringify([node.kind, node.instructions, node.agent, node.checks, node.setup ?? []])
+    if (frozen(after) !== frozen(before)) throw new Error(`${before.title} already ran, so its kind, instructions, agent, checks and setup cannot change`)
   }
   for (const token of run.tokens) if (!next.nodes.some(node => node.id === token.nodeId)) throw new Error(`${title(token.nodeId)} is in progress and cannot be removed`)
   const firsts = (paths: string[][]) => JSON.stringify(paths.map(path => path[0]))
@@ -136,12 +137,19 @@ function guardChange(run: WorkflowRun, next: WorkflowRevision): void {
   }
 }
 
-function positionOf(run: WorkflowRun): string {
-  const token = run.tokens[0]
-  if (!token) return run.currentNodeId
+function positionOfToken(run: WorkflowRun, token: WorkflowToken): string {
   if (token.state !== 'settled') return token.nodeId
   const outcome = run.attempts[token.attempt!]?.result?.outcome
   return run.workflow.edges.find(edge => edge.source === token.nodeId && edge.outcome === outcome)?.target ?? token.nodeId
+}
+
+function positionOf(run: WorkflowRun): string {
+  const token = run.tokens[0]
+  return token ? positionOfToken(run, token) : run.currentNodeId
+}
+
+function positionsOf(run: WorkflowRun): string[] {
+  return run.tokens.length ? run.tokens.map(token => positionOfToken(run, token)) : [run.currentNodeId]
 }
 
 const kindOf = (run: WorkflowRun, attempt: WorkflowAttempt) => run.workflow.nodes.find(node => node.id === attempt.nodeId)?.kind
@@ -393,27 +401,34 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const values = [(await readSecrets()).zaiAuthToken, ...references.map(reference => process.env[reference] ?? null)]
     return values.reduce<string>((output, secret) => redactSecrets(output, secret), text)
   }
-  async function runCheck(run: WorkflowRun, attempt: WorkflowAttempt, cwd: string, check: WorkflowNode['checks'][number]): Promise<CheckResult> {
-    const proc = spawn(resolveBinary(check.command), check.args, { cwd, env: { ...process.env, MC_WORKFLOW_RUN_ID: run.id }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  type Command = WorkflowNode['checks'][number]
+  type Finished = { exitCode: number | null; output: string; timedOut: boolean }
+  function spawnKillable(run: WorkflowRun, key: number, cwd: string, command: Command): { pid?: number; done: Promise<Finished> } {
+    const proc = spawn(resolveBinary(command.command), command.args, { cwd, env: { ...process.env, MC_WORKFLOW_RUN_ID: run.id }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
     const completion = new Promise<number | null>((resolveExit, reject) => { proc.once('error', reject); proc.once('exit', resolveExit) })
-    void completion.catch(() => {})
     let output = '', timedOut = false
     const collect = (chunk: Buffer) => { output = (output + chunk.toString()).slice(-16000) }
     proc.stdout.on('data', collect); proc.stderr.on('data', collect)
     const kill = () => { try { if (proc.pid) process.kill(-proc.pid, 'SIGTERM') } catch {}; setTimeout(() => { try { if (proc.pid) process.kill(-proc.pid, 'SIGKILL') } catch {} }, 1000).unref() }
     const kills = checks.get(run.id) ?? new Map<number, () => void>()
-    checks.set(run.id, kills.set(attempt.number, kill))
-    const timer = setTimeout(() => { timedOut = true; kill() }, check.timeoutSeconds * 1000)
+    checks.set(run.id, kills.set(key, kill))
+    const timer = setTimeout(() => { timedOut = true; kill() }, command.timeoutSeconds * 1000)
+    const done = completion
+      .then(async exitCode => ({ exitCode, output: await redactRunOutput(run, output), timedOut }), (error: Error) => ({ exitCode: null, output: error.message, timedOut }))
+      .finally(() => {
+        clearTimeout(timer); kills.delete(key)
+        if (!kills.size) checks.delete(run.id)
+      })
+    return { pid: proc.pid, done }
+  }
+  async function runCheck(run: WorkflowRun, attempt: WorkflowAttempt, cwd: string, check: Command): Promise<CheckResult> {
+    const started = spawnKillable(run, attempt.number, cwd, check)
     try {
-      await exclusive(run.id, async () => { attempt.checkPid = proc.pid; await persist(run) })
-      const exitCode = await completion
-      return { command: check.command, args: check.args, exitCode, output: await redactRunOutput(run, output), timedOut }
+      await exclusive(run.id, async () => { attempt.checkPid = started.pid; await persist(run) })
     } catch (error) {
-      return { command: check.command, args: check.args, exitCode: null, output: (error as Error).message, timedOut }
-    } finally {
-      clearTimeout(timer); kills.delete(attempt.number)
-      if (!kills.size) checks.delete(run.id)
+      return { command: check.command, args: check.args, exitCode: null, output: (error as Error).message, timedOut: false }
     }
+    return { command: check.command, args: check.args, ...await started.done }
   }
   type Checking = { attempt: WorkflowAttempt; token: WorkflowToken; node: WorkflowNode; result: NodeResult }
   async function settle(run: WorkflowRun, record: JobRecord): Promise<Checking | null> {
@@ -469,12 +484,14 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     else await finish(run, result.outcome === 'pass' ? 'done' : result.outcome === 'fail' ? 'failed' : 'blocked', result.outcome === 'pass' ? null : result.summary)
     return false
   }
-  async function runSetup(run: WorkflowRun, node: WorkflowNode, cwd: string): Promise<string | null> {
+  async function runSetup(run: WorkflowRun, node: WorkflowNode, cwd: string, key: number): Promise<string | null> {
     for (const command of node.setup ?? []) {
-      const proc = Bun.spawn([resolveBinary(command.command), ...command.args], { cwd, env: { ...process.env, MC_WORKFLOW_RUN_ID: run.id }, stdout: 'pipe', stderr: 'pipe' })
-      const timer = setTimeout(() => proc.kill('SIGKILL'), command.timeoutSeconds * 1000)
-      const [output, errors, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]).finally(() => clearTimeout(timer))
-      if (code !== 0) return `${node.title} setup failed: ${[command.command, ...command.args].join(' ')}${`\n${errors || output}`.trimEnd()}`
+      if (stopping.has(run.id)) return null
+      const { exitCode, output, timedOut } = await spawnKillable(run, key, cwd, command).done
+      if (stopping.has(run.id)) return null
+      if (exitCode === 0 && !timedOut) continue
+      const detail = timedOut ? `timed out after ${command.timeoutSeconds} s` : output.trimEnd()
+      return `${node.title} setup failed: ${[command.command, ...command.args].join(' ')}${detail ? `\n${detail}` : ''}`
     }
     return null
   }
@@ -483,7 +500,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     if (!closing) throw new Error(`${node.title} paths must meet at one join`)
     const parentWorkspace = token.workspace
     const top = await gitTimed(parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-toplevel'])
-    const prefix = await gitTimed(parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-prefix'])
+    const prefix = (await gitTimed(parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-prefix'])).replace(/\/$/, '')
     await mkdir(join(root, run.id), { recursive: true, mode: 0o700 })
     const base = await realpath(join(root, run.id))
     if (!base.startsWith(await realpath(homedir()) + sep)) { await block(run, 'Path worktrees must be under your home directory'); return false }
@@ -499,8 +516,12 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     await persist(run)
     for (const path of paths) {
       await addPathWorktree(top, path.dir, path.branch, snapshot)
+      const workspace = await realpath(path.workspace).catch(() => null)
+      if (!workspace) { await block(run, `${prefix} is not in the path's worktree (it holds only ignored files)`); return false }
+      path.workspace = workspace
       if (!deps.manager.claimWorkspace(path.workspace, run.id)) { await block(run, `Another run owns ${path.workspace}`); return false }
-      const failed = await runSetup(run, node, path.workspace)
+      const failed = await runSetup(run, node, path.workspace, attempt.number)
+      if (stopping.has(run.id)) return false
       if (failed) { await block(run, failed); return false }
     }
     run.tokens = [...run.tokens.filter(other => other.id !== token.id), ...paths.map(path => ({ id: crypto.randomUUID(), nodeId: path.firstNodeId, pathId: path.pathId, workspace: path.workspace, state: 'ready' as const, attempt: null, from: [attempt.number] }))]
@@ -565,7 +586,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       return block(run, summary)
     }
     const result: NodeResult = conflict
-      ? { outcome: 'fail', summary: `Paths could not be joined: ${files}`, evidence: [...conflictEvidence, `Unjoined paths kept on branches: ${unjoined.map(path => path.branch).join(', ')}`] }
+      ? { outcome: 'fail', summary: `Paths could not be joined: ${files}`, evidence: [...conflictEvidence, `Unjoined paths kept on branches: ${unjoined.map(path => path.branch).join(', ')} (they include a snapshot of your uncommitted files; delete them before pushing all branches)`] }
       : { outcome: 'pass', summary: `Joined ${section.paths.length} paths`, evidence: joining.counts }
     if (conflict) run.keptBranches.push(...unjoined.map(path => path.branch))
     settleAttempt(result)
@@ -750,7 +771,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const kept = Object.fromEntries(Object.entries(run.agents).filter(([nodeId]) => ran.has(nodeId)))
     const agents = { ...await agentsFor(next), ...kept }
     const skills = Object.fromEntries(await Promise.all(next.nodes.filter(node => !ran.has(node.id)).map(async node => [node.id, await snapshotSkills(node, run.cwd)] as const)))
-    const size = changeSize(run, next, agents, !!change.scopeGrew, positionOf(run))
+    const size = changeSize(run, next, agents, !!change.scopeGrew, positionsOf(run))
     const waits = size === 'big' && await requireApproval()
     return { number: run.versions.length + 1, revision: next.revision, reason: change.reason, size, state: waits ? 'pending' : 'approved', approvedVia: waits ? null : 'auto', relayedBy: null, at: Date.now(), graph: next, agents, skills }
   }
