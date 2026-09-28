@@ -244,6 +244,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .workflow-node small { color: var(--muted); font-size: 12px; margin-top: 12px; }
 .canvas-note { font-size: 12px; line-height: 1.6; color: var(--muted); margin: 20px 24px; }
 .step-inspector { min-width: 0; padding: 8px 0; }
+.step-inspector > * { animation: inspector-in 240ms cubic-bezier(.2, .8, .2, 1); }
+@keyframes inspector-in { from { opacity: 0; transform: translateX(8px); } }
+.workflow-node { transition: border-color 240ms cubic-bezier(.2, .8, .2, 1), box-shadow 240ms cubic-bezier(.2, .8, .2, 1), background-color 240ms cubic-bezier(.2, .8, .2, 1); }
+.run-state { transition: color 240ms cubic-bezier(.2, .8, .2, 1); }
 .step-inspector h2 { font-size: 17px; margin-bottom: 24px; }
 .step-inspector p { font-size: 13px; line-height: 1.7; }
 .step-inspector label, .field-stack label, .default-roles label, .secondary-studio label { display: grid; gap: 10px; font-size: 13px; margin-bottom: 20px; }
@@ -577,6 +581,7 @@ a.pill:hover { color: var(--accent); }
 .pane-head .close-split svg { width: 12px; height: 12px; }
 .pane-content { height: 100%; display: flex; padding: 0 2px 2px 0; overflow: hidden; }
 .pane-content .term-host { height: 100%; }
+.panes-morph .dv-view { transition: width 240ms cubic-bezier(.2, .8, .2, 1), left 240ms cubic-bezier(.2, .8, .2, 1), height 240ms cubic-bezier(.2, .8, .2, 1), top 240ms cubic-bezier(.2, .8, .2, 1); }
 #live-stage[data-single="false"] .dv-active-group .term-host { box-shadow: var(--inset), 0 0 0 1.5px #8062bd44; }
 #live-stage[data-single="true"] .close-split { display: none; }
 .mc-panes .dv-sash { z-index: 2; }

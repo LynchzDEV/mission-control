@@ -1,5 +1,5 @@
 import { renderMarkdown } from './markdown'
-import { MORPH_EASE, MORPH_MS, morph, reveal, rollText } from './morph'
+import { MORPH_EASE, MORPH_MS, blendColor, morph, reveal, rollText } from './morph'
 import { errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
 import { createOutcomeStrip } from './outcome-strip'
@@ -373,6 +373,7 @@ function paintHistory(items: HistoryItem[]): void {
   if (signature === historySignature) return
   historySignature = signature
   const openIds = new Set([...list.querySelectorAll<HTMLElement>('details[open]')].map(item => item.dataset.item))
+  const dotColors = new Map([...list.querySelectorAll<HTMLElement>('.live-dot')].map(dot => [(dot.closest('details') as HTMLElement).dataset.item, getComputedStyle(dot).backgroundColor]))
   list.replaceChildren(...items.map((item, index) => {
     const key = `${item.kind}:${item.id}`
     const signal = item.kind === 'chat' ? chatSignal(item.running, item.agents) : item.kind === 'terminal' && item.live ? { state: 'running' as const, count: 0 } : { state: null, count: 0 }
@@ -381,6 +382,8 @@ function paintHistory(items: HistoryItem[]): void {
     const title = document.createElement('span')
     if (signal.state) { const dot = document.createElement('span'); dot.className = 'live-dot'; dot.dataset.state = signal.state; dot.title = signal.count ? `${signal.count} ${signal.state === 'running' ? 'running' : signal.state === 'needs-you' ? 'need you' : 'landed'}` : signal.state; title.append(dot); if (signal.count > 1) { const count = document.createElement('small'); count.className = 'dot-count'; count.textContent = String(signal.count); title.append(count) } }
     title.append(item.title)
+    const dot = title.querySelector<HTMLElement>('.live-dot')
+    if (dot) queueMicrotask(() => blendColor(dot, dotColors.get(key)))
     const time = document.createElement('time'); time.textContent = historyDay(item.updatedAt, Date.now())
     summary.append(title, time)
     const line = document.createElement('p'); line.textContent = historyLabel(item)
@@ -441,8 +444,7 @@ composer.onsubmit = (event) => {
   event.preventDefault()
   const prompt = message.value.trim()
   if (!prompt || (running && !root)) return
-  message.value = ''
-  message.style.height = ''
+  morph(composer, () => { message.value = ''; message.style.height = '' })
   void sendMessage(prompt)
   message.focus()
 }

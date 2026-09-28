@@ -1,4 +1,4 @@
-import { fold, reveal } from './morph'
+import { fold, morph, reveal } from './morph'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const screens = ['welcome', 'history', 'conversation', 'studio'] as const
@@ -53,8 +53,7 @@ $('close-flow').onclick = () => { toggleFlow(false); $('toggle-flow').focus() }
 
 $('new-chat').onclick = () => {
   dispatchEvent(new Event('quiet:new-chat'))
-  composer.reset()
-  message.style.height = ''
+  morph(composer, () => { composer.reset(); message.style.height = '' })
   showScreen('welcome')
   message.focus()
 }

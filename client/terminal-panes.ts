@@ -1,5 +1,12 @@
 import type { DockviewApi, GroupPanelPartInitParameters, IContentRenderer, ITabRenderer, TabPartInitParameters } from 'dockview-core'
 import { createDockview, themeLight } from 'dockview-core/dist/dockview-core.js'
+import { MORPH_MS, settleIn } from './morph'
+
+function withPaneMotion(root: Element | null, change: () => void): void {
+  root?.classList.add('panes-morph')
+  change()
+  setTimeout(() => root?.classList.remove('panes-morph'), MORPH_MS + 80)
+}
 
 export type PaneHeader = { logo: string; title: string; caption: string }
 export type PaneDirection = 'right' | 'below'
@@ -42,7 +49,7 @@ class Tab implements ITabRenderer {
     close.className = 'round close-split'
     close.setAttribute('aria-label', 'Close this pane')
     close.insertAdjacentHTML('afterbegin', '<svg><use href="#close-icon"/></svg>')
-    close.onclick = (event) => { event.stopPropagation(); if (parameters.containerApi.panels.length > 1) parameters.api.close() }
+    close.onclick = (event) => { event.stopPropagation(); if (parameters.containerApi.panels.length > 1) withPaneMotion(this.element.closest('[data-single]'), () => parameters.api.close()) }
     this.element.append(close)
   }
   paint(header: PaneHeader): void {
@@ -88,9 +95,10 @@ export function createPanes(root: HTMLElement): Panes {
       if (api.getPanel(id)) return
       const reference = api.activePanel ?? api.panels[0]
       if (!reference) { add(id, host, header); return }
-      add(id, host, header, { referencePanel: reference.id, direction })
+      withPaneMotion(root, () => add(id, host, header, { referencePanel: reference.id, direction }))
+      settleIn(host)
     },
-    hide(id) { if (api.panels.length > 1) api.getPanel(id)?.api.close() },
+    hide(id) { if (api.panels.length > 1) withPaneMotion(root, () => api.getPanel(id)?.api.close()) },
     retitle(id, header) { api.getPanel(id)?.api.setTitle(header.title); tabs.get(id)?.paint(header) },
     shown: () => api.panels.map(panel => panel.id),
     active: () => api.activePanel?.id ?? null,
