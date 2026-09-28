@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import type { AgentConnection } from '../server/agent-connections'
 import type { WorkflowNode } from '../server/workflows'
 import { normalizeUsage, weeklyOnly, type ProviderUsage, type QuotaWindow } from './provider-usage'
 import { readRecord } from './shared'
 import { api, apiDelete } from './studio-api'
 import { roleWord } from './studio-graph'
+import { DISARM_MS } from './confirm-button'
 
 export type ConnectionList = { builtins: string[]; connections: AgentConnection[]; presets: Array<Partial<AgentConnection>>; models: Record<string, string[]>; roles?: Record<string, { engine: string; model: string | null }> }
 type Choice = { kind: 'builtin'; id: string } | { kind: 'connection'; value: AgentConnection } | { kind: 'preset'; value: Partial<AgentConnection> } | { kind: 'presets' }
@@ -57,6 +58,16 @@ function UsageBars({ usage }: { usage: ProviderUsage }) {
   return <>{windows.map(([label, window]) => <div className="connection-bar" key={label} title={window.reset ? `Resets ${window.reset}` : usage.reason || undefined}><span>{label}</span><i><b style={{ width: `${window.percent ?? 0}%` }} /></i><em>{window.percent === null ? '—' : `${Math.round(window.percent)}%`}</em></div>)}</>
 }
 
+function ConfirmRemove({ label, busy, warning, onConfirm }: { label: string; busy: boolean; warning: string; onConfirm: () => void }) {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    const timer = setTimeout(() => setArmed(false), DISARM_MS)
+    return () => clearTimeout(timer)
+  }, [armed])
+  return <button type="button" className="confirm-morph" data-armed={armed} disabled={busy} aria-label={armed ? 'Remove: click again to confirm' : label} title={armed ? `Click again to remove. ${warning}` : warning} onBlur={() => setArmed(false)} onMouseLeave={() => setArmed(false)} onKeyDown={(event) => { if (event.key === 'Escape') setArmed(false) }} onClick={() => { if (!armed) { setArmed(true); return } setArmed(false); onConfirm() }}><span>{label}</span><span>Remove</span></button>
+}
+
 export function Connections({ list, refresh, report, onError, onConnect }: { list: ConnectionList; refresh: () => Promise<void>; report: (text: string) => void; onError: (text: string) => void; onConnect?: () => void }) {
   const [choice, setChoice] = useState<Choice>({ kind: 'builtin', id: 'claude' })
   const [editing, setEditing] = useState<Partial<AgentConnection>>({})
@@ -67,7 +78,6 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
   const [busy, setBusy] = useState(false)
   const [advanced, setAdvanced] = useState(false)
   const [details, setDetails] = useState<Details>({ usage: {}, roles: {}, models: {}, glmConfigured: true })
-  const removeDialog = useRef<HTMLDialogElement | null>(null)
   useEffect(() => {
     let cancelled = false
     const read = async (url: string) => { const response = await fetch(url); if (!response.ok) throw new Error(`Could not read ${url}`); return await response.json() as Record<string, never> }
@@ -88,7 +98,7 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
     } catch (error) { onError((error as Error).message) } finally { setBusy(false) }
   }
   const check = async () => { setBusy(true); try { setProbe(JSON.stringify(await api(`/connections/${editing.id}/probe`, {}), null, 2)); report('Connection checked. No task was sent.') } catch (error) { onError((error as Error).message) } finally { setBusy(false) } }
-  const remove = async () => { setBusy(true); try { await apiDelete(`/connections/${editing.id}`); removeDialog.current?.close(); await refresh(); pick({ kind: 'builtin', id: 'claude' }); report('Connection removed.') } catch (error) { onError((error as Error).message) } finally { setBusy(false) } }
+  const remove = async () => { setBusy(true); try { await apiDelete(`/connections/${editing.id}`); await refresh(); pick({ kind: 'builtin', id: 'claude' }); report('Connection removed.') } catch (error) { onError((error as Error).message) } finally { setBusy(false) } }
   const current = (test: (item: Choice) => boolean) => test(choice)
   const aiId = choice.kind === 'builtin' ? choice.id : choice.kind === 'presets' ? '' : editing.id ?? ''
   const usedFor = ROLES.filter(role => readRecord(details.roles[role]).engine === aiId)
@@ -134,16 +144,11 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
         <button className="connection-button primary" type="submit" disabled={busy}>Save connection</button>
       </form>}
       <div className="connection-foot">
-        {choice.kind !== 'builtin' && <><button type="button" className="connection-button" disabled={busy || editing.adapter === 'cli' || !configured} title={editing.adapter === 'cli' ? 'CLI connections have no capability probe' : !configured ? 'Save first' : undefined} onClick={() => void check()}>Check connection</button>{configured && <button type="button" className="text-button danger" disabled={busy} onClick={() => removeDialog.current?.showModal()}>Remove connection</button>}</>}
+        {choice.kind !== 'builtin' && <><button type="button" className="connection-button" disabled={busy || editing.adapter === 'cli' || !configured} title={editing.adapter === 'cli' ? 'CLI connections have no capability probe' : !configured ? 'Save first' : undefined} onClick={() => void check()}>Check connection</button>{configured && <ConfirmRemove label="Remove connection" busy={busy} warning="Workflows that pin this AI will show it as unavailable until you pick another." onConfirm={() => void remove()} />}</>}
         <span className="muted connection-small">Checked when a job starts</span>
       </div>
       {probe && <details open><summary>Connection details</summary><pre className="studio-output">{probe}</pre></details>}
     </div>}
-    <dialog ref={removeDialog} className="access-dialog flat confirm-dialog" aria-labelledby="remove-connection-title">
-      <header className="dialog-heading"><h2 id="remove-connection-title">Remove {editing.name}?</h2><form method="dialog"><button className="round" aria-label="Cancel"><Icon id="close-icon" /></button></form></header>
-      <p className="muted">Workflows that pin this AI will show it as unavailable until you pick another.</p>
-      <div className="editor-actions dialog-actions"><button type="button" className="pill" onClick={() => removeDialog.current?.close()}>Cancel</button><button type="button" className="pill danger" disabled={busy} onClick={() => void remove()}>Remove</button></div>
-    </dialog>
   </section>
 }
 
