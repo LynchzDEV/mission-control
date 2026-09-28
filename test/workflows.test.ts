@@ -148,3 +148,10 @@ test('a join runs no agent and only a split carries setup commands', () => {
 test('a step still has at most one failure edge', () => {
   expect(errorsOf(flow(forkSteps(), [...forkLinks(), ['a', 'fail', 'plan'], ['a', 'fail', 'verify']]))).toContain('Only one edge per node outcome is allowed')
 })
+
+test('the big-flow fixture is a valid 22-step flow with two splits, a nested split and loops', async () => {
+  const graph = JSON.parse(await Bun.file(join(import.meta.dir, 'fixtures/big-flow.json')).text())
+  expect(validateWorkflow(graph)).toEqual([])
+  expect(graph.nodes).toHaveLength(22)
+  expect(forkSections(workflowSchema.parse(graph)).map(section => [section.fork, section.join])).toEqual([['split', 'join'], ['split2', 'join2'], ['ui-split', 'ui-join']])
+})

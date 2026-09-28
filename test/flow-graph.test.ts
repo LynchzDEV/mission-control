@@ -1,5 +1,9 @@
 import { afterAll, expect, test } from 'bun:test'
 import { JSDOM } from 'jsdom'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import type { RunView } from '../server/run-view'
+import { forkSections, workflowSchema, type Workflow } from '../server/workflows'
 import { COL_STEP, ROW_STEP, STEP_H, STEP_W, layoutRun, renderRunGraph, routeEdge, type GraphEdge, type GraphStep } from '../client/flow-graph'
 
 const { window } = new JSDOM('')
@@ -96,4 +100,93 @@ test('a back edge makes room below the graph for its dip and label', () => {
   const step = (id: string): GraphStep => ({ id, title: id, detail: '', state: 'pending', engine: 'claude', kind: 'task' })
   const frame = renderRunGraph(host, [step('build'), step('test')], [{ source: 'build', target: 'test', outcome: 'pass', state: 'idle' }, { source: 'test', target: 'build', outcome: 'fail', state: 'idle', label: 'if test fails' }], 'build', { animate: false })
   expect(frame.height).toBeGreaterThanOrEqual(STEP_H + 26 + 10)
+})
+
+type Rect = { x: number; y: number; width: number; height: number }
+const overlaps = (a: Rect, b: Rect): boolean => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+const contains = (outer: Rect, inner: Rect): boolean => outer.x <= inner.x && outer.y <= inner.y && outer.x + outer.width >= inner.x + inner.width && outer.y + outer.height >= inner.y + inner.height
+const bigFlow = workflowSchema.parse(JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/big-flow.json'), 'utf8')))
+const waitingSections = (graph: Workflow): RunView['sections'] => forkSections(graph).map(section => ({
+  fork: section.fork, join: section.join, state: 'waiting', joined: [],
+  paths: section.paths.map(nodes => ({ nodes, title: graph.nodes.find(node => node.id === nodes[0])!.title, firstNodeId: nodes[0]!, pathId: null, branch: null })),
+}))
+const LABEL_H = 18
+
+test('the big flow lays out in rank columns with lanes: no card overlaps another, a band or label; bands of different paths never overlap', () => {
+  const layout = layoutRun(bigFlow.nodes, bigFlow.edges, bigFlow.entry, waitingSections(bigFlow))
+  const at = Object.fromEntries(layout.placed.map(place => [place.id, place]))
+  const cards = layout.placed.map(place => ({ id: place.id, x: place.x, y: place.y, width: STEP_W, height: STEP_H }))
+  for (const [index, card] of cards.entries()) for (const other of cards.slice(index + 1)) expect([card.id, other.id, overlaps(card, other)]).toEqual([card.id, other.id, false])
+  expect(layout.bands.map(band => band.key)).toEqual(['split:0', 'split:1', 'split2:0', 'split2:1', 'ui-split:0', 'ui-split:1'])
+  for (const [index, band] of layout.bands.entries()) for (const other of layout.bands.slice(index + 1)) {
+    if (contains(band, other) || contains(other, band)) continue
+    expect([band.key, other.key, overlaps(band, other)]).toEqual([band.key, other.key, false])
+  }
+  for (const band of layout.bands) for (const card of cards) expect([band.key, card.id, overlaps({ x: band.x, y: band.y, width: band.width, height: LABEL_H }, card)]).toEqual([band.key, card.id, false])
+  expect([at.review!.y, at.split2!.y, at.notify!.y, at.join!.y]).toEqual([at.plan!.y, at.plan!.y, at.plan!.y, at.plan!.y])
+  expect(at.join!.x).toBeGreaterThan(Math.max(at['api-tests']!.x, at['ui-check']!.x))
+  expect([at.api!.y, at.docs!.y]).toEqual([at.plan!.y, at.plan!.y])
+  expect(at['api-fix']!.x).toBe(at['api-tests']!.x)
+  expect(at['merge-fix']!.x).toBe(at.join!.x)
+  for (const band of layout.bands) expect(band.x + band.width <= layout.width && band.y >= 0 && band.y + band.height <= layout.height).toBe(true)
+  expect(Math.min(...layout.placed.map(place => place.y))).toBeGreaterThanOrEqual(LABEL_H)
+})
+
+test('a path band holds its steps and a nested band sits inside its path band', () => {
+  const layout = layoutRun(bigFlow.nodes, bigFlow.edges, bigFlow.entry, waitingSections(bigFlow))
+  const band = (key: string) => layout.bands.find(item => item.key === key)!
+  const card = (id: string) => { const place = layout.placed.find(item => item.id === id)!; return { x: place.x, y: place.y, width: STEP_W, height: STEP_H } }
+  for (const id of ['api', 'api-tests', 'api-fix']) expect(contains(band('split:0'), card(id))).toBe(true)
+  for (const id of ['ui', 'ui-split', 'ui-join', 'ui-check', 'ui-copy', 'ui-style']) expect(contains(band('split:1'), card(id))).toBe(true)
+  expect(contains(band('split:1'), band('ui-split:0'))).toBe(true)
+  expect(contains(band('split:1'), band('ui-split:1'))).toBe(true)
+  expect(band('split:0').label).toBe('Api path')
+})
+
+test('a back edge dips below the lowest band it spans and the graph makes room for it', () => {
+  const graph = { ...bigFlow, edges: [...bigFlow.edges.filter(edge => !(edge.source === 'review' && edge.outcome === 'fail')), { source: 'review', target: 'plan', outcome: 'fail' as const }] }
+  const layout = layoutRun(graph.nodes, graph.edges, graph.entry, waitingSections(graph))
+  const at = Object.fromEntries(layout.placed.map(place => [place.id, place]))
+  const lowest = Math.max(...layout.bands.filter(band => band.key.startsWith('split:')).map(band => band.y + band.height))
+  const route = routeEdge(at.review!, at.plan!, layout.bands)
+  expect(route.shape).toBe('back')
+  const dip = Number(/C\S+ (\S+)/.exec(route.d)![1])
+  expect(dip).toBeGreaterThan(lowest)
+  expect(layout.height).toBeGreaterThanOrEqual(dip + 10)
+})
+
+test('bands render behind the routes with their label and branch, and cards carry their step id', () => {
+  const host = document.createElement('div')
+  const sections: RunView['sections'] = [{ fork: 'split', join: 'join', state: 'open', joined: [], paths: [
+    { nodes: ['a'], title: 'Api', firstNodeId: 'a', pathId: 'a2-1', branch: 'flow-01234567-a2-1' },
+    { nodes: ['b'], title: 'Ui', firstNodeId: 'b', pathId: 'a2-2', branch: 'flow-01234567-a2-2' },
+  ] }]
+  const step = (id: string, kind = 'task'): GraphStep => ({ id, title: id, detail: '', state: 'pending', engine: kind === 'join' ? '' : 'claude', kind })
+  const edge = (source: string, target: string): GraphEdge => ({ source, target, outcome: 'pass', state: 'idle' })
+  renderRunGraph(host, [step('split'), step('a'), step('b'), step('join', 'join')], [edge('split', 'a'), edge('split', 'b'), edge('a', 'join'), edge('b', 'join')], 'split', { animate: false, sections })
+  const bands = [...host.querySelectorAll<HTMLElement>('.flow-band')]
+  expect(bands.map(band => band.textContent)).toEqual(['Api path · flow-01234567-a2-1', 'Ui path · flow-01234567-a2-2'])
+  expect(bands[0]!.querySelector('code')!.textContent).toBe('flow-01234567-a2-1')
+  expect(host.querySelector('.flow-run')!.firstElementChild!.classList.contains('flow-band')).toBe(true)
+  expect([...host.querySelectorAll<HTMLElement>('.flow-step')].map(card => card.dataset.step)).toEqual(['split', 'a', 'b', 'join'])
+  const conflict = [{ ...sections[0]!, state: 'conflict' as const, paths: [{ ...sections[0]!.paths[0]!, branch: null }, sections[0]!.paths[1]!] }]
+  renderRunGraph(host, [step('split'), step('a'), step('b'), step('join', 'join')], [edge('split', 'a'), edge('split', 'b'), edge('a', 'join'), edge('b', 'join')], 'split', { animate: false, sections: conflict })
+  expect([...host.querySelectorAll('.flow-band')].map(band => band.textContent)).toEqual(['Api path', 'Ui path · kept on flow-01234567-a2-2'])
+})
+
+test('routes draw in only on the first paint of a run, not when its steps change', () => {
+  const drawn: unknown[] = []
+  const proto = window.SVGElement.prototype as unknown as Record<string, unknown>
+  Object.assign(proto, { getTotalLength: () => 10, animate: (frames: unknown) => { drawn.push(frames) } })
+  const host = document.createElement('div')
+  const step = (id: string): GraphStep => ({ id, title: id, detail: '', state: 'pending', engine: 'claude', kind: 'task' })
+  const edge: GraphEdge = { source: 'a', target: 'b', outcome: 'pass', state: 'idle' }
+  renderRunGraph(host, [step('a'), step('b')], [edge], 'a', { animate: true, runId: 'r1' })
+  expect(drawn).toHaveLength(1)
+  renderRunGraph(host, [step('a'), step('b'), step('c')], [edge], 'a', { animate: true, runId: 'r1' })
+  expect(drawn).toHaveLength(1)
+  renderRunGraph(host, [step('a'), step('b')], [edge], 'a', { animate: true, runId: 'r2' })
+  expect(drawn).toHaveLength(2)
+  delete proto.getTotalLength
+  delete proto.animate
 })

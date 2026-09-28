@@ -60,7 +60,9 @@ function reducedMotion(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: ViewportOptions): { paint(runId: string, content: Size, focus: Box | null): void; forget(runId: string): void } {
+type Anchor = { before: Point; after: Point }
+
+export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: ViewportOptions): { paint(runId: string, content: Size, focus: Box | null, anchor?: Anchor): void; forget(runId: string): void } {
   const size = options.size ?? ((): Size => ({ width: stage.clientWidth, height: stage.clientHeight }))
   const controls = stage.querySelector<HTMLElement>('.flow-zoom')
   const followButton = controls?.querySelector<HTMLButtonElement>('[data-zoom="follow"]') ?? null
@@ -256,10 +258,15 @@ export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: 
   }
 
   return {
-    paint(runId, nextContent, nextFocus) {
+    paint(runId, nextContent, nextFocus, anchor) {
       select(runId)
       content = nextContent
       focus = nextFocus
+      if (anchor && state.view) {
+        const { x, y, scale } = state.view
+        state.view = { x: x - (anchor.after.x - anchor.before.x) * scale, y: y - (anchor.after.y - anchor.before.y) * scale, scale }
+        state.moved = true
+      }
       if (state.view && state.moved) height = heightFor(state.view.scale)
       settle(true)
     },

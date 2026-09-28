@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { defaultWorkflow } from '../server/workflows'
+import { defaultWorkflow, workflowSchema } from '../server/workflows'
 import { runView, scopeSnapshot } from '../server/run-view'
 import type { WorkflowRun } from '../server/workflow-runner'
 import type { JobRecord } from '../server/jobs'
@@ -81,20 +81,87 @@ test('a proposal names the steps it removes and the unrun steps it edits', () =>
 
 test('a run mid-fork shows its tokens, open sections and kept branches without workspaces or snapshots', () => {
   const nodes = [...workflow.nodes.filter(node => node.id !== 'review'), { id: 'a', title: 'Build API', kind: 'task' as const, instructions: 'a' }, { id: 'b', title: 'Build UI', kind: 'task' as const, instructions: 'b' }, { id: 'join', title: 'Join', kind: 'join' as const, instructions: '' }]
+  const edges = [...workflow.edges.filter(edge => edge.source !== 'execute'), { source: 'execute', target: 'a', outcome: 'pass' as const }, { source: 'execute', target: 'b', outcome: 'pass' as const }, { source: 'a', target: 'join', outcome: 'pass' as const }, { source: 'b', target: 'join', outcome: 'pass' as const }]
   const agents = { ...run({}).agents, a: { engine: 'claude', model: null, family: null }, b: { engine: 'glm', model: null, family: null }, join: { engine: 'claude', model: null, family: null } }
   const path = (pathId: string, firstNodeId: string) => ({ pathId, branch: `flow-run-1-${pathId}`, dir: `/home/cfg/workflow-runs/run-1/${pathId}`, workspace: `/home/cfg/workflow-runs/run-1/${pathId}`, firstNodeId })
   const view = runView(run({
-    workflow: { ...workflow, nodes }, agents,
+    workflow: { ...workflow, nodes, edges } as WorkflowRun['workflow'], agents,
     attempts: [{ nodeId: 'b', number: 4, jobId: 'jb', status: 'settled', prompt: 'p', startedAt: 1, endedAt: 2, result: { outcome: 'pass', summary: 'ok', evidence: [] }, checks: [], output: '', workspace: null, tokenId: 'tb', pathId: 'a3-2', from: [3] }],
     tokens: [{ id: 'ta', nodeId: 'a', pathId: 'a3-1', workspace: '/home/cfg/workflow-runs/run-1/a3-1', state: 'working', attempt: 5, from: [3] }, { id: 'tb', nodeId: 'join', pathId: 'a3-2', workspace: '/home/cfg/workflow-runs/run-1/a3-2', state: 'waiting', attempt: null, from: [4] }],
     sections: [{ fork: 'execute', join: 'join', forkAttempt: 3, parentPathId: 'main', parentWorkspace: '/x', snapshot: 'abc123', joined: ['a3-2'], paths: [path('a3-1', 'a'), path('a3-2', 'b')] }],
     keptBranches: ['flow-run-1-a2-2'],
   }))
   expect(view.tokens).toEqual([{ nodeId: 'a', pathId: 'a3-1', state: 'working', from: [3] }, { nodeId: 'join', pathId: 'a3-2', state: 'waiting', from: [4] }])
-  expect(view.sections).toEqual([{ fork: 'execute', join: 'join', joined: ['a3-2'], paths: [{ pathId: 'a3-1', branch: 'flow-run-1-a3-1', firstNodeId: 'a' }, { pathId: 'a3-2', branch: 'flow-run-1-a3-2', firstNodeId: 'b' }] }])
+  expect(view.sections).toEqual([{ fork: 'execute', join: 'join', state: 'open', joined: ['a3-2'], paths: [{ nodes: ['a'], title: 'Build API', firstNodeId: 'a', pathId: 'a3-1', branch: 'flow-run-1-a3-1' }, { nodes: ['b'], title: 'Build UI', firstNodeId: 'b', pathId: 'a3-2', branch: 'flow-run-1-a3-2' }] }])
   expect(view.keptBranches).toEqual(['flow-run-1-a2-2'])
   expect(view.attempts[0]).toEqual(expect.objectContaining({ pathId: 'a3-2', from: [3] }))
   expect(view.nodes.find(node => node.id === 'join')!.engine).toBe('')
   expect(JSON.stringify(view)).not.toContain('abc123')
   expect(JSON.stringify(view)).not.toContain('/home/cfg')
+})
+
+const looped = workflowSchema.parse({ id: 'looped', name: 'Looped', entry: 'plan', nodes: [
+  { id: 'plan', title: 'Plan', kind: 'plan', agent: { role: 'plan' }, instructions: 'p' },
+  { id: 'verify', title: 'Verify', kind: 'verify-plan', agent: { role: 'review' }, instructions: 'v' },
+  { id: 'split', title: 'Split', instructions: 's' },
+  { id: 'api', title: 'Api', kind: 'implement', instructions: 'a' },
+  { id: 'ui', title: 'Ui', kind: 'implement', instructions: 'u' },
+  { id: 'join', title: 'Join', kind: 'join', instructions: 'j' },
+  { id: 'review', title: 'Review', kind: 'review', agent: { role: 'review' }, instructions: 'r' },
+], edges: [
+  { source: 'plan', target: 'verify', outcome: 'pass' }, { source: 'verify', target: 'split', outcome: 'pass' },
+  { source: 'split', target: 'api', outcome: 'pass' }, { source: 'split', target: 'ui', outcome: 'pass' },
+  { source: 'api', target: 'join', outcome: 'pass' }, { source: 'ui', target: 'join', outcome: 'pass' },
+  { source: 'join', target: 'review', outcome: 'pass' }, { source: 'review', target: 'plan', outcome: 'fail' },
+] })
+type Attempt = WorkflowRun['attempts'][number]
+const settled = (nodeId: string, number: number, outcome: 'pass' | 'fail', pathId = 'main', from: number[] = number ? [number - 1] : []): Attempt =>
+  ({ nodeId, number, jobId: nodeId === 'join' ? null : `j${number}`, status: 'settled', prompt: '', startedAt: number * 10, endedAt: number * 10 + 5, result: { outcome, summary: outcome, evidence: [] }, checks: [], output: '', workspace: null, pathId, from })
+const firstPass = [settled('plan', 0, 'pass'), settled('verify', 1, 'pass'), settled('split', 2, 'pass'), settled('api', 3, 'pass', 'a2-1', [2]), settled('ui', 4, 'pass', 'a2-2', [2])]
+const loopedRun = (patch: Partial<WorkflowRun>): WorkflowRun => run({ id: '0123456789abcdef', workflow: { ...looped, revision: 'l', createdAt: 0 }, tokens: [], ...patch })
+const sectionOf = (view: ReturnType<typeof runView>) => view.sections.find(section => section.fork === 'split')!
+
+test('every fork section of the flow is in the run view, waiting before its split runs, with its paths named by their first step', () => {
+  const view = runView(loopedRun({ attempts: firstPass.slice(0, 2) }))
+  expect(view.sections).toEqual([{ fork: 'split', join: 'join', state: 'waiting', joined: [], paths: [
+    { nodes: ['api'], title: 'Api', firstNodeId: 'api', pathId: null, branch: null },
+    { nodes: ['ui'], title: 'Ui', firstNodeId: 'ui', pathId: null, branch: null },
+  ] }])
+})
+
+test('an open section carries each path id and its flow-<run id 8>-<path id> branch', () => {
+  const open = { fork: 'split', join: 'join', forkAttempt: 2, parentPathId: 'main', parentWorkspace: '/x', snapshot: 's', joined: [], paths: [
+    { pathId: 'a2-1', branch: 'flow-01234567-a2-1', dir: '/d1', workspace: '/d1', firstNodeId: 'api' },
+    { pathId: 'a2-2', branch: 'flow-01234567-a2-2', dir: '/d2', workspace: '/d2', firstNodeId: 'ui' },
+  ] }
+  const section = sectionOf(runView(loopedRun({ attempts: firstPass, sections: [open] })))
+  expect(section.state).toBe('open')
+  expect(section.paths.map(path => [path.pathId, path.branch])).toEqual([['a2-1', 'flow-01234567-a2-1'], ['a2-2', 'flow-01234567-a2-2']])
+})
+
+test('a section whose latest join passed is joined, with no branches left', () => {
+  const section = sectionOf(runView(loopedRun({ attempts: [...firstPass, settled('join', 5, 'pass', 'main', [3, 4])] })))
+  expect(section.state).toBe('joined')
+  expect(section.joined).toEqual(['a2-1', 'a2-2'])
+  expect(section.paths.map(path => [path.pathId, path.branch])).toEqual([['a2-1', null], ['a2-2', null]])
+})
+
+test('a section whose latest join failed is a conflict and names the branch the unjoined path was kept on', () => {
+  const section = sectionOf(runView(loopedRun({ attempts: [...firstPass, settled('join', 5, 'fail', 'main', [3, 4])], keptBranches: ['flow-01234567-a2-2'] })))
+  expect(section.state).toBe('conflict')
+  expect(section.joined).toEqual(['a2-1'])
+  expect(section.paths.map(path => [path.pathId, path.branch])).toEqual([['a2-1', null], ['a2-2', 'flow-01234567-a2-2']])
+})
+
+test('a loop around a whole section re-opens it: after the split runs again the section is open, not joined', () => {
+  const again = [...firstPass, settled('join', 5, 'pass', 'main', [3, 4]), settled('review', 6, 'fail'), settled('plan', 7, 'pass'), settled('verify', 8, 'pass'), settled('split', 9, 'pass')]
+  const replanning = sectionOf(runView(loopedRun({ attempts: again.slice(0, 8) })))
+  expect(replanning.state).toBe('joined')
+  const open = { fork: 'split', join: 'join', forkAttempt: 9, parentPathId: 'main', parentWorkspace: '/x', snapshot: 's', joined: [], paths: [
+    { pathId: 'a9-1', branch: 'flow-01234567-a9-1', dir: '/d1', workspace: '/d1', firstNodeId: 'api' },
+    { pathId: 'a9-2', branch: 'flow-01234567-a9-2', dir: '/d2', workspace: '/d2', firstNodeId: 'ui' },
+  ] }
+  const reopened = sectionOf(runView(loopedRun({ attempts: again, sections: [open] })))
+  expect(reopened.state).toBe('open')
+  expect(reopened.paths.map(path => path.pathId)).toEqual(['a9-1', 'a9-2'])
 })

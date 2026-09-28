@@ -221,3 +221,64 @@ test('following the working step never animates under reduced motion, and does w
   Reflect.deleteProperty(canvas(), 'animate')
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })
+
+const forkedRun = (id: string): RunView => {
+  const node = (nodeId: string, title: string, kind = 'task') => ({ id: nodeId, title, kind, engine: kind === 'join' ? '' : 'claude' })
+  const settled = (nodeId: string, number: number, startedAt: number, endedAt: number, from: number[]) => ({ nodeId, number, jobId: nodeId === 'join' ? null : `j${number}`, status: 'settled', outcome: 'pass' as const, summary: 'ok', startedAt, endedAt, pathId: 'main', from })
+  return {
+    ...run(id, 50), entry: 'split', currentNodeId: 'review',
+    nodes: [node('split', 'Split'), node('a', 'Api'), node('b', 'Ui'), node('join', 'Join', 'join'), node('review', 'Review', 'review')],
+    edges: [{ source: 'split', target: 'a', outcome: 'pass' }, { source: 'split', target: 'b', outcome: 'pass' }, { source: 'a', target: 'join', outcome: 'pass' }, { source: 'b', target: 'join', outcome: 'pass' }, { source: 'join', target: 'review', outcome: 'pass' }],
+    attempts: [settled('split', 0, 0, 1000, []), settled('a', 1, 2000, 5000, [0]), settled('b', 2, 2000, 4000, [0]), settled('join', 3, 5000, 62_000, [1, 2]),
+      { nodeId: 'review', number: 4, jobId: 'j4', status: 'running', outcome: null, summary: null, startedAt: 0, endedAt: null, pathId: 'main', from: [3] }],
+    tokens: [{ nodeId: 'review', pathId: 'main', state: 'working', from: [3] }],
+    sections: [{ fork: 'split', join: 'join', state: 'joined', joined: [], paths: [
+      { nodes: ['a'], title: 'Api', firstNodeId: 'a', pathId: null, branch: null },
+      { nodes: ['b'], title: 'Ui', firstNodeId: 'b', pathId: null, branch: null },
+    ] }],
+  }
+}
+const card = (id: string): HTMLElement | null => canvas().querySelector<HTMLElement>(`[data-step="${id}"]`)
+const view = (): { x: number; y: number; scale: number } => {
+  const [, x, y, scale] = /translate\(([-\d.]+)px, ([-\d.]+)px\) scale\(([-\d.]+)\)/.exec(canvas().style.transform)!
+  return { x: Number(x), y: Number(y), scale: Number(scale) }
+}
+const tap = (element: HTMLElement): void => {
+  for (const type of ['pointerdown', 'pointerup']) element.dispatchEvent(new window.PointerEvent(type, { pointerId: 2, clientX: 5, clientY: 5, button: 0, bubbles: true }))
+  element.click()
+}
+const screenX = (id: string): number => view().x + parseFloat(card(id)!.style.left) * view().scale
+
+test('a finished section shows as one box; the ticker updates the working step by id, not by position', async () => {
+  stageSize.width = 1000
+  const stream = openStream()
+  stream.send({ runs: [forkedRun('F')], jobs: [] })
+  expect(card('a')).toBeNull()
+  expect(card('section:split')!.querySelector('strong')!.textContent).toBe('Parallel · Api + Ui')
+  expect(card('section:split')!.querySelector('small')!.textContent).toBe('Done · 1m 00s')
+  await Bun.sleep(1100)
+  expect(card('review')!.querySelector('small')!.textContent).toMatch(/^Working · \d+h \d{2}m$/)
+  expect(card('section:split')!.querySelector('small')!.textContent).toBe('Done · 1m 00s')
+  expect(card('join')).toBeNull()
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('clicking the box expands the section in place with a Collapse button; Collapse folds it back', () => {
+  stageSize.width = 1000
+  const stream = openStream()
+  stream.send({ runs: [forkedRun('E')], jobs: [] })
+  const before = screenX('section:split')
+  tap(card('section:split')!)
+  expect(card('section:split')).toBeNull()
+  expect([card('a'), card('b'), card('join')].every(Boolean)).toBe(true)
+  expect(canvas().querySelectorAll('.flow-band')).toHaveLength(2)
+  expect(Math.abs(screenX('a') - before)).toBeLessThan(0.5)
+  stream.send({ runs: [{ ...forkedRun('E'), updatedAt: 51 }], jobs: [] })
+  expect(card('a')).not.toBeNull()
+  const collapse = canvas().querySelector<HTMLButtonElement>('.flow-band button')!
+  expect(collapse.textContent).toBe('Collapse')
+  tap(collapse)
+  expect(card('section:split')).not.toBeNull()
+  expect(canvas().querySelectorAll('.flow-band')).toHaveLength(0)
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})

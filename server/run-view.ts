@@ -1,12 +1,13 @@
 import type { JobRecord } from './jobs'
 import type { ApprovalVia, ResolvedAgent, RunOrigin, RunVersion, TokenState, WorkflowRun } from './workflow-runner'
-import type { WorkflowNode, WorkflowRevision } from './workflows'
+import { forkSections, type ForkSection, type WorkflowNode, type WorkflowRevision } from './workflows'
 
 export type Scope = { chat?: string; terminal?: string }
 export type RunStepView = { id: string; title: string; kind: string; engine: string }
 export type RunAttemptView = { nodeId: string; number: number; jobId: string | null; status: string; outcome: 'pass' | 'fail' | 'blocked' | null; summary: string | null; startedAt: number; endedAt: number | null; pathId: string; from: number[] }
 export type RunTokenView = { nodeId: string; pathId: string; state: TokenState; from: number[] }
-export type RunSectionView = { fork: string; join: string; paths: { pathId: string; branch: string; firstNodeId: string }[]; joined: string[] }
+export type RunSectionPathView = { nodes: string[]; title: string; firstNodeId: string; pathId: string | null; branch: string | null }
+export type RunSectionView = { fork: string; join: string; state: 'waiting' | 'open' | 'joined' | 'conflict'; joined: string[]; paths: RunSectionPathView[] }
 export type RunEdgeView = { source: string; target: string; outcome: 'pass' | 'fail' | 'blocked' }
 export type RunVersionView = Omit<RunVersion, 'graph' | 'agents' | 'skills'>
 export type RunProposalView = { number: number; reason: string; nodes: RunStepView[]; edges: RunEdgeView[]; removed: string[]; changed: string[] }
@@ -44,6 +45,36 @@ function latestChangeView(run: WorkflowRun): RunChangeView | null {
   return { number: latest.number, reason: latest.reason, size: latest.size === 'big' ? 'big' : 'small', approvedVia: latest.approvedVia, state: latest.state }
 }
 
+function latestAttempt(run: WorkflowRun, nodeId: string, before = Infinity): WorkflowRun['attempts'][number] | undefined {
+  return run.attempts.filter(attempt => attempt.nodeId === nodeId && attempt.number < before).sort((a, b) => a.number - b.number).at(-1)
+}
+
+function settledSection(run: WorkflowRun, section: ForkSection, paths: RunSectionPathView[]): RunSectionView | null {
+  const join = latestAttempt(run, section.join)
+  const outcome = join?.status === 'settled' ? join.result?.outcome : undefined
+  if (!join || (outcome !== 'pass' && outcome !== 'fail')) return null
+  const fork = latestAttempt(run, section.fork, join.number)
+  const pathIdOf = (firstNodeId: string): string | null => run.attempts.find(attempt => attempt.nodeId === firstNodeId && !!fork && attempt.from?.includes(fork.number))?.pathId ?? null
+  const settled = paths.map(path => {
+    const pathId = pathIdOf(path.firstNodeId)
+    const kept = outcome === 'fail' && pathId ? run.keptBranches.find(branch => branch.endsWith(`-${pathId}`)) ?? null : null
+    return { ...path, pathId, branch: kept }
+  })
+  const joined = settled.filter(path => path.pathId && !path.branch).map(path => path.pathId!)
+  return { fork: section.fork, join: section.join, state: outcome === 'pass' ? 'joined' : 'conflict', joined, paths: settled }
+}
+
+function sectionView(run: WorkflowRun, section: ForkSection): RunSectionView {
+  const title = (id: string): string => run.workflow.nodes.find(node => node.id === id)?.title ?? id
+  const paths = section.paths.map(nodes => ({ nodes, title: title(nodes[0]!), firstNodeId: nodes[0]!, pathId: null, branch: null }))
+  const open = run.sections.filter(candidate => candidate.fork === section.fork && candidate.join === section.join).at(-1)
+  if (open) {
+    const live = (firstNodeId: string) => open.paths.find(path => path.firstNodeId === firstNodeId)
+    return { fork: section.fork, join: section.join, state: 'open', joined: [...open.joined], paths: paths.map(path => ({ ...path, pathId: live(path.firstNodeId)?.pathId ?? null, branch: live(path.firstNodeId)?.branch ?? null })) }
+  }
+  return settledSection(run, section, paths) ?? { fork: section.fork, join: section.join, state: 'waiting', joined: [], paths }
+}
+
 export function runView(run: WorkflowRun): RunView {
   return {
     id: run.id, label: run.label, status: run.status, error: run.error, workflowName: run.workflow.name, revision: run.workflow.revision,
@@ -53,7 +84,7 @@ export function runView(run: WorkflowRun): RunView {
     attempts: run.attempts.map(attempt => ({ nodeId: attempt.nodeId, number: attempt.number, jobId: attempt.jobId, status: attempt.status, outcome: attempt.result?.outcome ?? null, summary: attempt.result?.summary ?? null, startedAt: attempt.startedAt, endedAt: attempt.endedAt, pathId: attempt.pathId ?? 'main', from: attempt.from ?? (attempt.number ? [attempt.number - 1] : []) })),
     createdAt: run.createdAt, updatedAt: run.updatedAt, proposal: proposalView(run), latestChange: latestChangeView(run),
     tokens: run.tokens.map(token => ({ nodeId: token.nodeId, pathId: token.pathId, state: token.state, from: token.from })),
-    sections: run.sections.map(section => ({ fork: section.fork, join: section.join, joined: section.joined, paths: section.paths.map(path => ({ pathId: path.pathId, branch: path.branch, firstNodeId: path.firstNodeId })) })),
+    sections: forkSections(run.workflow).map(section => sectionView(run, section)),
     keptBranches: run.keptBranches,
   }
 }

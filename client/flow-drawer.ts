@@ -10,6 +10,9 @@ type BannerAction = 'approve' | 'reject' | 'retry' | 'stop' | 'keep' | 'approval
 type Banner = { tone: 'ask' | 'problem' | 'notice' | null; text: string; actions: BannerAction[] }
 type Edge = RunView['edges'][number]
 type StepStatus = { state: StepState; detail: string; since?: number }
+type Section = RunView['sections'][number]
+type Composed = { steps: GraphStep[]; edges: GraphEdge[]; bands: Section[] }
+type Point = { x: number; y: number }
 
 const LIVE = new Set(['awaiting-approval', 'running', 'paused'])
 const SUMMARY_CHARS = 60
@@ -81,9 +84,9 @@ function unstartedStatus(run: RunView, nodeId: string, engine: string, reachable
 }
 
 function waitingAtJoin(run: RunView, nodeId: string, tries: RunAttemptView[]): StepStatus | null {
-  const section = run.sections.find(open => open.join === nodeId)
+  const section = run.sections.find(open => open.join === nodeId && open.state === 'open')
   if (!section || !isLive(run) || tries.some(attempt => attempt.status !== 'settled')) return null
-  const pathIds = new Set(section.paths.map(path => path.pathId))
+  const pathIds = new Set(section.paths.map(path => path.pathId).filter(pathId => pathId !== null))
   const arrived = new Set(run.tokens.filter(token => token.nodeId === nodeId && token.state === 'waiting' && pathIds.has(token.pathId)).map(token => token.pathId))
   return { state: 'pending', detail: `Waiting for ${section.paths.length - arrived.size} of ${section.paths.length}` }
 }
@@ -170,6 +173,57 @@ export function edgesFor(run: RunView): GraphEdge[] {
   const current = run.edges.map(edge => labelled(run, edge, edgeState(run, edge)))
   const added = (proposed ?? []).filter(edge => !run.edges.some(other => sameEdge(other, edge))).map(edge => labelled(run, edge, 'proposed'))
   return [...current, ...added]
+}
+
+const sectionBox = (fork: string): string => `section:${fork}`
+const byNumber = (a: RunAttemptView, b: RunAttemptView): number => a.number - b.number
+
+function sectionDuration(section: Section, attempts: RunAttemptView[], now: number): string {
+  const forked = attempts.filter(attempt => attempt.nodeId === section.fork && attempt.endedAt !== null).sort(byNumber).at(-1)
+  const joined = attempts.filter(attempt => attempt.nodeId === section.join && attempt.outcome === 'pass').sort(byNumber).at(-1)
+  const members = new Set(section.paths.flatMap(path => path.nodes))
+  const starts = attempts.filter(attempt => forked && members.has(attempt.nodeId) && attempt.startedAt >= forked.endedAt!).map(attempt => attempt.startedAt)
+  if (!joined || !starts.length) return 'Done'
+  return `Done · ${elapsed((joined.endedAt ?? now) - Math.min(...starts))}`
+}
+
+function boxStep(section: Section, attempts: RunAttemptView[], now: number): GraphStep {
+  return { id: sectionBox(section.fork), title: `Parallel · ${section.paths.map(path => path.title).join(' + ')}`, detail: sectionDuration(section, attempts, now), state: 'done', kind: 'join', engine: '' }
+}
+
+function rewire(edges: GraphEdge[], boxOf: Map<string, string>): GraphEdge[] {
+  const seen = new Set<string>()
+  return edges.flatMap(edge => {
+    const source = boxOf.get(edge.source) ?? edge.source, target = boxOf.get(edge.target) ?? edge.target
+    if (source === edge.source && target === edge.target) return [edge]
+    const key = `${source}>${target}:${edge.outcome}`
+    if (source === target || seen.has(key)) return []
+    seen.add(key)
+    return [{ ...edge, source, target, ...(target !== edge.target ? { state: 'done' as const } : {}) }]
+  })
+}
+
+export function collapseSections(steps: GraphStep[], edges: GraphEdge[], sections: Section[], expanded: ReadonlySet<string>, attempts: RunAttemptView[], now: number): Composed {
+  const boxOf = new Map<string, string>()
+  const boxes = new Map<string, GraphStep>()
+  const drawn: Section[] = []
+  for (const section of sections) {
+    if (boxOf.has(section.fork)) continue
+    if (section.state !== 'joined' || expanded.has(section.fork)) { drawn.push(section); continue }
+    const box = boxStep(section, attempts, now)
+    boxes.set(box.id, box)
+    for (const member of [...section.paths.flatMap(path => path.nodes), section.join]) boxOf.set(member, box.id)
+  }
+  const shown = new Set<string>()
+  const composedSteps = steps.flatMap(step => {
+    const box = boxOf.get(step.id)
+    if (!box) return [step]
+    if (shown.has(box)) return []
+    shown.add(box)
+    return [boxes.get(box)!]
+  })
+  const bands = drawn.map(section => ({ ...section, paths: section.paths.map(path => ({ ...path, nodes: [...new Set(path.nodes.map(id => boxOf.get(id) ?? id))] })) }))
+  return { steps: composedSteps, edges: rewire(edges, boxOf), bands }
 }
 
 function clock(at: number): string {
@@ -265,6 +319,13 @@ function mountFlowDrawer(): void {
   let saving: string | null = null
   const savedAs = new Map<string, string>()
   const approvalRestored = new Set<string>()
+  const expandedByRun = new Map<string, Set<string>>()
+  const expandedFor = (runId: string): Set<string> => expandedByRun.get(runId) ?? expandedByRun.set(runId, new Set()).get(runId)!
+  const compose = (run: RunView, now: number): Composed => collapseSections(stepsFor(run, now), edgesFor(run), run.sections, expandedFor(run.id), run.attempts, now)
+  const cardAt = (id: string | undefined): Point | null => {
+    const card = id ? canvas.querySelector<HTMLElement>(`.flow-step[data-step="${id}"]`) : null
+    return card ? { x: parseFloat(card.style.left) || 0, y: parseFloat(card.style.top) || 0 } : null
+  }
 
   const make = (tag: string, text = '', className = ''): HTMLElement => {
     const element = document.createElement(tag)
@@ -430,7 +491,7 @@ function mountFlowDrawer(): void {
     return `${word} · ${elapsed((job.endedAt ?? now) - job.startedAt)}`
   }
 
-  function paint(): void {
+  function paint(keep?: { id: string; before: Point }): void {
     const run = pickRun(snapshot.runs, selected)
     current = run
     stage.hidden = !run
@@ -440,8 +501,10 @@ function mountFlowDrawer(): void {
     if (run) {
       paintHeader(run, run.label)
       meta.replaceChildren(...(run.origin.by === 'you' ? [] : [logo(run.origin.by, '')]), metaFor(run))
-      const frame = renderRunGraph(canvas, stepsFor(run, Date.now()), edgesFor(run), run.entry, { animate: motionAllowed() })
-      viewport.paint(run.id, frame, frame.focus)
+      const composed = compose(run, Date.now())
+      const frame = renderRunGraph(canvas, composed.steps, composed.edges, run.entry, { animate: motionAllowed(), sections: composed.bands, runId: run.id })
+      const after = keep ? cardAt(keep.id) : null
+      viewport.paint(run.id, frame, frame.focus, keep && after ? { before: keep.before, after } : undefined)
       return
     }
     const newest = snapshot.jobs[0]
@@ -455,10 +518,11 @@ function mountFlowDrawer(): void {
     if (document.hidden) return
     const now = Date.now()
     if (current) {
-      const steps = stepsFor(current, now)
-      stage.querySelectorAll<HTMLElement>('.flow-step').forEach((card, index) => {
+      const steps = new Map(compose(current, now).steps.map(step => [step.id, step]))
+      canvas.querySelectorAll<HTMLElement>('.flow-step').forEach(card => {
         const detail = card.querySelector<HTMLElement>('small[data-since]')
-        if (detail && steps[index]) detail.textContent = steps[index].detail
+        const step = steps.get(card.dataset.step ?? '')
+        if (detail && step) detail.textContent = step.detail
       })
       return
     }
@@ -485,6 +549,23 @@ function mountFlowDrawer(): void {
     connect()
   }
 
+  function toggleSection(fork: string, expand: boolean): void {
+    if (!current) return
+    const firstStep = current.sections.find(section => section.fork === fork)?.paths[0]?.firstNodeId
+    const [from, to] = expand ? [sectionBox(fork), firstStep] : [firstStep, sectionBox(fork)]
+    const before = cardAt(from)
+    if (expand) expandedFor(current.id).add(fork)
+    else expandedFor(current.id).delete(fork)
+    paint(before && to ? { id: to, before } : undefined)
+  }
+
+  canvas.addEventListener('click', (event) => {
+    const target = event.target as Element
+    const collapse = target.closest<HTMLElement>('[data-collapse]')
+    if (collapse) { toggleSection(collapse.dataset.collapse!, false); return }
+    const box = target.closest<HTMLElement>('.flow-step[data-step^="section:"]')
+    if (box) toggleSection(box.dataset.step!.slice(sectionBox('').length), true)
+  })
   runsSelect.onchange = () => { selected = runsSelect.value; paint() }
   pause.onclick = () => void act(current?.status === 'paused' ? 'resume' : 'pause', current?.id)
   let stopTarget: string | undefined

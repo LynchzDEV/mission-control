@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { bannerFor, edgesFor, elapsed, metaFor, pickRun, pillsFor, stepsFor } from '../client/flow-drawer'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { bannerFor, collapseSections, edgesFor, elapsed, metaFor, pickRun, pillsFor, stepsFor } from '../client/flow-drawer'
+import { STEP_H, STEP_W, layoutRun, type GraphEdge, type GraphStep } from '../client/flow-graph'
+import { forkSections, workflowSchema } from '../server/workflows'
 import type { RunView } from '../server/run-view'
 
 const base: RunView = {
@@ -173,7 +177,7 @@ const forked: RunView = {
     { nodeId: 'a', number: 5, jobId: 'a', status: 'running', outcome: null, summary: null, startedAt: 30, endedAt: null, pathId: 'a3-1', from: [3] },
   ],
   tokens: [{ nodeId: 'a', pathId: 'a3-1', state: 'working', from: [3] }, { nodeId: 'join', pathId: 'a3-2', state: 'waiting', from: [4] }],
-  sections: [{ fork: 'split', join: 'join', paths: [{ pathId: 'a3-1', branch: 'flow-r-a3-1', firstNodeId: 'a' }, { pathId: 'a3-2', branch: 'flow-r-a3-2', firstNodeId: 'b' }], joined: [] }],
+  sections: [{ fork: 'split', join: 'join', state: 'open', joined: [], paths: [{ nodes: ['a'], title: 'Build API', firstNodeId: 'a', pathId: 'a3-1', branch: 'flow-r-a3-1' }, { nodes: ['b'], title: 'Build UI', firstNodeId: 'b', pathId: 'a3-2', branch: 'flow-r-a3-2' }] }],
 }
 
 test('a run mid-fork shows the working path, the join waiting for the other path and the step after it', () => {
@@ -206,4 +210,55 @@ test('every working path counts as running and the steps after them are up next'
   expect([steps.a!.state, steps.b!.state]).toEqual(['active', 'active'])
   expect(steps.join!.detail).toBe('Waiting for 2 of 2')
   expect(pillsFor(both).running).toBe(2)
+})
+
+const bigFlow = workflowSchema.parse(JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/big-flow.json'), 'utf8')))
+const bigSteps: GraphStep[] = bigFlow.nodes.map(node => ({ id: node.id, title: node.title, detail: '', state: 'done', engine: node.kind === 'join' ? '' : 'claude', kind: node.kind }))
+const bigEdges: GraphEdge[] = bigFlow.edges.map(edge => ({ ...edge, state: 'done' }))
+const bigSections = (states: Record<string, RunView['sections'][number]['state']>): RunView['sections'] => forkSections(bigFlow).map(section => ({
+  fork: section.fork, join: section.join, state: states[section.fork] ?? 'waiting', joined: [],
+  paths: section.paths.map(nodes => ({ nodes, title: bigFlow.nodes.find(node => node.id === nodes[0])!.title, firstNodeId: nodes[0]!, pathId: null, branch: null })),
+}))
+const attempt = (nodeId: string, number: number, startedAt: number, endedAt: number, outcome: 'pass' | 'fail' = 'pass') => ({ nodeId, number, jobId: null, status: 'settled', outcome, summary: null, startedAt, endedAt, pathId: 'main', from: [] })
+const bigAttempts = [attempt('split', 1, 0, 10_000), attempt('ui', 2, 12_000, 20_000), attempt('api', 3, 13_000, 30_000), attempt('join', 4, 190_000, 192_000)]
+const ids = (steps: GraphStep[]) => steps.map(step => step.id)
+
+test('a joined section collapses to one Parallel box that replaces its paths and join, with the edges rewired to it', () => {
+  const composed = collapseSections(bigSteps, bigEdges, bigSections({ split: 'joined', 'ui-split': 'joined' }), new Set(), bigAttempts, 200_000)
+  const box = composed.steps.find(step => step.id === 'section:split')!
+  expect(box).toEqual({ id: 'section:split', title: 'Parallel · Api + Ui', detail: 'Done · 3m 00s', state: 'done', kind: 'join', engine: '' })
+  for (const gone of ['api', 'api-tests', 'api-fix', 'ui', 'ui-split', 'ui-copy', 'ui-style', 'ui-join', 'ui-check', 'join', 'section:ui-split']) expect(ids(composed.steps)).not.toContain(gone)
+  const touching = (id: string) => composed.edges.filter(edge => edge.source === id || edge.target === id).map(edge => `${edge.source}>${edge.target}:${edge.outcome}:${edge.state}`)
+  expect(touching('section:split')).toEqual(['split>section:split:pass:done', 'section:split>review:pass:done', 'section:split>merge-fix:fail:done'])
+  const kept = new Set(ids(composed.steps))
+  expect(composed.edges.every(edge => kept.has(edge.source) && kept.has(edge.target))).toBe(true)
+  expect(composed.bands.map(section => section.fork)).toEqual(['split2'])
+})
+
+test('with the outer section expanded, its joined inner section collapses to a box inside the outer path band', () => {
+  const composed = collapseSections(bigSteps, bigEdges, bigSections({ split: 'joined', 'ui-split': 'joined' }), new Set(['split']), bigAttempts, 200_000)
+  expect(composed.steps.find(step => step.id === 'section:ui-split')!.title).toBe('Parallel · Ui copy + Ui style')
+  expect(ids(composed.steps)).not.toContain('ui-copy')
+  expect(ids(composed.steps)).toContain('join')
+  const outer = composed.bands.find(section => section.fork === 'split')!
+  expect(outer.paths[1]!.nodes).toEqual(['ui', 'ui-split', 'section:ui-split', 'ui-check'])
+  expect(composed.bands.map(section => section.fork)).toEqual(['split', 'split2'])
+  const layout = layoutRun(composed.steps, composed.edges, bigFlow.entry, composed.bands)
+  const band = layout.bands.find(item => item.key === 'split:1')!
+  const box = layout.placed.find(place => place.id === 'section:ui-split')!
+  expect(box.x >= band.x && box.y >= band.y && box.x + STEP_W <= band.x + band.width && box.y + STEP_H <= band.y + band.height).toBe(true)
+})
+
+test('an open section stays expanded even when an earlier pass through it was joined', () => {
+  const composed = collapseSections(bigSteps, bigEdges, bigSections({ split: 'open', 'ui-split': 'joined' }), new Set(), bigAttempts, 200_000)
+  expect(ids(composed.steps)).not.toContain('section:split')
+  expect(ids(composed.steps)).toEqual(expect.arrayContaining(['api', 'ui', 'join', 'section:ui-split']))
+  expect(composed.bands.map(section => section.fork)).toEqual(['split', 'split2'])
+})
+
+test('waiting and conflict sections are never collapsed', () => {
+  const composed = collapseSections(bigSteps, bigEdges, bigSections({ split: 'conflict' }), new Set(), bigAttempts, 200_000)
+  expect(composed.steps).toEqual(bigSteps)
+  expect(composed.edges).toEqual(bigEdges)
+  expect(composed.bands.map(section => section.fork)).toEqual(['split', 'split2', 'ui-split'])
 })

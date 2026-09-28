@@ -1,3 +1,5 @@
+import type { RunView } from '../server/run-view'
+
 export type StepState = 'done' | 'active' | 'failed' | 'pending' | 'conditional' | 'proposed' | 'removed'
 export type EdgeState = 'done' | 'flowing' | 'failed' | 'idle' | 'proposed'
 export type GraphStep = { id: string; title: string; detail: string; state: StepState; engine: string; kind: string; since?: number }
@@ -6,10 +8,14 @@ export type Placed = { id: string; x: number; y: number }
 export type Route = { source: string; target: string; shape: 'forward' | 'down' | 'up' | 'back'; d: string }
 export type Box = { x: number; y: number; width: number; height: number }
 export type GraphFrame = { width: number; height: number; focus: Box | null }
+export type Band = Box & { key: string; label: string; branch: string | null }
 
 export const STEP_W = 160, STEP_H = 52, COL_STEP = 188, ROW_STEP = 70
 
 const BACK_DIP = 26
+const LABEL_H = 18
+const BAND_PAD = 8
+const BAND_GAP = 8
 const BACK_LABEL_ROOM = 10
 const ARROW = 6
 const DRAW_MS = 700
@@ -22,60 +28,157 @@ const GLYPHS: Record<string, string> = {
 }
 
 type LayoutEdge = { source: string; target: string; outcome: string }
+type Section = RunView['sections'][number]
+type Lane = { own: string[]; sections: { section: Section; paths: Lane[] }[]; band: { section: Section; index: number } | null }
 
-function shiftRight(column: Map<string, number>, edges: LayoutEdge[], join: string, by: number): void {
-  const moved = new Set([join])
-  const queue = [join]
+function backEdges(ids: string[], pass: LayoutEdge[], entry: string): Set<LayoutEdge> {
+  const back = new Set<LayoutEdge>()
+  const state = new Map<string, 'open' | 'closed'>()
+  const visit = (id: string): void => {
+    state.set(id, 'open')
+    for (const edge of pass) {
+      if (edge.source !== id) continue
+      const seen = state.get(edge.target)
+      if (seen === 'open') back.add(edge)
+      else if (!seen) visit(edge.target)
+    }
+    state.set(id, 'closed')
+  }
+  for (const id of [entry, ...ids]) if (ids.includes(id) && !state.has(id)) visit(id)
+  return back
+}
+
+function rankWave(seeds: Map<string, number>, forward: LayoutEdge[], ranked: Map<string, number>): Map<string, number> {
+  const wave = new Set(seeds.keys())
+  const queue = [...wave]
   while (queue.length) {
     const id = queue.shift()!
-    for (const edge of edges) {
-      const target = column.get(edge.target)
-      if (edge.source !== id || moved.has(edge.target) || target === undefined || target < column.get(id)!) continue
-      moved.add(edge.target)
+    for (const edge of forward) {
+      if (edge.source !== id || wave.has(edge.target) || ranked.has(edge.target)) continue
+      wave.add(edge.target)
       queue.push(edge.target)
     }
   }
-  for (const id of moved) column.set(id, column.get(id)! + by)
-}
-
-function alignJoins(column: Map<string, number>, steps: { id: string; kind?: string }[], edges: LayoutEdge[]): void {
-  const joins = steps.filter(step => step.kind === 'join' && column.has(step.id)).map(step => step.id)
-  for (let round = 0; round < steps.length; round++) {
-    let moved = false
-    for (const join of joins) {
-      const sources = edges.filter(edge => edge.target === join && column.has(edge.source)).map(edge => column.get(edge.source)!)
-      const needed = Math.max(-1, ...sources) + 1
-      if (needed <= column.get(join)!) continue
-      shiftRight(column, edges, join, needed - column.get(join)!)
-      moved = true
+  const rank = new Map(seeds)
+  for (let round = 0; round <= wave.size; round++) {
+    let changed = false
+    for (const edge of forward) {
+      const from = rank.get(edge.source)
+      if (from === undefined || !wave.has(edge.target) || from + 1 <= (rank.get(edge.target) ?? -1)) continue
+      rank.set(edge.target, from + 1)
+      changed = true
     }
-    if (!moved) return
+    if (!changed) break
   }
+  return rank
 }
 
-export function layoutRun(steps: { id: string; kind?: string }[], edges: LayoutEdge[], entry: string): { placed: Placed[]; width: number; height: number } {
+function rankColumns(ids: string[], edges: LayoutEdge[], entry: string): Map<string, number> {
+  const usable = edges.filter(edge => ids.includes(edge.source) && ids.includes(edge.target))
+  const pass = usable.filter(edge => edge.outcome === 'pass')
+  const back = backEdges(ids, pass, entry)
+  const forward = pass.filter(edge => !back.has(edge))
   const column = new Map<string, number>()
-  const queue = [entry]
-  if (steps.some(step => step.id === entry)) column.set(entry, 0)
-  while (queue.length) {
-    const id = queue.shift()!
-    const outgoing = edges.filter(edge => edge.source === id).sort((a, b) => Number(a.outcome !== 'pass') - Number(b.outcome !== 'pass'))
-    for (const edge of outgoing) {
-      if (column.has(edge.target)) continue
-      column.set(edge.target, column.get(id)! + (edge.outcome === 'pass' ? 1 : 0))
-      queue.push(edge.target)
+  let seeds = new Map(ids.includes(entry) ? [[entry, 0]] : [])
+  while (seeds.size) {
+    for (const [id, rank] of rankWave(seeds, forward, column)) column.set(id, rank)
+    seeds = new Map()
+    for (const edge of usable) {
+      if (edge.outcome === 'pass' || !column.has(edge.source) || column.has(edge.target)) continue
+      seeds.set(edge.target, Math.min(seeds.get(edge.target) ?? Infinity, column.get(edge.source)!))
     }
   }
-  alignJoins(column, steps, edges)
   const last = Math.max(-1, ...column.values()) + 1
-  for (const step of steps) if (!column.has(step.id)) column.set(step.id, last)
-  const row = new Map<string, number>()
-  const used = new Map<number, number>()
-  for (const id of column.keys()) { const col = column.get(id)!; row.set(id, used.get(col) ?? 0); used.set(col, (used.get(col) ?? 0) + 1) }
-  const placed = steps.map(step => ({ id: step.id, x: column.get(step.id)! * COL_STEP, y: row.get(step.id)! * ROW_STEP }))
-  const width = Math.max(0, ...placed.map(step => step.x + STEP_W))
-  const height = Math.max(0, ...placed.map(step => step.y + STEP_H))
-  return { placed, width, height }
+  for (const id of ids) if (!column.has(id)) column.set(id, last)
+  return column
+}
+
+function buildLanes(ids: string[], sections: Section[]): Lane {
+  const top: Lane = { own: [], sections: [], band: null }
+  const laneOf = new Map(ids.map(id => [id, top]))
+  for (const section of sections) {
+    const parent = laneOf.get(section.fork)
+    if (!parent) continue
+    const paths = section.paths.flatMap((path, index): Lane[] => {
+      const lane: Lane = { own: [], sections: [], band: { section, index } }
+      const claimed = path.nodes.filter(id => laneOf.get(id) === parent && id !== section.fork && id !== section.join)
+      for (const id of claimed) laneOf.set(id, lane)
+      return claimed.length ? [lane] : []
+    })
+    if (paths.length) parent.sections.push({ section, paths })
+  }
+  for (const id of ids) laneOf.get(id)!.own.push(id)
+  return top
+}
+
+const subtree = (lane: Lane): string[] => [...lane.own, ...lane.sections.flatMap(({ paths }) => paths.flatMap(subtree))]
+const headerOf = (lane: Lane): number => (lane.band ? LABEL_H : 0) + Math.max(0, ...lane.sections.map(({ paths }) => headerOf(paths[0]!)))
+
+function bandLabel(section: Section, index: number): Pick<Band, 'label' | 'branch'> {
+  const path = section.paths[index]!
+  const branch = (section.state === 'open' || section.state === 'conflict') ? path.branch : null
+  if (!branch) return { label: `${path.title} path`, branch: null }
+  return { label: `${path.title} path · ${section.state === 'conflict' ? 'kept on ' : ''}`, branch }
+}
+
+function placeLanes(top: Lane, column: Map<string, number>): { y: Map<string, number>; bands: Band[] } {
+  const y = new Map<string, number>()
+  const bands: Band[] = []
+  const bottomOf = (ids: string[]): number => Math.max(-Infinity, ...ids.map(id => y.get(id)! + STEP_H))
+  const place = (lane: Lane, laneTop: number): number => {
+    const rowTop = laneTop + headerOf(lane)
+    const spans = lane.sections.map(({ paths }) => { const cols = paths.flatMap(subtree).map(id => column.get(id)!); return [Math.min(...cols), Math.max(...cols)] as const })
+    const spanning = (id: string) => spans.map((span, index) => ({ span, index })).filter(({ span }) => column.get(id)! >= span[0] && column.get(id)! <= span[1]).map(({ index }) => index)
+    const rows = new Map<number, number>()
+    const stack = (id: string, floor: number): void => {
+      const col = column.get(id)!
+      const row = rows.get(col) ?? 0
+      rows.set(col, row + 1)
+      y.set(id, floor + row * ROW_STEP)
+    }
+    for (const id of lane.own) if (!spanning(id).length) stack(id, rowTop)
+    const blockBottoms = lane.sections.map(({ section, paths }) => {
+      let pathTop = (y.get(section.fork) ?? rowTop) - headerOf(paths[0]!)
+      for (const path of paths) {
+        const bottom = place(path, pathTop)
+        const cols = subtree(path).map(id => column.get(id)!)
+        const x = Math.min(...cols) * COL_STEP - BAND_PAD
+        const band = { key: `${section.fork}:${path.band!.index}`, x, y: pathTop, width: Math.max(...cols) * COL_STEP + STEP_W + BAND_PAD - x, height: bottom + BAND_PAD - pathTop, ...bandLabel(section, path.band!.index) }
+        bands.push(band)
+        pathTop = band.y + band.height + BAND_GAP
+      }
+      return pathTop - BAND_GAP
+    })
+    rows.clear()
+    for (const id of lane.own) {
+      const under = spanning(id)
+      if (under.length) stack(id, Math.max(...under.map(index => blockBottoms[index]!)) + BAND_GAP)
+    }
+    return Math.max(rowTop + STEP_H, bottomOf(lane.own), ...blockBottoms)
+  }
+  place(top, 0)
+  return { y, bands }
+}
+
+function backFloor(from: Placed, to: Placed, bands: Box[]): number {
+  const left = Math.min(from.x, to.x), right = Math.max(from.x, to.x) + STEP_W
+  const spanned = bands.filter(band => band.x < right && band.x + band.width > left).map(band => band.y + band.height)
+  return Math.max(from.y + STEP_H, to.y + STEP_H, ...spanned) + BACK_DIP
+}
+
+export function layoutRun(steps: { id: string; kind?: string }[], edges: LayoutEdge[], entry: string, sections: Section[] = []): { placed: Placed[]; bands: Band[]; width: number; height: number } {
+  const ids = steps.map(step => step.id)
+  const column = rankColumns(ids, edges, entry)
+  const { y, bands: unordered } = placeLanes(buildLanes(ids, sections), column)
+  const order = sections.flatMap(section => section.paths.map((_, index) => `${section.fork}:${index}`))
+  const bands = [...unordered].sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
+  const placed = steps.map(step => ({ id: step.id, x: column.get(step.id)! * COL_STEP, y: y.get(step.id)! }))
+  const places = new Map(placed.map(place => [place.id, place]))
+  const dips = edges.filter(edge => places.has(edge.source) && places.has(edge.target) && routeShape(places.get(edge.source)!, places.get(edge.target)!) === 'back')
+    .map(edge => backFloor(places.get(edge.source)!, places.get(edge.target)!, bands) + BACK_LABEL_ROOM)
+  const width = Math.max(0, ...placed.map(step => step.x + STEP_W), ...bands.map(band => band.x + band.width))
+  const height = Math.max(0, ...placed.map(step => step.y + STEP_H), ...bands.map(band => band.y + band.height), ...dips)
+  return { placed, bands, width, height }
 }
 
 function routeShape(from: Placed, to: Placed): Route['shape'] {
@@ -85,7 +188,7 @@ function routeShape(from: Placed, to: Placed): Route['shape'] {
   return 'back'
 }
 
-export function routeEdge(from: Placed, to: Placed): Route {
+export function routeEdge(from: Placed, to: Placed, bands: Box[] = []): Route {
   const shape = routeShape(from, to)
   const ends = { source: from.id, target: to.id, shape }
   if (shape === 'forward') {
@@ -96,12 +199,12 @@ export function routeEdge(from: Placed, to: Placed): Route {
   if (shape === 'down') return { ...ends, d: `M${from.x + STEP_W * 0.3} ${from.y + STEP_H}L${to.x + STEP_W * 0.3} ${to.y}` }
   if (shape === 'up') return { ...ends, d: `M${from.x + STEP_W * 0.7} ${from.y}L${to.x + STEP_W * 0.7} ${to.y + STEP_H}` }
   const startX = from.x + STEP_W / 2, endX = to.x + STEP_W / 2
-  const dip = Math.max(from.y, to.y) + STEP_H + BACK_DIP
+  const dip = backFloor(from, to, bands)
   return { ...ends, d: `M${startX} ${from.y + STEP_H}C${startX} ${dip} ${endX} ${dip} ${endX} ${to.y + STEP_H}` }
 }
 
-function labelPoint(from: Placed, to: Placed, shape: Route['shape']): { left: number; top: number } {
-  if (shape === 'back') return { left: (from.x + to.x + STEP_W) / 2, top: Math.max(from.y, to.y) + STEP_H + BACK_DIP }
+function labelPoint(from: Placed, to: Placed, shape: Route['shape'], bands: Box[]): { left: number; top: number } {
+  if (shape === 'back') return { left: (from.x + to.x + STEP_W) / 2, top: backFloor(from, to, bands) }
   if (shape === 'forward') return { left: (from.x + STEP_W + to.x) / 2, top: (from.y + to.y + STEP_H) / 2 }
   return { left: from.x + STEP_W + 6, top: (Math.min(from.y, to.y) + Math.max(from.y, to.y) + STEP_H) / 2 }
 }
@@ -137,6 +240,7 @@ function stepIcon(step: GraphStep): Element {
 function stepCard(step: GraphStep, place: Placed): HTMLElement {
   const card = document.createElement('div')
   card.className = 'flow-step'
+  card.dataset.step = step.id
   card.dataset.state = step.state
   card.dataset.kind = step.kind
   card.setAttribute('role', 'listitem')
@@ -196,28 +300,54 @@ function focusBox(steps: GraphStep[], places: Map<string, Placed>, entry: string
   return boxAround(places.has(entry) ? [places.get(entry)!] : [])
 }
 
-function frameHeight(layoutHeight: number, routes: Route[], places: Map<string, Placed>): number {
-  const dips = routes.filter(route => route.shape === 'back').map(route => Math.max(places.get(route.source)!.y, places.get(route.target)!.y) + STEP_H + BACK_DIP + BACK_LABEL_ROOM)
-  return Math.max(layoutHeight, ...dips)
+function bandElement(band: Band, collapsible: string | null): HTMLElement {
+  const element = document.createElement('div')
+  element.className = 'flow-band'
+  element.dataset.band = band.key
+  Object.assign(element.style, { left: `${band.x}px`, top: `${band.y}px`, width: `${band.width}px`, height: `${band.height}px` })
+  const label = document.createElement('span')
+  label.className = 'flow-band-label'
+  label.append(band.label)
+  if (band.branch) {
+    const branch = document.createElement('code')
+    branch.textContent = band.branch
+    label.append(branch)
+  }
+  element.append(label)
+  if (collapsible) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'flow-band-collapse'
+    button.dataset.collapse = collapsible
+    button.textContent = 'Collapse'
+    element.append(button)
+  }
+  return element
+}
+
+function collapsibleFork(band: Band, sections: Section[]): string | null {
+  const [fork, index] = band.key.split(':')
+  return index === '0' && sections.some(section => section.fork === fork && section.state === 'joined') ? fork! : null
 }
 
 const frames = new WeakMap<HTMLElement, GraphFrame>()
 const EMPTY_FRAME: GraphFrame = { width: 0, height: 0, focus: null }
 
-export function renderRunGraph(host: HTMLElement, steps: GraphStep[], edges: GraphEdge[], entry: string, options: { animate: boolean }): GraphFrame {
-  const paintSignature = JSON.stringify([options.animate, entry, steps, edges])
+export function renderRunGraph(host: HTMLElement, steps: GraphStep[], edges: GraphEdge[], entry: string, options: { animate: boolean; sections?: Section[]; runId?: string }): GraphFrame {
+  const sections = options.sections ?? []
+  const runKey = options.runId ?? ''
+  const paintSignature = JSON.stringify([options.animate, runKey, entry, steps, edges, sections])
   if (host.dataset.sig === paintSignature && host.firstChild) return frames.get(host) ?? EMPTY_FRAME
   host.dataset.sig = paintSignature
-  const stepKeys = steps.map(step => step.id).join('|')
-  const shouldDrawIn = options.animate && (host.dataset.graphKeys !== stepKeys || !host.firstChild)
-  host.dataset.graphKeys = stepKeys
+  const shouldDrawIn = options.animate && host.dataset.drawnRun !== runKey
+  host.dataset.drawnRun = runKey
   if (!steps.length) { host.replaceChildren(); frames.set(host, EMPTY_FRAME); return EMPTY_FRAME }
 
-  const layout = layoutRun(steps, edges, entry)
+  const layout = layoutRun(steps, edges, entry, sections)
   const places = new Map(layout.placed.map(place => [place.id, place]))
   const drawable = edges.filter(edge => places.has(edge.source) && places.has(edge.target))
-  const routes = drawable.map(edge => routeEdge(places.get(edge.source)!, places.get(edge.target)!))
-  const frame = { width: layout.width, height: frameHeight(layout.height, routes, places), focus: focusBox(steps, places, entry) }
+  const routes = drawable.map(edge => routeEdge(places.get(edge.source)!, places.get(edge.target)!, layout.bands))
+  const frame = { width: layout.width, height: layout.height, focus: focusBox(steps, places, entry) }
   frames.set(host, frame)
   const graph = document.createElement('div')
   graph.className = options.animate ? 'flow-run' : 'flow-run still'
@@ -236,9 +366,9 @@ export function renderRunGraph(host: HTMLElement, steps: GraphStep[], edges: Gra
   svg.append(...paths)
   const labels = drawable.filter(edge => edge.label).map(edge => {
     const from = places.get(edge.source)!, to = places.get(edge.target)!
-    return routeLabel(edge.label!, edge.state, labelPoint(from, to, routeShape(from, to)))
+    return routeLabel(edge.label!, edge.state, labelPoint(from, to, routeShape(from, to), layout.bands))
   })
-  graph.append(svg, ...labels, ...steps.map(step => stepCard(step, places.get(step.id)!)))
+  graph.append(...layout.bands.map(band => bandElement(band, collapsibleFork(band, sections))), svg, ...labels, ...steps.map(step => stepCard(step, places.get(step.id)!)))
   host.replaceChildren(graph)
   if (shouldDrawIn) drawIn(paths)
   return frame

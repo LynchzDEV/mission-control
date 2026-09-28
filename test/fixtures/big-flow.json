@@ -1,0 +1,342 @@
+{
+  "id": "big-flow",
+  "name": "Big flow",
+  "entry": "plan",
+  "nodes": [
+    {
+      "id": "plan",
+      "title": "Plan",
+      "kind": "plan",
+      "agent": {
+        "role": "plan"
+      },
+      "instructions": "Do the plan step."
+    },
+    {
+      "id": "verify",
+      "title": "Verify",
+      "kind": "verify-plan",
+      "agent": {
+        "role": "review"
+      },
+      "instructions": "Do the verify step."
+    },
+    {
+      "id": "split",
+      "title": "Split",
+      "kind": "task",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the split step."
+    },
+    {
+      "id": "api",
+      "title": "Api",
+      "kind": "implement",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the api step."
+    },
+    {
+      "id": "api-tests",
+      "title": "Api tests",
+      "kind": "task",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the api tests step."
+    },
+    {
+      "id": "api-fix",
+      "title": "Api fix",
+      "kind": "implement",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the api fix step."
+    },
+    {
+      "id": "ui",
+      "title": "Ui",
+      "kind": "implement",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the ui step."
+    },
+    {
+      "id": "ui-split",
+      "title": "Ui split",
+      "kind": "task",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the ui split step."
+    },
+    {
+      "id": "ui-copy",
+      "title": "Ui copy",
+      "kind": "task",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the ui copy step."
+    },
+    {
+      "id": "ui-style",
+      "title": "Ui style",
+      "kind": "task",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the ui style step."
+    },
+    {
+      "id": "ui-join",
+      "title": "Ui join",
+      "kind": "join",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Join the paths."
+    },
+    {
+      "id": "ui-check",
+      "title": "Ui check",
+      "kind": "task",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the ui check step."
+    },
+    {
+      "id": "join",
+      "title": "Join",
+      "kind": "join",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Join the paths."
+    },
+    {
+      "id": "merge-fix",
+      "title": "Merge fix",
+      "kind": "implement",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the merge fix step."
+    },
+    {
+      "id": "review",
+      "title": "Review",
+      "kind": "review",
+      "agent": {
+        "role": "review"
+      },
+      "instructions": "Do the review step."
+    },
+    {
+      "id": "split2",
+      "title": "Split2",
+      "kind": "task",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the split2 step."
+    },
+    {
+      "id": "docs",
+      "title": "Docs",
+      "kind": "task",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the docs step."
+    },
+    {
+      "id": "demo",
+      "title": "Demo",
+      "kind": "task",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the demo step."
+    },
+    {
+      "id": "join2",
+      "title": "Join2",
+      "kind": "join",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Join the paths."
+    },
+    {
+      "id": "changelog",
+      "title": "Changelog",
+      "kind": "task",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the changelog step."
+    },
+    {
+      "id": "release-check",
+      "title": "Release check",
+      "kind": "task",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the release check step."
+    },
+    {
+      "id": "notify",
+      "title": "Notify",
+      "kind": "task",
+      "agent": {
+        "role": "execute"
+      },
+      "instructions": "Do the notify step."
+    }
+  ],
+  "edges": [
+    {
+      "source": "plan",
+      "target": "verify",
+      "outcome": "pass"
+    },
+    {
+      "source": "verify",
+      "target": "split",
+      "outcome": "pass"
+    },
+    {
+      "source": "split",
+      "target": "api",
+      "outcome": "pass"
+    },
+    {
+      "source": "split",
+      "target": "ui",
+      "outcome": "pass"
+    },
+    {
+      "source": "api",
+      "target": "api-tests",
+      "outcome": "pass"
+    },
+    {
+      "source": "api-tests",
+      "target": "join",
+      "outcome": "pass"
+    },
+    {
+      "source": "ui",
+      "target": "ui-split",
+      "outcome": "pass"
+    },
+    {
+      "source": "ui-split",
+      "target": "ui-copy",
+      "outcome": "pass"
+    },
+    {
+      "source": "ui-split",
+      "target": "ui-style",
+      "outcome": "pass"
+    },
+    {
+      "source": "ui-copy",
+      "target": "ui-join",
+      "outcome": "pass"
+    },
+    {
+      "source": "ui-style",
+      "target": "ui-join",
+      "outcome": "pass"
+    },
+    {
+      "source": "ui-join",
+      "target": "ui-check",
+      "outcome": "pass"
+    },
+    {
+      "source": "ui-check",
+      "target": "join",
+      "outcome": "pass"
+    },
+    {
+      "source": "join",
+      "target": "review",
+      "outcome": "pass"
+    },
+    {
+      "source": "review",
+      "target": "split2",
+      "outcome": "pass"
+    },
+    {
+      "source": "split2",
+      "target": "docs",
+      "outcome": "pass"
+    },
+    {
+      "source": "split2",
+      "target": "demo",
+      "outcome": "pass"
+    },
+    {
+      "source": "docs",
+      "target": "join2",
+      "outcome": "pass"
+    },
+    {
+      "source": "demo",
+      "target": "join2",
+      "outcome": "pass"
+    },
+    {
+      "source": "join2",
+      "target": "changelog",
+      "outcome": "pass"
+    },
+    {
+      "source": "changelog",
+      "target": "release-check",
+      "outcome": "pass"
+    },
+    {
+      "source": "release-check",
+      "target": "notify",
+      "outcome": "pass"
+    },
+    {
+      "source": "api-fix",
+      "target": "api-tests",
+      "outcome": "pass"
+    },
+    {
+      "source": "merge-fix",
+      "target": "review",
+      "outcome": "pass"
+    },
+    {
+      "source": "api-tests",
+      "target": "api-fix",
+      "outcome": "fail"
+    },
+    {
+      "source": "join",
+      "target": "merge-fix",
+      "outcome": "fail"
+    },
+    {
+      "source": "review",
+      "target": "merge-fix",
+      "outcome": "fail"
+    }
+  ]
+}
