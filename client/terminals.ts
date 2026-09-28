@@ -8,6 +8,7 @@ import { dragKind, dropCopy, findCount, findKeys, restoreTarget, nextActive, ses
 import { createPanes, type PaneHeader } from './terminal-panes'
 import { createOutcomeStrip } from './outcome-strip'
 import type { ResumeRequest } from './chat-view'
+import { morph, reveal, rollText } from './morph'
 
 type Provider = { id: string; name: string; models: string[] }
 
@@ -87,7 +88,7 @@ export class TerminalView {
       else if (action !== null) this.send(TERMINAL_BYTES[action])
       return false
     })
-    this.search.onDidChangeResults(({ resultIndex, resultCount }) => { if (activeId === session.id) findPart('find-count').textContent = findCount(resultIndex, resultCount, findInput.value) })
+    this.search.onDidChangeResults(({ resultIndex, resultCount }) => { if (activeId === session.id) rollText(findPart('find-count'), findCount(resultIndex, resultCount, findInput.value)) })
     this.terminal.open(this.screen)
     this.outcomes.setSource(`terminal=${encodeURIComponent(session.id)}`)
     this.terminal.onData(data => this.send(data))
@@ -111,10 +112,11 @@ export class TerminalView {
   setStatus(text: string): void {
     const pill = statusPill(text)
     const button = this.bar.querySelector('.term-bar-status') as HTMLButtonElement
-    button.dataset.kind = pill.kind
     button.disabled = pill.kind !== 'down'
     button.title = text
-    ;(button.lastElementChild as HTMLElement).textContent = pill.text
+    const label = button.lastElementChild as HTMLElement
+    if (button.dataset.kind === pill.kind && label.textContent === pill.text) return
+    morph(button, () => { button.dataset.kind = pill.kind; label.textContent = pill.text })
   }
 
   get state(): SessionState { return sessionState(this.lastOutputAt, this.ended, Date.now()) }
@@ -171,7 +173,8 @@ function visible(on: boolean): void {
   const changed = (canvas.dataset.live === 'true') !== on
   canvas.dataset.live = String(on)
   document.body.dataset.live = String(on)
-  $('live').hidden = !on
+  if (on) reveal($('live'), true)
+  else $('live').hidden = true
   $('flow').hidden = !on && $('flow').dataset.open !== 'true'
   const active = on && activeId ? views.get(activeId)?.session ?? null : null
   if (changed) dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: active }))
@@ -253,8 +256,7 @@ function openFind(): boolean {
   const view = activeId ? views.get(activeId) : null
   if (!view || document.querySelector('dialog[open]')) return false
   const opened = findBar.hidden
-  view.bar.append(findBar)
-  findBar.hidden = false
+  morph(view.bar, () => { view.bar.append(findBar); findBar.hidden = false })
   findInput.focus()
   findInput.select()
   if (opened) findStep('next')
@@ -263,7 +265,8 @@ function openFind(): boolean {
 function closeFind(): void {
   const view = activeId ? views.get(activeId) : null
   view?.search.clearDecorations()
-  findBar.hidden = true
+  if (view) morph(view.bar, () => { findBar.hidden = true })
+  else findBar.hidden = true
   findPart('find-count').textContent = ''
   view?.terminal.focus()
 }
@@ -291,15 +294,14 @@ for (const type of ['dragover', 'drop'] as const) document.addEventListener(type
 const dropOver = $('drop-over')
 function paintDropOver(transfer: DataTransfer | null, show: boolean): void {
   if (show) $('drop-over-title').textContent = dropCopy(Array.from(transfer?.items ?? []).filter(item => item.kind === 'file').length).title
-  dropOver.hidden = !show
+  reveal(dropOver, show)
 }
 let toastTimer = 0
 function toast(text: string, ms = 2000): void {
   const box = $('toast')
-  box.textContent = text
-  box.hidden = false
+  if (box.hidden) { box.textContent = text; reveal(box, true, 'center bottom', 'translateX(-50%)') } else rollText(box, text)
   clearTimeout(toastTimer)
-  toastTimer = window.setTimeout(() => { box.hidden = true }, ms)
+  toastTimer = window.setTimeout(() => reveal(box, false, 'center bottom', 'translateX(-50%)'), ms)
 }
 addEventListener('quiet:toast', (event) => toast(String((event as CustomEvent<string>).detail), 4000))
 function dropTarget(event: DragEvent): TerminalView | null {
@@ -399,11 +401,11 @@ async function refreshSessions(): Promise<void> {
 
 function updateModelChoices(): void {
   ;($('live-models') as HTMLDataListElement).replaceChildren(...(models[engineSelect.value] ?? []).map(model => new Option(model, model)))
-  submit.textContent = `Open ${engineName(engineSelect.value)}`
+  morph(submit, () => { submit.textContent = `Open ${engineName(engineSelect.value)}` })
 }
 
 async function load(restore = false): Promise<void> {
-  $('live-error').textContent = 'Checking your workspace…'
+  rollText($('live-error'), 'Checking your workspace…')
   $('live-create').hidden = true
   workflowsReady = false
   await refreshSessions()
@@ -414,9 +416,9 @@ async function load(restore = false): Promise<void> {
   if (!launch.open) return
   const [providerResult, workflowResult] = await Promise.all([getJson('/api/providers'), getJson('/api/studio/workflows')])
   const failed = [providerResult, workflowResult].find(item => !item.ok)
-  if (failed) { $('live-error').textContent = `Could not load launch options: ${errorText(failed)}. Close and reopen to retry.`; return }
+  if (failed) { rollText($('live-error'), `Could not load launch options: ${errorText(failed)}. Close and reopen to retry.`); return }
   const selected = readRecord(workflowResult.data.selected)
-  if (!selected.id || !selected.revision || !selected.name) { $('live-error').textContent = 'Default workflow unavailable. Close and reopen to retry.'; return }
+  if (!selected.id || !selected.revision || !selected.name) { rollText($('live-error'), 'Default workflow unavailable. Close and reopen to retry.'); return }
   const providers = readArray(providerResult.data.providers) as Provider[]
   models = Object.fromEntries(providers.map(provider => [provider.id, provider.models]))
   engineSelect.replaceChildren(...providers.map(provider => new Option(provider.name, provider.id)))
@@ -429,7 +431,7 @@ async function load(restore = false): Promise<void> {
   workflowsReady = true
   updateModelChoices()
   $('live-create').hidden = false
-  $('live-error').textContent = 'Choose how and where to start.'
+  rollText($('live-error'), 'Choose how and where to start.')
 }
 
 export async function openTerminal(restore = false, cwd?: string): Promise<void> {
@@ -442,16 +444,16 @@ export async function openTerminal(restore = false, cwd?: string): Promise<void>
 async function createTerminal(): Promise<void> {
   if (opening || !workflowsReady) return
   const cwd = cwdInput.value.trim()
-  if (!cwd) { $('live-error').textContent = 'Choose a working directory.'; return }
+  if (!cwd) { rollText($('live-error'), 'Choose a working directory.'); return }
   opening = true
   submit.disabled = true
   const engine = engineSelect.value
   const model = modelInput.value.trim()
   const [workflowId, revision] = workflowSelect.value.split('@')
-  $('live-error').textContent = `Opening ${engineName(engine)}…`
+  rollText($('live-error'), `Opening ${engineName(engine)}…`)
   try {
     const result = await postJson('/api/terminals', { engine, cwd, cols: 100, rows: 30, ...(model ? { model } : {}), ...(workflowId ? { workflowId, revision } : {}) })
-    if (!result.ok) { $('live-error').textContent = `Could not open ${engineName(engine)}: ${errorText(result)}`; return }
+    if (!result.ok) { rollText($('live-error'), `Could not open ${engineName(engine)}: ${errorText(result)}`); return }
     store(recentKey, JSON.stringify([cwd, ...readRecentDirectories(stored(recentKey)).filter(item => item !== cwd)].slice(0, 12)))
     store(engineKey, engine)
     store(modelKey, model || null)
