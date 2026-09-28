@@ -233,6 +233,11 @@ test('a flow whose label starts with a digit is saved with a flow- prefix', asyn
   expect(await (await post(`/api/studio/runs/${run.id}/save`, {}, { 'sec-fetch-site': 'same-origin' })).json()).toMatchObject({ id: 'flow-2nd-pass-tidy-imports' })
 })
 
+test('a flow whose label has no latin letters is saved under its run id', async () => {
+  const run = await (await post('/api/studio/runs', await runBody('เพิ่มปุ่มส่งออก'), { 'sec-fetch-site': 'same-origin' })).json()
+  expect(await (await post(`/api/studio/runs/${run.id}/save`, {}, { 'sec-fetch-site': 'same-origin' })).json()).toMatchObject({ id: `flow-${run.id.slice(0, 8)}`, name: 'เพิ่มปุ่มส่งออก' })
+})
+
 test('saving a flow is refused outside the drawer', async () => {
   const run = await (await post('/api/studio/runs', await runBody('Add CSV export'), { 'sec-fetch-site': 'same-origin' })).json()
   const response = await post(`/api/studio/runs/${run.id}/save`, {}, {})

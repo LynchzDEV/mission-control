@@ -21,9 +21,9 @@ function approvalContext(request: Request, body: unknown): ApprovalContext {
   return fromBrowser(request) ? { via: 'drawer', ...(version ? { version } : {}) } : { via: 'conversation', ...session, ...(version ? { version } : {}) }
 }
 
-function workflowIdFor(label: string): string {
+function workflowIdFor(label: string, runId: string): string {
   const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-  const prefixed = /^[0-9]/.test(slug) ? `flow-${slug}` : slug
+  const prefixed = !slug ? `flow-${runId.slice(0, 8)}` : /^[0-9]/.test(slug) ? `flow-${slug}` : slug
   return prefixed.slice(0, 64).replace(/-+$/, '')
 }
 
@@ -103,8 +103,7 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
       if (!fromBrowser(request)) throw new RunActionError('Save from the drawer', 403)
       const run = runner.get(params.id)
       if (!run) throw new RunActionError('Run not found', 404)
-      const id = workflowIdFor(run.label)
-      if (!id) throw new Error('The flow label needs letters or digits to save it')
+      const id = workflowIdFor(run.label, run.id)
       if (await workflowExists(store, id)) throw new RunActionError('A workflow with that name exists', 409)
       const { revision: _revision, createdAt: _createdAt, ...graph } = run.workflow
       return store.save({ ...graph, id, name: run.label })
