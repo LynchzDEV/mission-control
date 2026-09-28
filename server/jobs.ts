@@ -78,6 +78,7 @@ export type ChatJobPatch = Partial<Pick<JobRecord, 'label' | 'project' | 'titleL
 
 export type CreateJobParams = {
   worktree?: boolean
+  baseRepo?: string
   engine: string
   cwd: string
   prompt: string
@@ -581,7 +582,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       return { ok: false, status: 400, error: 'engine resolver failed' }
     }
 
-    let workspace: Pick<JobRecord, 'worktree' | 'baseRepo' | 'baseBranch'> = { worktree: null, baseRepo: null, baseBranch: null }
+    let workspace: Pick<JobRecord, 'worktree' | 'baseRepo' | 'baseBranch'> = { worktree: null, baseRepo: params.baseRepo ?? null, baseBranch: null }
     if (params.worktree) {
       try {
         workspace = await prepareWorktree(cwdCheck.path, params.label)

@@ -1,11 +1,12 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createJobManager, type JobManager } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
 import { createWorkflowStore, defaultWorkflow, draftRevision, type Workflow } from '../server/workflows'
 import { changeSize, covers, createWorkflowRunner, lineage, RunActionError, type ResolvedAgent, type WorkflowRun, type WorkflowRunner } from '../server/workflow-runner'
+import * as worktrees from '../server/job-worktrees'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 import type { TerminalRecord } from '../server/terminals'
 
@@ -783,4 +784,203 @@ test('stop answers at once while an acceptance check is still running', async ()
   const stopped = await runner.stop(run.id)
   expect(performance.now() - began).toBeLessThan(1000)
   expect(stopped.status).toBe('stopped')
+})
+
+async function homeConfig() {
+  await rm(dir, { recursive: true, force: true })
+  dir = await mkdtemp(join(homedir(), 'mc-workflow-config-'))
+  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+}
+const writes = (file: string, text: string, before = '') => [{ command: '/bin/sh', args: ['-c', `${before}echo ${text} > ${file}`] }]
+const overlapping: EngineResolver = ({ prompt }) => ({ cmd: '/bin/sh', args: ['-c', `${prompt.includes('SLOW') ? 'sleep 0.5; ' : ''}echo '${report()}'`], env: {} })
+type Step = { id: string; title: string; instructions: string; [key: string]: unknown }
+function forked(steps: { a?: Partial<Step>; b?: Partial<Step>; review?: Partial<Step> } = {}, extra: { nodes?: Step[]; edges?: Array<{ source: string; target: string; outcome: 'pass' | 'fail' | 'blocked' }> } = {}) {
+  const pass = (source: string, target: string) => ({ source, target, outcome: 'pass' as const })
+  return {
+    id: 'forked', name: 'Forked', entry: 'plan',
+    nodes: [
+      { id: 'plan', title: 'Plan', kind: 'plan', agent: { role: 'plan' }, instructions: 'Plan the work' },
+      { id: 'verify', title: 'Verify', kind: 'verify-plan', agent: { role: 'review' }, instructions: 'Verify the plan' },
+      { id: 'split', title: 'Split', instructions: 'Split the work' },
+      { id: 'a', title: 'A', instructions: 'Write A', checks: writes('a.txt', 'a'), ...steps.a },
+      { id: 'b', title: 'B', instructions: 'Write B', checks: writes('b.txt', 'b'), ...steps.b },
+      { id: 'join', title: 'Join', kind: 'join', instructions: 'Join the paths' },
+      { id: 'review', title: 'Review', instructions: 'Review the result', ...steps.review },
+      ...extra.nodes ?? [],
+    ],
+    edges: [pass('plan', 'verify'), pass('verify', 'split'), pass('split', 'a'), pass('split', 'b'), pass('a', 'join'), pass('b', 'join'), pass('join', 'review'), ...extra.edges ?? []],
+  }
+}
+const gitOut = (...args: string[]) => worktrees.git(repo, ...args)
+const joins = (run: WorkflowRun) => run.attempts.filter(attempt => attempt.nodeId === 'join')
+const exists = (path: string) => stat(path).then(() => true, () => false)
+async function allJobsStopped() {
+  for (let i = 0; i < 200 && manager.listJobs().some(job => job.status === 'running'); i++) await Bun.sleep(20)
+}
+
+test('a fork runs each path at the same time in its own worktree under the run folder', async () => {
+  await homeConfig()
+  build(overlapping)
+  const started = await runner.start({ cwd: repo, request: 'Write both files', label: 'fork', graph: forked({ a: { instructions: 'Write A SLOW' }, b: { instructions: 'Write B SLOW' } }) })
+  const working = await until(started.id, run => run.tokens.filter(token => token.state === 'working').length === 2 && run.attempts.filter(attempt => attempt.status === 'running').length === 2)
+  const tokens = working.tokens.filter(token => token.state === 'working')
+  const runFolder = join(await realpath(dir), 'workflow-runs', started.id)
+  expect(new Set(tokens.map(token => token.workspace)).size).toBe(2)
+  for (const token of tokens) expect(token.workspace.startsWith(`${runFolder}/`)).toBe(true)
+  const running = manager.listJobs().filter(job => job.status === 'running' && job.workflowRunId === started.id)
+  expect(new Set(running.map(job => job.cwd))).toEqual(new Set(tokens.map(token => token.workspace)))
+  expect(running.every(job => job.baseRepo === repo)).toBe(true)
+  expect((await finished(started.id)).status).toBe('done')
+})
+
+test('a finished fork leaves both paths as uncommitted files and no commit, branch or worktree behind', async () => {
+  await homeConfig()
+  build()
+  const commits = await gitOut('rev-list', '--count', 'HEAD')
+  const started = await runner.start({ cwd: repo, request: 'Write both files', label: 'fork', graph: forked() })
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(await readFile(join(repo, 'a.txt'), 'utf8')).toBe('a\n')
+  expect(await readFile(join(repo, 'b.txt'), 'utf8')).toBe('b\n')
+  expect(await gitOut('rev-list', '--count', 'HEAD')).toBe(commits)
+  expect(await gitOut('diff', '--cached')).toBe('')
+  expect(await gitOut('branch', '--list', 'flow-*')).toBe('')
+  expect((await gitOut('worktree', 'list', '--porcelain')).split('\n').filter(line => line.startsWith('worktree '))).toEqual([`worktree ${repo}`])
+  expect(done.sections).toEqual([])
+  expect(joins(done)[0]!.result).toEqual({ outcome: 'pass', summary: 'Joined 2 paths', evidence: [`${done.attempts.find(attempt => attempt.nodeId === 'a')!.pathId}: 1 files`, `${done.attempts.find(attempt => attempt.nodeId === 'b')!.pathId}: 1 files`] })
+  expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['plan', 'verify', 'split', expect.any(String), expect.any(String), 'join', 'review'])
+})
+
+test('two paths settling together run the join exactly once', async () => {
+  await homeConfig()
+  build()
+  const started = await runner.start({ cwd: repo, request: 'Write both files', label: 'fork', graph: forked() })
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(joins(done)).toHaveLength(1)
+  expect(done.attempts.filter(attempt => attempt.nodeId === 'a' || attempt.nodeId === 'b')).toHaveLength(2)
+  expect(joins(done)[0]!.from.sort()).toEqual(done.attempts.filter(attempt => attempt.nodeId === 'a' || attempt.nodeId === 'b').map(attempt => attempt.number).sort())
+})
+
+test('the paths see the user’s uncommitted work and the join leaves it untouched', async () => {
+  await homeConfig()
+  build()
+  await writeFile(join(repo, 'README.md'), 'edited by the user\n')
+  await writeFile(join(repo, 'notes.txt'), 'untracked notes\n')
+  const started = await runner.start({ cwd: repo, request: 'Write both files', label: 'fork', graph: forked({ a: { checks: writes('a.txt', 'a', 'test -f notes.txt && grep -q edited README.md && ') } }) })
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(await readFile(join(repo, 'README.md'), 'utf8')).toBe('edited by the user\n')
+  expect(await readFile(join(repo, 'notes.txt'), 'utf8')).toBe('untracked notes\n')
+  expect(await readFile(join(repo, 'a.txt'), 'utf8')).toBe('a\n')
+  expect(await readFile(join(repo, 'b.txt'), 'utf8')).toBe('b\n')
+  expect(await gitOut('diff', '--cached')).toBe('')
+  expect(await gitOut('rev-list', '--count', 'HEAD')).toBe('1')
+})
+
+test('a join conflict takes the fail edge, keeps the unjoined branch and the fix step finishes the run', async () => {
+  await homeConfig()
+  build()
+  const graph = forked({ a: { checks: writes('same.txt', 'a') }, b: { checks: writes('same.txt', 'b') }, review: { kind: 'review', agent: { role: 'review', engine: 'claude' } } }, {
+    nodes: [{ id: 'fix', title: 'Fix', kind: 'implement', agent: { role: 'execute', engine: 'codex' }, instructions: 'Resolve the conflict' }],
+    edges: [{ source: 'join', target: 'fix', outcome: 'fail' }, { source: 'fix', target: 'review', outcome: 'pass' }],
+  })
+  const started = await runner.start({ cwd: repo, request: 'Write the same file', label: 'fork', graph })
+  const done = await finished(started.id)
+  const bPath = done.attempts.find(attempt => attempt.nodeId === 'b')!.pathId
+  const aPath = done.attempts.find(attempt => attempt.nodeId === 'a')!.pathId
+  const branch = `flow-${started.id.slice(0, 8)}-${bPath}`
+  const joined = joins(done)[0]!
+  expect(joined.result!.outcome).toBe('fail')
+  expect(joined.result!.summary.startsWith('Paths could not be joined: same.txt')).toBe(true)
+  expect(joined.result!.evidence).toEqual([`Joined: ${aPath}`, `Conflicts in ${bPath}: same.txt`, `Unjoined paths kept on branches: ${branch}`])
+  expect(done.keptBranches).toEqual([branch])
+  expect(await gitOut('branch', '--list', branch)).toContain(branch)
+  expect(done.attempts.map(attempt => attempt.nodeId).slice(-3)).toEqual(['join', 'fix', 'review'])
+  expect(done.status).toBe('done')
+  expect(await readFile(join(repo, 'same.txt'), 'utf8')).toBe('a\n')
+})
+
+test('a join conflict with no fail edge blocks the run with the conflicting files', async () => {
+  await homeConfig()
+  build()
+  const started = await runner.start({ cwd: repo, request: 'Write the same file', label: 'fork', graph: forked({ a: { checks: writes('same.txt', 'a') }, b: { checks: writes('same.txt', 'b') } }) })
+  const done = await finished(started.id)
+  expect(done.status).toBe('blocked')
+  expect(done.error!.startsWith('Paths could not be joined: same.txt')).toBe(true)
+})
+
+test('stop kills both paths and keeps their worktrees, and retry joins both into the workspace', async () => {
+  await homeConfig()
+  build(overlapping)
+  const started = await runner.start({ cwd: repo, request: 'Write both files', label: 'fork', graph: forked({ a: { instructions: 'Write A SLOW' }, b: { instructions: 'Write B SLOW' } }) })
+  await until(started.id, run => run.tokens.filter(token => token.state === 'working').length === 2)
+  const stopped = await runner.stop(started.id)
+  expect(stopped.status).toBe('stopped')
+  await allJobsStopped()
+  expect(manager.listJobs().some(job => job.status === 'running')).toBe(false)
+  expect(stopped.sections).toHaveLength(1)
+  for (const path of stopped.sections[0]!.paths) expect(await exists(path.dir)).toBe(true)
+  await runner.retry(started.id)
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(await readFile(join(repo, 'a.txt'), 'utf8')).toBe('a\n')
+  expect(await readFile(join(repo, 'b.txt'), 'utf8')).toBe('b\n')
+  expect(joins(done)).toHaveLength(1)
+})
+
+test('after a restart with one path waiting at the join and one working, both resume and the join runs once', async () => {
+  await homeConfig()
+  const store = build(overlapping)
+  const started = await runner.start({ cwd: repo, request: 'Write both files', label: 'fork', graph: forked({ b: { instructions: 'Write B SLOW' } }) })
+  await until(started.id, run => run.tokens.some(token => token.state === 'waiting') && run.tokens.some(token => token.state === 'working'))
+  runner = createWorkflowRunner({ manager, resolver: overlapping, store, base: dir, requireApproval: async () => false })
+  await runner.recover()
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(joins(done)).toHaveLength(1)
+  expect(await readFile(join(repo, 'b.txt'), 'utf8')).toBe('b\n')
+})
+
+test('a join interrupted between two applies resumes without applying a path twice', async () => {
+  await homeConfig()
+  build()
+  const realApply = worktrees.applyPath
+  let calls = 0
+  const apply = spyOn(worktrees, 'applyPath').mockImplementation(async (...args) => {
+    const applied = await realApply(...args)
+    if (++calls === 2) throw new Error('Simulated crash after the second apply')
+    return applied
+  })
+  try {
+    const started = await runner.start({ cwd: repo, request: 'Write both files', label: 'fork', graph: forked() })
+    const blocked = await finished(started.id)
+    expect(blocked.status).toBe('blocked')
+    expect(blocked.error).toBe('Simulated crash after the second apply')
+    expect(blocked.sections[0]!.joined).toEqual([blocked.attempts.find(attempt => attempt.nodeId === 'a')!.pathId])
+    apply.mockRestore()
+    await runner.retry(started.id)
+    const done = await finished(started.id)
+    expect(done.status).toBe('done')
+    expect(joins(done).map(attempt => attempt.result!.outcome)).toEqual(['blocked', 'pass'])
+    expect(await readFile(join(repo, 'a.txt'), 'utf8')).toBe('a\n')
+    expect(await readFile(join(repo, 'b.txt'), 'utf8')).toBe('b\n')
+  } finally { apply.mockRestore() }
+})
+
+test('a passing review in one path does not clear an implementation in another path', async () => {
+  await homeConfig()
+  build()
+  const graph = forked({ a: { kind: 'implement', agent: { role: 'execute', engine: 'claude' }, checks: [] }, b: { id: 'r', title: 'R', kind: 'review', agent: { role: 'review', engine: 'codex' }, checks: [] }, review: { id: 'review2', title: 'Review 2', kind: 'review', agent: { role: 'review', engine: 'claude' } } })
+  graph.edges = graph.edges.map(edge => ({ ...edge, source: edge.source === 'b' ? 'r' : edge.source === 'review' ? 'review2' : edge.source, target: edge.target === 'b' ? 'r' : edge.target === 'review' ? 'review2' : edge.target })).sort((x, y) => Number(y.target === 'r') - Number(x.target === 'r'))
+  await expect(runner.start({ cwd: repo, request: 'Build and review', label: 'fork', graph })).rejects.toThrow('Review 2 must use a different model family from implementation')
+  expect(runner.list()).toHaveLength(0)
+})
+
+test('changeSize: splitting a step into parallel paths is big', () => {
+  const graph = forked({ a: { checks: [] }, b: { checks: [] } })
+  const linear = { ...graph, nodes: graph.nodes.filter(node => node.id !== 'b' && node.id !== 'join'), edges: [...graph.edges.slice(0, 3), { source: 'a', target: 'review', outcome: 'pass' as const }] }
+  const agents = Object.fromEntries(graph.nodes.map(node => [node.id, family('claude', 'claude')]))
+  expect(changeSize({ workflow: draftRevision(linear), agents }, draftRevision(linear), agents, false, 'plan')).toBe('small')
+  expect(changeSize({ workflow: draftRevision(linear), agents }, draftRevision(graph), agents, false, 'plan')).toBe('big')
 })

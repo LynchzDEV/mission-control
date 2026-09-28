@@ -8,16 +8,17 @@ import { z } from 'zod'
 import { parseThread } from './activity'
 import { BUILTIN_AGENTS, createConnectionStore, modelFamily, type AgentConnection } from './agent-connections'
 import { resolveBinary } from './engines'
-import { git } from './job-worktrees'
+import { addPathWorktree, applyPath, commitPath, git, gitTimed, removePathWorktree, snapshotCommit } from './job-worktrees'
 import { type JobManager, type JobRecord, readLogFile, redactSecrets } from './jobs'
 import type { EngineResolver } from './jobs-engine-iface'
 import type { TerminalRegistry } from './terminals'
 import { threadRootOf } from './threads'
 import { configDir, readConfig, readSecrets } from './secrets'
 import { validateWorkspaceCwd } from './workspace'
-import { atomicJson, composeWorkflowPrompt, draftRevision, identifier, type Outcome, type PolicyRevision, type WorkflowNode, type WorkflowRevision, type WorkflowStore } from './workflows'
+import { atomicJson, composeWorkflowPrompt, draftRevision, forkSections, identifier, passTargets, type Outcome, type PolicyRevision, type WorkflowNode, type WorkflowRevision, type WorkflowStore } from './workflows'
 
 const jobId = z.string().min(1).max(200)
+const GIT_TIMEOUT = 120_000
 const startSchema = z.object({ terminalId: identifier.optional(), workflowId: identifier.optional(), revision: identifier.optional(), cwd: z.string().min(1).max(2048), request: z.string().trim().min(1).max(32000), label: z.string().trim().min(1).max(120), chat: jobId.optional(), chatTurn: jobId.optional(), engine: identifier.optional(), model: z.string().min(1).max(200).optional(), graph: z.unknown().optional() })
 const resultSchema = z.object({ outcome: z.enum(['pass', 'fail', 'blocked']), summary: z.string().trim().min(1).max(16000), evidence: z.array(z.string().min(1).max(4000)).max(100) })
 type NodeResult = z.infer<typeof resultSchema>
@@ -104,7 +105,8 @@ function weakensGates(before: WorkflowRevision, after: WorkflowRevision): boolea
 export function changeSize(run: Pick<WorkflowRun, 'workflow' | 'agents'>, next: WorkflowRevision, nextAgents: Record<string, ResolvedAgent>, scopeGrew: boolean, from: string): 'small' | 'big' {
   if (scopeGrew) return 'big'
   const families = new Set(Object.values(run.agents).map(agent => agent.family))
-  if (next.nodes.some(node => !families.has(nextAgents[node.id]?.family ?? null))) return 'big'
+  if (next.nodes.some(node => node.kind !== 'join' && !families.has(nextAgents[node.id]?.family ?? null))) return 'big'
+  if (next.nodes.some(node => passTargets(next, node.id).length > 1 && passTargets(run.workflow, node.id).length < 2)) return 'big'
   const reviews = (graph: WorkflowRevision) => graph.nodes.filter(node => node.kind === 'review').length
   if (reviews(next) < reviews(run.workflow)) return 'big'
   const reviewsStillAhead = reviewsAhead(next, from)
@@ -124,6 +126,13 @@ function guardChange(run: WorkflowRun, next: WorkflowRevision): void {
     if (!after) throw new Error(`${before.title} already ran and cannot be removed`)
     const frozen = (node: WorkflowNode) => JSON.stringify([node.kind, node.instructions, node.agent, node.checks])
     if (frozen(after) !== frozen(before)) throw new Error(`${before.title} already ran, so its kind, instructions, agent and checks cannot change`)
+  }
+  for (const token of run.tokens) if (!next.nodes.some(node => node.id === token.nodeId)) throw new Error(`${title(token.nodeId)} is in progress and cannot be removed`)
+  const firsts = (paths: string[][]) => JSON.stringify(paths.map(path => path[0]))
+  const sections = run.sections.length ? forkSections(next) : []
+  for (const open of run.sections) {
+    const kept = sections.some(section => section.fork === open.fork && section.join === open.join && firsts(section.paths) === JSON.stringify(open.paths.map(path => path.firstNodeId)))
+    if (!kept) throw new Error(`Wait for the parallel paths to join before changing ${title(open.fork)}`)
   }
 }
 
@@ -147,6 +156,7 @@ const previousOf = (number: number) => number ? [number - 1] : []
 function migrateRun(record: WorkflowRun): WorkflowRun {
   record.origin ??= { source: 'saved', by: 'you', where: record.terminalId ? 'terminal' : record.chatId ? 'chat' : 'studio' }
   record.versions ??= [{ number: 1, revision: record.workflow.revision, reason: 'Initial flow', size: 'initial', state: 'approved', approvedVia: 'user', relayedBy: null, at: record.createdAt }]
+  for (const graph of [record.workflow, ...record.versions.map(version => version.graph)]) for (const node of graph?.nodes ?? []) node.setup ??= []
   record.sections ??= []
   record.keptBranches ??= []
   if (!record.tokens) {
@@ -218,7 +228,15 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     runs.set(run.id, run)
     run.currentNodeId = positionOf(run)
     deps.onChange?.(structuredClone(run))
-    if (!LIVE_STATUSES.has(run.status) && !run.attempts.some(attempt => processAlive(attempt.checkPid)) && !deps.manager.listJobs().some(job => job.workflowRunId === run.id && job.status === 'running')) deps.manager.releaseWorkspace(run.cwd, run.id)
+    if (!LIVE_STATUSES.has(run.status) && !run.attempts.some(attempt => processAlive(attempt.checkPid)) && !deps.manager.listJobs().some(job => job.workflowRunId === run.id && job.status === 'running')) {
+      for (const workspace of [run.cwd, ...pathWorkspaces(run)]) deps.manager.releaseWorkspace(workspace, run.id)
+    }
+  }
+  function pathWorkspaces(run: WorkflowRun): string[] {
+    return run.sections.flatMap(section => section.paths.map(path => path.workspace))
+  }
+  function claimPaths(run: WorkflowRun): string | null {
+    return pathWorkspaces(run).find(workspace => !deps.manager.claimWorkspace(workspace, run.id)) ?? null
   }
   function processAlive(pid?: number): boolean {
     if (!pid) return false
@@ -239,6 +257,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const wasLive = LIVE_STATUSES.has(run.status)
     run.status = status; run.error = error
     if (status !== 'done') { await killWork(run); interrupt(run) }
+    else for (const section of run.sections.splice(0)) await closeSection(run, section, () => false)
     for (const version of run.versions.filter(version => version.state === 'pending')) Object.assign(version, { state: 'rejected', at: Date.now() })
     await persist(run)
     if (wasLive) deps.onRunSettled?.(structuredClone(run))
@@ -263,7 +282,8 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       const family = (modelFamily(model) ?? ownFamily)?.toLowerCase() ?? null
       return { engine, model, family, ...(connection ? { connection } : {}) }
     }
-    const agents: Record<string, ResolvedAgent> = Object.fromEntries(await Promise.all(workflow.nodes.map(async node => [node.id, await resolveAgent(node, chatDefault)] as const)))
+    const working = workflow.nodes.filter(node => node.kind !== 'join')
+    const agents: Record<string, ResolvedAgent> = Object.fromEntries(await Promise.all(working.map(async node => [node.id, await resolveAgent(node, chatDefault)] as const)))
     const implementationFamilies = new Set(workflow.nodes.filter(node => node.kind === 'implement').map(node => agents[node.id]!.family))
     for (const review of workflow.nodes.filter(node => chatDefault && node.kind === 'review' && !node.agent.engine && implementationFamilies.has(agents[node.id]!.family))) {
       agents[review.id] = await resolveAgent(review, undefined)
@@ -274,27 +294,34 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     for (const review of workflow.nodes.filter(node => node.kind === 'review')) {
       if (!agents[review.id]!.family) throw new Error(`${review.title}: select or declare the review model family`)
     }
-    let next: string | undefined = workflow.entry
+    const stack: Array<[string, Set<string>]> = [[workflow.entry, new Set()]]
     const visited = new Set<string>()
-    const walkFamilies = new Set<string>()
-    while (next && !visited.has(next)) {
-      visited.add(next)
-      const node = workflow.nodes.find(node => node.id === next)!
-      if (node.kind === 'implement') walkFamilies.add(agents[node.id]!.family!)
+    while (stack.length) {
+      const [id, families] = stack.pop()!
+      const key = `${id}:${[...families].sort().join(',')}`
+      if (visited.has(key)) continue
+      visited.add(key)
+      const node = workflow.nodes.find(node => node.id === id)!
+      const carried = new Set(families)
+      if (node.kind === 'implement') carried.add(agents[node.id]!.family!)
       if (node.kind === 'review') {
-        if (walkFamilies.has(agents[node.id]!.family!)) throw new Error(`${node.title} must use a different model family from implementation`)
-        walkFamilies.clear()
+        if (carried.has(agents[node.id]!.family!)) throw new Error(`${node.title} must use a different model family from implementation`)
+        carried.clear()
       }
-      next = workflow.edges.find(edge => edge.source === node.id && edge.outcome === 'pass')?.target
+      for (const target of passTargets(workflow, id)) stack.push([target, carried])
     }
     return agents
+  }
+  function visitLimit(run: WorkflowRun, node: WorkflowNode): string | null {
+    if (run.attempts.filter(attempt => attempt.nodeId === node.id).length >= node.maxVisits) return `${node.title} reached its ${node.maxVisits}-visit limit`
+    return run.attempts.length >= 256 ? 'Run reached its 256-node execution limit' : null
   }
   async function dispatch(run: WorkflowRun, token: WorkflowToken): Promise<void> {
     if (stopping.has(run.id) || run.status !== 'running' || changePending(run)) return
     const node = run.workflow.nodes.find(node => node.id === token.nodeId)!
-    const visits = run.attempts.filter(attempt => attempt.nodeId === node.id).length
-    if (visits >= node.maxVisits) return block(run, `${node.title} reached its ${node.maxVisits}-visit limit`)
-    if (run.attempts.length >= 256) return block(run, 'Run reached its 256-node execution limit')
+    if (node.kind === 'join') return block(run, `${node.title} has no open paths to join`)
+    const limit = visitLimit(run, node)
+    if (limit) return block(run, limit)
     const related = run.attempts.filter(attempt => lineage(attempt.pathId, token.pathId))
     const lastPlan = related.findLastIndex(attempt => kindOf(run, attempt) === 'plan')
     const verification = related.findLastIndex(attempt => kindOf(run, attempt) === 'verify-plan')
@@ -311,7 +338,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     await persist(run)
     const agent = run.agents[node.id]!
     const chat = run.chatId ? { chatId: run.chatId, ...(run.chatTurn ? { chatTurn: run.chatTurn } : {}), reason: `Studio · ${run.workflow.name} · ${node.title}` } : {}
-    const result = await deps.manager.createJob({ engine: agent.engine, model: agent.model ?? undefined, connection: agent.connection, cwd: token.workspace, label: run.chatId ? node.title : run.label, prompt, ...chat, coreRules: node.kind === 'implement' ? `${run.policy.coreRules}\n\n${run.policy.implementationRules}` : run.policy.coreRules, mcpServers: node.mcpServers, workflowRunId: run.id, workflowNodeId: node.id, workflowAttempt: attempt.number, terminalId: run.terminalId }, deps.resolver)
+    const result = await deps.manager.createJob({ engine: agent.engine, model: agent.model ?? undefined, connection: agent.connection, cwd: token.workspace, ...(token.workspace === run.cwd ? {} : { baseRepo: run.cwd }), label: run.chatId ? node.title : run.label, prompt, ...chat, coreRules: node.kind === 'implement' ? `${run.policy.coreRules}\n\n${run.policy.implementationRules}` : run.policy.coreRules, mcpServers: node.mcpServers, workflowRunId: run.id, workflowNodeId: node.id, workflowAttempt: attempt.number, terminalId: run.terminalId }, deps.resolver)
     if (!result.ok) return block(run, result.error)
     attempt.jobId = result.job.id; attempt.status = 'running'
     await persist(run)
@@ -432,17 +459,117 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   async function route(run: WorkflowRun, token: WorkflowToken): Promise<boolean> {
     const attempt = run.attempts[token.attempt!]!
     const result = attempt.result!
-    const edge = run.workflow.edges.find(edge => edge.source === attempt.nodeId && edge.outcome === result.outcome)
-    Object.assign(token, { nodeId: edge?.target ?? attempt.nodeId, state: 'ready', attempt: null, from: [attempt.number] })
-    if (edge) return true
+    const targets = result.outcome === 'pass' ? passTargets(run.workflow, attempt.nodeId) : run.workflow.edges.filter(edge => edge.source === attempt.nodeId && edge.outcome === result.outcome).map(edge => edge.target)
+    if (targets.length > 1) return fork(run, token, run.workflow.nodes.find(node => node.id === attempt.nodeId)!, attempt)
+    const target = targets[0]
+    const waits = target !== undefined && run.sections.some(section => section.join === target && section.paths.some(path => path.pathId === token.pathId))
+    Object.assign(token, { nodeId: target ?? attempt.nodeId, state: waits ? 'waiting' : 'ready', attempt: null, from: [attempt.number] })
+    if (target !== undefined) return true
     if (result.outcome === 'pass' && unreviewedImplementations(run, token.pathId).length) await block(run, 'Implementation finished without a cross-family review')
     else await finish(run, result.outcome === 'pass' ? 'done' : result.outcome === 'fail' ? 'failed' : 'blocked', result.outcome === 'pass' ? null : result.summary)
     return false
+  }
+  async function runSetup(run: WorkflowRun, node: WorkflowNode, cwd: string): Promise<string | null> {
+    for (const command of node.setup ?? []) {
+      const proc = Bun.spawn([resolveBinary(command.command), ...command.args], { cwd, env: { ...process.env, MC_WORKFLOW_RUN_ID: run.id }, stdout: 'pipe', stderr: 'pipe' })
+      const timer = setTimeout(() => proc.kill('SIGKILL'), command.timeoutSeconds * 1000)
+      const [output, errors, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]).finally(() => clearTimeout(timer))
+      if (code !== 0) return `${node.title} setup failed: ${[command.command, ...command.args].join(' ')}${`\n${errors || output}`.trimEnd()}`
+    }
+    return null
+  }
+  async function fork(run: WorkflowRun, token: WorkflowToken, node: WorkflowNode, attempt: WorkflowAttempt): Promise<boolean> {
+    const closing = forkSections(run.workflow).find(section => section.fork === node.id)
+    if (!closing) throw new Error(`${node.title} paths must meet at one join`)
+    const parentWorkspace = token.workspace
+    const top = await gitTimed(parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-toplevel'])
+    const prefix = await gitTimed(parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-prefix'])
+    await mkdir(join(root, run.id), { recursive: true, mode: 0o700 })
+    const base = await realpath(join(root, run.id))
+    if (!base.startsWith(await realpath(homedir()) + sep)) { await block(run, 'Path worktrees must be under your home directory'); return false }
+    const stem = token.pathId === 'main' ? '' : `${token.pathId}.`
+    const paths = passTargets(run.workflow, node.id).map((firstNodeId, index) => {
+      const pathId = `${stem}a${attempt.number}-${index + 1}`
+      const dir = join(base, pathId)
+      return { pathId, branch: `flow-${run.id.slice(0, 8)}-${pathId}`, dir, workspace: prefix ? join(dir, prefix) : dir, firstNodeId }
+    })
+    const snapshot = await snapshotCommit(parentWorkspace, `${run.label}: snapshot before ${node.title}`)
+    const section: OpenSection = { fork: node.id, join: closing.join, forkAttempt: attempt.number, parentPathId: token.pathId, parentWorkspace, snapshot, joined: [], paths }
+    run.sections = [...run.sections.filter(open => !(open.fork === node.id && open.forkAttempt === attempt.number)), section]
+    await persist(run)
+    for (const path of paths) {
+      await addPathWorktree(top, path.dir, path.branch, snapshot)
+      if (!deps.manager.claimWorkspace(path.workspace, run.id)) { await block(run, `Another run owns ${path.workspace}`); return false }
+      const failed = await runSetup(run, node, path.workspace)
+      if (failed) { await block(run, failed); return false }
+    }
+    run.tokens = [...run.tokens.filter(other => other.id !== token.id), ...paths.map(path => ({ id: crypto.randomUUID(), nodeId: path.firstNodeId, pathId: path.pathId, workspace: path.workspace, state: 'ready' as const, attempt: null, from: [attempt.number] }))]
+    return true
+  }
+  function joinable(run: WorkflowRun): OpenSection | undefined {
+    return run.sections.find(section => section.paths.every(path => run.tokens.some(token => token.pathId === path.pathId && token.state === 'waiting' && token.nodeId === section.join)))
+  }
+  async function closeSection(run: WorkflowRun, section: OpenSection, keep: (pathId: string) => boolean): Promise<void> {
+    const top = await gitTimed(section.parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-toplevel'])
+    for (const path of section.paths) {
+      await removePathWorktree(top, path.dir, path.branch, keep(path.pathId))
+      deps.manager.releaseWorkspace(path.workspace, run.id)
+    }
+  }
+  async function changedFiles(section: OpenSection, branch: string): Promise<number> {
+    const names = await gitTimed(section.parentWorkspace, GIT_TIMEOUT, ['diff', '--name-only', '--no-renames', section.snapshot, branch])
+    return names ? names.split('\n').length : 0
+  }
+  async function applySection(run: WorkflowRun, section: OpenSection): Promise<NodeResult> {
+    const title = (id: string) => run.workflow.nodes.find(node => node.id === id)?.title ?? id
+    for (const path of section.paths) await commitPath(path.dir, `${run.label}: ${title(path.firstNodeId)}`)
+    const counts: string[] = []
+    let conflict: { pathId: string; files: string[] } | null = null
+    for (const path of section.paths) {
+      if (section.joined.includes(path.pathId)) { counts.push(`${path.pathId}: ${await changedFiles(section, path.branch)} files`); continue }
+      const applied = await applyPath(section.parentWorkspace, section.snapshot, path.branch)
+      if (!applied.applied) { conflict = { pathId: path.pathId, files: applied.conflicts }; break }
+      section.joined.push(path.pathId)
+      counts.push(`${path.pathId}: ${applied.files} files`)
+      await persist(run)
+    }
+    const unjoined = section.paths.filter(path => !section.joined.includes(path.pathId))
+    await closeSection(run, section, pathId => unjoined.some(path => path.pathId === pathId))
+    if (!conflict) return { outcome: 'pass', summary: `Joined ${section.paths.length} paths`, evidence: counts }
+    run.keptBranches.push(...unjoined.map(path => path.branch))
+    const files = conflict.files.join(', ')
+    return { outcome: 'fail', summary: `Paths could not be joined: ${files}`, evidence: [`Joined: ${section.joined.join(', ') || 'none'}`, `Conflicts in ${conflict.pathId}: ${files}`, `Unjoined paths kept on branches: ${unjoined.map(path => path.branch).join(', ')}`] }
+  }
+  async function joinPaths(run: WorkflowRun, section: OpenSection): Promise<void> {
+    const node = run.workflow.nodes.find(node => node.id === section.join)!
+    const limit = visitLimit(run, node)
+    if (limit) return block(run, limit)
+    const waiting = run.tokens.filter(token => token.state === 'waiting' && token.nodeId === section.join && section.paths.some(path => path.pathId === token.pathId))
+    const attempt: WorkflowAttempt = { nodeId: node.id, number: run.attempts.length, jobId: null, status: 'running', prompt: '', startedAt: Date.now(), endedAt: null, result: null, checks: [], output: '', workspace: null, tokenId: crypto.randomUUID(), pathId: section.parentPathId, from: waiting.flatMap(token => token.from) }
+    run.attempts.push(attempt)
+    await persist(run)
+    let result: NodeResult
+    try { result = await applySection(run, section) } catch (error) {
+      const summary = error instanceof Error ? error.message : 'Join failed'
+      Object.assign(attempt, { status: 'settled', endedAt: Date.now(), result: { outcome: 'blocked', summary, evidence: [] } })
+      return block(run, summary)
+    }
+    Object.assign(attempt, { status: 'settled', endedAt: Date.now(), result, workspace: await workspaceSnapshot(section.parentWorkspace) })
+    run.sections = run.sections.filter(open => open !== section)
+    const parent: WorkflowToken = { id: attempt.tokenId, nodeId: node.id, pathId: section.parentPathId, workspace: section.parentWorkspace, state: 'settled', attempt: attempt.number, from: attempt.from }
+    run.tokens = [...run.tokens.filter(token => !waiting.includes(token)), parent]
+    const hasEdge = run.workflow.edges.some(edge => edge.source === node.id && edge.outcome === result.outcome)
+    if (result.outcome === 'fail' && !hasEdge) return block(run, result.summary)
+    await route(run, parent)
   }
   async function advance(run: WorkflowRun): Promise<void> {
     try {
       if (stopping.has(run.id) || run.status !== 'running' || changePending(run) || incoming.has(run.id)) return await persist(run)
       for (const token of run.tokens.filter(token => token.state === 'settled')) if (!await route(run, token)) return
+      for (let section = joinable(run); section; section = joinable(run)) {
+        await joinPaths(run, section)
+        if (run.status !== 'running') return
+      }
       for (const token of run.tokens.filter(token => token.state === 'ready')) {
         await dispatch(run, token)
         if (run.status !== 'running') return
@@ -499,6 +626,8 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       if (run.attempts.some(attempt => processAlive(attempt.checkPid))) throw new Error('The interrupted acceptance process may still be running; inspect it before retrying')
       interrupt(run)
       if (!deps.manager.claimWorkspace(run.cwd, run.id)) throw new Error('Workspace already has running work')
+      const taken = claimPaths(run)
+      if (taken) { deps.manager.releaseWorkspace(run.cwd, run.id); throw new Error(`Another run owns ${taken}`) }
       run.status = 'running'; run.error = null
       if (run.chatId) run.reportedAt = null
       await advance(run)
@@ -508,9 +637,16 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   async function recover(): Promise<void> {
     for (const run of runs.values()) {
       const unsettled = run.attempts.filter(attempt => attempt.status !== 'settled')
-      if (run.status === 'awaiting-approval' || ((run.status === 'paused' || (run.status === 'running' && changePending(run))) && !unsettled.length)) { if (!deps.manager.claimWorkspace(run.cwd, run.id)) await block(run, 'Another run owns this workspace'); continue }
+      if (run.status === 'awaiting-approval' || ((run.status === 'paused' || (run.status === 'running' && changePending(run))) && !unsettled.length)) {
+        const taken = deps.manager.claimWorkspace(run.cwd, run.id) ? claimPaths(run) : 'this workspace'
+        if (taken) await block(run, `Another run owns ${taken}`)
+        continue
+      }
       if (run.status !== 'running' && run.status !== 'paused') { if (run.attempts.some(attempt => processAlive(attempt.checkPid))) deps.manager.claimWorkspace(run.cwd, run.id); continue }
       if (!deps.manager.claimWorkspace(run.cwd, run.id)) { await block(run, 'Another run owns this workspace'); continue }
+      const taken = claimPaths(run)
+      if (taken) { await block(run, `Another run owns ${taken}`); continue }
+      if (unsettled.some(attempt => kindOf(run, attempt) === 'join')) { await block(run, 'Join interrupted; Retry resumes it'); continue }
       const adopted = unsettled.map(attempt => ({ attempt, job: deps.manager.listJobs().find(job => job.workflowRunId === run.id && job.workflowAttempt === attempt.number) }))
       const broken = adopted.find(({ attempt, job }) => !job || attempt.status === 'checking')
       if (!adopted.length || broken) { await block(run, `Interrupted transition or acceptance check; inspect evidence${broken?.attempt.checkPid ? ` and process ${broken.attempt.checkPid}` : ''} before retrying`); continue }
@@ -544,6 +680,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       const run = mustGet(id)
       owned(run, context)
       const version = pendingVersion(run, context)
+      if (version.number > 1) guardChange(run, version.graph!)
       Object.assign(version, { state: 'approved', approvedVia: context.via, relayedBy: context.via === 'conversation' ? run.origin.by : null, at: Date.now() })
       if (version.number > 1) { applyVersion(run, version); await advance(run) }
       else if (run.status === 'awaiting-approval') { run.status = 'running'; await advance(run) } else await persist(run)
