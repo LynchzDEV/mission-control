@@ -311,6 +311,20 @@ test('terminal cwd does not require a git repository', async () => {
   }
 })
 
+test('terminal instructions explain when to use a flow and how to relay approval', async () => {
+  const { createConnectionStore } = await import('../server/agent-connections')
+  const store = createConnectionStore(configDir)
+  await store.save({ id: 'flow-echo', name: 'Flow echo', adapter: 'acp', command: '/bin/sh', args: [], terminalArgs: ['-c', 'printf %s "$1"; exec cat', 'sh', '{{instructions}}'] })
+  const started = await registry.createTerminal({ engine: 'flow-echo', cwd: plain })
+  expect(started.ok).toBe(true)
+  if (!started.ok) return
+  await waitFor(() => registry.replay(started.terminal.id).includes('Never approve without the user saying so'))
+  const output = registry.replay(started.terminal.id)
+  for (const phrase of ['more than one step that changes code', '/approve', '"terminalId"', 'Never approve without the user saying so']) expect(output).toContain(phrase)
+  expect(output).not.toContain('pinned workflow')
+  registry.kill(started.terminal.id)
+})
+
 test('configured agents can open interactive terminals without changing the built-in engines', async () => {
   const { createConnectionStore } = await import('../server/agent-connections')
   const store = createConnectionStore(configDir)

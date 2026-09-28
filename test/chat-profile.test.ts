@@ -25,9 +25,9 @@ describe('chat rules', () => {
     expect(text).toContain('Recent: fixed login')
     expect(chatRules({ chatId: 'r', home: '/h', project: null, edit: true, memory: '' })).toContain('may edit files directly')
   })
-  test('explain how a named Studio workflow runs from the chat, and that naming one is optional', () => {
-    for (const phrase of ['GET $MC_URL/api/studio/workflows', 'POST $MC_URL/api/studio/runs', '"chat":"$MC_CHAT_ID"', '"chatTurn":"$MC_JOB_ID"', 'case-insensitively', '"[workflow', 'Without a named workflow, keep choosing agents yourself']) expect(CHAT_RULES).toContain(phrase)
-    expect(CHAT_RULES).not.toContain('Naming a Studio workflow makes you follow it instead.')
+  test('chat rules explain when to use a flow and how to relay approval', () => {
+    for (const phrase of ['more than one step that changes code', 'GET $MC_URL/api/studio/workflows', '"status":"awaiting-approval"', '/approve {"chat":"$MC_CHAT_ID"}', 'Never approve without the owner saying so']) expect(CHAT_RULES).toContain(phrase)
+    expect(CHAT_RULES).not.toContain('Naming a Studio workflow is optional')
   })
   test('state the chat\'s own engine and model', () => {
     expect(chatRules({ chatId: 'r', home: '/h', project: null, edit: false, memory: '', engine: 'claude', model: 'claude-opus-4' })).toContain('Your AI: engine claude, model claude-opus-4.')
