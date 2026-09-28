@@ -984,3 +984,14 @@ test('changeSize: splitting a step into parallel paths is big', () => {
   expect(changeSize({ workflow: draftRevision(linear), agents }, draftRevision(linear), agents, false, 'plan')).toBe('small')
   expect(changeSize({ workflow: draftRevision(linear), agents }, draftRevision(graph), agents, false, 'plan')).toBe('big')
 })
+
+test('a path that commits on a branch of its own still joins its change', async () => {
+  await homeConfig()
+  build()
+  const moved = [{ command: '/bin/sh', args: ['-c', 'git checkout -q -b other && echo c > c.txt && git add c.txt && git -c user.name=t -c user.email=t@localhost commit -q -m c'] }]
+  const started = await runner.start({ cwd: repo, request: 'Write both files', label: 'fork', graph: forked({ b: { checks: moved } }) })
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(await readFile(join(repo, 'c.txt'), 'utf8')).toBe('c\n')
+  expect(await readFile(join(repo, 'a.txt'), 'utf8')).toBe('a\n')
+})

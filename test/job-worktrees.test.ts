@@ -104,3 +104,57 @@ test('an empty path applies with no files', async () => {
   expect(await applyPath(repo, snapshot, 'flow-test-p1')).toEqual({ applied: true, files: 0, conflicts: [] })
   await removePathWorktree(repo, dir, 'flow-test-p1', false)
 })
+
+async function pathWith(write: (dir: string) => Promise<void>) {
+  const snapshot = await snapshotCommit(repo, 'fixture: snapshot')
+  const dir = join(scratch, 'p1')
+  await addPathWorktree(repo, dir, 'flow-test-p1', snapshot)
+  await write(dir)
+  await commitPath(dir, 'fixture: change')
+  return { snapshot, dir }
+}
+
+test('a path whose last changed file is binary joins byte for byte', async () => {
+  const bytes = new Uint8Array([0, 1, 2, 255, 0, 10, 13, 0, 128])
+  const { snapshot } = await pathWith(async dir => {
+    await writeFile(join(dir, 'a.txt'), 'a\n')
+    await writeFile(join(dir, 'z.bin'), bytes)
+  })
+  expect(await applyPath(repo, snapshot, 'flow-test-p1')).toEqual({ applied: true, files: 2, conflicts: [] })
+  expect(new Uint8Array(await readFile(join(repo, 'z.bin')))).toEqual(bytes)
+})
+
+test('a path that ends with trailing spaces keeps them', async () => {
+  const { snapshot } = await pathWith(dir => writeFile(join(dir, 'README.md'), 'initial\nadded   \n'))
+  expect((await applyPath(repo, snapshot, 'flow-test-p1')).applied).toBe(true)
+  expect(await readFile(join(repo, 'README.md'), 'utf8')).toBe('initial\nadded   \n')
+})
+
+test('a join ignores diff.noprefix and forced colour in the user’s git config', async () => {
+  await git(repo, 'config', 'diff.noprefix', 'true')
+  await git(repo, 'config', 'color.ui', 'always')
+  const { snapshot } = await pathWith(dir => writeFile(join(dir, 'new.txt'), 'new\n'))
+  expect(await applyPath(repo, snapshot, 'flow-test-p1')).toEqual({ applied: true, files: 1, conflicts: [] })
+  expect(await readFile(join(repo, 'new.txt'), 'utf8')).toBe('new\n')
+})
+
+test('commitPath sees a new file even when untracked files are hidden from status', async () => {
+  await git(repo, 'config', 'status.showUntrackedFiles', 'no')
+  const snapshot = await snapshotCommit(repo, 'fixture: snapshot')
+  const dir = join(scratch, 'p1')
+  await addPathWorktree(repo, dir, 'flow-test-p1', snapshot)
+  await writeFile(join(dir, 'new.txt'), 'new\n')
+  expect(await commitPath(dir, 'fixture: new')).toBe(true)
+  expect(await applyPath(repo, snapshot, 'flow-test-p1')).toEqual({ applied: true, files: 1, conflicts: [] })
+  expect(await readFile(join(repo, 'new.txt'), 'utf8')).toBe('new\n')
+})
+
+test('runner-owned git never runs the user’s hooks', async () => {
+  const marker = (name: string) => join(scratch, `${name}.ran`)
+  for (const hook of ['post-checkout', 'post-commit']) {
+    await writeFile(join(repo, '.git', 'hooks', hook), `#!/bin/sh\ntouch '${marker(hook)}'\n`, { mode: 0o755 })
+  }
+  await pathWith(dir => writeFile(join(dir, 'a.txt'), 'a\n'))
+  expect(await Bun.file(marker('post-checkout')).exists()).toBe(false)
+  expect(await Bun.file(marker('post-commit')).exists()).toBe(false)
+})

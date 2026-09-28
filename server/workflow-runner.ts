@@ -8,7 +8,7 @@ import { z } from 'zod'
 import { parseThread } from './activity'
 import { BUILTIN_AGENTS, createConnectionStore, modelFamily, type AgentConnection } from './agent-connections'
 import { resolveBinary } from './engines'
-import { addPathWorktree, applyPath, commitPath, git, gitTimed, removePathWorktree, snapshotCommit } from './job-worktrees'
+import { addPathWorktree, applyPath, changedFileCount, commitPath, git, gitTimed, removePathWorktree, snapshotCommit } from './job-worktrees'
 import { type JobManager, type JobRecord, readLogFile, redactSecrets } from './jobs'
 import type { EngineResolver } from './jobs-engine-iface'
 import type { TerminalRegistry } from './terminals'
@@ -517,8 +517,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     }
   }
   async function changedFiles(section: OpenSection, branch: string): Promise<number> {
-    const names = await gitTimed(section.parentWorkspace, GIT_TIMEOUT, ['diff', '--name-only', '--no-renames', section.snapshot, branch])
-    return names ? names.split('\n').length : 0
+    return changedFileCount(section.parentWorkspace, section.snapshot, branch)
   }
   async function applySection(run: WorkflowRun, section: OpenSection): Promise<NodeResult> {
     const title = (id: string) => run.workflow.nodes.find(node => node.id === id)?.title ?? id
@@ -527,7 +526,8 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     let conflict: { pathId: string; files: string[] } | null = null
     for (const path of section.paths) {
       if (section.joined.includes(path.pathId)) { counts.push(`${path.pathId}: ${await changedFiles(section, path.branch)} files`); continue }
-      const applied = await applyPath(section.parentWorkspace, section.snapshot, path.branch)
+      const head = await gitTimed(path.dir, GIT_TIMEOUT, ['rev-parse', 'HEAD'])
+      const applied = await applyPath(section.parentWorkspace, section.snapshot, head)
       if (!applied.applied) { conflict = { pathId: path.pathId, files: applied.conflicts }; break }
       section.joined.push(path.pathId)
       counts.push(`${path.pathId}: ${applied.files} files`)
