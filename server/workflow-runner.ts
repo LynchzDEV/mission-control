@@ -231,10 +231,10 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   }
   async function persist(run: WorkflowRun): Promise<void> {
     run.updatedAt = Date.now()
+    run.currentNodeId = positionOf(run)
     await mkdir(root, { recursive: true, mode: 0o700 })
     await atomicJson(join(root, `${run.id}.json`), run)
     runs.set(run.id, run)
-    run.currentNodeId = positionOf(run)
     deps.onChange?.(structuredClone(run))
     if (!LIVE_STATUSES.has(run.status) && !run.attempts.some(attempt => processAlive(attempt.checkPid)) && !deps.manager.listJobs().some(job => job.workflowRunId === run.id && job.status === 'running')) {
       for (const workspace of [run.cwd, ...pathWorkspaces(run)]) deps.manager.releaseWorkspace(workspace, run.id)

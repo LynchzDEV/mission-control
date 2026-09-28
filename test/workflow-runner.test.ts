@@ -357,6 +357,7 @@ test('a paused run records the finished step but starts nothing new until resume
   expect(moved.currentNodeId).toBe('verify-plan')
   await Bun.sleep(200)
   expect(runner.get(started.id)!.attempts).toHaveLength(1)
+  expect(JSON.parse(await Bun.file(join(dir, 'workflow-runs', `${started.id}.json`)).text()).currentNodeId).toBe('verify-plan')
   await runner.resume(started.id)
   expect((await finished(started.id)).status).toBe('done')
 })
