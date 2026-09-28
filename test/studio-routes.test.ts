@@ -1,28 +1,59 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Elysia } from 'elysia'
-import { createJobManager } from '../server/jobs'
+import { createJobManager, type JobManager } from '../server/jobs'
 import { fakeEchoResolver } from '../server/jobs-engine-iface'
 import { createWorkflowStore, defaultWorkflow } from '../server/workflows'
-import { createWorkflowRunner } from '../server/workflow-runner'
+import { createWorkflowRunner, LIVE_STATUSES, type WorkflowRunner } from '../server/workflow-runner'
 import { studioRoutes } from '../server/routes/studio'
+import { initScratchGitRepo } from './support/scratch-git-repo'
 
-let dir: string, app: Elysia
+let dir: string, app: Elysia, manager: JobManager, runner: WorkflowRunner, repos: string[]
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-studio-api-'))
   process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  repos = []
   const store = createWorkflowStore(dir)
-  const runner = createWorkflowRunner({ manager: createJobManager(), resolver: fakeEchoResolver, store })
+  manager = createJobManager()
+  runner = createWorkflowRunner({ manager, resolver: fakeEchoResolver, store, requireApproval: async () => true })
   app = new Elysia().use(studioRoutes(store, runner))
 })
-afterEach(async () => { delete process.env.MISSION_CONTROL_CONFIG_DIR; await rm(dir, { recursive: true, force: true }) })
+afterEach(async () => {
+  for (const run of runner.list()) if (LIVE_STATUSES.has(run.status)) await runner.stop(run.id)
+  for (const job of manager.listJobs()) if (job.status === 'running') await manager.killJob(job.id)
+  for (let i = 0; i < 200 && manager.listJobs().some(job => job.status === 'running'); i++) await Bun.sleep(20)
+  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  await rm(dir, { recursive: true, force: true })
+  for (const repo of repos) await rm(repo, { recursive: true, force: true })
+})
 function request(path: string, body?: unknown, origin = 'http://localhost') {
   return app.handle(new Request(`${origin}/api/studio${path}`, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }))
 }
 function remove(path: string, origin = 'http://localhost') {
   return app.handle(new Request(`${origin}/api/studio${path}`, { method: 'DELETE' }))
+}
+function post(path: string, body: unknown, headers: Record<string, string>) {
+  return app.handle(new Request(`http://localhost${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) }))
+}
+function get(path: string) {
+  return app.handle(new Request(`http://localhost${path}`))
+}
+async function scratchRepo() {
+  const repo = await mkdtemp(join(homedir(), 'mc-studio-routes-repo-'))
+  repos.push(repo)
+  await initScratchGitRepo(repo)
+  return repo
+}
+async function runBody(label = 'fixture') {
+  return { cwd: await scratchRepo(), request: 'x', label }
+}
+async function chatRoot() {
+  const created = await manager.createJob({ engine: 'claude', cwd: await scratchRepo(), prompt: 'Run the shipping workflow', label: 'Shipping chat', purpose: 'chat' }, fakeEchoResolver)
+  if (!created.ok) throw new Error(created.error)
+  for (let i = 0; i < 200 && manager.getJob(created.job.id)?.status === 'running'; i++) await Bun.sleep(20)
+  return created.job.id
 }
 
 test('Studio configuration and execution refuse a rebinding host', async () => {
@@ -76,4 +107,70 @@ test('starting a run for a chat that does not exist is refused', async () => {
   const response = await request('/runs', { cwd: dir, request: 'Ship it', label: 'ship', chat: 'no-such-chat', chatTurn: 'no-such-turn', engine: 'claude' })
   expect(response.status).toBe(400)
   expect((await response.json()).error).toContain('Chat not found')
+})
+
+test('a browser start is approved by the user; a CLI start waits', async () => {
+  const browser = await post('/api/studio/runs', await runBody(), { 'sec-fetch-site': 'same-origin' })
+  expect((await browser.json()).versions[0].approvedVia).toBe('user')
+  const cli = await post('/api/studio/runs', await runBody('cli'), {})
+  expect((await cli.json()).status).toBe('awaiting-approval')
+})
+
+test('approve records drawer for browser requests and conversation for CLI requests', async () => {
+  const run = await (await post('/api/studio/runs', await runBody(), {})).json()
+  const approved = await (await post(`/api/studio/runs/${run.id}/approve`, {}, { 'sec-fetch-site': 'same-origin' })).json()
+  expect(approved.versions[0].approvedVia).toBe('drawer')
+  const chatId = await chatRoot()
+  const chatRun = await (await post('/api/studio/runs', { ...(await runBody('chat')), chat: chatId }, {})).json()
+  const relayed = await (await post(`/api/studio/runs/${chatRun.id}/approve`, { chat: chatId }, {})).json()
+  expect(relayed.versions[0].approvedVia).toBe('conversation')
+})
+
+test('a relayed approval for another session is refused with 403', async () => {
+  const chatId = await chatRoot()
+  const run = await (await post('/api/studio/runs', { ...(await runBody()), chat: chatId }, {})).json()
+  const response = await post(`/api/studio/runs/${run.id}/approve`, { chat: 'someone-else' }, {})
+  expect(response.status).toBe(403)
+  expect((await (await get(`/api/studio/runs/${run.id}`)).json()).status).toBe('awaiting-approval')
+})
+
+test('approving twice answers 409 the second time', async () => {
+  const run = await (await post('/api/studio/runs', await runBody(), {})).json()
+  await post(`/api/studio/runs/${run.id}/approve`, {}, { 'sec-fetch-site': 'same-origin' })
+  expect((await post(`/api/studio/runs/${run.id}/approve`, {}, { 'sec-fetch-site': 'same-origin' })).status).toBe(409)
+})
+
+test('approving a version that is not the pending one answers 409', async () => {
+  const run = await (await post('/api/studio/runs', await runBody(), {})).json()
+  expect((await post(`/api/studio/runs/${run.id}/approve`, { version: 2 }, { 'sec-fetch-site': 'same-origin' })).status).toBe(409)
+  expect((await post(`/api/studio/runs/${run.id}/approve`, { version: 1 }, { 'sec-fetch-site': 'same-origin' })).status).toBe(200)
+})
+
+test('rejecting a waiting flow stops it', async () => {
+  const run = await (await post('/api/studio/runs', await runBody(), {})).json()
+  const rejected = await (await post(`/api/studio/runs/${run.id}/reject`, {}, { 'sec-fetch-site': 'same-origin' })).json()
+  expect(rejected.status).toBe('stopped')
+  expect(rejected.versions[0].state).toBe('rejected')
+})
+
+test('pause and resume answer with the run, and a wrong state or unknown run is refused', async () => {
+  const run = await (await post('/api/studio/runs', await runBody(), {})).json()
+  expect((await post(`/api/studio/runs/${run.id}/pause`, {}, {})).status).toBe(409)
+  await post(`/api/studio/runs/${run.id}/approve`, {}, { 'sec-fetch-site': 'same-origin' })
+  expect((await (await post(`/api/studio/runs/${run.id}/pause`, {}, {})).json()).status).toBe('paused')
+  expect((await (await post(`/api/studio/runs/${run.id}/resume`, {}, {})).json()).status).toBe('running')
+  expect((await post('/api/studio/runs/no-such-run/resume', {}, {})).status).toBe(404)
+})
+
+test('the run list filters by chat and terminal', async () => {
+  const chatId = await chatRoot()
+  const chatRun = await (await post('/api/studio/runs', { ...(await runBody('chat')), chat: chatId }, {})).json()
+  await post('/api/studio/runs', await runBody('studio'), {})
+  const chatRunIds = [chatRun.id]
+  const list = await (await get(`/api/studio/runs?chat=${chatId}`)).json()
+  expect(list.runs.length).toBe(1)
+  expect(list.runs.every((run: { id: string }) => chatRunIds.includes(run.id))).toBe(true)
+  expect(list.runs[0]).toMatchObject({ status: 'awaiting-approval', pending: true, origin: { where: 'chat' } })
+  expect((await (await get('/api/studio/runs')).json()).runs.length).toBe(2)
+  expect((await (await get('/api/studio/runs?terminal=no-such-terminal')).json()).runs).toEqual([])
 })

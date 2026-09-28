@@ -33,7 +33,7 @@ export type RunStatus = 'awaiting-approval' | 'running' | 'paused' | 'done' | 'f
 export type ApprovalVia = 'user' | 'drawer' | 'conversation' | 'auto'
 export type RunVersion = { number: number; revision: string; reason: string; size: 'initial' | 'small' | 'big'; state: 'pending' | 'approved' | 'rejected'; approvedVia: ApprovalVia | null; relayedBy: string | null; at: number }
 export type RunOrigin = { source: 'saved' | 'drafted'; by: string; where: 'chat' | 'terminal' | 'studio' }
-export type ApprovalContext = { via: 'drawer' | 'conversation'; chat?: string; terminalId?: string }
+export type ApprovalContext = { via: 'drawer' | 'conversation'; chat?: string; terminalId?: string; version?: number }
 export class RunActionError extends Error { constructor(message: string, readonly status: 403 | 404 | 409) { super(message) } }
 export const LIVE_STATUSES: ReadonlySet<RunStatus> = new Set<RunStatus>(['awaiting-approval', 'running', 'paused'])
 type SettledStatus = Exclude<RunStatus, 'awaiting-approval' | 'running' | 'paused'>
@@ -358,9 +358,10 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const matches = (context.chat && context.chat === run.chatId) || (context.terminalId && context.terminalId === run.terminalId)
     if (!matches) throw new RunActionError('This flow belongs to a different session', 403)
   }
-  function pendingVersion(run: WorkflowRun): RunVersion {
+  function pendingVersion(run: WorkflowRun, context: ApprovalContext): RunVersion {
     const version = run.versions.find(version => version.state === 'pending')
     if (!version) throw new RunActionError('Nothing is waiting for approval', 409)
+    if (context.version !== undefined && context.version !== version.number) throw new RunActionError('That version is no longer waiting', 409)
     return version
   }
   function mustGet(id: string): WorkflowRun {
@@ -372,7 +373,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     return exclusive(id, async () => {
       const run = mustGet(id)
       owned(run, context)
-      const version = pendingVersion(run)
+      const version = pendingVersion(run, context)
       Object.assign(version, { state: 'approved', approvedVia: context.via, relayedBy: context.via === 'conversation' ? run.origin.by : null, at: Date.now() })
       if (run.status === 'awaiting-approval') { run.status = 'running'; await persist(run); await dispatch(run) } else await persist(run)
       return structuredClone(run)
@@ -382,7 +383,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     return exclusive(id, async () => {
       const run = mustGet(id)
       owned(run, context)
-      const version = pendingVersion(run)
+      const version = pendingVersion(run, context)
       Object.assign(version, { state: 'rejected', at: Date.now() })
       if (run.status === 'awaiting-approval') await finish(run, 'stopped', 'Flow rejected')
       else await persist(run)

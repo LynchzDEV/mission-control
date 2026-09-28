@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import type { Elysia } from 'elysia'
 
+import { allowToken } from '../server/auth'
 import { createApp } from '../server/index'
 import { readApiToken } from '../server/secrets'
 import { initScratchGitRepo } from './support/scratch-git-repo'
@@ -109,4 +110,11 @@ test('dispatch tokens can read workflow versions but cannot edit policy or conne
   for (const path of ['/api/studio/workflows', '/api/studio/policy', '/api/studio/connections', '/api/studio/default', '/api/studio/drafts', '/api/studio/drafts/unknown/stop']) {
     expect((await app.handle(bearer(path, 'POST', {}))).status).toBe(403)
   }
+})
+
+test('dispatch tokens can approve, reject, pause and resume runs but not flip the approval switch or subscribe to studio events', () => {
+  for (const action of ['approve', 'reject', 'pause', 'resume']) expect(allowToken(`/api/studio/runs/abc/${action}`, 'POST')).toBe(true)
+  expect(allowToken('/api/studio/runs/abc/approve', 'GET')).toBe(false)
+  expect(allowToken('/api/flow-approval', 'PUT')).toBe(false)
+  expect(allowToken('/api/studio/events', 'GET')).toBe(false)
 })

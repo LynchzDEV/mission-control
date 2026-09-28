@@ -30,6 +30,10 @@ function isTopLevelPageNavigation(request: Request): boolean {
     && !DATA_PATH_PREFIXES.some(prefix => path.startsWith(prefix))
 }
 
+export function fromBrowser(request: Request): boolean {
+  return request.headers.get('sec-fetch-site') === 'same-origin'
+}
+
 export function localRequestAllowed(request: Request): boolean {
   const host = requestHost(request)
   const name = hostname(host)

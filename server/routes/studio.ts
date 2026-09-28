@@ -1,21 +1,28 @@
 import { Elysia } from 'elysia'
 import { z } from 'zod'
 import { requireLocal } from '../auth'
+import { fromBrowser } from '../local-access'
 import { BUILTIN_AGENTS, CONNECTION_PRESETS, createConnectionStore } from '../agent-connections'
 import { listModels } from '../models'
 import { modelsCache } from './models'
 import { composeWorkflowPrompt, identifier, type WorkflowStore } from '../workflows'
 import type { WorkflowBuilder } from '../workflow-builder'
-import type { WorkflowRunner } from '../workflow-runner'
+import { RunActionError, type ApprovalContext, type WorkflowRunner } from '../workflow-runner'
 import { readConfig } from '../secrets'
 import { join } from 'node:path'
+
+const sessionBody = z.object({ chat: z.string().min(1).max(200).optional(), terminalId: identifier.optional(), version: z.number().int().min(1).optional() }).default({})
+function approvalContext(request: Request, body: unknown): ApprovalContext {
+  const { version, ...session } = sessionBody.parse(body ?? {})
+  return fromBrowser(request) ? { via: 'drawer', ...(version ? { version } : {}) } : { via: 'conversation', ...session, ...(version ? { version } : {}) }
+}
 
 export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, builder?: WorkflowBuilder) {
   const connections = createConnectionStore()
   return new Elysia()
     .onBeforeHandle(requireLocal)
     .onError(({ error, set }) => {
-      set.status = 400
+      set.status = error instanceof RunActionError ? error.status : 400
       return { error: error instanceof Error ? error.message : 'Studio request failed' }
     })
     .get('/api/studio/drafts', () => ({ draft: builder?.current() ?? null }))
@@ -60,13 +67,19 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
         return events.find(event => event.type === 'mc_capabilities') ?? { error: 'Agent did not advertise capabilities' }
       } finally { clearTimeout(timer) }
     })
-    .get('/api/studio/runs', () => ({ runs: runner.list().map(run => ({ id: run.id, label: run.label, status: run.status, error: run.error, workflowName: run.workflow.name, revision: run.workflow.revision, currentNodeId: run.currentNodeId, createdAt: run.createdAt })) }))
-    .post('/api/studio/runs', ({ body }) => runner.start(body))
+    .get('/api/studio/runs', ({ query }) => ({ runs: runner.list()
+      .filter(run => (!query.chat || run.chatId === query.chat) && (!query.terminal || run.terminalId === query.terminal))
+      .map(run => ({ id: run.id, label: run.label, status: run.status, error: run.error, workflowName: run.workflow.name, revision: run.workflow.revision, currentNodeId: run.currentNodeId, createdAt: run.createdAt, origin: run.origin, pending: run.versions.some(version => version.state === 'pending') })) }))
+    .post('/api/studio/runs', ({ body, request }) => runner.start(body, { startedByUser: fromBrowser(request) }))
     .get('/api/studio/runs/:id', ({ params, set }) => {
       const run = runner.get(params.id)
       if (!run) { set.status = 404; return { error: 'Run not found' } }
       return run
     })
+    .post('/api/studio/runs/:id/approve', ({ params, body, request }) => runner.approve(params.id, approvalContext(request, body)))
+    .post('/api/studio/runs/:id/reject', ({ params, body, request }) => runner.reject(params.id, approvalContext(request, body)))
+    .post('/api/studio/runs/:id/pause', ({ params }) => runner.pause(params.id))
+    .post('/api/studio/runs/:id/resume', ({ params }) => runner.resume(params.id))
     .post('/api/studio/runs/:id/stop', ({ params }) => runner.stop(params.id))
     .post('/api/studio/runs/:id/retry', ({ params }) => runner.retry(params.id))
 }

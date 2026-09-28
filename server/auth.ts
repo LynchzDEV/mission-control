@@ -11,7 +11,7 @@ export function allowToken(pathname: string, method: string): boolean {
   const upperMethod = method.toUpperCase()
   if (pathname === '/api/studio/workflows' || pathname === '/api/studio/policy' || /^\/api\/studio\/workflows\/[^/]+\/revisions$/.test(pathname)) return upperMethod === 'GET'
   if (pathname === '/api/studio/runs' || /^\/api\/studio\/runs\/[^/]+$/.test(pathname)) return upperMethod === 'GET' || (pathname === '/api/studio/runs' && upperMethod === 'POST')
-  if (/^\/api\/studio\/runs\/[^/]+\/(stop|retry)$/.test(pathname)) return upperMethod === 'POST'
+  if (/^\/api\/studio\/runs\/[^/]+\/(stop|retry|approve|reject|pause|resume)$/.test(pathname)) return upperMethod === 'POST'
   if (pathname === TOKEN_SCOPED_PREFIX || pathname.startsWith(`${TOKEN_SCOPED_PREFIX}/`)) {
     return upperMethod === 'GET' || upperMethod === 'POST'
   }
