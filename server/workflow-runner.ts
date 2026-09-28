@@ -33,7 +33,7 @@ export type WorkflowAttempt = {
 }
 export type TokenState = 'ready' | 'working' | 'settled' | 'waiting'
 export type WorkflowToken = { id: string; nodeId: string; pathId: string; workspace: string; state: TokenState; attempt: number | null; from: number[] }
-export type OpenSection = { fork: string; join: string; forkAttempt: number; parentPathId: string; parentWorkspace: string; snapshot: string; joined: string[]; paths: { pathId: string; branch: string; dir: string; workspace: string; firstNodeId: string }[] }
+export type OpenSection = { fork: string; join: string; forkAttempt: number; parentPathId: string; parentWorkspace: string; snapshot: string; joined: string[]; counts?: Record<string, number>; paths: { pathId: string; branch: string; dir: string; workspace: string; firstNodeId: string }[] }
 export type RunStatus = 'awaiting-approval' | 'running' | 'paused' | 'done' | 'failed' | 'blocked' | 'stopped'
 export type ApprovalVia = 'user' | 'drawer' | 'conversation' | 'auto'
 export type RunVersion = { number: number; revision: string; reason: string; size: 'initial' | 'small' | 'big'; state: 'pending' | 'approved' | 'rejected'; approvedVia: ApprovalVia | null; relayedBy: string | null; at: number; graph?: WorkflowRevision; agents?: Record<string, ResolvedAgent>; skills?: Record<string, Array<{ path: string; content: string }>> }
@@ -312,8 +312,8 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     }
     return agents
   }
-  function visitLimit(run: WorkflowRun, node: WorkflowNode): string | null {
-    if (run.attempts.filter(attempt => attempt.nodeId === node.id).length >= node.maxVisits) return `${node.title} reached its ${node.maxVisits}-visit limit`
+  function visitLimit(run: WorkflowRun, node: WorkflowNode, counts: (attempt: WorkflowAttempt) => boolean = () => true): string | null {
+    if (run.attempts.filter(attempt => attempt.nodeId === node.id && counts(attempt)).length >= node.maxVisits) return `${node.title} reached its ${node.maxVisits}-visit limit`
     return run.attempts.length >= 256 ? 'Run reached its 256-node execution limit' : null
   }
   async function dispatch(run: WorkflowRun, token: WorkflowToken): Promise<void> {
@@ -509,57 +509,73 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   function joinable(run: WorkflowRun): OpenSection | undefined {
     return run.sections.find(section => section.paths.every(path => run.tokens.some(token => token.pathId === path.pathId && token.state === 'waiting' && token.nodeId === section.join)))
   }
-  async function closeSection(run: WorkflowRun, section: OpenSection, keep: (pathId: string) => boolean): Promise<void> {
-    const top = await gitTimed(section.parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-toplevel'])
+  async function closeSection(run: WorkflowRun, section: OpenSection, keep: (pathId: string) => boolean): Promise<string[]> {
+    const errors: string[] = []
+    const reason = (error: unknown) => error instanceof Error ? error.message : String(error)
+    const top = await gitTimed(section.parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-toplevel']).catch(error => { errors.push(reason(error)); return null })
     for (const path of section.paths) {
-      await removePathWorktree(top, path.dir, path.branch, keep(path.pathId))
+      if (top) await removePathWorktree(top, path.dir, path.branch, keep(path.pathId)).catch(error => { errors.push(`${path.pathId}: ${reason(error)}`) })
       deps.manager.releaseWorkspace(path.workspace, run.id)
     }
+    return errors
   }
-  async function changedFiles(section: OpenSection, branch: string): Promise<number> {
-    return changedFileCount(section.parentWorkspace, section.snapshot, branch)
+  async function joinedCount(section: OpenSection, path: OpenSection['paths'][number]): Promise<number> {
+    return section.counts?.[path.pathId] ?? await changedFileCount(section.parentWorkspace, section.snapshot, path.branch).catch(() => 0)
   }
-  async function applySection(run: WorkflowRun, section: OpenSection): Promise<NodeResult> {
+  type Joining = { counts: string[]; conflict: { pathId: string; files: string[] } | null }
+  async function applySection(run: WorkflowRun, section: OpenSection): Promise<Joining> {
     const title = (id: string) => run.workflow.nodes.find(node => node.id === id)?.title ?? id
-    for (const path of section.paths) await commitPath(path.dir, `${run.label}: ${title(path.firstNodeId)}`)
+    const open = section.paths.filter(path => !section.joined.includes(path.pathId))
+    for (const path of open) await commitPath(path.dir, `${run.label}: ${title(path.firstNodeId)}`)
     const counts: string[] = []
-    let conflict: { pathId: string; files: string[] } | null = null
     for (const path of section.paths) {
-      if (section.joined.includes(path.pathId)) { counts.push(`${path.pathId}: ${await changedFiles(section, path.branch)} files`); continue }
+      if (section.joined.includes(path.pathId)) { counts.push(`${path.pathId}: ${await joinedCount(section, path)} files`); continue }
       const head = await gitTimed(path.dir, GIT_TIMEOUT, ['rev-parse', 'HEAD'])
       const applied = await applyPath(section.parentWorkspace, section.snapshot, head)
-      if (!applied.applied) { conflict = { pathId: path.pathId, files: applied.conflicts }; break }
+      if (!applied.applied) return { counts, conflict: { pathId: path.pathId, files: applied.conflicts } }
       section.joined.push(path.pathId)
+      section.counts = { ...section.counts, [path.pathId]: applied.files }
       counts.push(`${path.pathId}: ${applied.files} files`)
       await persist(run)
     }
-    const unjoined = section.paths.filter(path => !section.joined.includes(path.pathId))
-    await closeSection(run, section, pathId => unjoined.some(path => path.pathId === pathId))
-    if (!conflict) return { outcome: 'pass', summary: `Joined ${section.paths.length} paths`, evidence: counts }
-    run.keptBranches.push(...unjoined.map(path => path.branch))
-    const files = conflict.files.join(', ')
-    return { outcome: 'fail', summary: `Paths could not be joined: ${files}`, evidence: [`Joined: ${section.joined.join(', ') || 'none'}`, `Conflicts in ${conflict.pathId}: ${files}`, `Unjoined paths kept on branches: ${unjoined.map(path => path.branch).join(', ')}`] }
+    return { counts, conflict: null }
   }
   async function joinPaths(run: WorkflowRun, section: OpenSection): Promise<void> {
     const node = run.workflow.nodes.find(node => node.id === section.join)!
-    const limit = visitLimit(run, node)
+    const limit = visitLimit(run, node, attempt => attempt.result?.outcome !== 'blocked')
     if (limit) return block(run, limit)
     const waiting = run.tokens.filter(token => token.state === 'waiting' && token.nodeId === section.join && section.paths.some(path => path.pathId === token.pathId))
     const attempt: WorkflowAttempt = { nodeId: node.id, number: run.attempts.length, jobId: null, status: 'running', prompt: '', startedAt: Date.now(), endedAt: null, result: null, checks: [], output: '', workspace: null, tokenId: crypto.randomUUID(), pathId: section.parentPathId, from: waiting.flatMap(token => token.from) }
     run.attempts.push(attempt)
     await persist(run)
-    let result: NodeResult
-    try { result = await applySection(run, section) } catch (error) {
+    const settleAttempt = (result: NodeResult) => Object.assign(attempt, { status: 'settled', endedAt: Date.now(), result })
+    let joining: Joining
+    try { joining = await applySection(run, section) } catch (error) {
       const summary = error instanceof Error ? error.message : 'Join failed'
-      Object.assign(attempt, { status: 'settled', endedAt: Date.now(), result: { outcome: 'blocked', summary, evidence: [] } })
+      settleAttempt({ outcome: 'blocked', summary, evidence: [] })
       return block(run, summary)
     }
-    Object.assign(attempt, { status: 'settled', endedAt: Date.now(), result, workspace: await workspaceSnapshot(section.parentWorkspace) })
+    const unjoined = section.paths.filter(path => !section.joined.includes(path.pathId))
+    const { conflict } = joining
+    const files = conflict?.files.join(', ')
+    const conflictEvidence = conflict ? [`Joined: ${section.joined.join(', ') || 'none'}`, `Conflicts in ${conflict.pathId}: ${files}`] : []
+    if (conflict && !run.workflow.edges.some(edge => edge.source === node.id && edge.outcome === 'fail')) {
+      const summary = `Paths could not be joined: ${files}`
+      settleAttempt({ outcome: 'blocked', summary, evidence: conflictEvidence })
+      return block(run, summary)
+    }
+    const result: NodeResult = conflict
+      ? { outcome: 'fail', summary: `Paths could not be joined: ${files}`, evidence: [...conflictEvidence, `Unjoined paths kept on branches: ${unjoined.map(path => path.branch).join(', ')}`] }
+      : { outcome: 'pass', summary: `Joined ${section.paths.length} paths`, evidence: joining.counts }
+    if (conflict) run.keptBranches.push(...unjoined.map(path => path.branch))
+    settleAttempt(result)
+    attempt.workspace = await workspaceSnapshot(section.parentWorkspace)
     run.sections = run.sections.filter(open => open !== section)
     const parent: WorkflowToken = { id: attempt.tokenId, nodeId: node.id, pathId: section.parentPathId, workspace: section.parentWorkspace, state: 'settled', attempt: attempt.number, from: attempt.from }
     run.tokens = [...run.tokens.filter(token => !waiting.includes(token)), parent]
-    const hasEdge = run.workflow.edges.some(edge => edge.source === node.id && edge.outcome === result.outcome)
-    if (result.outcome === 'fail' && !hasEdge) return block(run, result.summary)
+    await persist(run)
+    const cleanup = await closeSection(run, section, pathId => unjoined.some(path => path.pathId === pathId))
+    if (cleanup.length) attempt.result = { ...result, evidence: [...result.evidence, ...cleanup.map(error => `Cleanup failed: ${error}`)] }
     await route(run, parent)
   }
   async function advance(run: WorkflowRun): Promise<void> {

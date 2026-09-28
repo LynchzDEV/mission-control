@@ -901,13 +901,55 @@ test('a join conflict takes the fail edge, keeps the unjoined branch and the fix
   expect(await readFile(join(repo, 'same.txt'), 'utf8')).toBe('a\n')
 })
 
-test('a join conflict with no fail edge blocks the run with the conflicting files', async () => {
+test('a join conflict with no fail edge blocks the run, keeps the paths and joins once the user resolves it', async () => {
   await homeConfig()
   build()
-  const started = await runner.start({ cwd: repo, request: 'Write the same file', label: 'fork', graph: forked({ a: { checks: writes('same.txt', 'a') }, b: { checks: writes('same.txt', 'b') } }) })
+  const graph = forked({ a: { checks: writes('same.txt', 'a') }, b: { checks: writes('same.txt', 'b') } })
+  graph.nodes.find(node => node.id === 'join')!.maxVisits = 2
+  const started = await runner.start({ cwd: repo, request: 'Write the same file', label: 'fork', graph })
+  const blocked = await finished(started.id)
+  const aPath = blocked.attempts.find(attempt => attempt.nodeId === 'a')!.pathId
+  const bPath = blocked.attempts.find(attempt => attempt.nodeId === 'b')!.pathId
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.error).toBe('Paths could not be joined: same.txt')
+  expect(joins(blocked)[0]!.result).toEqual({ outcome: 'blocked', summary: 'Paths could not be joined: same.txt', evidence: [`Joined: ${aPath}`, `Conflicts in ${bPath}: same.txt`] })
+  expect(blocked.sections).toHaveLength(1)
+  expect(blocked.sections[0]!.joined).toEqual([aPath])
+  expect(blocked.tokens.filter(token => token.state === 'waiting')).toHaveLength(2)
+  for (const path of blocked.sections[0]!.paths) expect(await exists(path.dir)).toBe(true)
+  expect(blocked.keptBranches).toEqual([])
+  for (let retries = 0; retries < 3; retries++) {
+    await runner.retry(started.id)
+    const again = await finished(started.id)
+    expect(again.status).toBe('blocked')
+    expect(again.error).toBe('Paths could not be joined: same.txt')
+  }
+  await writeFile(join(repo, 'same.txt'), 'b\n')
+  await runner.retry(started.id)
   const done = await finished(started.id)
-  expect(done.status).toBe('blocked')
-  expect(done.error!.startsWith('Paths could not be joined: same.txt')).toBe(true)
+  expect(done.status).toBe('done')
+  expect(await readFile(join(repo, 'same.txt'), 'utf8')).toBe('b\n')
+  expect(joins(done).map(attempt => attempt.result!.outcome)).toEqual(['blocked', 'blocked', 'blocked', 'blocked', 'pass'])
+  expect(await gitOut('branch', '--list', 'flow-*')).toBe('')
+})
+
+test('a join whose cleanup fails still finishes the run and records the failure', async () => {
+  await homeConfig()
+  build()
+  const realRemove = worktrees.removePathWorktree
+  let failed = false
+  const remove = spyOn(worktrees, 'removePathWorktree').mockImplementation(async (...args) => {
+    if (!failed && await exists(join(repo, 'a.txt'))) { failed = true; throw new Error('Simulated cleanup failure') }
+    return realRemove(...args)
+  })
+  try {
+    const started = await runner.start({ cwd: repo, request: 'Write both files', label: 'fork', graph: forked() })
+    const done = await finished(started.id)
+    expect(failed).toBe(true)
+    expect(done.status).toBe('done')
+    expect(joins(done)[0]!.result!.outcome).toBe('pass')
+    expect(joins(done)[0]!.result!.evidence.some(line => line.includes('Simulated cleanup failure'))).toBe(true)
+  } finally { remove.mockRestore() }
 })
 
 test('stop kills both paths and keeps their worktrees, and retry joins both into the workspace', async () => {
