@@ -379,3 +379,58 @@ test('a step whose job is gone says so on its own line and leaves the approval b
   expect(bannerText()).toContain('Nothing runs until you approve')
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })
+
+let captured: number | null = null
+Object.assign(flowStage, { setPointerCapture: (id: number) => { captured = id }, releasePointerCapture: () => { captured = null } })
+const press = (element: HTMLElement): void => {
+  captured = null
+  const at = { pointerId: 4, clientX: 5, clientY: 5, button: 0, bubbles: true }
+  element.dispatchEvent(new window.PointerEvent('pointerdown', at))
+  const target = captured === null ? element : flowStage
+  target.dispatchEvent(new window.PointerEvent('pointerup', at))
+  target.click()
+}
+
+test('a press on Collapse that does not move reaches the button and folds the section', () => {
+  stageSize.width = 1000
+  const stream = openStream()
+  stream.send({ runs: [forkedRun('P1')], jobs: [] })
+  press(card('section:split')!)
+  expect(card('a')).not.toBeNull()
+  press(canvas().querySelector<HTMLElement>('[data-collapse]')!)
+  expect(card('section:split')).not.toBeNull()
+  expect(card('a')).toBeNull()
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('a press on a step that does not move opens its job', () => {
+  stageSize.width = 1000
+  const jobs = opened()
+  const stream = openStream()
+  stream.send({ runs: [twoSteps('P2')], jobs: [] })
+  press(card('plan')!)
+  expect(jobs).toEqual(['job-plan'])
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+const progressed = (id: string, count: number, working: number): RunView => {
+  const base = chain(id, count, working)
+  const attempts = Array.from({ length: working + 1 }, (_, index) => ({ nodeId: `s${index + 1}`, number: index, jobId: `job-${index + 1}`, status: index === working ? 'running' : 'settled', outcome: index === working ? null : 'pass' as const, summary: null, startedAt: index * 1000, endedAt: index === working ? null : index * 1000 + 500 }))
+  return { ...base, attempts }
+}
+const following = (): string | null => document.querySelector('[data-zoom="follow"]')!.getAttribute('aria-pressed')
+
+test('a focused step that the flow leaves off-screen keeps focus without turning Follow off; a real focus still follows it', () => {
+  stageSize.width = 300
+  const stream = openStream()
+  stream.send({ runs: [progressed('F2', 8, 0)], jobs: [] })
+  card('s1')!.focus()
+  expect(following()).toBe('true')
+  stream.send({ runs: [{ ...progressed('F2', 8, 7), updatedAt: 41 }], jobs: [] })
+  expect((document.activeElement as HTMLElement).dataset.step).toBe('s1')
+  expect(following()).toBe('true')
+  card('s1')!.blur()
+  card('s1')!.focus()
+  expect(following()).toBe('false')
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})

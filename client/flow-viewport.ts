@@ -62,7 +62,9 @@ function reducedMotion(): boolean {
 
 type Anchor = { before: Point; after: Point }
 
-export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: ViewportOptions): { paint(runId: string, content: Size, focus: Box | null, anchor?: Anchor): void; forget(runId: string): void } {
+type Viewport = { paint(runId: string, content: Size, focus: Box | null, anchor?: Anchor): void; forget(runId: string): void; quietly(action: () => void): void }
+
+export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: ViewportOptions): Viewport {
   const size = options.size ?? ((): Size => ({ width: stage.clientWidth, height: stage.clientHeight }))
   const controls = stage.querySelector<HTMLElement>('.flow-zoom')
   const followButton = controls?.querySelector<HTMLButtonElement>('[data-zoom="follow"]') ?? null
@@ -75,6 +77,7 @@ export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: 
   let gesture: { view: View; start: Point; distance: number } | null = null
   let panned = false
   let swallowClick = false
+  let quiet = false
 
   const stageBox = (): Size => ({ width: size().width, height })
   const range = (): Range => scaleRange(size().width)
@@ -171,11 +174,15 @@ export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: 
 
   stage.addEventListener('pointerdown', (event) => {
     if ((event.target as Element).closest('.flow-zoom') || event.button !== 0) return
+    if (event.isPrimary) pointers.clear()
     if (!pointers.size) { panned = false; swallowClick = false }
     pointers.set(event.pointerId, stagePoint(event))
-    try { stage.setPointerCapture(event.pointerId) } catch {}
     startGesture()
   })
+
+  function capturePointers(): void {
+    for (const id of pointers.keys()) try { stage.setPointerCapture(id) } catch {}
+  }
 
   stage.addEventListener('pointermove', (event) => {
     if (!pointers.has(event.pointerId) || !gesture) return
@@ -183,6 +190,7 @@ export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: 
     if (pointers.size > 1) {
       const pinch = pinchCentre()
       const zoomed = zoomAt(gesture.view, pinch.distance / (gesture.distance || 1), gesture.start, range())
+      if (!panned) capturePointers()
       panned = true
       userMoved({ ...zoomed, x: zoomed.x + pinch.at.x - gesture.start.x, y: zoomed.y + pinch.at.y - gesture.start.y })
       return
@@ -190,7 +198,7 @@ export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: 
     const at = pointers.get(event.pointerId)!
     const dx = at.x - gesture.start.x, dy = at.y - gesture.start.y
     if (!panned && Math.hypot(dx, dy) <= CLICK_SLOP) return
-    if (!panned) gesture = { ...gesture, view: current() ?? gesture.view }
+    if (!panned) { gesture = { ...gesture, view: current() ?? gesture.view }; capturePointers() }
     panned = true
     userMoved({ ...gesture.view, x: gesture.view.x + dx, y: gesture.view.y + dy })
   })
@@ -243,7 +251,7 @@ export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: 
   stage.addEventListener('focusin', (event) => {
     const card = (event.target as Element).closest<HTMLElement>('.flow-step')
     const view = current()
-    if (!card || !view) return
+    if (!card || !view || quiet) return
     stage.scrollLeft = 0
     stage.scrollTop = 0
     const box = { x: parseFloat(card.style.left) || 0, y: parseFloat(card.style.top) || 0, width: STEP_W, height: STEP_H }
@@ -273,6 +281,10 @@ export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: 
       }
       if (state.view && state.moved) height = heightFor(state.view.scale)
       settle(true)
+    },
+    quietly(action) {
+      quiet = true
+      try { action() } finally { quiet = false }
     },
     forget(runId) {
       if (runs.get(runId) === state) state = { view: null, follow: true, moved: false }

@@ -252,3 +252,28 @@ test('a stage with no size is skipped', () => {
   h.viewport.paint('hidden', wideGraph, null)
   expect(h.canvas.style.transform).toBe('')
 })
+
+test('a press captures the pointer only once it moves past 4px, so a still press reaches what it landed on', () => {
+  const h = harness()
+  h.viewport.paint('capture', wideGraph, null)
+  const captured: number[] = []
+  Object.assign(h.stage, { setPointerCapture: (id: number) => captured.push(id), releasePointerCapture: () => {} })
+  pointer(h.stage, 'pointerdown', 1, 100, 100)
+  pointer(h.stage, 'pointermove', 1, 103, 100)
+  pointer(h.stage, 'pointerup', 1, 103, 100)
+  expect(captured).toEqual([])
+  drag(h.stage, 20)
+  expect(captured).toEqual([1])
+})
+
+test('a press released outside the stage does not turn the next press into a pinch', () => {
+  const h = harness()
+  h.viewport.paint('lost', wideGraph, null)
+  const press = (type: string, pointerId: number, clientX: number) => h.stage.dispatchEvent(new window.PointerEvent(type, { pointerId, clientX, clientY: 100, button: 0, bubbles: true, isPrimary: true }))
+  press('pointerdown', 1, 400)
+  const before = { scale: scaleOf(h), x: Number(/translate\(([-\d.]+)px/.exec(h.canvas.style.transform)![1]) }
+  press('pointerdown', 2, 100)
+  press('pointermove', 2, 120)
+  expect(scaleOf(h)).toBe(before.scale)
+  expect(Number(/translate\(([-\d.]+)px/.exec(h.canvas.style.transform)![1])).toBeCloseTo(before.x + 20)
+})

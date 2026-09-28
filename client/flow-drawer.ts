@@ -522,7 +522,7 @@ function mountFlowDrawer(): void {
       const after = keep ? cardAt(keep.id) : null
       viewport.paint(run.id, frame, frame.focus, keep && after ? { before: keep.before, after } : undefined)
       const refocus = cardFor(focused)
-      if (refocus && document.activeElement !== refocus) refocus.focus({ preventScroll: true })
+      if (refocus && document.activeElement !== refocus) viewport.quietly(() => refocus.focus({ preventScroll: true }))
       return
     }
     const newest = snapshot.jobs[0]
