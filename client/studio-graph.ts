@@ -10,7 +10,7 @@ export const stepPresets = [
 ] as const
 export function taskPreset(id: string): WorkflowNode {
   const preset=stepPresets.find(item=>item.id===id)??stepPresets.at(-1)!
-  return {id:`step-${crypto.randomUUID().slice(0,8)}`,title:preset.title,instructions:preset.instruction,kind:preset.kind,agent:{role:preset.role},skills:[],mcpServers:[],checks:[],maxVisits:3,position:{x:0,y:100}}
+  return {id:`step-${crypto.randomUUID().slice(0,8)}`,title:preset.title,instructions:preset.instruction,kind:preset.kind,agent:{role:preset.role},skills:[],mcpServers:[],checks:[],setup:[],maxVisits:3,position:{x:0,y:100}}
 }
 export function insertWorkflowStep(graph: Workflow, step: WorkflowNode, afterId?: string): Workflow {
   const after=graph.nodes.find(node=>node.id===afterId)??graph.nodes.at(-1)
@@ -34,7 +34,7 @@ export function agentLabel(node: Pick<WorkflowNode, 'agent'>, providers: readonl
   if (!engine) return 'Chat decides'
   return providers.find(provider => provider.id === engine)?.name ?? `Unavailable · ${engine}`
 }
-const kindIcons: Record<WorkflowNode['kind'], string> = { plan: 'plan-icon', 'verify-plan': 'check-circle-icon', implement: 'code-icon', review: 'eye-icon', task: 'spark-icon' }
+const kindIcons: Record<WorkflowNode['kind'], string> = { plan: 'plan-icon', 'verify-plan': 'check-circle-icon', implement: 'code-icon', review: 'eye-icon', task: 'spark-icon', join: 'spark-icon' }
 export function kindIcon(kind: WorkflowNode['kind']): string { return kindIcons[kind] }
 export function roleWord(role: 'plan' | 'execute' | 'review'): string { return role[0]!.toUpperCase() + role.slice(1) }
 export type NodeRunState = 'passed' | 'running' | 'failed' | 'waiting'

@@ -17,7 +17,7 @@ const isLiveRun = (status: RunStatus | undefined) => status === 'running' || sta
 type RunSummary = Pick<WorkflowRun, 'id' | 'label' | 'status' | 'error' | 'currentNodeId' | 'createdAt'> & { workflowName: string; revision: string }
 const outcomes: Outcome[] = ['pass', 'fail', 'blocked']
 const outcomeLabels: Record<Outcome, string> = { pass: 'When it succeeds', fail: 'If it fails', blocked: 'If it needs help' }
-const purposeLabels = { task: 'Custom task', plan: 'Plan work', 'verify-plan': 'Check a plan', implement: 'Implement changes', review: 'Review work' }
+const purposeLabels = { task: 'Custom task', plan: 'Plan work', 'verify-plan': 'Check a plan', implement: 'Implement changes', review: 'Review work', join: 'Join paths' }
 const NAV: Array<[Screen, string]> = [['home', 'Workflows'], ['connections', 'Manage AIs'], ['runs', 'Runs'], ['rules', 'Rules']]
 const EXAMPLES: Array<[string, string]> = [['Plan, implement, review', 'Plan the work, verify the plan, then implement and get an independent review using my configured AIs.'], ['Research and verify', 'Research my question, then have another AI check the sources and findings.']]
 const SUGGESTIONS = ['Add a testing step before the final review', 'Use a different AI to review the work']
@@ -59,7 +59,7 @@ syncMotion()
 document.getElementById('motion')?.addEventListener('click', () => setTimeout(syncMotion))
 
 const navHost = document.getElementById('studio-nav')
-function graphEdges(graph: Workflow): Edge[] { return graph.edges.map(edge => ({ id: `${edge.source}-${edge.outcome}`, source: edge.source, target: edge.target, sourceHandle: edge.outcome, label: edge.outcome === 'pass' ? undefined : outcomeLabels[edge.outcome], type: 'flow', markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: '#8a93a8' }, className: `outcome-${edge.outcome}` })) }
+function graphEdges(graph: Workflow): Edge[] { return graph.edges.map(edge => ({ id: `${edge.source}-${edge.outcome}-${edge.target}`, source: edge.source, target: edge.target, sourceHandle: edge.outcome, label: edge.outcome === 'pass' ? undefined : outcomeLabels[edge.outcome], type: 'flow', markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: '#8a93a8' }, className: `outcome-${edge.outcome}` })) }
 function fresh(graph: Workflow): WorkflowRevision { return { ...graph, id: `workflow-${crypto.randomUUID().slice(0, 8)}`, revision: '', createdAt: 0 } }
 function dateLabel(time: number): string { return time ? new Date(time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Built-in version' }
 
@@ -118,7 +118,7 @@ function Studio() {
   function patch(patch: Partial<WorkflowNode>) { if (disabled) return; markDirty(); setNodes(current => current.map(node => node.id === selected ? { ...node, data: { ...node.data, ...patch, ...(patch.agent ? { agentLabel: label({ agent: patch.agent }) } : {}) } } : node)) }
   function adopt(value: Workflow) { markDirty(); setGraph(current => current ? { ...current, entry: value.entry } : current); setNodes(nodesFor(value)); setEdges(graphEdges(value)); fit() }
   function addStep(id: string) { if (disabled || !graph) return; const step = taskPreset(id); adopt(insertWorkflowStep(draft(), step, selected ?? undefined)); setSelected(step.id); setPanel('step') }
-  function wire(source: string, outcome: Outcome, target: string) { if (disabled) return; const value = draft(); value.edges = [...value.edges.filter(edge => edge.source !== source || edge.outcome !== outcome), ...(target ? [{ source, outcome, target }] : [])]; adopt(value) }
+  function wire(source: string, outcome: Outcome, target: string, replacing?: string) { if (disabled) return; const value = draft(); const replaced = (edge: Workflow['edges'][number]) => edge.source === source && edge.outcome === outcome && (outcome !== 'pass' || edge.target === target || edge.target === replacing); value.edges = [...value.edges.filter(edge => !replaced(edge)), ...(target ? [{ source, outcome, target }] : [])]; adopt(value) }
   async function action(task: () => Promise<void>) { setBusy(true); setError(''); try { await task() } catch (error) { setError((error as Error).message) } finally { setBusy(false) } }
   const refreshConnections = useCallback(async () => { setList(await api<ConnectionList>('/connections')); const result = await fetch('/api/providers').then(response => response.json()) as { providers: Provider[] }; setProviders(result.providers ?? []) }, [])
   const refreshWorkflows = useCallback(async () => { const result = await api<{ workflows: WorkflowRevision[]; selected: WorkflowRevision }>('/workflows'); setWorkflows(result.workflows); setDefaultFlow(result.selected); return result }, [])
@@ -227,7 +227,7 @@ function Studio() {
             <details><summary>Tools, skills & checks{current.skills.length + current.mcpServers.length + current.checks.length ? ` (${current.skills.length + current.mcpServers.length + current.checks.length})` : ''}</summary><StepAttachments node={current} onChange={patch} /></details>
             <details><summary>More options</summary>
               <label>Task purpose<select value={current.kind} onChange={event => patch({ kind: event.target.value as WorkflowNode['kind'] })}>{Object.entries(purposeLabels).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
-              {outcomes.map(outcome => <label key={outcome}>{outcomeLabels[outcome]}<select value={edges.find(edge => edge.source === current.id && edge.sourceHandle === outcome)?.target ?? ''} onChange={event => wire(current.id, outcome, event.target.value)}><option value="">End the workflow</option>{nodes.filter(node => node.id !== current.id).map(node => <option key={node.id} value={node.id}>{node.data.title}</option>)}</select></label>)}
+              {outcomes.map(outcome => <label key={outcome}>{outcomeLabels[outcome]}<select value={edges.find(edge => edge.source === current.id && edge.sourceHandle === outcome)?.target ?? ''} onChange={event => wire(current.id, outcome, event.target.value, edges.find(edge => edge.source === current.id && edge.sourceHandle === outcome)?.target)}><option value="">End the workflow</option>{nodes.filter(node => node.id !== current.id).map(node => <option key={node.id} value={node.id}>{node.data.title}</option>)}</select></label>)}
               <label>Model<input list="studio-models" value={current.agent.model ?? ''} placeholder="Use this AI's default" onChange={event => patch({ agent: { ...current.agent, model: event.target.value || undefined } })} /><datalist id="studio-models">{modelsOf(current.agent.engine).map(model => <option key={model} value={model} />)}</datalist></label>
               <label>Maximum attempts<input type="number" min={1} max={10} value={current.maxVisits} onChange={event => patch({ maxVisits: Number(event.target.value) })} /></label>
               <label>Model family (if unknown)<input value={current.agent.family ?? ''} onChange={event => patch({ agent: { ...current.agent, family: event.target.value || undefined } })} /></label>

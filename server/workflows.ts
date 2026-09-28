@@ -11,11 +11,12 @@ export const commandSchema = z.object({ command: z.string().min(1).max(1024), ar
 export const mcpSchema = z.object({ name: identifier, command: z.string().min(1).max(1024), args: z.array(z.string().max(4096)).max(50).default([]), env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).default({}) })
 export const nodeSchema = z.object({
   id: identifier, title: z.string().trim().min(1).max(120), instructions: text,
-  kind: z.enum(['task', 'plan', 'verify-plan', 'implement', 'review']).default('task'),
+  kind: z.enum(['task', 'plan', 'verify-plan', 'implement', 'review', 'join']).default('task'),
   agent: z.object({ role: z.enum(['plan', 'execute', 'review']).default('execute'), engine: identifier.optional(), model: z.string().max(200).optional(), family: identifier.optional() }).default({ role: 'execute' }),
   skills: z.array(z.string().min(1).max(2048)).max(10).default([]),
   mcpServers: z.array(mcpSchema).max(10).default([]),
   checks: z.array(commandSchema).max(10).default([]),
+  setup: z.array(commandSchema).max(10).default([]),
   maxVisits: z.number().int().min(1).max(10).default(3),
   position: z.object({ x: z.number().finite(), y: z.number().finite() }).default({ x: 0, y: 0 }),
 })
@@ -53,6 +54,113 @@ export function defaultWorkflow(): Workflow {
   ] })
 }
 
+export type ForkSection = { fork: string; join: string; paths: string[][] }
+
+export function passTargets(graph: Pick<Workflow, 'edges'>, id: string): string[] {
+  return graph.edges.filter(edge => edge.source === id && edge.outcome === 'pass').map(edge => edge.target)
+}
+
+type Closing = { join: string | null; empty: boolean }
+
+function reachable(graph: Workflow, starts: string[], follows: (edge: Workflow['edges'][number]) => boolean, excluded: Set<string>, within?: Set<string>): string[] {
+  const order: string[] = []
+  const queue = starts.filter(id => !excluded.has(id))
+  const seen = new Set(queue)
+  while (queue.length) {
+    const id = queue.shift()!
+    order.push(id)
+    for (const edge of graph.edges) {
+      if (edge.source !== id || !follows(edge) || seen.has(edge.target) || excluded.has(edge.target)) continue
+      if (within && !within.has(edge.target)) continue
+      seen.add(edge.target)
+      queue.push(edge.target)
+    }
+  }
+  return order
+}
+
+function analyzeForks(graph: Workflow): { sections: ForkSection[]; errors: string[] } {
+  const nodes = new Map(graph.nodes.map(node => [node.id, node]))
+  const title = (id: string) => nodes.get(id)!.title
+  const isJoin = (id: string) => nodes.get(id)!.kind === 'join'
+  const errors: string[] = []
+  for (const node of graph.nodes) if (node.kind === 'join' && passTargets(graph, node.id).length > 1) errors.push(`${node.title} cannot split again; add a step after it`)
+  const forks = graph.nodes.filter(node => node.kind !== 'join' && passTargets(graph, node.id).length > 1).map(node => node.id)
+  const closings = new Map<string, Closing>()
+  const walking = new Set<string>()
+  function pathEnd(start: string): string | null {
+    const seen = new Set<string>()
+    let id: string | undefined = start
+    while (id !== undefined && !seen.has(id)) {
+      seen.add(id)
+      if (isJoin(id)) return id
+      const targets = passTargets(graph, id)
+      if (targets.length < 2) { id = targets[0]; continue }
+      const inner: string | null = closing(id).join
+      if (!inner || seen.has(inner)) return null
+      seen.add(inner)
+      id = passTargets(graph, inner)[0]
+    }
+    return null
+  }
+  function closing(fork: string): Closing {
+    const known = closings.get(fork)
+    if (known) return known
+    if (walking.has(fork)) return { join: null, empty: false }
+    walking.add(fork)
+    const firsts = passTargets(graph, fork)
+    const ends = firsts.map(pathEnd)
+    walking.delete(fork)
+    const join = ends[0] && ends.every(end => end === ends[0]) ? ends[0] : null
+    const result = { join, empty: join !== null && firsts.includes(join) }
+    closings.set(fork, result)
+    return result
+  }
+  for (const fork of forks) {
+    const { join, empty } = closing(fork)
+    if (!join) errors.push(`${title(fork)} paths must meet at one join`)
+    else if (empty) errors.push(`${title(fork)} has a path with no steps`)
+  }
+  const owners = (join: string) => forks.filter(fork => closing(fork).join === join)
+  for (const node of graph.nodes) if (node.kind === 'join' && owners(node.id).length !== 1) errors.push(`${node.title} must close exactly one fork`)
+  const sections: ForkSection[] = []
+  for (const fork of forks) {
+    const { join, empty } = closing(fork)
+    if (!join || empty || owners(join).length !== 1) continue
+    const firsts = passTargets(graph, fork)
+    const cores = firsts.map(first => new Set(reachable(graph, [first], edge => edge.outcome === 'pass', new Set([join]))))
+    for (const node of graph.nodes) if (cores.filter(core => core.has(node.id)).length > 1) errors.push(`${node.title} belongs to more than one path`)
+    const members = cores.map((core, index) => {
+      const outside = new Set([join, fork, graph.entry, ...cores.flatMap((other, at) => at === index ? [] : [...other])])
+      const kept = new Set(reachable(graph, [...core], () => true, outside))
+      for (let changed = true; changed;) {
+        changed = false
+        for (const id of kept) {
+          if (core.has(id) || graph.edges.every(edge => edge.target !== id || kept.has(edge.source))) continue
+          kept.delete(id)
+          changed = true
+        }
+      }
+      return kept
+    })
+    const pathOf = (id: string) => members.findIndex(member => member.has(id))
+    for (const edge of graph.edges) {
+      const from = pathOf(edge.source)
+      const to = pathOf(edge.target)
+      if (from === -1) {
+        if (to !== -1 && !(edge.source === fork && edge.outcome === 'pass' && edge.target === firsts[to])) errors.push(`An edge from ${title(edge.source)} crosses into another path`)
+        if (edge.target === join && edge.source !== fork) errors.push(`${title(join)} can only be reached from its own paths`)
+      } else if (to !== -1 && to !== from) errors.push(`An edge from ${title(edge.source)} crosses into another path`)
+      else if (to === -1 && !(edge.target === join && edge.outcome === 'pass')) errors.push(edge.outcome === 'pass' ? `${title(fork)} paths must meet at one join` : `${title(edge.source)}: loops must stay inside one path`)
+    }
+    sections.push({ fork, join, paths: members.map((member, index) => reachable(graph, [firsts[index]!], () => true, new Set(), member)) })
+  }
+  const depth = (section: ForkSection) => sections.filter(other => other.paths.some(path => path.includes(section.fork))).length
+  return { sections: sections.map((section, index) => ({ section, index, depth: depth(section) })).sort((a, b) => a.depth - b.depth || a.index - b.index).map(({ section }) => section), errors }
+}
+
+export function forkSections(graph: Workflow): ForkSection[] { return analyzeForks(graph).sections }
+
 export function validateWorkflow(value: unknown): string[] {
   const parsed = workflowSchema.safeParse(value)
   if (!parsed.success) return parsed.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`)
@@ -64,11 +172,19 @@ export function validateWorkflow(value: unknown): string[] {
   const edges = new Map<string, string>()
   for (const edge of graph.edges) {
     if (!nodes.has(edge.source) || !nodes.has(edge.target)) errors.push('Edge refers to a missing node')
-    const key = `${edge.source}:${edge.outcome}`
+    const key = edge.outcome === 'pass' ? `${edge.source}:pass:${edge.target}` : `${edge.source}:${edge.outcome}`
     if (edges.has(key)) errors.push('Only one edge per node outcome is allowed')
     edges.set(key, edge.target)
   }
   if (errors.length) return errors
+  for (const node of graph.nodes) {
+    if (node.kind === 'join' && (node.checks.length || node.skills.length || node.mcpServers.length || node.agent.engine)) errors.push(`${node.title}: a join runs no agent`)
+    if (node.setup.length && passTargets(graph, node.id).length < 2) errors.push(`${node.title}: only a step that splits can have setup commands`)
+  }
+  const forked = analyzeForks(graph)
+  errors.push(...forked.errors)
+  if (errors.length) return [...new Set(errors)]
+  const joinsImplementation = new Set(forked.sections.filter(section => section.paths.flat().some(id => nodes.get(id)!.kind === 'implement')).map(section => section.join))
   const reached = new Set<string>()
   const visited = new Set<string>()
   const pending: Array<[string, boolean, boolean, boolean]> = [[graph.entry, false, false, false]]
@@ -86,10 +202,10 @@ export function validateWorkflow(value: unknown): string[] {
       const pass = outcome === 'pass'
       const nextPlanned = node.kind === 'plan' ? pass : planned
       const nextVerified = node.kind === 'plan' ? false : node.kind === 'verify-plan' ? pass : verified
-      const nextDirty = node.kind === 'implement' ? true : node.kind === 'review' && pass ? false : dirty
-      const target = edges.get(`${id}:${outcome}`)
-      if (target) pending.push([target, nextPlanned, nextVerified, nextDirty])
-      else if (pass) {
+      const nextDirty = node.kind === 'implement' || joinsImplementation.has(id) ? true : node.kind === 'review' && pass ? false : dirty
+      const targets = pass ? passTargets(graph, id) : [edges.get(`${id}:${outcome}`)].filter(target => target !== undefined)
+      for (const target of targets) pending.push([target, nextPlanned, nextVerified, nextDirty])
+      if (pass && !targets.length) {
         canFinish = true
         if (nextDirty) errors.push(`${node.title} cannot finish successfully without a subsequent review`)
       }
