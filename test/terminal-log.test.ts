@@ -49,6 +49,21 @@ describe('terminal registry with a log', () => {
     await rm(repo, { recursive: true, force: true })
   })
 
+  test('resuming a session that is already open, or being opened, returns that terminal instead of a second copy', async () => {
+    const registry = createTerminalRegistry()
+    const resumeSessionId = '35e2e0d9-0000-4000-8000-000000000000'
+    const clicks = await Promise.all(Array.from({ length: 5 }, () => registry.createTerminal({ engine: 'claude', cwd: repo, resumeSessionId, title: 'mine' })))
+    const ids = clicks.map((result) => (result.ok ? result.terminal.id : result.error))
+    expect(new Set(ids).size).toBe(1)
+    expect(registry.list()).toHaveLength(1)
+    const later = await registry.createTerminal({ engine: 'claude', cwd: repo, resumeSessionId })
+    expect(later.ok && later.terminal.id).toBe(ids[0])
+    registry.kill(ids[0]!)
+    const reopened = await registry.createTerminal({ engine: 'claude', cwd: repo, resumeSessionId })
+    expect(reopened.ok && reopened.terminal.id).not.toBe(ids[0])
+    registry.shutdown()
+  })
+
   test('records a terminal when it opens, is renamed and ends; ended() lists only finished ones', async () => {
     const log = createTerminalLog(file)
     const registry = createTerminalRegistry({ log })

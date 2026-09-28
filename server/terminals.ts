@@ -169,7 +169,19 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     for (const subscriber of subscribers) subscriber.close?.()
   }
 
-  async function createTerminal(params: CreateTerminalParams): Promise<CreateTerminalResult> {
+  const resuming = new Map<string, Promise<CreateTerminalResult>>()
+
+  function createTerminal(params: CreateTerminalParams): Promise<CreateTerminalResult> {
+    const resume = params.resumeSessionId
+    if (typeof resume !== 'string') return spawnTerminal(params)
+    const open = [...sessions.values()].find((session) => session.record.sessionId === resume)
+    if (open) return Promise.resolve({ ok: true, terminal: open.record })
+    const pending = resuming.get(resume) ?? spawnTerminal(params).finally(() => resuming.delete(resume))
+    resuming.set(resume, pending)
+    return pending
+  }
+
+  async function spawnTerminal(params: CreateTerminalParams): Promise<CreateTerminalResult> {
     if (typeof params.engine !== 'string') {
       return { ok: false, status: 400, error: 'unknown engine' }
     }
