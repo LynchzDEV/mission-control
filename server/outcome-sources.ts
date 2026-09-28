@@ -167,8 +167,10 @@ export function parseCodexRolloutOutcomes(text: string, previous: ParseState, co
   const state: ParseState = { pending: { ...previous.pending }, agents: { ...previous.agents } }
   const outcomes: OutcomeDraft[] = []
   for (const raw of jsonLines(text)) {
-    if (raw.type !== 'response_item' || !isRecord(raw.payload)) continue
+    if (!isRecord(raw.payload)) continue
     const payload = raw.payload
+    if (raw.type === 'event_msg' && payload.type === 'item_completed' && isRecord(payload.item)) { codexItem(payload.item, raw, context, outcomes); continue }
+    if (raw.type !== 'response_item') continue
     const type = str(payload.type)
     const id = str(payload.call_id)
     if (id === '') continue
@@ -191,16 +193,21 @@ export function parseCodexRolloutOutcomes(text: string, previous: ParseState, co
   return { outcomes, state }
 }
 
-function codexExecItem(item: R, raw: R, context: ParseContext, out: OutcomeDraft[]): void {
+function changedPaths(changes: unknown): string[] {
+  if (Array.isArray(changes)) return changes.map((change) => (isRecord(change) ? str(change.path) : '')).filter(Boolean)
+  return isRecord(changes) ? Object.keys(changes) : []
+}
+
+function codexItem(item: R, raw: R, context: ParseContext, out: OutcomeDraft[]): void {
   const id = str(item.id)
   if (id === '') return
-  if (item.type === 'command_execution' && typeof item.exit_code === 'number') {
+  const type = str(item.type).toLowerCase().replace(/_/g, '')
+  if (type === 'commandexecution' && typeof item.exit_code === 'number') {
     const use: PendingUse = { tool: 'Shell', kind: 'command', target: oneLine(codexCommand(item.command), TARGET_CHARS) }
-    out.push(draft(context, id, timestamp(raw, context.now), use, item.exit_code === 0, item.exit_code, str(item.aggregated_output)))
-  } else if (item.type === 'file_change' && Array.isArray(item.changes)) {
-    const paths = item.changes.map((change) => (isRecord(change) ? str(change.path) : '')).filter(Boolean)
-    const use: PendingUse = { tool: 'apply_patch', kind: 'edit', target: oneLine(paths.join(', ') || 'patch', TARGET_CHARS) }
-    out.push(draft(context, id, timestamp(raw, context.now), use, item.status === 'completed', null, ''))
+    out.push(draft(context, id, timestamp(raw, context.now), use, item.exit_code === 0, item.exit_code, str(item.aggregated_output) || str(item.stderr) || str(item.stdout)))
+  } else if (type === 'filechange' && item.status !== 'in_progress') {
+    const use: PendingUse = { tool: 'apply_patch', kind: 'edit', target: oneLine(changedPaths(item.changes).join(', ') || 'patch', TARGET_CHARS) }
+    out.push(draft(context, id, timestamp(raw, context.now), use, item.status === 'completed', null, str(item.stderr)))
   }
 }
 
@@ -208,7 +215,7 @@ export function parseCodexExecOutcomes(text: string, previous: ParseState, conte
   const state: ParseState = { pending: { ...previous.pending }, agents: { ...previous.agents } }
   const outcomes: OutcomeDraft[] = []
   for (const raw of jsonLines(text)) {
-    if (raw.type === 'item.completed' && isRecord(raw.item)) codexExecItem(raw.item, raw, context, outcomes)
+    if (raw.type === 'item.completed' && isRecord(raw.item)) codexItem(raw.item, raw, context, outcomes)
     const msg = isRecord(raw.msg) ? raw.msg : null
     if (msg === null) continue
     const id = str(msg.call_id)

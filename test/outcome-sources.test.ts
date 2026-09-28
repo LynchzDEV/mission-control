@@ -83,6 +83,23 @@ describe('parseCodexRolloutOutcomes', () => {
     expect(parsed.state.pending).toEqual({})
   })
 
+  test('newer rollouts report commands and file changes as item_completed events', () => {
+    const item = (value: unknown) => line({ type: 'event_msg', timestamp: '2026-09-28T10:02:00Z', payload: { type: 'item_completed', item: value } })
+    const text = [
+      line({ type: 'response_item', payload: { type: 'custom_tool_call', call_id: 'x1', name: 'exec', input: 'bun test' } }),
+      line({ type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: 'x1', output: 'no exit code here' } }),
+      item({ id: 'k1', type: 'CommandExecution', command: ['bun', 'test'], exit_code: 1, status: 'completed', aggregated_output: '1 fail\n' }),
+      item({ id: 'k2', type: 'FileChange', changes: { 'app/a.rb': { type: 'update' } }, status: 'completed', stderr: '' }),
+      item({ id: 'k3', type: 'FileChange', changes: { 'app/b.rb': {} }, status: 'failed', stderr: 'patch did not apply' }),
+      item({ id: 'k4', type: 'Reasoning', summary_text: [] }),
+    ].join('\n')
+    expect(parseCodexRolloutOutcomes(text, emptyParseState(), context).outcomes.map((entry) => [entry.key, entry.tool, entry.target, entry.ok, entry.detail])).toEqual([
+      ['main:k1', 'Shell', 'bun test', false, '1 fail'],
+      ['main:k2', 'apply_patch', 'app/a.rb', true, ''],
+      ['main:k3', 'apply_patch', 'app/b.rb', false, 'patch did not apply'],
+    ])
+  })
+
   test('apply_patch is an edit targeting the patched files', () => {
     const text = [
       line({ type: 'response_item', payload: { type: 'custom_tool_call', call_id: 'p1', name: 'apply_patch', input: '*** Begin Patch\n*** Update File: app/a.rb\n*** Add File: app/b.rb\n' } }),
