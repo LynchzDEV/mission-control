@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sidebar remove — dot → ✕ → Remove</title>
+<link rel="stylesheet" href="assets/quiet.css">
+<style>
+  body { margin: 0; padding: 32px 40px; min-height: 100vh; background: var(--paper); color: #344155; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+  h1 { font-size: 20px; font-weight: 500; margin: 0 0 4px; }
+  .lead { margin: 0 0 28px; color: var(--muted); font-size: 13.5px; max-width: 760px; line-height: 1.5; }
+  .stage { display: flex; gap: 56px; align-items: flex-start; }
+  .panel { width: 262px; }
+  .panel h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .frozen { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .frozen figure { min-width: 0; }
+  .frozen figure { margin: 0; }
+  .frozen figcaption { font-size: 12px; color: var(--muted); margin: 0 0 6px 12px; }
+
+  /* proposal: the status dot, the ✕ and Remove are one element that morphs */
+  .sb-trail { gap: 8px; }
+  .sb-slot { flex: none; width: 22px; height: 22px; }
+  .sb-key { transition: opacity 180ms ease; }
+  .sb-morph { --ease: cubic-bezier(.2, .8, .2, 1); --t: 240ms; position: absolute; top: 50%; right: 19.5px; translate: 0 -50%; display: grid; place-items: center; width: 7px; height: 7px; padding: 0; border: 0; border-radius: 999px; background: var(--dot, transparent); color: var(--muted); overflow: hidden; cursor: pointer; box-shadow: none; transition: width var(--t) var(--ease), height var(--t) var(--ease), right var(--t) var(--ease), border-radius var(--t) var(--ease), background-color var(--t) var(--ease), color var(--t) var(--ease); }
+  .sb-morph[data-s="live"] { --dot: #6f9c7e; }
+  .sb-morph[data-s="running"] { --dot: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+  .sb-morph[data-s="needs"] { --dot: #b0556a; }
+  .sb-morph svg { position: absolute; inset: 0; margin: auto; width: 11px; height: 11px; opacity: 0; scale: .4; transition: opacity var(--t) var(--ease), scale var(--t) var(--ease); }
+  .sb-morph span { font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap; opacity: 0; translate: 6px 0; transition: opacity var(--t) var(--ease), translate var(--t) var(--ease); }
+  .sb-item:hover .sb-morph, .sb-item.is-hover .sb-morph, .sb-morph:focus-visible, .sb-morph[data-armed="true"] { animation: none; width: 22px; height: 22px; right: 12px; border-radius: 6px; background: color-mix(in srgb, #fff 55%, var(--paper)); }
+  .sb-item:hover .sb-morph svg, .sb-item.is-hover .sb-morph svg, .sb-morph:focus-visible svg { opacity: 1; scale: 1; }
+  .sb-morph:hover { color: #b0556a; }
+  .sb-item .sb-morph[data-armed="true"] { width: 70px; background: #b0556a; color: #fff; }
+  .sb-item .sb-morph[data-armed="true"] svg { opacity: 0; scale: .4; }
+  .sb-item .sb-morph[data-armed="true"] span { opacity: 1; translate: 0 0; }
+  .sb-item:has(.sb-morph[data-armed="true"]) .sb-key { opacity: 0; }
+  .sb-item.removing { opacity: 0; transition: opacity 180ms; }
+  @media (prefers-reduced-motion: reduce) { .sb-morph, .sb-morph svg, .sb-morph span, .sb-key { transition: none; animation: none; } }
+</style>
+</head>
+<body>
+<h1>Sidebar ✕ → Remove (morph)</h1>
+<p class="lead">At rest the ⌘ badge sits at the right edge with the status dot in a fixed slot beside it, so every badge lines up. Hover a row: the dot grows into ✕. Click ✕: it stretches into a red <b>Remove</b> button. One element, one smooth morph. Click Remove to confirm, or move away, press Escape or click elsewhere and it turns back into the dot. Rows without a dot show ✕ in the same slot.</p>
+
+<div class="stage">
+  <div class="panel">
+    <h2>The three states (frozen)</h2>
+    <div class="frozen">
+      <figure><figcaption>1 · At rest</figcaption><div data-row='{"title":"shell-lane-quota-fix","kind":"terminal","dot":"live","key":1}'></div></figure>
+      <figure><figcaption>2 · Hover: dot becomes ✕</figcaption><div data-row='{"title":"shell-lane-quota-fix","kind":"terminal","dot":"live","key":1,"state":"hover"}'></div></figure>
+      <figure><figcaption>3 · Clicked ✕: Remove</figcaption><div data-row='{"title":"shell-lane-quota-fix","kind":"terminal","dot":"live","key":1,"state":"armed"}'></div></figure>
+      <figure><figcaption>Row without a dot, hovered</figcaption><div data-row='{"title":"/klangtech-read https://app.clickup.com/t/3845","kind":"session","key":2,"state":"hover"}'></div></figure>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Try it</h2>
+    <p class="sb-day">Today</p>
+    <div data-row='{"title":"shell-lane-quota-fix","kind":"terminal","dot":"live","key":1}'></div>
+    <div data-row='{"title":"api · csv export","kind":"chat","dot":"running","key":2}'></div>
+    <div data-row='{"title":"/klangtech-read https://app.clickup.com/t/3845","kind":"session","key":3}'></div>
+    <div data-row='{"title":"shell-lane-quota-fix","kind":"session","key":4}'></div>
+    <div data-row='{"title":"/loop","kind":"terminal","key":5}'></div>
+    <div data-row='{"title":"/inv-prod help me check please, S01755","kind":"session","key":6}'></div>
+    <div data-row='{"title":"[Image #1] those aren&#39;t my session","kind":"session","key":7}'></div>
+    <p class="sb-day">Yesterday</p>
+    <div data-row='{"title":"from latest work — quota lane","kind":"session","key":8}'></div>
+  </div>
+</div>
+
+<svg width="0" height="0" style="position:absolute"><symbol id="close-icon" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></symbol><symbol id="terminal-icon" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m6 8 2.5 2L6 12M10.5 12H14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol></svg>
+<script>
+const CHAT = '<svg viewBox="0 0 20 20"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3h0A1.5 1.5 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>'
+const TERMINAL = '<svg><use href="#terminal-icon"/></svg>'
+for (const host of document.querySelectorAll('[data-row]')) {
+  const row = JSON.parse(host.dataset.row)
+  const wrap = document.createElement('div'); wrap.className = 'sb-item'
+  if (row.state === 'hover') wrap.classList.add('is-hover')
+  wrap.innerHTML = `<a class="sb-row" data-kind="${row.kind === 'chat' ? 'chat' : 'terminal'}" href="#"><span class="sb-ic">${row.kind === 'chat' ? CHAT : TERMINAL}</span><span class="sb-t"></span><span class="sb-trail"><kbd class="sb-key">⌘${row.key}</kbd><span class="sb-slot"></span></span></a><button type="button" class="sb-morph" aria-label="Remove"${row.dot ? ` data-s="${row.dot}"` : ''}><svg><use href="#close-icon"/></svg><span>Remove</span></button>`
+  wrap.querySelector('.sb-t').textContent = row.title
+  const x = wrap.querySelector('.sb-morph')
+  const disarm = () => { x.dataset.armed = 'false' }
+  const arm = () => { x.dataset.armed = 'true' }
+  if (row.state === 'armed') arm()
+  else {
+    x.onclick = (event) => { event.preventDefault(); if (x.dataset.armed === 'true') { wrap.classList.add('removing'); setTimeout(() => wrap.remove(), 200) } else arm() }
+    x.onblur = disarm
+    x.onkeydown = (event) => { if (event.key === 'Escape') disarm() }
+    wrap.onmouseleave = disarm
+  }
+  wrap.querySelector('.sb-row').onclick = (event) => event.preventDefault()
+  host.replaceWith(wrap)
+}
+</script>
+</body>
+</html>
