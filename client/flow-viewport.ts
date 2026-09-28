@@ -198,7 +198,10 @@ export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: 
   function release(event: PointerEvent): void {
     if (!pointers.delete(event.pointerId)) return
     try { stage.releasePointerCapture(event.pointerId) } catch {}
-    if (panned) swallowClick = true
+    if (panned) {
+      swallowClick = true
+      setTimeout(() => { swallowClick = false }, 0)
+    }
     startGesture()
   }
   stage.addEventListener('pointerup', release)

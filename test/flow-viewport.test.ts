@@ -103,6 +103,17 @@ test('a drag over 4px pans, turns Follow off, keeps the view on later paints and
   expect(h.canvas.style.transform).toBe(moved)
 })
 
+test('a drag whose click never arrives does not swallow a later keyboard or programmatic click', async () => {
+  const h = harness()
+  h.viewport.paint('stray', wideGraph, null)
+  const clicks: string[] = []
+  h.stage.addEventListener('click', () => clicks.push('click'))
+  drag(h.stage, 20)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  h.stage.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+  expect(clicks).toEqual(['click'])
+})
+
 test('two pointers pinch-zoom around their midpoint', () => {
   const h = harness()
   h.viewport.paint('pinch', { width: 400, height: 100 }, null)
