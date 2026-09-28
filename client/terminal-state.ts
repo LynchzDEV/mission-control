@@ -53,6 +53,22 @@ export function findKeys(event: { key: string; metaKey: boolean; ctrlKey: boolea
   return null
 }
 
+type KeyEvent = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }
+export type TerminalKey = 'newline' | 'clear' | 'kill-line' | 'line-start' | 'line-end' | null
+const COMMAND_KEYS: Record<string, TerminalKey> = { k: 'clear', Backspace: 'kill-line', ArrowLeft: 'line-start', ArrowRight: 'line-end' }
+
+export function terminalKeys(event: KeyEvent): TerminalKey {
+  const onlyShift = event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey
+  if (event.key === 'Enter') return onlyShift ? 'newline' : null
+  if (!event.metaKey || event.ctrlKey || event.altKey) return null
+  return COMMAND_KEYS[event.key] ?? null
+}
+
+export function sessionSlot(event: KeyEvent): number | null {
+  if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || !/^[1-9]$/.test(event.key)) return null
+  return Number(event.key) - 1
+}
+
 export function dropCopy(count: number): { title: string; toast: string } {
   const files = count === 0 ? 'files' : `${count} file${count === 1 ? '' : 's'}`
   return { title: `Drop to add ${files}`, toast: `Added ${files}` }

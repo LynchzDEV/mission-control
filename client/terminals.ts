@@ -4,7 +4,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { errorText, getJson, pathsFromUriList, postJson, providerName, readArray, readRecord, shellQuote } from './shared'
 import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
-import { dragKind, dropCopy, findCount, findKeys, restoreTarget, nextActive, sessionState, splitPlan, statusPill, type Session, type SessionState } from './terminal-state'
+import { dragKind, dropCopy, findCount, findKeys, restoreTarget, nextActive, sessionSlot, sessionState, splitPlan, statusPill, terminalKeys, type Session, type TerminalKey, type SessionState } from './terminal-state'
 import { createPanes, type PaneHeader } from './terminal-panes'
 
 type Provider = { id: string; name: string; models: string[] }
@@ -38,6 +38,7 @@ const findBar = barTemplate.querySelector('#find') as HTMLElement
 findBar.remove()
 const findPart = (id: string): HTMLElement => findBar.querySelector(`#${id}`) as HTMLElement
 const findInput = findPart('find-input') as HTMLInputElement
+const TERMINAL_BYTES: Record<Exclude<TerminalKey, 'clear' | null>, string> = { newline: '\x1b\r', 'kill-line': '\x15', 'line-start': '\x01', 'line-end': '\x05' }
 
 const stored = (key: string): string | null => { try { return localStorage.getItem(key) } catch { return null } }
 const store = (key: string, value: string | null): void => { try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key) } catch {} }
@@ -69,12 +70,27 @@ export class TerminalView {
     this.terminal.loadAddon(this.fit)
     this.terminal.loadAddon(this.search)
     this.terminal.loadAddon(new WebLinksAddon())
-    this.terminal.attachCustomKeyEventHandler(event => { if (findKeys(event, false, MAC) !== 'open') return true; if (event.type === 'keydown') openFind(); return false })
+    this.terminal.attachCustomKeyEventHandler(event => {
+      if (sessionSlot(event) !== null) return false
+      const find = findKeys(event, false, MAC) === 'open'
+      const action = terminalKeys(event)
+      if (!find && action === null) return true
+      if (event.type !== 'keydown') return false
+      event.preventDefault()
+      if (find) openFind()
+      else if (action === 'clear') this.terminal.clear()
+      else if (action !== null) this.send(TERMINAL_BYTES[action])
+      return false
+    })
     this.search.onDidChangeResults(({ resultIndex, resultCount }) => { if (activeId === session.id) findPart('find-count').textContent = findCount(resultIndex, resultCount, findInput.value) })
     this.terminal.open(this.host)
-    this.terminal.onData(data => { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(new TextEncoder().encode(data)) })
+    this.terminal.onData(data => this.send(data))
     this.observer = new ResizeObserver(() => { cancelAnimationFrame(this.resizeFrame); this.resizeFrame = requestAnimationFrame(() => this.resize()) })
     this.observer.observe(this.host)
+  }
+
+  send(data: string): void {
+    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(new TextEncoder().encode(data))
   }
 
   paintBar(): void {
@@ -256,7 +272,14 @@ findInput.onkeydown = (event) => {
   else if (action === 'prev') findStep('prev')
   else findStep('next')
 }
-document.addEventListener('keydown', (event) => { if (canvas.dataset.live === 'true' && findKeys(event, false, MAC) === 'open' && openFind()) event.preventDefault() })
+document.addEventListener('keydown', (event) => {
+  if (event.defaultPrevented || document.querySelector('dialog[open]')) return
+  const session = sessions[sessionSlot(event) ?? -1]
+  if (session) { event.preventDefault(); activate(session.id); return }
+  if (canvas.dataset.live !== 'true') return
+  if (findKeys(event, false, MAC) === 'open' && openFind()) event.preventDefault()
+  else if (terminalKeys(event) === 'clear') { event.preventDefault(); void openTerminal() }
+})
 for (const type of ['dragover', 'drop'] as const) document.addEventListener(type, (event) => { if (dragKind(event.dataTransfer?.types ?? []) === 'files' && !dropStage.contains(event.target as Node | null)) event.preventDefault() })
 
 const dropOver = $('drop-over')
@@ -486,3 +509,4 @@ async function reconnect(id: string): Promise<void> {
 }
 setInterval(() => { if (!document.hidden) void refreshSessions() }, POLL_MS)
 if (restoreRequested(location)) void openTerminal(true)
+else void refreshSessions()

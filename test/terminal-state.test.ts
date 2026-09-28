@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { dragKind, dropCopy, findCount, findKeys, latestLine, nextActive, renameValue, restoreTarget, sessionState, splitPlan, statusPill } from '../client/terminal-state'
+import { dragKind, dropCopy, findCount, findKeys, latestLine, sessionSlot, terminalKeys, nextActive, renameValue, restoreTarget, sessionState, splitPlan, statusPill } from '../client/terminal-state'
 
 describe('sessionState', () => {
   test('working within 5 s of output, idle after, ended wins', () => {
@@ -73,6 +73,42 @@ describe('findKeys', () => {
   test('Ctrl+F stays with the shell on a Mac and ⌘F is not a shortcut elsewhere', () => {
     expect(findKeys(key('f', { ctrlKey: true }), false, true)).toBeNull()
     expect(findKeys(key('f', { metaKey: true }), false, false)).toBeNull()
+  })
+})
+
+describe('terminalKeys', () => {
+  const key = (key: string, extra: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }> = {}) => ({ key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...extra })
+  test('Shift+Enter is a newline, ⌘K clears, ⌘⌫ kills the line, ⌘← / ⌘→ jump to line start / end', () => {
+    expect(terminalKeys(key('Enter', { shiftKey: true }))).toBe('newline')
+    expect(terminalKeys(key('k', { metaKey: true }))).toBe('clear')
+    expect(terminalKeys(key('Backspace', { metaKey: true }))).toBe('kill-line')
+    expect(terminalKeys(key('ArrowLeft', { metaKey: true }))).toBe('line-start')
+    expect(terminalKeys(key('ArrowRight', { metaKey: true }))).toBe('line-end')
+  })
+  test('plain keys, Ctrl and Option combos, and ⌘C / ⌘V stay with the shell and the browser', () => {
+    expect(terminalKeys(key('Enter'))).toBeNull()
+    expect(terminalKeys(key('Enter', { shiftKey: true, metaKey: true }))).toBeNull()
+    expect(terminalKeys(key('k'))).toBeNull()
+    expect(terminalKeys(key('k', { ctrlKey: true }))).toBeNull()
+    expect(terminalKeys(key('k', { metaKey: true, altKey: true }))).toBeNull()
+    expect(terminalKeys(key('ArrowLeft', { altKey: true }))).toBeNull()
+    expect(terminalKeys(key('c', { metaKey: true }))).toBeNull()
+    expect(terminalKeys(key('v', { metaKey: true }))).toBeNull()
+  })
+})
+
+describe('sessionSlot', () => {
+  const key = (key: string, extra: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }> = {}) => ({ key, metaKey: true, ctrlKey: false, altKey: false, shiftKey: false, ...extra })
+  test('⌘1 … ⌘9 pick the first to ninth terminal', () => {
+    expect(sessionSlot(key('1'))).toBe(0)
+    expect(sessionSlot(key('9'))).toBe(8)
+  })
+  test('⌘0, bare digits and digits with another modifier are not slots', () => {
+    expect(sessionSlot(key('0'))).toBeNull()
+    expect(sessionSlot(key('1', { metaKey: false }))).toBeNull()
+    expect(sessionSlot(key('1', { shiftKey: true }))).toBeNull()
+    expect(sessionSlot(key('1', { altKey: true }))).toBeNull()
+    expect(sessionSlot(key('1', { ctrlKey: true }))).toBeNull()
   })
 })
 
