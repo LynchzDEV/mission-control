@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from 'bun:test'
 import { JSDOM } from 'jsdom'
-import { COL_STEP, ROW_STEP, STEP_H, STEP_W, layoutRun, renderRunGraph, routeEdge } from '../client/flow-graph'
+import { COL_STEP, ROW_STEP, STEP_H, STEP_W, layoutRun, renderRunGraph, routeEdge, type GraphEdge, type GraphStep } from '../client/flow-graph'
 
 const { window } = new JSDOM('')
 Object.assign(globalThis, { window, document: window.document })
@@ -78,4 +78,22 @@ test('a join step draws the join glyph instead of an engine logo', () => {
   renderRunGraph(host, [{ id: 'join', title: 'Join', detail: 'Waiting for 1 of 2 paths', state: 'pending', engine: '', kind: 'join' }], [], 'join', { animate: false })
   expect(host.querySelector('.flow-step img')).toBeNull()
   expect(host.querySelector('.flow-step svg.flow-step-glyph circle')).not.toBeNull()
+})
+
+test('a paint reports the graph size and the box Follow aims at: working steps, else the failed step, else the entry', () => {
+  const host = document.createElement('div')
+  const step = (id: string, state: GraphStep['state']): GraphStep => ({ id, title: id, detail: '', state, engine: 'claude', kind: 'task' })
+  const edges: GraphEdge[] = [{ source: 'a', target: 'b', outcome: 'pass', state: 'idle' }, { source: 'a', target: 'c', outcome: 'pass', state: 'idle' }, { source: 'b', target: 'd', outcome: 'pass', state: 'idle' }]
+  const working = renderRunGraph(host, [step('a', 'done'), step('b', 'active'), step('c', 'active'), step('d', 'pending')], edges, 'a', { animate: false })
+  expect(working).toEqual({ width: 2 * COL_STEP + STEP_W, height: ROW_STEP + STEP_H, focus: { x: COL_STEP, y: 0, width: STEP_W, height: ROW_STEP + STEP_H } })
+  expect(renderRunGraph(host, [step('a', 'done'), step('b', 'active'), step('c', 'active'), step('d', 'pending')], edges, 'a', { animate: false })).toEqual(working)
+  expect(renderRunGraph(host, [step('a', 'done'), step('b', 'done'), step('c', 'failed'), step('d', 'pending')], edges, 'a', { animate: false }).focus).toEqual({ x: COL_STEP, y: ROW_STEP, width: STEP_W, height: STEP_H })
+  expect(renderRunGraph(host, [step('a', 'pending'), step('b', 'pending'), step('c', 'pending'), step('d', 'pending')], edges, 'a', { animate: false }).focus).toEqual({ x: 0, y: 0, width: STEP_W, height: STEP_H })
+})
+
+test('a back edge makes room below the graph for its dip and label', () => {
+  const host = document.createElement('div')
+  const step = (id: string): GraphStep => ({ id, title: id, detail: '', state: 'pending', engine: 'claude', kind: 'task' })
+  const frame = renderRunGraph(host, [step('build'), step('test')], [{ source: 'build', target: 'test', outcome: 'pass', state: 'idle' }, { source: 'test', target: 'build', outcome: 'fail', state: 'idle', label: 'if test fails' }], 'build', { animate: false })
+  expect(frame.height).toBeGreaterThanOrEqual(STEP_H + 26 + 10)
 })

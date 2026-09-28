@@ -1,6 +1,7 @@
 import type { QuickJobView, RunAttemptView, RunView, ScopeSnapshot } from '../server/run-view'
 import { confirmButton } from './confirm-button'
 import { renderRunGraph, type EdgeState, type GraphEdge, type GraphStep, type StepState } from './flow-graph'
+import { mountViewport } from './flow-viewport'
 import { rollText } from './morph'
 import { errorText, postJson, providerName, type ApiResult, type JsonRecord } from './shared'
 
@@ -251,7 +252,8 @@ function mountFlowDrawer(): void {
   const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
   const title = $('flow-title'), meta = $('flow-meta'), pills = $('flow-pills'), runsSelect = $('flow-runs') as HTMLSelectElement
   const pause = $('flow-pause') as HTMLButtonElement, stop = $('flow-stop') as HTMLButtonElement, save = $('flow-save') as HTMLButtonElement
-  const banner = $('flow-banner'), stage = $('flow-stage'), quick = $('flow-quick'), quickList = $('flow-quick-list'), empty = $('flow-empty')
+  const banner = $('flow-banner'), stage = $('flow-stage'), canvas = $('flow-canvas'), quick = $('flow-quick'), quickList = $('flow-quick-list'), empty = $('flow-empty')
+  const viewport = mountViewport(stage, canvas, { animate: motionAllowed })
   let scopeQuery: string | null = null
   let open = false
   let source: EventSource | null = null
@@ -438,7 +440,8 @@ function mountFlowDrawer(): void {
     if (run) {
       paintHeader(run, run.label)
       meta.replaceChildren(...(run.origin.by === 'you' ? [] : [logo(run.origin.by, '')]), metaFor(run))
-      renderRunGraph(stage, stepsFor(run, Date.now()), edgesFor(run), run.entry, { animate: motionAllowed() })
+      const frame = renderRunGraph(canvas, stepsFor(run, Date.now()), edgesFor(run), run.entry, { animate: motionAllowed() })
+      viewport.paint(run.id, frame, frame.focus)
       return
     }
     const newest = snapshot.jobs[0]

@@ -4,10 +4,13 @@ export type GraphStep = { id: string; title: string; detail: string; state: Step
 export type GraphEdge = { source: string; target: string; outcome: 'pass' | 'fail' | 'blocked'; state: EdgeState; label?: string }
 export type Placed = { id: string; x: number; y: number }
 export type Route = { source: string; target: string; shape: 'forward' | 'down' | 'up' | 'back'; d: string }
+export type Box = { x: number; y: number; width: number; height: number }
+export type GraphFrame = { width: number; height: number; focus: Box | null }
 
 export const STEP_W = 160, STEP_H = 52, COL_STEP = 188, ROW_STEP = 70
 
 const BACK_DIP = 26
+const BACK_LABEL_ROOM = 10
 const ARROW = 6
 const DRAW_MS = 700
 const DRAW_STAGGER_MS = 140
@@ -177,32 +180,59 @@ function drawIn(paths: SVGPathElement[]): void {
   })
 }
 
-export function renderRunGraph(host: HTMLElement, steps: GraphStep[], edges: GraphEdge[], entry: string, options: { animate: boolean }): void {
+function boxAround(places: Placed[]): Box | null {
+  if (!places.length) return null
+  const left = Math.min(...places.map(place => place.x)), top = Math.min(...places.map(place => place.y))
+  const right = Math.max(...places.map(place => place.x + STEP_W)), bottom = Math.max(...places.map(place => place.y + STEP_H))
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
+function focusBox(steps: GraphStep[], places: Map<string, Placed>, entry: string): Box | null {
+  const placesIn = (state: StepState): Placed[] => steps.filter(step => step.state === state && places.has(step.id)).map(step => places.get(step.id)!)
+  for (const state of ['active', 'failed'] as const) {
+    const box = boxAround(placesIn(state))
+    if (box) return box
+  }
+  return boxAround(places.has(entry) ? [places.get(entry)!] : [])
+}
+
+function frameHeight(layoutHeight: number, routes: Route[], places: Map<string, Placed>): number {
+  const dips = routes.filter(route => route.shape === 'back').map(route => Math.max(places.get(route.source)!.y, places.get(route.target)!.y) + STEP_H + BACK_DIP + BACK_LABEL_ROOM)
+  return Math.max(layoutHeight, ...dips)
+}
+
+const frames = new WeakMap<HTMLElement, GraphFrame>()
+const EMPTY_FRAME: GraphFrame = { width: 0, height: 0, focus: null }
+
+export function renderRunGraph(host: HTMLElement, steps: GraphStep[], edges: GraphEdge[], entry: string, options: { animate: boolean }): GraphFrame {
   const paintSignature = JSON.stringify([options.animate, entry, steps, edges])
-  if (host.dataset.sig === paintSignature && host.firstChild) return
+  if (host.dataset.sig === paintSignature && host.firstChild) return frames.get(host) ?? EMPTY_FRAME
   host.dataset.sig = paintSignature
   const stepKeys = steps.map(step => step.id).join('|')
   const shouldDrawIn = options.animate && (host.dataset.graphKeys !== stepKeys || !host.firstChild)
   host.dataset.graphKeys = stepKeys
-  if (!steps.length) { host.replaceChildren(); return }
+  if (!steps.length) { host.replaceChildren(); frames.set(host, EMPTY_FRAME); return EMPTY_FRAME }
 
   const layout = layoutRun(steps, edges, entry)
   const places = new Map(layout.placed.map(place => [place.id, place]))
+  const drawable = edges.filter(edge => places.has(edge.source) && places.has(edge.target))
+  const routes = drawable.map(edge => routeEdge(places.get(edge.source)!, places.get(edge.target)!))
+  const frame = { width: layout.width, height: frameHeight(layout.height, routes, places), focus: focusBox(steps, places, entry) }
+  frames.set(host, frame)
   const graph = document.createElement('div')
   graph.className = options.animate ? 'flow-run' : 'flow-run still'
-  graph.style.width = `${layout.width}px`
-  graph.style.height = `${layout.height}px`
+  graph.style.width = `${frame.width}px`
+  graph.style.height = `${frame.height}px`
   const svg = document.createElementNS(SVG, 'svg')
   svg.setAttribute('class', 'flow-run-edges')
-  svg.setAttribute('width', String(layout.width))
-  svg.setAttribute('height', String(layout.height))
+  svg.setAttribute('width', String(frame.width))
+  svg.setAttribute('height', String(frame.height))
   svg.setAttribute('aria-hidden', 'true')
   const defs = document.createElementNS(SVG, 'defs')
   defs.append(...EDGE_STATES.map(tipMarker))
   svg.append(defs)
 
-  const drawable = edges.filter(edge => places.has(edge.source) && places.has(edge.target))
-  const paths = drawable.map(edge => routePath(routeEdge(places.get(edge.source)!, places.get(edge.target)!), edge.state))
+  const paths = drawable.map((edge, index) => routePath(routes[index]!, edge.state))
   svg.append(...paths)
   const labels = drawable.filter(edge => edge.label).map(edge => {
     const from = places.get(edge.source)!, to = places.get(edge.target)!
@@ -211,4 +241,5 @@ export function renderRunGraph(host: HTMLElement, steps: GraphStep[], edges: Gra
   graph.append(svg, ...labels, ...steps.map(step => stepCard(step, places.get(step.id)!)))
   host.replaceChildren(graph)
   if (shouldDrawIn) drawIn(paths)
+  return frame
 }

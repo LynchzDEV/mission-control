@@ -5,7 +5,7 @@ import type { RunView, ScopeSnapshot } from '../server/run-view'
 const markup = `<section id="flow" data-open="true"><h2 id="flow-title"></h2><select id="flow-runs" hidden></select><small id="flow-meta"></small><div id="flow-pills"></div>
 <div class="flow-actions"><button id="flow-save" type="button" hidden>Save as workflow</button><button id="flow-pause" type="button" hidden>Pause</button><button id="flow-stop" class="flow-confirm" type="button" aria-label="Stop" hidden><span>Stop</span><span>Stop flow</span></button></div>
 <div id="flow-banner" hidden><span class="flow-mark"></span><p></p><div class="flow-banner-actions"></div></div>
-<div id="flow-stage" hidden></div><div id="flow-quick" hidden><ol id="flow-quick-list"></ol></div><p id="flow-empty"></p></section>`
+<div id="flow-stage" hidden><div id="flow-canvas" class="flow-canvas"></div><div class="flow-zoom" hidden><button type="button" data-zoom="out" aria-label="Zoom out">−</button><button type="button" data-zoom="in" aria-label="Zoom in">+</button><button type="button" data-zoom="fit">Fit</button><button type="button" data-zoom="follow" aria-pressed="true">Follow</button></div></div><div id="flow-quick" hidden><ol id="flow-quick-list"></ol></div><p id="flow-empty"></p></section>`
 const { window } = new JSDOM(`<body>${markup}</body>`, { url: 'http://127.0.0.1:7777/' })
 const streams: FakeSource[] = []
 type Sent = { url: string; method: string; body: unknown }
@@ -27,7 +27,11 @@ globalThis.fetch = (async (url: string, init?: RequestInit) => {
   sent.push(request)
   return respond(request)
 }) as typeof fetch
-afterAll(() => { dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false })); globalThis.fetch = realFetch; window.close(); for (const key of ['window', 'document', 'EventSource', 'HTMLElement', 'HTMLButtonElement', 'HTMLSelectElement', 'Option', 'localStorage']) Reflect.deleteProperty(globalThis, key) })
+afterAll(() => { dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false })); globalThis.fetch = realFetch; window.close(); for (const key of ['window', 'document', 'EventSource', 'HTMLElement', 'HTMLButtonElement', 'HTMLSelectElement', 'Option', 'localStorage', 'matchMedia']) Reflect.deleteProperty(globalThis, key) })
+const stageSize = { width: 1000, height: 300 }
+const flowStage = window.document.getElementById('flow-stage')!
+Object.defineProperty(flowStage, 'clientWidth', { get: () => stageSize.width })
+Object.defineProperty(flowStage, 'clientHeight', { get: () => stageSize.height })
 
 const run = (id: string, createdAt: number): RunView => ({
   id, label: `Flow ${id}`, status: 'running', error: null, workflowName: 'Feature build', revision: 'v', entry: 'plan', currentNodeId: 'plan',
@@ -151,5 +155,69 @@ test('Save as workflow shows only for drafted flows, saves, and reports a name c
   stream.send({ runs: [{ ...drafted('S'), updatedAt: 30 }], jobs: [] })
   expect([save.textContent, save.disabled]).toEqual(['Saved as Add CSV export', true])
   respond = ok
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+const chain = (id: string, count: number, working: number): RunView => {
+  const ids = Array.from({ length: count }, (_, index) => `s${index + 1}`)
+  return {
+    ...run(id, 40),
+    entry: 's1', currentNodeId: ids[working]!,
+    nodes: ids.map(node => ({ id: node, title: node.toUpperCase(), kind: 'task', engine: 'claude' })),
+    edges: ids.slice(1).map((node, index) => ({ source: ids[index]!, target: node, outcome: 'pass' as const })),
+    attempts: [{ nodeId: ids[working]!, number: 0, jobId: 'j', status: 'running', outcome: null, summary: null, startedAt: 0, endedAt: null }],
+    tokens: [{ nodeId: ids[working]!, pathId: 'main', state: 'working', from: [] }],
+  }
+}
+const canvas = (): HTMLElement => document.getElementById('flow-canvas')!
+const pointer = (type: string, clientX: number) => flowStage.dispatchEvent(new window.PointerEvent(type, { pointerId: 1, clientX, clientY: 60, button: 0, bubbles: true }))
+
+test('the graph paints into the canvas; a small flow sits at scale 1 with no zoom controls and a stage that fits it', () => {
+  stageSize.width = 1000
+  const stream = openStream()
+  stream.send({ runs: [chain('small', 4, 1)], jobs: [] })
+  expect(canvas().querySelectorAll('.flow-step')).toHaveLength(4)
+  expect(canvas().style.transform).toContain('scale(1)')
+  expect(document.querySelector<HTMLElement>('.flow-zoom')!.hidden).toBe(true)
+  expect(flowStage.style.height).toBe('120px')
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('two snapshots that arrive after a drag leave the view where the drag put it and Follow off', () => {
+  stageSize.width = 400
+  const stream = openStream()
+  stream.send({ runs: [chain('dragged', 8, 0)], jobs: [] })
+  const fitted = canvas().style.transform
+  pointer('pointerdown', 100)
+  pointer('pointermove', 120)
+  pointer('pointerup', 120)
+  const dragged = canvas().style.transform
+  expect(dragged).not.toBe(fitted)
+  expect(document.querySelector('[data-zoom="follow"]')!.getAttribute('aria-pressed')).toBe('false')
+  stream.send({ runs: [{ ...chain('dragged', 8, 7), updatedAt: 41 }], jobs: [] })
+  stream.send({ runs: [{ ...chain('dragged', 8, 6), updatedAt: 42 }], jobs: [] })
+  expect(canvas().style.transform).toBe(dragged)
+  expect(document.querySelector('[data-zoom="follow"]')!.getAttribute('aria-pressed')).toBe('false')
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('following the working step never animates under reduced motion, and does when motion is allowed', () => {
+  stageSize.width = 300
+  const frames: unknown[] = []
+  Object.assign(canvas(), { animate: (keyframes: unknown) => { frames.push(keyframes) } })
+  const stream = openStream()
+  stream.send({ runs: [chain('reduced', 8, 0)], jobs: [] })
+  const fitted = canvas().style.transform
+  window.localStorage.setItem('mc.motion.paused', 'false')
+  Object.assign(globalThis, { matchMedia: () => ({ matches: true }) })
+  stream.send({ runs: [{ ...chain('reduced', 8, 7), updatedAt: 41 }], jobs: [] })
+  expect(canvas().style.transform).not.toBe(fitted)
+  expect(frames).toEqual([])
+  Object.assign(globalThis, { matchMedia: () => ({ matches: false }) })
+  stream.send({ runs: [{ ...chain('reduced', 8, 0), updatedAt: 42 }], jobs: [] })
+  expect(canvas().style.transform).toBe(fitted)
+  expect(frames).toHaveLength(1)
+  window.localStorage.setItem('mc.motion.paused', 'true')
+  Reflect.deleteProperty(canvas(), 'animate')
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })
