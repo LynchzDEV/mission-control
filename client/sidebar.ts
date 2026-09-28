@@ -105,6 +105,8 @@ function rowElement(row: Row, className: 'sb-row' | 'sb-mini'): HTMLElement {
     if (row.note) text.append(Object.assign(document.createElement('small'), { textContent: row.note }))
     element.append(text)
   } else element.title = row.item.title
+  const slot = row.item.kind === 'terminal' ? liveTerminals?.findIndex(session => session.id === row.item.id) ?? -1 : -1
+  if (slot >= 0 && slot < 9) element.append(Object.assign(document.createElement('kbd'), { className: 'sb-key', textContent: `⌘${slot + 1}`, title: `Switch to this terminal · ⌘${slot + 1}` }))
   if (row.state) { const dot = document.createElement('i'); dot.className = 'sb-dot'; dot.dataset.s = row.state; element.append(dot) }
   return row.item.kind === 'terminal' ? terminalActions(row.item, element, text) : element
 }
@@ -123,7 +125,7 @@ function paint(items: HistoryItem[]): void {
   if (renaming) return
   const groups = sidebarGroups(withLiveTerminals(items, liveTerminals, Date.now()), Date.now())
   const rows = groups.flatMap(group => group.items.map(item => rowOf(item as Listed)))
-  const next = JSON.stringify([groups.map(group => [group.day, group.items.length]), rows.map(row => [row.item.kind, row.item.id, row.item.title, row.state, row.note])])
+  const next = JSON.stringify([groups.map(group => [group.day, group.items.length]), rows.map(row => [row.item.kind, row.item.id, row.item.title, row.state, row.note]), liveTerminals?.map(session => session.id)])
   if (next === signature) return
   signature = next
   const list = document.getElementById('sidebar-list')!
