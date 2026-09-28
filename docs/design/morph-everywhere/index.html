@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Morph everywhere</title>
+<link rel="stylesheet" href="assets/quiet.css">
+<style>
+  body { margin: 0; padding: 36px 44px 80px; min-height: 100vh; background: var(--paper); color: #344155; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+  h1 { font-size: 22px; font-weight: 500; margin: 0 0 6px; }
+  .lead { margin: 0 0 20px; color: var(--muted); font-size: 13.5px; max-width: 860px; line-height: 1.55; }
+  nav.areas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 26px; }
+  nav.areas button { padding: 6px 12px; border-radius: var(--r-sm); corner-shape: var(--corner); font-size: 12.5px; }
+  nav.areas button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(560px, 100%), 1fr)); gap: 22px; }
+  .card { min-width: 0; }
+  .card { display: grid; gap: 12px; padding: 18px 20px; border-radius: var(--r-lg); corner-shape: var(--corner); background: var(--paper); box-shadow: var(--raised); }
+  .card header { display: grid; gap: 3px; }
+  .card .area { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); }
+  .card h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .card h3 em { margin-left: 6px; padding: 2px 7px; border-radius: var(--r-xs); background: #dcece1; color: #3f7352; font-size: 11px; font-style: normal; font-weight: 600; vertical-align: 2px; }
+  .card code { font-size: 11.5px; color: var(--muted); }
+  .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+  .side { min-width: 0; }
+  .side h4 { margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .side:last-child h4 { color: var(--accent); }
+  .demo { position: relative; display: grid; align-content: center; min-height: 92px; padding: 14px; border-radius: var(--r-md); corner-shape: var(--corner); box-shadow: var(--inset); overflow: hidden; }
+  .demo[data-side="now"] *, .demo[data-side="now"] *::before { transition: none !important; }
+  .how { margin: 0; font-size: 12.5px; color: #505e75; line-height: 1.5; }
+  .card footer { display: flex; align-items: center; gap: 12px; }
+  .card footer .play { padding: 6px 12px; border-radius: var(--r-sm); corner-shape: var(--corner); font-size: 12.5px; }
+  .card footer .step { font-size: 12px; color: var(--muted); }
+  .tap { cursor: pointer; }
+  .hint { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+  /* demo-only: force the sidebar hover state that the real app gets from :hover */
+  .demo .sb-item.is-hover .sb-morph { animation: none; width: 22px; height: 22px; right: 12px; border-radius: var(--r-xs); background: color-mix(in srgb, #fff 55%, var(--paper)); }
+  .demo .sb-item.is-hover .sb-morph svg { opacity: 1; scale: 1; }
+  .demo .term-bar { position: static; justify-self: start; max-width: 100%; }
+  .demo .term-bar-name { max-width: 90px; }
+  .demo { font-size: 13px; }
+  .inventory { margin-top: 44px; }
+  .inventory h2 { font-size: 17px; font-weight: 500; margin: 0 0 14px; }
+  .inventory h2 small { margin-left: 8px; font-size: 12.5px; color: var(--muted); font-weight: 400; }
+  .inventory table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .inventory th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .inventory td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .inventory code { font-size: 11.5px; color: var(--muted); }
+  .inventory .kind { display: inline-block; padding: 2px 8px; border-radius: var(--r-xs); font-size: 11px; font-weight: 600; white-space: nowrap; background: #e2e6f0; color: var(--muted); }
+  .inventory tr[data-kind="card"] .kind { background: #e6def7; color: #6b4fb0; }
+  .inventory tr[data-kind="shipped"] .kind, .inventory tr[data-kind="keep"] .kind { background: #dcece1; color: #3f7352; }
+  .morphing { overflow: hidden; white-space: nowrap; }
+  .morphing * { white-space: nowrap; }
+</style>
+</head>
+<body>
+<h1>Morph everywhere</h1>
+<p class="lead">Every place in the app that changes state today, shown twice: <b>Now</b> (how it snaps today) and <b>Morph</b> (the same change as one element reshaping — size, corners, colour and cross-faded content — 240&nbsp;ms, instant for people with reduced motion). Click a control inside a demo to step both sides, or press <b>Play both</b>.</p>
+<nav class="areas" aria-label="Areas"></nav>
+<div id="cards"></div>
+<script type="module" src="cards.js"></script>
+<script type="module" src="inventory.js"></script>
+</body>
+</html>
