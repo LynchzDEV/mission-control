@@ -31,7 +31,7 @@ function isTopLevelPageNavigation(request: Request): boolean {
 }
 
 export function fromBrowser(request: Request): boolean {
-  return request.headers.get('sec-fetch-site') === 'same-origin'
+  return request.headers.get('sec-fetch-site') === 'same-origin' && !request.headers.has('authorization')
 }
 
 export function localRequestAllowed(request: Request): boolean {

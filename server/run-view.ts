@@ -13,6 +13,10 @@ export type RunView = { id: string; label: string; status: string; error: string
 export type QuickJobView = { id: string; label: string; engine: string; status: string; startedAt: number; endedAt: number | null }
 export type ScopeSnapshot = { runs: RunView[]; jobs: QuickJobView[] }
 
+export function versionView({ graph: _graph, agents: _agents, skills: _skills, ...version }: RunVersion): RunVersionView {
+  return version
+}
+
 function stepViews(workflow: WorkflowRevision, agents: Record<string, ResolvedAgent>): RunStepView[] {
   return workflow.nodes.map(node => ({ id: node.id, title: node.title, kind: node.kind, engine: agents[node.id]?.engine ?? '' }))
 }
@@ -37,7 +41,7 @@ export function runView(run: WorkflowRun): RunView {
   return {
     id: run.id, label: run.label, status: run.status, error: run.error, workflowName: run.workflow.name, revision: run.workflow.revision,
     entry: run.workflow.entry, currentNodeId: run.currentNodeId, origin: run.origin,
-    versions: run.versions.map(({ graph: _graph, agents: _agents, skills: _skills, ...version }) => version),
+    versions: run.versions.map(versionView),
     nodes: stepViews(run.workflow, run.agents), edges: edgeViews(run.workflow),
     attempts: run.attempts.map(attempt => ({ nodeId: attempt.nodeId, number: attempt.number, jobId: attempt.jobId, status: attempt.status, outcome: attempt.result?.outcome ?? null, summary: attempt.result?.summary ?? null, startedAt: attempt.startedAt, endedAt: attempt.endedAt })),
     createdAt: run.createdAt, updatedAt: run.updatedAt, proposal: proposalView(run), latestChange: latestChangeView(run),

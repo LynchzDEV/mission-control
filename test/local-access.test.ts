@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { localRequestAllowed, sameOrigin } from '../server/local-access'
+import { fromBrowser, localRequestAllowed, sameOrigin } from '../server/local-access'
 
 const req = (headers: Record<string, string>, url = 'http://127.0.0.1:7777/api/jobs', method = 'GET') =>
   new Request(url, { method, headers })
@@ -64,5 +64,18 @@ describe('sameOrigin', () => {
   test('sameOrigin rejects another local port and a missing Origin', () => {
     expect(sameOrigin(req({ host: '127.0.0.1:7777', origin: 'http://127.0.0.1:5173' }))).toBe(false)
     expect(sameOrigin(req({ host: '127.0.0.1:7777' }))).toBe(false)
+  })
+})
+
+describe('fromBrowser', () => {
+  test('a same-origin request without credentials comes from the browser', () => {
+    expect(fromBrowser(req({ 'sec-fetch-site': 'same-origin' }))).toBe(true)
+  })
+  test('a request carrying an Authorization header never counts as the browser', () => {
+    expect(fromBrowser(req({ 'sec-fetch-site': 'same-origin', authorization: 'Bearer fixture' }))).toBe(false)
+  })
+  test('a request without the same-origin fetch header is not the browser', () => {
+    expect(fromBrowser(req({}))).toBe(false)
+    expect(fromBrowser(req({ 'sec-fetch-site': 'none' }))).toBe(false)
   })
 })

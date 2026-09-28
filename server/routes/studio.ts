@@ -10,7 +10,7 @@ import type { WorkflowBuilder } from '../workflow-builder'
 import { RunActionError, type ApprovalContext, type WorkflowRunner } from '../workflow-runner'
 import { readConfig } from '../secrets'
 import { eventStreamResponse, type RunEvents } from '../run-events'
-import { scopeSnapshot } from '../run-view'
+import { scopeSnapshot, versionView } from '../run-view'
 import type { JobRecord } from '../jobs'
 import { join } from 'node:path'
 
@@ -94,7 +94,7 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
     .get('/api/studio/runs/:id', ({ params, set }) => {
       const run = runner.get(params.id)
       if (!run) { set.status = 404; return { error: 'Run not found' } }
-      return run
+      return { ...run, versions: run.versions.map(versionView) }
     })
     .post('/api/studio/runs/:id/approve', ({ params, body, request }) => runner.approve(params.id, approvalContext(request, body)))
     .post('/api/studio/runs/:id/reject', ({ params, body, request }) => runner.reject(params.id, approvalContext(request, body)))

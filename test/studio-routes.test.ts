@@ -245,3 +245,35 @@ test('saving a flow is refused outside the drawer', async () => {
   expect((await response.json()).error).toBe('Save from the drawer')
   expect((await (await get('/api/studio/workflows')).json()).workflows.map((graph: { id: string }) => graph.id)).not.toContain('add-csv-export')
 })
+
+test('a token caller is never the drawer, even with a same-origin header', async () => {
+  const token = { 'sec-fetch-site': 'same-origin', authorization: 'Bearer fixture-token' }
+  const chatId = await chatRoot()
+  const run = await (await post('/api/studio/runs', { ...(await runBody()), chat: chatId }, {})).json()
+  const response = await post(`/api/studio/runs/${run.id}/approve`, { chat: 'someone-else' }, token)
+  expect(response.status).toBe(403)
+  expect((await (await get(`/api/studio/runs/${run.id}`)).json()).status).toBe('awaiting-approval')
+  const started = await (await post('/api/studio/runs', await runBody('token start'), token)).json()
+  expect(started.status).toBe('awaiting-approval')
+  expect(started.versions[0].approvedVia).toBeNull()
+})
+
+test('reading runs never returns the graph, agents or skills of a version', async () => {
+  const run = await (await post('/api/studio/runs', await runBody(), { 'sec-fetch-site': 'same-origin' })).json()
+  const proposed = await post(`/api/studio/runs/${run.id}/changes`, { graph: withMigrate(), reason: 'Needs a migration' }, { 'sec-fetch-site': 'same-origin' })
+  expect(proposed.status).toBe(200)
+  const read = await (await get(`/api/studio/runs/${run.id}`)).json()
+  expect(read.versions).toHaveLength(2)
+  for (const version of read.versions) {
+    expect(version).not.toHaveProperty('graph')
+    expect(version).not.toHaveProperty('agents')
+    expect(version).not.toHaveProperty('skills')
+  }
+  expect(read.versions[1]).toMatchObject({ number: 2, size: 'big', state: 'pending', reason: 'Needs a migration' })
+  const listed = await (await get('/api/studio/runs')).json()
+  for (const item of listed.runs) for (const version of item.versions ?? []) {
+    expect(version).not.toHaveProperty('graph')
+    expect(version).not.toHaveProperty('agents')
+    expect(version).not.toHaveProperty('skills')
+  }
+})
