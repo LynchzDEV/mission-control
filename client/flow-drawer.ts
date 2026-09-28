@@ -184,21 +184,22 @@ function mountFlowDrawer(): void {
     return span
   }
 
-  async function act(action: RunAction): Promise<void> {
-    if (!current) return
-    const pending = current.versions.find(version => version.state === 'pending')
+  async function act(action: RunAction, runId: string | undefined): Promise<void> {
+    const target = snapshot.runs.find(run => run.id === runId)
+    if (!target) return
+    const pending = target.versions.find(version => version.state === 'pending')
     const body = (action === 'approve' || action === 'reject') && pending ? { version: pending.number } : {}
-    const result = await postJson(`/api/studio/runs/${encodeURIComponent(current.id)}/${action}`, body)
+    const result = await postJson(`/api/studio/runs/${encodeURIComponent(target.id)}/${action}`, body)
     if (result.ok) return
     if (banner.hidden) { banner.className = 'flow-banner problem'; banner.querySelector<HTMLElement>('.flow-mark')!.dataset.state = 'failed'; banner.hidden = false }
     rollText(banner.querySelector('p') as HTMLElement, `Could not ${action}: ${errorText(result)}`)
   }
 
-  function actionButton(action: Banner['actions'][number]): HTMLButtonElement {
+  function actionButton(action: Banner['actions'][number], runId: string | undefined): HTMLButtonElement {
     const button = make('button', '', 'pill flow-sm') as HTMLButtonElement
     button.type = 'button'
-    if (action === 'approve') { button.classList.add('flow-primary'); button.textContent = 'Approve and run'; button.onclick = () => void act('approve'); return button }
-    if (action === 'retry') { button.textContent = 'Retry step'; button.onclick = () => void act('retry'); return button }
+    if (action === 'approve') { button.classList.add('flow-primary'); button.textContent = 'Approve and run'; button.onclick = () => void act('approve', runId); return button }
+    if (action === 'retry') { button.textContent = 'Retry step'; button.onclick = () => void act('retry', runId); return button }
     const [idle, armed] = action === 'reject' ? ['Reject', 'Reject flow'] : ['Stop', 'Stop flow']
     button.classList.add('flow-ghost', 'flow-confirm')
     button.setAttribute('aria-label', idle)
@@ -217,8 +218,8 @@ function mountFlowDrawer(): void {
     banner.querySelector<HTMLElement>('.flow-mark')!.dataset.state = next.tone === 'problem' ? 'failed' : 'active'
     ;(banner.querySelector('p') as HTMLElement).textContent = next.text
     const actions = banner.querySelector('.flow-banner-actions') as HTMLElement
-    actions.replaceChildren(...next.actions.map(actionButton))
-    actions.querySelectorAll<HTMLButtonElement>('.flow-confirm').forEach(button => confirmButton(button, button.lastElementChild!.textContent ?? '', () => void act(button.dataset.action as RunAction)))
+    actions.replaceChildren(...next.actions.map(action => actionButton(action, run?.id)))
+    actions.querySelectorAll<HTMLButtonElement>('.flow-confirm').forEach(button => confirmButton(button, button.lastElementChild!.textContent ?? '', () => void act(button.dataset.action as RunAction, run?.id)))
   }
 
   function paintHeader(run: RunView | null, heading: string): void {
@@ -308,8 +309,10 @@ function mountFlowDrawer(): void {
   }
 
   runsSelect.onchange = () => { selected = runsSelect.value; paint() }
-  pause.onclick = () => void act(current?.status === 'paused' ? 'resume' : 'pause')
-  confirmButton(stop, 'Stop flow', () => void act('stop'))
+  pause.onclick = () => void act(current?.status === 'paused' ? 'resume' : 'pause', current?.id)
+  let stopTarget: string | undefined
+  stop.addEventListener('click', () => { if (stop.dataset.armed !== 'true') stopTarget = current?.id }, { capture: true })
+  confirmButton(stop, 'Stop flow', () => void act('stop', stopTarget))
   addEventListener('quiet:flow-open', (event) => { open = (event as CustomEvent<boolean>).detail; connect() })
   addEventListener('quiet:activity-scope', (event) => { const session = (event as CustomEvent<{ id: string; cwd: string } | null>).detail; setScope(session ? `terminal=${encodeURIComponent(session.id)}` : null) })
   addEventListener('quiet:chat-agents', (event) => { const chat = (event as CustomEvent<string | null>).detail; if (chat) setScope(`chat=${encodeURIComponent(chat)}`) })
