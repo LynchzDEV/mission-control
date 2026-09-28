@@ -111,11 +111,15 @@ export function createOutcomeLedger(deps: LedgerDeps): OutcomeLedger {
   const throttleMs = deps.throttleMs ?? SYNC_THROTTLE_MS
   const readBytes = deps.readBytes ?? READ_BYTES_PER_SYNC
   const secrets = deps.secrets ?? logSecrets
-  const sessions = new Map<string, Session>()
+  const sessions = new Map<string, Promise<Session>>()
 
-  async function load(key: string): Promise<Session> {
-    const cached = sessions.get(key)
-    if (cached) return cached
+  function load(key: string): Promise<Session> {
+    const pending = sessions.get(key) ?? loadFromDisk(key)
+    sessions.set(key, pending)
+    return pending
+  }
+
+  async function loadFromDisk(key: string): Promise<Session> {
     const stem = sessionFileStem(key)
     const session: Session = { file: join(dir, `${stem}.jsonl`), stateFile: join(dir, `${stem}.state.json`), recent: [], keys: new Set(), last: 0, passed: 0, failed: 0, cursors: {}, syncing: null, syncedAt: 0, known: false, writeFailed: false }
     const stored = parseJsonl<Outcome>(await readFile(session.file, 'utf8').catch(() => ''))
@@ -131,7 +135,6 @@ export function createOutcomeLedger(deps: LedgerDeps): OutcomeLedger {
     } catch {
       session.cursors = {}
     }
-    sessions.set(key, session)
     return session
   }
 
@@ -237,7 +240,7 @@ export function createOutcomeLedger(deps: LedgerDeps): OutcomeLedger {
         const stem = name.slice(0, -'.jsonl'.length)
         await rm(path, { force: true })
         await rm(join(dir, `${stem}.state.json`), { force: true })
-        for (const [key, session] of sessions) if (session.file === path) sessions.delete(key)
+        for (const key of sessions.keys()) if (sessionFileStem(key) === stem) sessions.delete(key)
         removed += 1
       }
       return removed

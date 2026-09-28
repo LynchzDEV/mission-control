@@ -100,6 +100,16 @@ describe('outcome ledger', () => {
     expect(page?.items.map((item) => [item.key, item.at])).toEqual([['job:j1:i1', 1_000_000], ['job:j1', 1_000_000]])
   })
 
+  test('concurrent first reads of a new session share one load and never duplicate seqs', async () => {
+    await appendFile(transcript, bash('a', 'bin/ci') + done('a', 'ok') + bash('b', 'ls') + done('b', 'ok'))
+    const store = ledger()
+    const [first, second] = await Promise.all([store.read('terminal:t1', 0, 50), store.read('terminal:t1', 0, 50)])
+    expect(first?.last).toBe(2)
+    expect(second?.last).toBe(2)
+    const stored = (await readFile(join(root, 'outcomes', `${sessionFileStem('terminal:t1')}.jsonl`), 'utf8')).trim().split('\n')
+    expect(stored.map((row) => JSON.parse(row).seq)).toEqual([1, 2])
+  })
+
   test('secrets in commands and details are redacted before they are stored', async () => {
     await appendFile(transcript, bash('a', 'curl -H "Authorization: sk-secret-token-123" x') + done('a', 'Exit code 1\ntoken sk-secret-token-123 rejected', true))
     const page = await ledger().read('terminal:t1', 0, 50)
