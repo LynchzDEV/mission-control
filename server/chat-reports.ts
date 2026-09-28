@@ -66,7 +66,8 @@ export function agentReport(job: JobRecord, log: string): AgentReport {
 
 export function workflowReport(run: WorkflowRun): AgentReport {
   const title = (nodeId: string) => run.workflow.nodes.find((node) => node.id === nodeId)?.title ?? nodeId
-  const lines = run.attempts.map((attempt) => [title(attempt.nodeId), attempt.result?.outcome ?? 'unfinished', attempt.result ? oneLine(attempt.result.summary, RUN_LINE_MAX) : ''].filter((part) => part !== '').join(' · '))
+  const path = (pathId: string | undefined) => pathId && pathId !== 'main' ? pathId : ''
+  const lines = run.attempts.map((attempt) => [path(attempt.pathId), title(attempt.nodeId), attempt.result?.outcome ?? 'unfinished', attempt.result ? oneLine(attempt.result.summary, RUN_LINE_MAX) : ''].filter((part) => part !== '').join(' · '))
   const reason = run.error ? [`Reason: ${oneLine(run.error, RUN_LINE_MAX)}`] : []
   const message = [`[workflow ${oneLine(run.workflow.name, LABEL_MAX)} · ${run.status}]`, ...lines, ...reason].join('\n')
   return { message, needsYou: run.status === 'failed' || run.status === 'blocked' }

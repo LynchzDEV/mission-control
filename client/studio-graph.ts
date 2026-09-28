@@ -38,10 +38,11 @@ const kindIcons: Record<WorkflowNode['kind'], string> = { plan: 'plan-icon', 've
 export function kindIcon(kind: WorkflowNode['kind']): string { return kindIcons[kind] }
 export function roleWord(role: 'plan' | 'execute' | 'review'): string { return role[0]!.toUpperCase() + role.slice(1) }
 export type NodeRunState = 'passed' | 'running' | 'failed' | 'waiting'
-export type CanvasRun = { status: string; currentNodeId: string; attempts: { nodeId: string; status: string; result: { outcome: string } | null; startedAt: number }[] }
+export type CanvasRun = { status: string; tokens: { nodeId: string; state: string }[]; attempts: { nodeId: string; status: string; result: { outcome: string } | null; startedAt: number }[] }
 export function nodeRunStates(run: CanvasRun | null): Record<string, NodeRunState> {
   if (run?.status !== 'running' && run?.status !== 'paused') return {}
   const settled = run.attempts.filter(attempt => attempt.status === 'settled' && attempt.result).sort((a, b) => a.startedAt - b.startedAt)
   const states: Record<string, NodeRunState> = Object.fromEntries(settled.map(attempt => [attempt.nodeId, attempt.result!.outcome === 'pass' ? 'passed' : 'failed']))
-  return { ...states, [run.currentNodeId]: 'running' }
+  const working = run.tokens.filter(token => token.state === 'working').map(token => [token.nodeId, 'running' as const])
+  return { ...states, ...Object.fromEntries(working) }
 }

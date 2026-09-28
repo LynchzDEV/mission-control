@@ -52,14 +52,55 @@ export function activeVersion(run: RunView): number {
   return run.versions.filter(version => version.state === 'approved').at(-1)?.number ?? 1
 }
 
+function routedTarget(run: RunView, token: RunView['tokens'][number]): string {
+  const ran = run.attempts.filter(attempt => attempt.nodeId === token.nodeId && (attempt.pathId ?? 'main') === token.pathId && attempt.status === 'settled').at(-1)
+  return run.edges.find(edge => edge.source === token.nodeId && edge.outcome === ran?.outcome)?.target ?? token.nodeId
+}
+
+function nextUp(run: RunView): Set<string> {
+  const ids = new Set<string>()
+  for (const token of run.tokens) {
+    if (token.state === 'ready') ids.add(token.nodeId)
+    if (token.state === 'settled') { ids.add(token.nodeId); ids.add(routedTarget(run, token)) }
+  }
+  return ids
+}
+
+function afterWorking(run: RunView, nodeId: string): boolean {
+  const working = new Set(run.tokens.filter(token => token.state === 'working').map(token => token.nodeId))
+  return run.edges.some(edge => working.has(edge.source) && edge.target === nodeId && edge.outcome === 'pass')
+}
+
 function unstartedStatus(run: RunView, nodeId: string, engine: string, reachable: Set<string>): StepStatus {
   const onFailure = run.edges.find(edge => edge.target === nodeId && edge.outcome !== 'pass')
   if (!reachable.has(nodeId) && onFailure) return { state: 'conditional', detail: `If ${titleOf(run, onFailure.source)} fails` }
   if (run.status === 'awaiting-approval') return { state: 'pending', detail: providerName(engine) }
-  if (isLive(run) && nodeId === run.currentNodeId) return { state: 'pending', detail: run.status === 'paused' ? 'Paused here' : 'Up next' }
-  const currentBusy = run.attempts.some(attempt => attempt.nodeId === run.currentNodeId && attempt.status !== 'settled')
-  const upNext = isLive(run) && currentBusy && run.edges.some(edge => edge.source === run.currentNodeId && edge.target === nodeId && edge.outcome === 'pass')
-  return { state: 'pending', detail: upNext ? 'Up next' : 'Waiting' }
+  if (isLive(run) && nextUp(run).has(nodeId)) return { state: 'pending', detail: run.status === 'paused' ? 'Paused here' : 'Up next' }
+  return { state: 'pending', detail: isLive(run) && afterWorking(run, nodeId) ? 'Up next' : 'Waiting' }
+}
+
+function waitingAtJoin(run: RunView, nodeId: string, tries: RunAttemptView[]): StepStatus | null {
+  const section = run.sections.find(open => open.join === nodeId)
+  if (!section || !isLive(run) || tries.some(attempt => attempt.status !== 'settled')) return null
+  const pathIds = new Set(section.paths.map(path => path.pathId))
+  const arrived = new Set(run.tokens.filter(token => token.nodeId === nodeId && token.state === 'waiting' && pathIds.has(token.pathId)).map(token => token.pathId))
+  return { state: 'pending', detail: `Waiting for ${section.paths.length - arrived.size} of ${section.paths.length} paths` }
+}
+
+function joinedStatus(run: RunView, nodeId: string, status: StepStatus, latest: RunAttemptView): StepStatus {
+  if (latest.status !== 'settled') return status
+  if (latest.outcome === 'fail') return { ...status, detail: 'Paths could not be joined' }
+  if (latest.outcome !== 'pass') return status
+  const paths = Number(/^Joined (\d+) paths/.exec(latest.summary ?? '')?.[1] ?? run.edges.filter(edge => edge.target === nodeId && edge.outcome === 'pass').length)
+  return { ...status, detail: `Joined ${paths} paths` }
+}
+
+function stepStatus(run: RunView, kind: string, nodeId: string, engine: string, tries: RunAttemptView[], reachable: Set<string>, now: number): StepStatus {
+  const waiting = kind === 'join' ? waitingAtJoin(run, nodeId, tries) : null
+  if (waiting) return waiting
+  if (!tries.length) return unstartedStatus(run, nodeId, engine, reachable)
+  const status = attemptStatus(run, tries, now)
+  return kind === 'join' ? joinedStatus(run, nodeId, status, tries.at(-1)!) : status
 }
 
 function attemptStatus(run: RunView, tries: RunAttemptView[], now: number): StepStatus {
@@ -80,7 +121,7 @@ export function stepsFor(run: RunView, now: number): GraphStep[] {
   const proposal = run.proposal
   const current = run.nodes.map(node => {
     const tries = attempts.filter(attempt => attempt.nodeId === node.id)
-    const status = tries.length ? attemptStatus(run, tries, now) : unstartedStatus(run, node.id, node.engine, reachable)
+    const status = stepStatus(run, node.kind, node.id, node.engine, tries, reachable, now)
     const proposed = proposal?.removed.includes(node.id) ? { state: 'removed' as const, detail: `Removed in v${proposal.number}` }
       : !tries.length && proposal?.changed.includes(node.id) ? { state: status.state, detail: `Changed in v${proposal.number}` }
         : status
@@ -92,18 +133,27 @@ export function stepsFor(run: RunView, now: number): GraphStep[] {
   return [...current, ...ghosts]
 }
 
+function sourcesOf(attempts: RunAttemptView[], next: RunAttemptView, index: number): RunAttemptView[] {
+  if (!next.from?.length) return index > 0 ? [attempts[index - 1]!] : []
+  return attempts.filter(attempt => next.from.includes(attempt.number))
+}
+
 function takenPairs(run: RunView, edge: Edge): [RunAttemptView, RunAttemptView][] {
   const attempts = inOrder(run)
-  return attempts.slice(1).flatMap((next, index): [RunAttemptView, RunAttemptView][] => {
-    const previous = attempts[index]!
-    const matches = previous.nodeId === edge.source && previous.status === 'settled' && previous.outcome === edge.outcome && next.nodeId === edge.target
-    return matches ? [[previous, next]] : []
-  })
+  const took = (previous: RunAttemptView) => previous.nodeId === edge.source && previous.status === 'settled' && previous.outcome === edge.outcome
+  return attempts.flatMap((next, index): [RunAttemptView, RunAttemptView][] => next.nodeId === edge.target
+    ? sourcesOf(attempts, next, index).filter(took).map(previous => [previous, next])
+    : [])
+}
+
+function reachedJoin(run: RunView, edge: Edge): boolean {
+  const arrivals = new Set(run.tokens.filter(token => token.nodeId === edge.target && token.state === 'waiting').flatMap(token => token.from))
+  return run.attempts.some(attempt => arrivals.has(attempt.number) && attempt.nodeId === edge.source && attempt.status === 'settled' && attempt.outcome === edge.outcome)
 }
 
 function edgeState(run: RunView, edge: Edge): EdgeState {
   const pairs = takenPairs(run, edge)
-  if (!pairs.length) return 'idle'
+  if (!pairs.length) return reachedJoin(run, edge) ? (edge.outcome === 'pass' ? 'done' : 'failed') : 'idle'
   if (edge.outcome !== 'pass') return 'failed'
   return pairs.at(-1)![1].status !== 'settled' && isLive(run) ? 'flowing' : 'done'
 }

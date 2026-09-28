@@ -18,24 +18,57 @@ const GLYPHS: Record<string, string> = {
   review: '<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>',
 }
 
-export function layoutRun(steps: { id: string }[], edges: { source: string; target: string; outcome: string }[], entry: string): { placed: Placed[]; width: number; height: number } {
+type LayoutEdge = { source: string; target: string; outcome: string }
+
+function shiftRight(column: Map<string, number>, edges: LayoutEdge[], join: string, by: number): void {
+  const moved = new Set([join])
+  const queue = [join]
+  while (queue.length) {
+    const id = queue.shift()!
+    for (const edge of edges) {
+      const target = column.get(edge.target)
+      if (edge.source !== id || moved.has(edge.target) || target === undefined || target < column.get(id)!) continue
+      moved.add(edge.target)
+      queue.push(edge.target)
+    }
+  }
+  for (const id of moved) column.set(id, column.get(id)! + by)
+}
+
+function alignJoins(column: Map<string, number>, steps: { id: string; kind?: string }[], edges: LayoutEdge[]): void {
+  const joins = steps.filter(step => step.kind === 'join' && column.has(step.id)).map(step => step.id)
+  for (let round = 0; round < steps.length; round++) {
+    let moved = false
+    for (const join of joins) {
+      const sources = edges.filter(edge => edge.target === join && column.has(edge.source)).map(edge => column.get(edge.source)!)
+      const needed = Math.max(-1, ...sources) + 1
+      if (needed <= column.get(join)!) continue
+      shiftRight(column, edges, join, needed - column.get(join)!)
+      moved = true
+    }
+    if (!moved) return
+  }
+}
+
+export function layoutRun(steps: { id: string; kind?: string }[], edges: LayoutEdge[], entry: string): { placed: Placed[]; width: number; height: number } {
   const column = new Map<string, number>()
-  const row = new Map<string, number>()
-  const used = new Map<number, number>()
-  const place = (id: string, col: number) => { const next = used.get(col) ?? 0; column.set(id, col); row.set(id, next); used.set(col, next + 1) }
   const queue = [entry]
-  if (steps.some(step => step.id === entry)) place(entry, 0)
+  if (steps.some(step => step.id === entry)) column.set(entry, 0)
   while (queue.length) {
     const id = queue.shift()!
     const outgoing = edges.filter(edge => edge.source === id).sort((a, b) => Number(a.outcome !== 'pass') - Number(b.outcome !== 'pass'))
     for (const edge of outgoing) {
       if (column.has(edge.target)) continue
-      place(edge.target, column.get(id)! + (edge.outcome === 'pass' ? 1 : 0))
+      column.set(edge.target, column.get(id)! + (edge.outcome === 'pass' ? 1 : 0))
       queue.push(edge.target)
     }
   }
+  alignJoins(column, steps, edges)
   const last = Math.max(-1, ...column.values()) + 1
-  for (const step of steps) if (!column.has(step.id)) place(step.id, last)
+  for (const step of steps) if (!column.has(step.id)) column.set(step.id, last)
+  const row = new Map<string, number>()
+  const used = new Map<number, number>()
+  for (const id of column.keys()) { const col = column.get(id)!; row.set(id, used.get(col) ?? 0); used.set(col, (used.get(col) ?? 0) + 1) }
   const placed = steps.map(step => ({ id: step.id, x: column.get(step.id)! * COL_STEP, y: row.get(step.id)! * ROW_STEP }))
   const width = Math.max(0, ...placed.map(step => step.x + STEP_W))
   const height = Math.max(0, ...placed.map(step => step.y + STEP_H))

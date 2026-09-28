@@ -170,7 +170,7 @@ test('the run list filters by chat and terminal', async () => {
   const list = await (await get(`/api/studio/runs?chat=${chatId}`)).json()
   expect(list.runs.length).toBe(1)
   expect(list.runs.every((run: { id: string }) => chatRunIds.includes(run.id))).toBe(true)
-  expect(list.runs[0]).toMatchObject({ status: 'awaiting-approval', pending: true, origin: { where: 'chat' } })
+  expect(list.runs[0]).toMatchObject({ status: 'awaiting-approval', pending: true, origin: { where: 'chat' }, workingNodeIds: [] })
   expect((await (await get('/api/studio/runs')).json()).runs.length).toBe(2)
   expect((await (await get('/api/studio/runs?terminal=no-such-terminal')).json()).runs).toEqual([])
 })

@@ -36,6 +36,7 @@ const run = (id: string, createdAt: number): RunView => ({
   nodes: [{ id: 'plan', title: 'Plan', kind: 'plan', engine: 'claude' }], edges: [],
   attempts: [{ nodeId: 'plan', number: 0, jobId: 'j', status: 'running', outcome: null, summary: null, startedAt: 0, endedAt: null }],
   createdAt, updatedAt: createdAt, proposal: null, latestChange: null,
+  tokens: [{ nodeId: 'plan', pathId: 'main', state: 'working', from: [] }], sections: [], keptBranches: [],
 })
 
 test('a confirmed Stop goes to the flow that was showing when it was armed', async () => {

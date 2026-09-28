@@ -63,3 +63,19 @@ test('a proposed step and its proposed route render as proposed, with their own 
   expect(route.getAttribute('marker-end')).toBe('url(#flow-tip-proposed)')
   expect(host.querySelector('#flow-tip-proposed')).not.toBeNull()
 })
+
+test('a join sits right of every path that leads into it, and the steps after it move with it', () => {
+  const steps = [...ids('split', 'a1', 'a2', 'b'), { id: 'join', kind: 'join' }, ...ids('review', 'fix')]
+  const edges = [{ source: 'split', target: 'a1', outcome: 'pass' }, { source: 'split', target: 'b', outcome: 'pass' }, { source: 'a1', target: 'a2', outcome: 'pass' }, { source: 'a2', target: 'join', outcome: 'pass' }, { source: 'b', target: 'join', outcome: 'pass' }, { source: 'join', target: 'review', outcome: 'pass' }, { source: 'review', target: 'fix', outcome: 'fail' }, { source: 'fix', target: 'a1', outcome: 'pass' }]
+  const at = Object.fromEntries(layoutRun(steps, edges, 'split').placed.map(step => [step.id, step]))
+  expect([at.a1!.x, at.b!.x, at.a2!.x]).toEqual([COL_STEP, COL_STEP, 2 * COL_STEP])
+  expect([at.join!.x, at.join!.y]).toEqual([3 * COL_STEP, 0])
+  expect([at.review!.x, at.fix!.x, at.fix!.y]).toEqual([4 * COL_STEP, 4 * COL_STEP, ROW_STEP])
+})
+
+test('a join step draws the join glyph instead of an engine logo', () => {
+  const host = document.createElement('div')
+  renderRunGraph(host, [{ id: 'join', title: 'Join', detail: 'Waiting for 1 of 2 paths', state: 'pending', engine: '', kind: 'join' }], [], 'join', { animate: false })
+  expect(host.querySelector('.flow-step img')).toBeNull()
+  expect(host.querySelector('.flow-step svg.flow-step-glyph circle')).not.toBeNull()
+})

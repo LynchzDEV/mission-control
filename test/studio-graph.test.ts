@@ -55,21 +55,30 @@ test('nodeRunStates is empty when no run is running',()=>{
 })
 
 test('nodeRunStates marks settled passes and the current step as running',()=>{
-  const run={status:'running',currentNodeId:'execute',attempts:[settled('plan','pass',1),settled('verify-plan','pass',2),{nodeId:'execute',status:'running',result:null,startedAt:3}]}
+  const run={status:'running',currentNodeId:'execute',tokens:[{nodeId:'execute',state:'working'}],attempts:[settled('plan','pass',1),settled('verify-plan','pass',2),{nodeId:'execute',status:'running',result:null,startedAt:3}]}
   expect(nodeRunStates(run)).toEqual({plan:'passed','verify-plan':'passed',execute:'running'})
 })
 
 test('nodeRunStates keeps the highlights of a paused run',()=>{
-  const run={status:'paused',currentNodeId:'execute',attempts:[settled('plan','pass',1),{nodeId:'execute',status:'running',result:null,startedAt:2}]}
+  const run={status:'paused',currentNodeId:'execute',tokens:[{nodeId:'execute',state:'working'}],attempts:[settled('plan','pass',1),{nodeId:'execute',status:'running',result:null,startedAt:2}]}
   expect(nodeRunStates(run)).toEqual({plan:'passed',execute:'running'})
 })
 
 test('nodeRunStates marks a settled fail or blocked step as failed',()=>{
-  expect(nodeRunStates({status:'running',currentNodeId:'execute',attempts:[settled('review','fail',1)]}).review).toBe('failed')
-  expect(nodeRunStates({status:'running',currentNodeId:'execute',attempts:[settled('review','blocked',1)]}).review).toBe('failed')
+  expect(nodeRunStates({status:'running',currentNodeId:'execute',tokens:[{nodeId:'execute',state:'working'}],attempts:[settled('review','fail',1)]}).review).toBe('failed')
+  expect(nodeRunStates({status:'running',currentNodeId:'execute',tokens:[{nodeId:'execute',state:'working'}],attempts:[settled('review','blocked',1)]}).review).toBe('failed')
 })
 
 test('nodeRunStates uses the newest settled attempt of a step',()=>{
-  const run={status:'running',currentNodeId:'review',attempts:[settled('execute','fail',1),settled('execute','pass',2)]}
+  const run={status:'running',currentNodeId:'review',tokens:[{nodeId:'review',state:'working'}],attempts:[settled('execute','fail',1),settled('execute','pass',2)]}
   expect(nodeRunStates(run).execute).toBe('passed')
+})
+
+test('nodeRunStates marks every step that holds a working token as running',()=>{
+  const run={status:'running',currentNodeId:'a',tokens:[{nodeId:'a',state:'working'},{nodeId:'b',state:'working'},{nodeId:'join',state:'waiting'}],attempts:[settled('split','pass',1),{nodeId:'a',status:'running',result:null,startedAt:2},{nodeId:'b',status:'running',result:null,startedAt:2}]}
+  expect(nodeRunStates(run)).toEqual({split:'passed',a:'running',b:'running'})
+})
+
+test('nodeRunStates does not mark a step whose token is only ready as running',()=>{
+  expect(nodeRunStates({status:'paused',currentNodeId:'review',tokens:[{nodeId:'review',state:'ready'}],attempts:[settled('execute','pass',1)]})).toEqual({execute:'passed'})
 })

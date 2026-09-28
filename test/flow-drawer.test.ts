@@ -15,6 +15,7 @@ const base: RunView = {
     { nodeId: 'build', number: 3, jobId: 'd', status: 'running', outcome: null, summary: null, startedAt: 260_000, endedAt: null },
   ],
   createdAt: 0, updatedAt: 260_000, proposal: null, latestChange: null,
+  tokens: [{ nodeId: 'build', pathId: 'main', state: 'working', from: [2] }], sections: [], keptBranches: [],
 }
 
 test('elapsed reads like a person would say it', () => {
@@ -32,7 +33,7 @@ test('steps show done, a second try in progress, a failed test and a conditional
 })
 
 test('a run paused between steps names the step that starts on resume', () => {
-  const paused: RunView = { ...base, status: 'paused', currentNodeId: 'build', attempts: base.attempts.slice(0, 1) }
+  const paused: RunView = { ...base, status: 'paused', currentNodeId: 'build', attempts: base.attempts.slice(0, 1), tokens: [{ nodeId: 'build', pathId: 'main', state: 'ready', from: [0] }] }
   const steps = Object.fromEntries(stepsFor(paused, 0).map(step => [step.id, step]))
   expect([steps.build!.state, steps.build!.detail]).toEqual(['pending', 'Paused here'])
   expect(steps.test!.detail).toBe('Waiting')
@@ -158,4 +159,51 @@ test('a proposal strikes the steps it removes and marks the unstarted steps it e
   const steps = Object.fromEntries(stepsFor(editing, 308_000).map(step => [step.id, step]))
   expect([steps.fix!.state, steps.fix!.detail]).toEqual(['conditional', 'Changed in v2'])
   expect([steps.test!.state, steps.test!.detail]).toEqual(['failed', 'Failed · Tests failed in export_spec'])
+})
+
+const forked: RunView = {
+  ...base, entry: 'plan', currentNodeId: 'a',
+  nodes: [{ id: 'plan', title: 'Plan', kind: 'plan', engine: 'claude' }, { id: 'verify', title: 'Check plan', kind: 'verify-plan', engine: 'codex' }, { id: 'split', title: 'Split', kind: 'task', engine: 'claude' }, { id: 'a', title: 'Build API', kind: 'task', engine: 'claude' }, { id: 'b', title: 'Build UI', kind: 'task', engine: 'glm' }, { id: 'join', title: 'Join', kind: 'join', engine: '' }, { id: 'review', title: 'Review', kind: 'review', engine: 'codex' }],
+  edges: [{ source: 'plan', target: 'verify', outcome: 'pass' }, { source: 'verify', target: 'split', outcome: 'pass' }, { source: 'split', target: 'a', outcome: 'pass' }, { source: 'split', target: 'b', outcome: 'pass' }, { source: 'a', target: 'join', outcome: 'pass' }, { source: 'b', target: 'join', outcome: 'pass' }, { source: 'join', target: 'review', outcome: 'pass' }],
+  attempts: [
+    { nodeId: 'plan', number: 1, jobId: 'p', status: 'settled', outcome: 'pass', summary: 'ok', startedAt: 0, endedAt: 10, pathId: 'main', from: [] },
+    { nodeId: 'verify', number: 2, jobId: 'v', status: 'settled', outcome: 'pass', summary: 'ok', startedAt: 10, endedAt: 20, pathId: 'main', from: [1] },
+    { nodeId: 'split', number: 3, jobId: 's', status: 'settled', outcome: 'pass', summary: 'ok', startedAt: 20, endedAt: 30, pathId: 'main', from: [2] },
+    { nodeId: 'b', number: 4, jobId: 'b', status: 'settled', outcome: 'pass', summary: 'ok', startedAt: 30, endedAt: 40, pathId: 'a3-2', from: [3] },
+    { nodeId: 'a', number: 5, jobId: 'a', status: 'running', outcome: null, summary: null, startedAt: 30, endedAt: null, pathId: 'a3-1', from: [3] },
+  ],
+  tokens: [{ nodeId: 'a', pathId: 'a3-1', state: 'working', from: [3] }, { nodeId: 'join', pathId: 'a3-2', state: 'waiting', from: [4] }],
+  sections: [{ fork: 'split', join: 'join', paths: [{ pathId: 'a3-1', branch: 'flow-r-a3-1', firstNodeId: 'a' }, { pathId: 'a3-2', branch: 'flow-r-a3-2', firstNodeId: 'b' }], joined: [] }],
+}
+
+test('a run mid-fork shows the working path, the join waiting for the other path and the step after it', () => {
+  const steps = Object.fromEntries(stepsFor(forked, 50).map(step => [step.id, step]))
+  expect(steps.a!.state).toBe('active')
+  expect([steps.b!.state, steps.join!.state, steps.join!.detail, steps.join!.engine]).toEqual(['done', 'pending', 'Waiting for 1 of 2 paths', ''])
+  expect([steps.review!.state, steps.review!.detail]).toEqual(['pending', 'Waiting'])
+})
+
+test('a run mid-fork marks each path hand-off by where its attempt came from', () => {
+  const edges = Object.fromEntries(edgesFor(forked).map(edge => [`${edge.source}>${edge.target}`, edge.state]))
+  expect(edges).toEqual(expect.objectContaining({ 'split>a': 'flowing', 'split>b': 'done', 'b>join': 'done', 'a>join': 'idle', 'join>review': 'idle' }))
+})
+
+test('a join says how many paths it joined, or that they could not be joined', () => {
+  const joinAttempt = (outcome: 'pass' | 'fail', summary: string) => ({ nodeId: 'join', number: 6, jobId: null, status: 'settled', outcome, summary, startedAt: 40, endedAt: 41, pathId: 'main', from: [4, 5] })
+  const settledA = { ...forked.attempts[4]!, status: 'settled', outcome: 'pass' as const, endedAt: 40 }
+  const joined: RunView = { ...forked, attempts: [...forked.attempts.slice(0, 4), settledA, joinAttempt('pass', 'Joined 2 paths')], tokens: [{ nodeId: 'review', pathId: 'main', state: 'ready', from: [6] }], sections: [] }
+  const step = (run: RunView) => stepsFor(run, 50).find(item => item.id === 'join')!
+  expect([step(joined).state, step(joined).detail]).toEqual(['done', 'Joined 2 paths'])
+  expect(stepsFor(joined, 50).find(item => item.id === 'review')!.detail).toBe('Up next')
+  expect(edgesFor(joined).find(edge => edge.source === 'a' && edge.target === 'join')!.state).toBe('done')
+  const conflict: RunView = { ...joined, attempts: [...joined.attempts.slice(0, 5), joinAttempt('fail', 'Paths could not be joined: same.txt')] }
+  expect([step(conflict).state, step(conflict).detail]).toEqual(['failed', 'Paths could not be joined'])
+})
+
+test('every working path counts as running and the steps after them are up next', () => {
+  const both: RunView = { ...forked, attempts: [...forked.attempts.slice(0, 3), { ...forked.attempts[3]!, status: 'running', outcome: null, summary: null, endedAt: null }, forked.attempts[4]!], tokens: [{ nodeId: 'a', pathId: 'a3-1', state: 'working', from: [3] }, { nodeId: 'b', pathId: 'a3-2', state: 'working', from: [3] }] }
+  const steps = Object.fromEntries(stepsFor(both, 50).map(step => [step.id, step]))
+  expect([steps.a!.state, steps.b!.state]).toEqual(['active', 'active'])
+  expect(steps.join!.detail).toBe('Waiting for 2 of 2 paths')
+  expect(pillsFor(both).running).toBe(2)
 })

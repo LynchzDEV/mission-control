@@ -5,13 +5,13 @@ import type { WorkflowRun } from '../server/workflow-runner'
 import type { JobRecord } from '../server/jobs'
 
 const workflow = { ...defaultWorkflow(), revision: 'r1', createdAt: 0 }
-const run = (patch: Partial<WorkflowRun>): WorkflowRun => ({ id: 'run-1', label: 'Add export', cwd: '/x', request: 'secret request text', workflow, policy: { revision: 'p', template: 't', coreRules: 'c', implementationRules: 'i', createdAt: 0 }, agents: Object.fromEntries(workflow.nodes.map(node => [node.id, { engine: node.id === 'review' ? 'codex' : 'claude', model: null, family: null }])), skills: {}, status: 'running', error: null, currentNodeId: 'execute', attempts: [{ nodeId: 'plan', number: 0, jobId: 'j1', status: 'settled', prompt: 'long prompt', startedAt: 1, endedAt: 2, result: { outcome: 'pass', summary: 'Planned', evidence: ['e'] }, checks: [], output: 'long output', workspace: null }], createdAt: 0, updatedAt: 3, origin: { source: 'saved', by: 'codex', where: 'terminal' }, versions: [], terminalId: 't1', ...patch })
+const run = (patch: Partial<WorkflowRun>): WorkflowRun => ({ id: 'run-1', label: 'Add export', cwd: '/x', request: 'secret request text', workflow, policy: { revision: 'p', template: 't', coreRules: 'c', implementationRules: 'i', createdAt: 0 }, agents: Object.fromEntries(workflow.nodes.map(node => [node.id, { engine: node.id === 'review' ? 'codex' : 'claude', model: null, family: null }])), skills: {}, status: 'running', error: null, currentNodeId: 'execute', attempts: [{ nodeId: 'plan', number: 0, jobId: 'j1', status: 'settled', prompt: 'long prompt', startedAt: 1, endedAt: 2, result: { outcome: 'pass', summary: 'Planned', evidence: ['e'] }, checks: [], output: 'long output', workspace: null }], createdAt: 0, updatedAt: 3, origin: { source: 'saved', by: 'codex', where: 'terminal' }, versions: [], terminalId: 't1', tokens: [{ id: 'tok-1', nodeId: 'execute', pathId: 'main', workspace: '/x', state: 'ready', attempt: null, from: [0] }], sections: [], keptBranches: [], ...patch })
 const job = (patch: Partial<JobRecord>) => ({ id: 'j', label: 'Fix badge', engine: 'codex', status: 'done', startedAt: 1, endedAt: 2, cwd: '/x', ...patch }) as JobRecord
 
 test('run view keeps what the drawer draws and drops prompts, outputs and policy', () => {
   const view = runView(run({}))
   expect(view.nodes.map(node => [node.id, node.engine])).toEqual([['plan', 'claude'], ['verify-plan', 'claude'], ['execute', 'claude'], ['review', 'codex']])
-  expect(view.attempts[0]).toEqual({ nodeId: 'plan', number: 0, jobId: 'j1', status: 'settled', outcome: 'pass', summary: 'Planned', startedAt: 1, endedAt: 2 })
+  expect(view.attempts[0]).toEqual({ nodeId: 'plan', number: 0, jobId: 'j1', status: 'settled', outcome: 'pass', summary: 'Planned', startedAt: 1, endedAt: 2, pathId: 'main', from: [] })
   expect(JSON.stringify(view)).not.toContain('long prompt')
   expect(JSON.stringify(view)).not.toContain('long output')
   expect(JSON.stringify(view)).not.toContain('secret request text')
@@ -77,4 +77,24 @@ test('a proposal names the steps it removes and the unrun steps it edits', () =>
   const view = runView(run({ workflow: current, versions }))
   expect(view.proposal!.removed).toEqual(['notes'])
   expect(view.proposal!.changed).toEqual(['execute', 'review'])
+})
+
+test('a run mid-fork shows its tokens, open sections and kept branches without workspaces or snapshots', () => {
+  const nodes = [...workflow.nodes.filter(node => node.id !== 'review'), { id: 'a', title: 'Build API', kind: 'task' as const, instructions: 'a' }, { id: 'b', title: 'Build UI', kind: 'task' as const, instructions: 'b' }, { id: 'join', title: 'Join', kind: 'join' as const, instructions: '' }]
+  const agents = { ...run({}).agents, a: { engine: 'claude', model: null, family: null }, b: { engine: 'glm', model: null, family: null }, join: { engine: 'claude', model: null, family: null } }
+  const path = (pathId: string, firstNodeId: string) => ({ pathId, branch: `flow-run-1-${pathId}`, dir: `/home/cfg/workflow-runs/run-1/${pathId}`, workspace: `/home/cfg/workflow-runs/run-1/${pathId}`, firstNodeId })
+  const view = runView(run({
+    workflow: { ...workflow, nodes }, agents,
+    attempts: [{ nodeId: 'b', number: 4, jobId: 'jb', status: 'settled', prompt: 'p', startedAt: 1, endedAt: 2, result: { outcome: 'pass', summary: 'ok', evidence: [] }, checks: [], output: '', workspace: null, tokenId: 'tb', pathId: 'a3-2', from: [3] }],
+    tokens: [{ id: 'ta', nodeId: 'a', pathId: 'a3-1', workspace: '/home/cfg/workflow-runs/run-1/a3-1', state: 'working', attempt: 5, from: [3] }, { id: 'tb', nodeId: 'join', pathId: 'a3-2', workspace: '/home/cfg/workflow-runs/run-1/a3-2', state: 'waiting', attempt: null, from: [4] }],
+    sections: [{ fork: 'execute', join: 'join', forkAttempt: 3, parentPathId: 'main', parentWorkspace: '/x', snapshot: 'abc123', joined: ['a3-2'], paths: [path('a3-1', 'a'), path('a3-2', 'b')] }],
+    keptBranches: ['flow-run-1-a2-2'],
+  }))
+  expect(view.tokens).toEqual([{ nodeId: 'a', pathId: 'a3-1', state: 'working', from: [3] }, { nodeId: 'join', pathId: 'a3-2', state: 'waiting', from: [4] }])
+  expect(view.sections).toEqual([{ fork: 'execute', join: 'join', joined: ['a3-2'], paths: [{ pathId: 'a3-1', branch: 'flow-run-1-a3-1', firstNodeId: 'a' }, { pathId: 'a3-2', branch: 'flow-run-1-a3-2', firstNodeId: 'b' }] }])
+  expect(view.keptBranches).toEqual(['flow-run-1-a2-2'])
+  expect(view.attempts[0]).toEqual(expect.objectContaining({ pathId: 'a3-2', from: [3] }))
+  expect(view.nodes.find(node => node.id === 'join')!.engine).toBe('')
+  expect(JSON.stringify(view)).not.toContain('abc123')
+  expect(JSON.stringify(view)).not.toContain('/home/cfg')
 })

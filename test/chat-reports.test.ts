@@ -73,6 +73,10 @@ describe('workflowReport', () => {
     expect(stopped.message).toBe('[workflow Shipping · stopped]\nExecute · unfinished\nReason: Stopped by user')
     expect(stopped.needsYou).toBe(false)
   })
+  test('an attempt made in a parallel path is prefixed with its path id', () => {
+    const report = workflowReport(runFixture({ attempts: [{ ...attempt('plan', 'pass', 'Planned the change'), pathId: 'main' }, { ...attempt('execute', 'pass', 'Built the UI'), pathId: 'a3-2' }, { ...attempt('review', 'pass', 'No findings'), pathId: 'main' }] }))
+    expect(report.message).toBe('[workflow Shipping · done]\nPlan · pass · Planned the change\na3-2 · Execute · pass · Built the UI\nCross-family review · pass · No findings')
+  })
 })
 
 describe('runNeedsReport', () => {

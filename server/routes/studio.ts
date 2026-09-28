@@ -91,7 +91,7 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
     })
     .get('/api/studio/runs', ({ query }) => ({ runs: runner.list()
       .filter(run => (!query.chat || run.chatId === query.chat) && (!query.terminal || run.terminalId === query.terminal))
-      .map(run => ({ id: run.id, label: run.label, status: run.status, error: run.error, workflowName: run.workflow.name, revision: run.workflow.revision, currentNodeId: run.currentNodeId, createdAt: run.createdAt, origin: run.origin, pending: run.versions.some(version => version.state === 'pending') })) }))
+      .map(run => ({ id: run.id, label: run.label, status: run.status, error: run.error, workflowName: run.workflow.name, revision: run.workflow.revision, currentNodeId: run.currentNodeId, workingNodeIds: run.tokens.filter(token => token.state === 'working').map(token => token.nodeId), createdAt: run.createdAt, origin: run.origin, pending: run.versions.some(version => version.state === 'pending') })) }))
     .post('/api/studio/runs', ({ body, request }) => runner.start(body, { startedByUser: fromBrowser(request) }).then(publicRun))
     .get('/api/studio/runs/:id', ({ params, set }) => {
       const run = runner.get(params.id)

@@ -14,7 +14,7 @@ type TaskNode = Node<WorkflowNode & { agentLabel: string; branches: Outcome[]; r
 type Screen = 'home' | 'templates' | 'editor' | 'connections' | 'runs' | 'rules'
 type Panel = 'assistant' | 'picker' | 'step' | 'history' | null
 const isLiveRun = (status: RunStatus | undefined) => status === 'running' || status === 'paused' || status === 'awaiting-approval'
-type RunSummary = Pick<WorkflowRun, 'id' | 'label' | 'status' | 'error' | 'currentNodeId' | 'createdAt'> & { workflowName: string; revision: string }
+type RunSummary = Pick<WorkflowRun, 'id' | 'label' | 'status' | 'error' | 'currentNodeId' | 'createdAt'> & { workflowName: string; revision: string; workingNodeIds: string[] }
 const outcomes: Outcome[] = ['pass', 'fail', 'blocked']
 const outcomeLabels: Record<Outcome, string> = { pass: 'When it succeeds', fail: 'If it fails', blocked: 'If it needs help' }
 const purposeLabels = { task: 'Custom task', plan: 'Plan work', 'verify-plan': 'Check a plan', implement: 'Implement changes', review: 'Review work', join: 'Join paths' }
@@ -105,8 +105,8 @@ function Studio() {
   const templates = builtin ? workflowTemplates(builtin) : []
   const label = (node: Pick<WorkflowNode, 'agent'>) => agentLabel(node, providers)
   const runStates = useMemo(() => nodeRunStates(canvasRun), [canvasRun])
-  const runSince = canvasRun?.attempts.findLast(attempt => attempt.nodeId === canvasRun.currentNodeId && attempt.status !== 'settled')?.startedAt
-  const shownNodes = useMemo(() => isLiveRun(canvasRun?.status) ? nodes.map(node => ({ ...node, data: { ...node.data, runState: runStates[node.id] ?? 'waiting' as const, runSince } })) : nodes, [nodes, canvasRun, runStates, runSince])
+  const runSince = (id: string) => canvasRun?.attempts.findLast(attempt => attempt.nodeId === id && attempt.status !== 'settled')?.startedAt
+  const shownNodes = useMemo(() => isLiveRun(canvasRun?.status) ? nodes.map(node => ({ ...node, data: { ...node.data, runState: runStates[node.id] ?? 'waiting' as const, runSince: runSince(node.id) } })) : nodes, [nodes, canvasRun, runStates])
   const shownEdges = useMemo(() => edges.map(edge => edge.sourceHandle === 'pass' && runStates[edge.source] === 'passed' ? { ...edge, className: `${edge.className} run-passed`, markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: '#6f9c7e' } } : edge), [edges, runStates])
   const toast = (text: string) => dispatchEvent(new CustomEvent('quiet:toast', { detail: text }))
 

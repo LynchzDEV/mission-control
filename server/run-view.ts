@@ -1,15 +1,17 @@
 import type { JobRecord } from './jobs'
-import type { ApprovalVia, ResolvedAgent, RunOrigin, RunVersion, WorkflowRun } from './workflow-runner'
+import type { ApprovalVia, ResolvedAgent, RunOrigin, RunVersion, TokenState, WorkflowRun } from './workflow-runner'
 import type { WorkflowNode, WorkflowRevision } from './workflows'
 
 export type Scope = { chat?: string; terminal?: string }
 export type RunStepView = { id: string; title: string; kind: string; engine: string }
-export type RunAttemptView = { nodeId: string; number: number; jobId: string | null; status: string; outcome: 'pass' | 'fail' | 'blocked' | null; summary: string | null; startedAt: number; endedAt: number | null }
+export type RunAttemptView = { nodeId: string; number: number; jobId: string | null; status: string; outcome: 'pass' | 'fail' | 'blocked' | null; summary: string | null; startedAt: number; endedAt: number | null; pathId: string; from: number[] }
+export type RunTokenView = { nodeId: string; pathId: string; state: TokenState; from: number[] }
+export type RunSectionView = { fork: string; join: string; paths: { pathId: string; branch: string; firstNodeId: string }[]; joined: string[] }
 export type RunEdgeView = { source: string; target: string; outcome: 'pass' | 'fail' | 'blocked' }
 export type RunVersionView = Omit<RunVersion, 'graph' | 'agents' | 'skills'>
 export type RunProposalView = { number: number; reason: string; nodes: RunStepView[]; edges: RunEdgeView[]; removed: string[]; changed: string[] }
 export type RunChangeView = { number: number; reason: string; size: 'small' | 'big'; approvedVia: ApprovalVia | null; state: string }
-export type RunView = { id: string; label: string; status: string; error: string | null; workflowName: string; revision: string; entry: string; currentNodeId: string; origin: RunOrigin; versions: RunVersionView[]; nodes: RunStepView[]; edges: RunEdgeView[]; attempts: RunAttemptView[]; createdAt: number; updatedAt: number; proposal: RunProposalView | null; latestChange: RunChangeView | null }
+export type RunView = { id: string; label: string; status: string; error: string | null; workflowName: string; revision: string; entry: string; currentNodeId: string; origin: RunOrigin; versions: RunVersionView[]; nodes: RunStepView[]; edges: RunEdgeView[]; attempts: RunAttemptView[]; createdAt: number; updatedAt: number; proposal: RunProposalView | null; latestChange: RunChangeView | null; tokens: RunTokenView[]; sections: RunSectionView[]; keptBranches: string[] }
 export type QuickJobView = { id: string; label: string; engine: string; status: string; startedAt: number; endedAt: number | null }
 export type ScopeSnapshot = { runs: RunView[]; jobs: QuickJobView[] }
 
@@ -18,7 +20,7 @@ export function versionView({ graph: _graph, agents: _agents, skills: _skills, .
 }
 
 function stepViews(workflow: WorkflowRevision, agents: Record<string, ResolvedAgent>): RunStepView[] {
-  return workflow.nodes.map(node => ({ id: node.id, title: node.title, kind: node.kind, engine: agents[node.id]?.engine ?? '' }))
+  return workflow.nodes.map(node => ({ id: node.id, title: node.title, kind: node.kind, engine: node.kind === 'join' ? '' : agents[node.id]?.engine ?? '' }))
 }
 
 function edgeViews(workflow: WorkflowRevision): RunEdgeView[] {
@@ -48,8 +50,11 @@ export function runView(run: WorkflowRun): RunView {
     entry: run.workflow.entry, currentNodeId: run.currentNodeId, origin: run.origin,
     versions: run.versions.map(versionView),
     nodes: stepViews(run.workflow, run.agents), edges: edgeViews(run.workflow),
-    attempts: run.attempts.map(attempt => ({ nodeId: attempt.nodeId, number: attempt.number, jobId: attempt.jobId, status: attempt.status, outcome: attempt.result?.outcome ?? null, summary: attempt.result?.summary ?? null, startedAt: attempt.startedAt, endedAt: attempt.endedAt })),
+    attempts: run.attempts.map(attempt => ({ nodeId: attempt.nodeId, number: attempt.number, jobId: attempt.jobId, status: attempt.status, outcome: attempt.result?.outcome ?? null, summary: attempt.result?.summary ?? null, startedAt: attempt.startedAt, endedAt: attempt.endedAt, pathId: attempt.pathId ?? 'main', from: attempt.from ?? (attempt.number ? [attempt.number - 1] : []) })),
     createdAt: run.createdAt, updatedAt: run.updatedAt, proposal: proposalView(run), latestChange: latestChangeView(run),
+    tokens: run.tokens.map(token => ({ nodeId: token.nodeId, pathId: token.pathId, state: token.state, from: token.from })),
+    sections: run.sections.map(section => ({ fork: section.fork, join: section.join, joined: section.joined, paths: section.paths.map(path => ({ pathId: path.pathId, branch: path.branch, firstNodeId: path.firstNodeId })) })),
+    keptBranches: run.keptBranches,
   }
 }
 
