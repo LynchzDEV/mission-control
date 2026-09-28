@@ -459,7 +459,7 @@ body[data-live="true"] #agents > .activity-empty, body[data-live="true"] #agents
 .pulse { display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: color-mix(in srgb, var(--engine) 70%, #505e75); vertical-align: 1px; animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .25; } }
 .team-progress { height: 4px; margin-top: 12px; border-radius: var(--r-xs); corner-shape: var(--corner); box-shadow: var(--inset); overflow: hidden; }
-.team-progress span { display: block; height: 100%; background: var(--accent); opacity: .6; }
+.team-progress span { display: block; height: 100%; background: var(--accent); opacity: .6; transition: width 240ms cubic-bezier(.2, .8, .2, 1); }
 @media (max-width: 600px) { .chat .msg.assistant { grid-template-columns: minmax(0, 1fr); } .avatar { display: none; } #project-name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; } }
 
 .usage-card { --item: 104px; --gap: 18px; width: calc(var(--item) * 3 + var(--gap) * 2 + 28px); padding: 6px 14px; margin-right: 6px; border-radius: var(--r-md); corner-shape: var(--corner); overflow: hidden; }
@@ -505,6 +505,7 @@ a.pill:hover { color: var(--accent); }
 .chip svg, .chip img { width: 14px; height: 14px; }
 .chip .caret-sm { width: 11px; height: 11px; }
 .chip[aria-expanded="true"] { box-shadow: var(--inset); }
+.chip { transition: box-shadow 240ms cubic-bezier(.2, .8, .2, 1), color 240ms cubic-bezier(.2, .8, .2, 1), background-color 240ms cubic-bezier(.2, .8, .2, 1); }
 .chip.off { color: var(--muted); }
 .chip.off[aria-pressed="true"] { color: #fff; background: #5b8a6a; box-shadow: var(--raised); }
 .chip-group { display: inline-flex; align-items: center; gap: 8px; }

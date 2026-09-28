@@ -1,4 +1,5 @@
 import { renderMarkdown } from './markdown'
+import { MORPH_EASE, MORPH_MS, morph, reveal, rollText } from './morph'
 import { errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
 import { createOutcomeStrip } from './outcome-strip'
@@ -115,7 +116,7 @@ function teamCard(rows: TeamRow[], project: string | null): HTMLElement {
   }
   const progress = card.querySelector('.team-progress') as HTMLElement
   if (rows.some(row => row.state === 'running' || row.state === 'reviewing')) {
-    progress.hidden = false
+    reveal(progress, true, 'left center')
     const settled = rows.filter(row => row.state === 'done' || row.state === 'landed').length
     ;(progress.firstElementChild as HTMLElement).style.width = `${Math.round((settled / rows.length) * 100)}%`
   }
@@ -160,10 +161,10 @@ function agentRow(turn: Turn): HTMLElement {
   const body = document.createElement('div'); body.className = 'md agent-report-body'; body.hidden = true
   body.append(renderMarkdown(report.body))
   const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'text-button'; toggle.textContent = 'Show report'
-  toggle.onclick = () => {
+  toggle.onclick = () => morph(row, () => {
     body.hidden = !body.hidden
     toggle.textContent = body.hidden ? 'Show report' : 'Hide report'
-  }
+  })
   head.append(toggle)
   row.append(body)
   return row
@@ -313,6 +314,7 @@ function askHome(why: string, candidates: string[]): Promise<string | null> {
   input.value = candidates[0] ?? ''
   $('chat-home-candidates').replaceChildren(...candidates.map(path => { const button = document.createElement('button'); button.type = 'button'; button.textContent = path; button.onclick = () => { input.value = path }; return button }))
   dialog.showModal()
+  ;[...$('chat-home-candidates').children].forEach((choice, index) => (choice as HTMLElement).animate?.([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: MORPH_MS, easing: MORPH_EASE, delay: 60 + index * 40, fill: 'backwards' }))
   return new Promise(resolve => {
     const done = (value: string | null): void => { dialog.removeEventListener('close', onClose); dialog.close(); resolve(value) }
     const onClose = (): void => done(null)
@@ -364,7 +366,7 @@ async function sendMessage(prompt: string): Promise<void> {
 type ListedJob = AgentJob & TurnJob & { threadRoot: string; purpose?: string; project?: string | null; chatId?: string; label: string }
 
 function paintHistory(items: HistoryItem[]): void {
-  $('history-count').textContent = items.length ? `(${items.length})` : ''
+  rollText($('history-count'), items.length ? `(${items.length})` : '')
   const list = $('history-list')
   if (!items.length) { list.replaceChildren(Object.assign(document.createElement('p'), { className: 'history-empty', textContent: 'Nothing yet. Write a message or open a terminal to start.' })); historySignature = ''; return }
   const signature = JSON.stringify(items.map(item => [item.kind, item.id, item.title, item.updatedAt, item.kind === 'chat' ? [item.running, item.agents.map(job => [job.status, job.landedAt, job.stoppedAt])] : null]))
@@ -406,8 +408,8 @@ function paintHistory(items: HistoryItem[]): void {
 function paintAgentsCount(jobs: ListedJob[]): void {
   const running = jobs.filter(job => job.chatId && job.status === 'running').length
   const badge = $('agents-count')
-  badge.textContent = String(running)
-  badge.hidden = running === 0
+  rollText(badge, String(running))
+  reveal(badge, running > 0)
 }
 
 let jobsTimer = 0

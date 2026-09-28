@@ -1,4 +1,5 @@
 import { getJson, readArray } from './shared'
+import { morph, reveal } from './morph'
 import { customModelChoice, launchChoice, readRecentDirectories, type LaunchProvider } from './shell-launch'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
@@ -32,15 +33,17 @@ function row(label: string, detail: string, iconId: string | null, logo: string 
 
 function paintProject(): void {
   const project = stored(projectKey)
-  $('project-name').textContent = project ? basename(project) : 'Auto'
+  morph(projectChip, () => { $('project-name').textContent = project ? basename(project) : 'Auto' })
   projectChip.title = project ? `Project for this chat: ${project}` : 'Project for this chat: detected from your message'
 }
 
 function paintModel(): void {
   const choice = launchChoice(providers, stored(engineKey), stored(modelKey))
   const provider = providers.find(item => item.id === choice.engine)
-  ;($('model-logo') as HTMLImageElement).src = `/providers/${choice.engine || 'claude'}.svg`
-  $('model-name').textContent = provider ? choice.model || provider.name : 'Chat default'
+  morph(modelChip, () => {
+    ;($('model-logo') as HTMLImageElement).src = `/providers/${choice.engine || 'claude'}.svg`
+    $('model-name').textContent = provider ? choice.model || provider.name : 'Chat default'
+  })
 }
 
 function paintEdit(): void {
@@ -80,7 +83,7 @@ function fillModelMenu(): void {
 }
 
 function closeMenus(): void {
-  for (const [menu, chip] of [[projectMenu, projectChip], [modelMenu, modelChip]] as const) { menu.hidden = true; chip.setAttribute('aria-expanded', 'false') }
+  for (const [menu, chip] of [[projectMenu, projectChip], [modelMenu, modelChip]] as const) { reveal(menu, false, 'left bottom'); chip.setAttribute('aria-expanded', 'false') }
 }
 
 function toggleMenu(menu: HTMLElement, chip: HTMLButtonElement, fill: () => void): void {
@@ -89,7 +92,7 @@ function toggleMenu(menu: HTMLElement, chip: HTMLButtonElement, fill: () => void
   if (!open) return
   paintModel()
   fill()
-  menu.hidden = false
+  reveal(menu, true, 'left bottom')
   chip.setAttribute('aria-expanded', 'true')
 }
 
