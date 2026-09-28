@@ -111,3 +111,9 @@ test('dispatch tokens can approve, reject, pause and resume runs but not flip th
   expect(allowToken('/api/flow-approval', 'PUT')).toBe(false)
   expect(allowToken('/api/studio/events', 'GET')).toBe(false)
 })
+
+test('dispatch tokens can propose a change to a run but not save it as a workflow', () => {
+  expect(allowToken('/api/studio/runs/x/changes', 'POST')).toBe(true)
+  expect(allowToken('/api/studio/runs/x/changes', 'GET')).toBe(false)
+  expect(allowToken('/api/studio/runs/x/save', 'POST')).toBe(false)
+})

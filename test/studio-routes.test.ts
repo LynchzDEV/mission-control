@@ -174,3 +174,69 @@ test('the run list filters by chat and terminal', async () => {
   expect((await (await get('/api/studio/runs')).json()).runs.length).toBe(2)
   expect((await (await get('/api/studio/runs?terminal=no-such-terminal')).json()).runs).toEqual([])
 })
+
+function withMigrate() {
+  const graph = defaultWorkflow()
+  graph.nodes.push({ ...graph.nodes[2]!, id: 'migrate', title: 'Migrate', instructions: 'Write the migration' })
+  graph.edges = graph.edges.filter(edge => edge.source !== 'verify-plan').concat({ source: 'verify-plan', target: 'migrate', outcome: 'pass' }, { source: 'migrate', target: 'execute', outcome: 'pass' })
+  return graph
+}
+
+test('a drafted graph starts as a drafted flow waiting for approval, and a graph that breaks a rule is refused with the rule', async () => {
+  const drafted = await post('/api/studio/runs', { ...(await runBody()), graph: { ...defaultWorkflow(), id: 'drafted-export', name: 'Drafted export' } }, {})
+  expect(drafted.status).toBe(200)
+  expect(await drafted.json()).toMatchObject({ status: 'awaiting-approval', origin: { source: 'drafted' } })
+  const unsafe = await post('/api/studio/runs', { ...(await runBody()), graph: { ...defaultWorkflow(), id: 'unsafe', name: 'Unsafe', edges: [{ source: 'plan', target: 'execute', outcome: 'pass' }] } }, {})
+  expect(unsafe.status).toBe(400)
+  expect((await unsafe.json()).error).toContain('requires a verified plan')
+})
+
+test('a big change to a running flow waits for approval, and a second change is refused with 409', async () => {
+  const chatId = await chatRoot()
+  const run = await (await post('/api/studio/runs', { ...(await runBody()), chat: chatId }, { 'sec-fetch-site': 'same-origin' })).json()
+  const proposed = await post(`/api/studio/runs/${run.id}/changes`, { graph: withMigrate(), reason: 'Needs a migration', chat: chatId }, {})
+  expect(proposed.status).toBe(200)
+  const changed = await proposed.json()
+  expect(changed.versions.at(-1)).toMatchObject({ number: 2, size: 'big', state: 'pending', reason: 'Needs a migration' })
+  const second = await post(`/api/studio/runs/${run.id}/changes`, { graph: withMigrate(), reason: 'Again' }, { 'sec-fetch-site': 'same-origin' })
+  expect(second.status).toBe(409)
+  expect((await second.json()).error).toBe('A change is already waiting')
+})
+
+test('a change relayed from another session is refused with 403 and leaves the run as it was', async () => {
+  const run = await (await post('/api/studio/runs', await runBody(), { 'sec-fetch-site': 'same-origin' })).json()
+  const response = await post(`/api/studio/runs/${run.id}/changes`, { graph: withMigrate(), reason: 'Needs a migration', terminalId: 'someone-else' }, {})
+  expect(response.status).toBe(403)
+  expect((await (await get(`/api/studio/runs/${run.id}`)).json()).versions).toHaveLength(1)
+})
+
+test('a change without a reason is refused with 400', async () => {
+  const run = await (await post('/api/studio/runs', await runBody(), { 'sec-fetch-site': 'same-origin' })).json()
+  expect((await post(`/api/studio/runs/${run.id}/changes`, { graph: withMigrate(), reason: '  ' }, { 'sec-fetch-site': 'same-origin' })).status).toBe(400)
+})
+
+test('the drawer saves a flow under a name taken from its label, once', async () => {
+  const run = await (await post('/api/studio/runs', await runBody('Add CSV export'), { 'sec-fetch-site': 'same-origin' })).json()
+  const saved = await post(`/api/studio/runs/${run.id}/save`, {}, { 'sec-fetch-site': 'same-origin' })
+  expect(saved.status).toBe(200)
+  const workflow = await saved.json()
+  expect(workflow).toMatchObject({ id: 'add-csv-export', name: 'Add CSV export' })
+  expect(workflow.revision).toMatch(/^[a-f0-9]{24}$/)
+  expect((await (await get('/api/studio/workflows')).json()).workflows.map((graph: { id: string }) => graph.id)).toContain('add-csv-export')
+  const again = await post(`/api/studio/runs/${run.id}/save`, {}, { 'sec-fetch-site': 'same-origin' })
+  expect(again.status).toBe(409)
+  expect((await again.json()).error).toBe('A workflow with that name exists')
+})
+
+test('a flow whose label starts with a digit is saved with a flow- prefix', async () => {
+  const run = await (await post('/api/studio/runs', await runBody('2nd pass: Tidy imports!'), { 'sec-fetch-site': 'same-origin' })).json()
+  expect(await (await post(`/api/studio/runs/${run.id}/save`, {}, { 'sec-fetch-site': 'same-origin' })).json()).toMatchObject({ id: 'flow-2nd-pass-tidy-imports' })
+})
+
+test('saving a flow is refused outside the drawer', async () => {
+  const run = await (await post('/api/studio/runs', await runBody('Add CSV export'), { 'sec-fetch-site': 'same-origin' })).json()
+  const response = await post(`/api/studio/runs/${run.id}/save`, {}, {})
+  expect(response.status).toBe(403)
+  expect((await response.json()).error).toBe('Save from the drawer')
+  expect((await (await get('/api/studio/workflows')).json()).workflows.map((graph: { id: string }) => graph.id)).not.toContain('add-csv-export')
+})

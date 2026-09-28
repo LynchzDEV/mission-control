@@ -14,10 +14,22 @@ import { scopeSnapshot } from '../run-view'
 import type { JobRecord } from '../jobs'
 import { join } from 'node:path'
 
+const changeBody = z.object({ graph: z.unknown(), reason: z.string().trim().min(1).max(500), scopeGrew: z.boolean().optional() })
 const sessionBody = z.object({ chat: z.string().min(1).max(200).optional(), terminalId: identifier.optional(), version: z.number().int().min(1).optional() }).default({})
 function approvalContext(request: Request, body: unknown): ApprovalContext {
   const { version, ...session } = sessionBody.parse(body ?? {})
   return fromBrowser(request) ? { via: 'drawer', ...(version ? { version } : {}) } : { via: 'conversation', ...session, ...(version ? { version } : {}) }
+}
+
+function workflowIdFor(label: string): string {
+  const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  const prefixed = /^[0-9]/.test(slug) ? `flow-${slug}` : slug
+  return prefixed.slice(0, 64).replace(/-+$/, '')
+}
+
+async function workflowExists(store: WorkflowStore, id: string): Promise<boolean> {
+  try { await store.get(id); return true }
+  catch (error) { if ((error as Error).message === 'Workflow not found') return false; throw error }
 }
 
 export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, builder?: WorkflowBuilder, events?: RunEvents, jobs?: () => JobRecord[]) {
@@ -86,6 +98,17 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
     })
     .post('/api/studio/runs/:id/approve', ({ params, body, request }) => runner.approve(params.id, approvalContext(request, body)))
     .post('/api/studio/runs/:id/reject', ({ params, body, request }) => runner.reject(params.id, approvalContext(request, body)))
+    .post('/api/studio/runs/:id/changes', ({ params, body, request }) => runner.propose(params.id, changeBody.parse(body), approvalContext(request, body)))
+    .post('/api/studio/runs/:id/save', async ({ params, request }) => {
+      if (!fromBrowser(request)) throw new RunActionError('Save from the drawer', 403)
+      const run = runner.get(params.id)
+      if (!run) throw new RunActionError('Run not found', 404)
+      const id = workflowIdFor(run.label)
+      if (!id) throw new Error('The flow label needs letters or digits to save it')
+      if (await workflowExists(store, id)) throw new RunActionError('A workflow with that name exists', 409)
+      const { revision: _revision, createdAt: _createdAt, ...graph } = run.workflow
+      return store.save({ ...graph, id, name: run.label })
+    })
     .post('/api/studio/runs/:id/pause', ({ params }) => runner.pause(params.id))
     .post('/api/studio/runs/:id/resume', ({ params }) => runner.resume(params.id))
     .post('/api/studio/runs/:id/stop', ({ params }) => runner.stop(params.id))
