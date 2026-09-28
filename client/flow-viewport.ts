@@ -269,6 +269,7 @@ export function mountViewport(stage: HTMLElement, canvas: HTMLElement, options: 
         const { x, y, scale } = state.view
         state.view = { x: x - (anchor.after.x - anchor.before.x) * scale, y: y - (anchor.after.y - anchor.before.y) * scale, scale }
         state.moved = true
+        state.follow = false
       }
       if (state.view && state.moved) height = heightFor(state.view.scale)
       settle(true)

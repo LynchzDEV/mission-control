@@ -273,6 +273,7 @@ test('clicking the box expands the section in place with a Collapse button; Coll
   expect([card('a'), card('b'), card('join')].every(Boolean)).toBe(true)
   expect(canvas().querySelectorAll('.flow-band')).toHaveLength(2)
   expect(Math.abs(screenX('a') - before)).toBeLessThan(0.5)
+  expect(document.querySelector('.flow-zoom [aria-pressed]')!.getAttribute('aria-pressed')).toBe('false')
   stream.send({ runs: [{ ...forkedRun('E'), updatedAt: 51 }], jobs: [] })
   expect(card('a')).not.toBeNull()
   const collapse = canvas().querySelector<HTMLButtonElement>('.flow-band button')!
