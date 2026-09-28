@@ -55,6 +55,13 @@ describe('withLiveTerminals', () => {
     expect(withLiveTerminals([stale, chat('c1', now - 1)], [live('t1')], now).map(item => `${item.kind}:${item.id}`)).toEqual(['terminal:t1', 'chat:c1'])
   })
 
+  test('a session opened in a live terminal drops its ended row and its session row at once', () => {
+    const endedRun = { ...terminal('old-run', now - 5, false), sessionId: 's1' } as HistoryItem
+    const sessionRow = session('s1', now - 6)
+    const merged = withLiveTerminals([endedRun, sessionRow, chat('c1', now - 7)], [{ ...live('fresh'), sessionId: 's1' }], now)
+    expect(merged.map(item => `${item.kind}:${item.id}`)).toEqual(['terminal:fresh', 'chat:c1'])
+  })
+
   test('a terminal that ended drops out even while history still lists it as live; ended ones and sessions stay', () => {
     expect(withLiveTerminals([terminal('gone', now), chat('c1', now), terminal('old', now, false), session('h1', now)], [], now).map(item => item.id)).toEqual(['c1', 'old', 'h1'])
   })

@@ -1,4 +1,4 @@
-export type Session = { id: string; engine: string; cwd: string; title: string; model?: string | null }
+export type Session = { id: string; engine: string; cwd: string; title: string; model?: string | null; sessionId?: string | null }
 export type SessionState = 'working' | 'idle' | 'ended'
 
 export const WORKING_WINDOW_MS = 5000

@@ -46,6 +46,17 @@ describe('buildHistory', () => {
     expect(buildHistory({ jobs: [], terminals: [], ended: [{ ...ended, endedAt: null }], sessions: [] })[0]).toMatchObject({ id: 't0', updatedAt: 500, live: false })
     expect(buildHistory({ jobs: [], terminals: [], ended: [], sessions: [] })).toEqual([])
   })
+  test('one row per Claude session: a live terminal hides its ended runs, repeated ended runs collapse to the latest', () => {
+    const run = (id: string, sessionId: string | null, endedAt: number): PastTerminal => ({ ...ended, id, sessionId, endedAt })
+    const rows = buildHistory({
+      jobs: [],
+      terminals: [{ ...terminal, sessionId: 'sess-live' }],
+      ended: [run('e1', 'sess-live', 100), run('e2', 'sess-twice', 200), run('e3', 'sess-twice', 300), run('e4', null, 50), run('e5', null, 60)],
+      sessions: [],
+    })
+    expect(rows.map(item => `${item.id}:${item.kind === 'terminal' ? item.live : ''}`)).toEqual(['t1:true', 'e3:false', 'e5:false', 'e4:false'])
+  })
+
   test('a finished chat is not running', () => {
     const quiet = buildHistory({ jobs: [root, { ...agent, status: 'done' }], terminals: [], ended: [], sessions: [] })
     expect(quiet).toHaveLength(1)

@@ -27,9 +27,15 @@ export function sidebarGroups(items: HistoryItem[], now: number): { day: Day; it
 export function withLiveTerminals(items: HistoryItem[], sessions: Session[] | null, now: number): HistoryItem[] {
   if (!sessions) return items
   const known = new Map(items.flatMap(item => item.kind === 'terminal' ? [[item.id, item] as const] : []))
-  const live = sessions.map((session): HistoryItem => ({ kind: 'terminal', id: session.id, title: session.title, updatedAt: known.get(session.id)?.updatedAt ?? now, cwd: session.cwd, engine: session.engine, sessionId: known.get(session.id)?.sessionId ?? null, live: true }))
+  const live = sessions.map((session): HistoryItem => ({ kind: 'terminal', id: session.id, title: session.title, updatedAt: known.get(session.id)?.updatedAt ?? now, cwd: session.cwd, engine: session.engine, sessionId: session.sessionId ?? known.get(session.id)?.sessionId ?? null, live: true }))
   const liveIds = new Set(sessions.map(session => session.id))
-  return [...items.filter(item => !isLiveTerminal(item) && !(item.kind === 'terminal' && liveIds.has(item.id))), ...live].sort((a, b) => b.updatedAt - a.updatedAt)
+  const openSessions = new Set(sessions.flatMap(session => session.sessionId ? [session.sessionId] : []))
+  const superseded = (item: HistoryItem): boolean => {
+    if (item.kind === 'claude-history') return openSessions.has(item.id)
+    if (item.kind !== 'terminal') return false
+    return item.live || liveIds.has(item.id) || (item.sessionId !== null && openSessions.has(item.sessionId))
+  }
+  return [...items.filter(item => !superseded(item)), ...live].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 export function numberedKeys(items: readonly HistoryItem[]): string[] {

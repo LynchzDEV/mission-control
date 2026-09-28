@@ -47,6 +47,20 @@ function endedTerminalItem(terminal: PastTerminal): HistoryItem {
   return { kind: 'terminal', id: terminal.id, title: terminal.title, updatedAt: terminal.endedAt ?? terminal.createdAt, cwd: terminal.cwd, engine: terminal.engine, sessionId: terminal.sessionId, live: false }
 }
 
+function endedTerminalItems(input: HistoryInput): HistoryItem[] {
+  const open = new Set(input.terminals.map(terminal => terminal.sessionId))
+  const endedAt = (entry: PastTerminal): number => entry.endedAt ?? entry.createdAt
+  const latest = new Map<string, PastTerminal>()
+  const unresumable: PastTerminal[] = []
+  for (const entry of input.ended) {
+    if (entry.sessionId === null) { unresumable.push(entry); continue }
+    if (open.has(entry.sessionId)) continue
+    const kept = latest.get(entry.sessionId)
+    if (kept === undefined || endedAt(entry) > endedAt(kept)) latest.set(entry.sessionId, entry)
+  }
+  return [...latest.values(), ...unresumable].map(endedTerminalItem)
+}
+
 function sessionItems(input: HistoryInput): HistoryItem[] {
   const owned = new Set([...input.jobs, ...input.terminals, ...input.ended].map(owner => owner.sessionId).filter((id): id is string => id !== null))
   return input.sessions.filter(session => !owned.has(session.id)).map(session => ({ kind: 'claude-history', id: session.id, title: session.title, updatedAt: session.updatedAt, cwd: session.cwd, bytes: session.bytes }))
@@ -56,7 +70,7 @@ export function buildHistory(input: HistoryInput): HistoryItem[] {
   return [
     ...chatItems(input.jobs),
     ...input.terminals.map(terminalItem),
-    ...input.ended.map(endedTerminalItem),
+    ...endedTerminalItems(input),
     ...sessionItems(input),
   ].sort((a, b) => b.updatedAt - a.updatedAt)
 }
