@@ -1,7 +1,6 @@
 import { activeAgents, awarenessFlows, flowColumns, scopedWork, selectFlow } from './awareness'
 import { confirmButton } from './confirm-button'
 import { morph, morphFrom, reveal, rollText, snapshot, type Snapshot } from './morph'
-import { renderFlowGraph } from './flow-graph'
 import { buildWork, type WorkItem, type WorkJob } from './work'
 import { errorText, getJson, postJson, providerName, readArray, readRecord } from './shared'
 
@@ -269,10 +268,7 @@ function paintFlow(): void {
   paintGraph()
 }
 
-function paintGraph(): void {
-  if ($('flow').dataset.open !== 'true') { $('live-flow-steps').replaceChildren(); return }
-  renderFlowGraph($('live-flow-steps'), flowColumns(flows.find(flow => flow.id === current)), { animate: motionAllowed() })
-}
+function paintGraph(): void {}
 
 function motionAllowed(): boolean {
   try { return localStorage.getItem('mc.motion.paused') !== 'true' } catch { return true }

@@ -28,7 +28,7 @@ describe('transpileClientModule', () => {
     const code = await transpileClientModule('shell-activity.js')
 
     expect(code).not.toBeNull()
-    for (const marker of ['Your review', 'live-agents-list']) expect(code).toContain(marker)
+    for (const marker of ['belongsToTerminal', 'live-agents-list']) expect(code).toContain(marker)
     for (const specifier of ['./awareness', './work', './shared']) expect(code).not.toContain(specifier)
   })
 

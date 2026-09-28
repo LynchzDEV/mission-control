@@ -1,47 +1,51 @@
-import { expect, test } from 'bun:test'
-import { graphLayout, renderFlowGraph } from '../client/flow-graph'
+import { afterAll, expect, test } from 'bun:test'
+import { JSDOM } from 'jsdom'
+import { COL_STEP, ROW_STEP, STEP_H, STEP_W, layoutRun, renderRunGraph, routeEdge } from '../client/flow-graph'
 
-test('graph layout places columns left to right, centres short columns and links every neighbour pair', () => {
-  const layout = graphLayout([[{ title: 'Direction' }], [{ title: 'a' }, { title: 'b' }], [{ title: 'Your review' }]])
-  expect(layout.nodes).toHaveLength(4)
-  expect(layout.edges).toHaveLength(4)
-  const [direction, a, b, review] = layout.nodes
-  expect(direction!.x).toBe(0)
-  expect(a!.x).toBe(232)
-  expect(b!.x).toBe(232)
-  expect(review!.x).toBe(464)
-  expect(a!.y).toBeLessThan(b!.y)
-  expect(direction!.y).toBe((a!.y + b!.y) / 2)
-  expect(layout.width).toBe(632)
-  expect(layout.height).toBe(142)
+const { window } = new JSDOM('')
+Object.assign(globalThis, { window, document: window.document })
+afterAll(() => { window.close(); Reflect.deleteProperty(globalThis, 'window'); Reflect.deleteProperty(globalThis, 'document') })
+
+const ids = (...names: string[]) => names.map(id => ({ id }))
+
+test('a straight pass chain runs left to right on one row', () => {
+  const layout = layoutRun(ids('plan', 'verify', 'build', 'review'), [{ source: 'plan', target: 'verify', outcome: 'pass' }, { source: 'verify', target: 'build', outcome: 'pass' }, { source: 'build', target: 'review', outcome: 'pass' }], 'plan')
+  expect(layout.placed.map(step => [step.id, step.x, step.y])).toEqual([['plan', 0, 0], ['verify', COL_STEP, 0], ['build', 2 * COL_STEP, 0], ['review', 3 * COL_STEP, 0]])
+  expect(layout.width).toBe(3 * COL_STEP + STEP_W)
+  expect(layout.height).toBe(STEP_H)
 })
 
-test('a single column has no edges and keeps given keys', () => {
-  const layout = graphLayout([[{ key: 'direction', title: 'Direction' }, { title: 'Other' }]])
-  expect(layout.edges).toHaveLength(0)
-  expect(layout.nodes[0]!.key).toBe('direction')
-  expect(layout.width).toBe(168)
+test('a step reached only on failure sits under its source; its way back is an up edge', () => {
+  const edges = [{ source: 'review', target: 'fix', outcome: 'fail' }, { source: 'fix', target: 'review', outcome: 'pass' }, { source: 'review', target: 'done', outcome: 'pass' }]
+  const layout = layoutRun(ids('review', 'fix', 'done'), edges, 'review')
+  const at = Object.fromEntries(layout.placed.map(step => [step.id, step]))
+  expect([at.fix!.x, at.fix!.y]).toEqual([0, ROW_STEP])
+  expect([at.done!.x, at.done!.y]).toEqual([COL_STEP, 0])
+  expect(routeEdge(at.review!, at.fix!).shape).toBe('down')
+  expect(routeEdge(at.fix!, at.review!).shape).toBe('up')
 })
 
-test('edges connect column i to column i + 1 by key', () => {
-  const layout = graphLayout([[{ key: 'd', title: 'D' }], [{ key: 'x', title: 'X' }, { key: 'y', title: 'Y' }]])
-  expect(layout.edges).toEqual([{ from: 'd', to: 'x' }, { from: 'd', to: 'y' }])
+test('a retry loop to an earlier column is drawn as a back arc below both steps', () => {
+  const layout = layoutRun(ids('build', 'test'), [{ source: 'build', target: 'test', outcome: 'pass' }, { source: 'test', target: 'build', outcome: 'fail' }], 'build')
+  const [build, testStep] = layout.placed
+  const route = routeEdge(testStep!, build!)
+  expect(route.shape).toBe('back')
+  expect(route.d).toContain(String(STEP_H + 26))
 })
 
-test('an empty flow lays out nothing', () => {
-  expect(graphLayout([])).toEqual({ nodes: [], edges: [], width: 0, height: 0 })
+test('unreachable steps still get a place instead of being dropped', () => {
+  const layout = layoutRun(ids('a', 'orphan'), [], 'a')
+  expect(layout.placed.map(step => step.id)).toEqual(['a', 'orphan'])
 })
 
-test('repainting identical columns keeps the rendered graph element', () => {
-  const make = (): any => ({ children: [] as any[], dataset: {} as Record<string, string>, style: { setProperty() {} }, get firstChild() { return this.children[0] ?? null }, append(...nodes: any[]) { this.children.push(...nodes) }, replaceChildren(...nodes: any[]) { this.children = nodes }, setAttribute() {} })
-  ;(globalThis as any).document = { createElement: make, createElementNS: make }
-  const columns = [[{ key: 'd', title: 'Direction', status: 'done', detail: 'Decided' }], [{ key: 'w', title: 'Codex work', status: 'active', detail: 'Working', assignee: 'codex' }]]
-  const host = make()
-  renderFlowGraph(host, columns, { animate: false })
-  const first = host.children[0]
-  renderFlowGraph(host, structuredClone(columns), { animate: false })
-  expect(host.children[0]).toBe(first)
-  renderFlowGraph(host, [columns[0]!, [{ ...columns[1]![0]!, detail: 'Finished', status: 'done' }]], { animate: false })
-  expect(host.children[0]).not.toBe(first)
-  delete (globalThis as any).document
+test('render draws one step per node and one route per edge, with states', () => {
+  const host = document.createElement('div')
+  renderRunGraph(host, [
+    { id: 'plan', title: 'Plan', detail: 'Done · 2m 10s', state: 'done', engine: 'claude', kind: 'plan' },
+    { id: 'build', title: 'Build', detail: 'Try 2 · 48s', state: 'active', engine: 'codex', kind: 'implement', since: 1 },
+  ], [{ source: 'plan', target: 'build', outcome: 'pass', state: 'flowing' }], 'plan', { animate: false })
+  expect([...host.querySelectorAll('.flow-step')].map(step => (step as HTMLElement).dataset.state)).toEqual(['done', 'active'])
+  expect(host.querySelectorAll('path.flow-route[data-state="flowing"]')).toHaveLength(1)
+  expect(host.querySelector('.flow-step img')!.getAttribute('src')).toBe('/providers/claude.svg')
+  expect(host.querySelector('[data-since]')).not.toBeNull()
 })
