@@ -24,8 +24,8 @@ afterEach(async () => {
 describe('quiet shell', () => {
   test('/ renders the composer, toolbar controls and the usage card mount', async () => {
     const markup = await (await app.handle(new Request('http://localhost/'))).text()
-    for (const marker of ['id="composer"', 'id="new-chat"', 'id="chip-group"', 'id="project-chip"', 'id="model-chip"', 'id="edit-chip"', 'id="project-menu"', 'id="model-menu"', 'id="open-agents"', 'id="toggle-flow"', 'id="usage-track"', 'id="live-launch" class="access-dialog flat"', 'id="live-stage"', 'id="drop-stage"', 'id="term-park"', 'id="drop-over"', 'id="toast"', 'id="term-bar"', 'id="find-input"', 'id="backdrop"', 'id="motion"', 'id="messages"', 'id="queued"', 'id="chat-home"', 'id="team-card"', '/js/chat.js', '/js/sidebar.js', 'id="history-list"', 'id="agents-count"', 'id="agent-reply"', 'id="studio"', 'id="studio-root"', '/js/studio.js', 'href="/quiet.css"', 'id="open-studio"', 'window.MC_WORKSPACE_DIR=']) expect(markup).toContain(marker)
-    for (const gone of ['id="show-history"', 'data-dialog="session"', 'id="session"', 'id="live-recents"', 'id="new-conversation"', 'id="rail', 'with-rail', 'Design preview']) expect(markup).not.toContain(gone)
+    for (const marker of ['id="composer"', 'id="new-chat"', 'id="chip-group"', 'id="project-chip"', 'id="model-chip"', 'id="edit-chip"', 'id="project-menu"', 'id="model-menu"', 'id="open-agents"', 'id="toggle-flow"', 'id="usage-track"', 'id="live-launch" class="access-dialog flat"', 'id="live-stage"', 'id="drop-stage"', 'id="term-park"', 'id="drop-over"', 'id="toast"', 'id="term-bar"', 'id="find-input"', 'id="backdrop"', 'id="motion"', 'id="messages"', 'id="queued"', 'id="chat-home"', 'id="team-card"', '/js/chat.js', '/js/sidebar.js', 'id="history-list"', 'id="agents-count"', 'id="agent-reply"', 'id="studio"', 'id="studio-root"', '/js/studio.js', 'href="/quiet.css"', 'id="open-studio"', 'window.MC_WORKSPACE_DIR=', 'id="flow-stage"', 'id="flow-banner"', 'id="flow-quick"', '/js/flow-drawer.js']) expect(markup).toContain(marker)
+    for (const gone of ['id="show-history"', 'data-dialog="session"', 'id="session"', 'id="live-recents"', 'id="new-conversation"', 'id="rail', 'with-rail', 'Design preview', 'id="live-flow']) expect(markup).not.toContain(gone)
     expect(markup).not.toContain('id="tabs"')
     expect(markup).not.toContain('Design preview')
     expect(markup).not.toContain('./vendor/')
@@ -57,7 +57,7 @@ describe('quiet shell', () => {
   })
 
   test('the shell islands transpile', async () => {
-    for (const island of ['shell', 'shell-composer', 'terminals', 'shell-activity', 'usage-card', 'backdrop', 'chat', 'studio', 'access']) {
+    for (const island of ['shell', 'shell-composer', 'terminals', 'shell-activity', 'flow-drawer', 'usage-card', 'backdrop', 'chat', 'studio', 'access']) {
       const response = await app.handle(new Request(`http://localhost/js/${island}.js`))
       expect(response.status).toBe(200)
       expect((await response.text()).length).toBeGreaterThan(100)

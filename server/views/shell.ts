@@ -67,11 +67,16 @@ const BODY = `
     <div class="workspace">
     <div class="chat-container">
     <section id="flow" class="inline-flow" aria-labelledby="flow-title" aria-hidden="true" inert>
-      <div class="flow-inner"><div class="flow-panel content-width">
-        <header class="inline-flow-heading"><h2 id="flow-title">Session flow</h2><button id="close-flow" class="round" aria-label="Collapse flow"><svg><use href="#close-icon"/></svg></button></header>
-        <div id="live-flow" hidden><p id="live-flow-status" class="muted" role="status"></p><select id="live-flow-select" aria-label="Session work flow" hidden></select><div id="live-flow-steps" class="live-flow-steps" role="list" aria-label="Live session progress"></div></div>
-        <div class="activity-empty"><p>Your session’s flow will appear here.</p></div>
-        <div class="activity-filled" hidden><ol class="flow-steps" aria-label="Session progress"><li><span class="step-mark">✓</span><strong>Direction</strong><small>Decided</small></li><li class="active-step"><span class="step-mark">•</span><strong>Builder</strong><small>Working</small></li><li><span class="step-mark">○</span><strong>Your review</strong><small>Up next</small></li></ol></div>
+      <div class="flow-inner"><div class="flow-card">
+        <header class="flow-head">
+          <div class="flow-title"><h2 id="flow-title">Session flow</h2><select id="flow-runs" class="flow-runs" aria-label="Flows in this session" hidden></select><small id="flow-meta" class="flow-meta"></small></div>
+          <div id="flow-pills" class="flow-pills"></div>
+          <div class="flow-actions"><button id="flow-pause" class="pill flow-sm" type="button" hidden>Pause</button><button id="flow-stop" class="pill flow-sm flow-confirm" type="button" aria-label="Stop" hidden><span>Stop</span><span>Stop flow</span></button><button id="close-flow" class="round" aria-label="Collapse flow"><svg><use href="#close-icon"/></svg></button></div>
+        </header>
+        <div id="flow-banner" class="flow-banner" role="status" hidden><span class="flow-mark"></span><p></p><div class="flow-banner-actions"></div></div>
+        <div id="flow-stage" class="flow-stage" hidden></div>
+        <div id="flow-quick" class="flow-quick" hidden><p class="muted">No flow for this work. The agents run directly.</p><ol id="flow-quick-list"></ol></div>
+        <p id="flow-empty" class="flow-empty muted">Your session’s flow will appear here.</p>
       </div></div>
     </section>
 
@@ -184,6 +189,7 @@ export function ShellPage(props: ShellProps): string {
   <script src="/js/studio.js" type="module" defer></script>
   <script src="/js/terminals.js" type="module" defer></script>
   <script src="/js/shell-activity.js" type="module" defer></script>
+  <script src="/js/flow-drawer.js" type="module" defer></script>
   <script src="/js/usage-card.js" type="module" defer></script>
   <script src="/js/backdrop.js" type="module" defer></script>
   <script src="/js/access.js" type="module" defer></script>

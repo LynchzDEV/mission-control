@@ -1,8 +1,8 @@
-import { activeAgents, awarenessFlows, flowColumns, scopedWork, selectFlow } from './awareness'
+import { activeAgents, scopedWork } from './awareness'
 import { confirmButton } from './confirm-button'
 import { morph, morphFrom, reveal, rollText, snapshot, type Snapshot } from './morph'
 import { buildWork, type WorkItem, type WorkJob } from './work'
-import { errorText, getJson, postJson, providerName, readArray, readRecord } from './shared'
+import { errorText, getJson, postJson, providerName, readArray } from './shared'
 
 type Session = { id: string; cwd: string }
 type Scope = { kind: 'session'; session: Session } | { kind: 'chat'; chat: string }
@@ -19,8 +19,6 @@ let scope: Scope | null = null
 let replyTarget: string | null = null
 let generation = 0
 let refreshing = false
-let flows: WorkItem[] = []
-let current = ''
 let agentSignature = ''
 let openRow: string | null = null
 let logTimer: ReturnType<typeof setInterval> | undefined
@@ -38,19 +36,13 @@ function node(tag: string, text = '', className = ''): HTMLElement {
 function setActivityScope(next: Scope | null): void {
   generation++
   scope = next
-  flows = []
-  current = ''
   agentSignature = ''
   closeDetail()
   $('live-agents').hidden = !next
-  $('live-flow').hidden = !next
-  document.querySelectorAll<HTMLElement>('#agents .activity-empty, #flow .activity-empty').forEach(node => { node.hidden = !!next })
+  document.querySelectorAll<HTMLElement>('#agents .activity-empty').forEach(node => { node.hidden = !!next })
   $('live-agents-list').replaceChildren()
   rollText($('agents-summary'), '')
-  $('live-flow-steps').replaceChildren()
-  $('live-flow-select').hidden = true
   rollText($('live-agents-status'), next?.kind === 'chat' ? 'Loading the chat’s agents…' : 'Loading session activity…')
-  rollText($('live-flow-status'), next?.kind === 'chat' ? 'Loading the chat’s flow…' : 'Loading session flow…')
   if (next) void refresh()
 }
 
@@ -241,37 +233,11 @@ function chatDetail(job: ChatAgent): HTMLElement {
 }
 
 async function refreshChat(chat: string, request: number): Promise<void> {
-  const [jobsResult, flowResult] = await Promise.all([getJson(`/api/jobs?chat=${encodeURIComponent(chat)}`), getJson('/api/flow?includeArchived=1')])
+  const jobsResult = await getJson(`/api/jobs?chat=${encodeURIComponent(chat)}`)
   refreshing = false
   if (request !== generation) return
   if (!jobsResult.ok) { rollText($('live-agents-status'), `Agents unavailable: ${errorText(jobsResult)}. Retrying…`); agentSignature = ''; return }
-  const agents = (readArray(jobsResult.data.jobs) as unknown as ChatAgent[]).filter(job => job.purpose !== 'chat')
-  paintChatAgents(agents)
-  if (!flowResult.ok) { rollText($('live-flow-status'), `Flow unavailable: ${errorText(flowResult)}. Retrying…`); return }
-  const jobs = (agents as unknown as WorkJob[]).map(job => ({ ...job, threadRoot: job.threadRoot || job.id }))
-  showFlows(awarenessFlows(buildWork(jobs, readRecord(flowResult.data.sessions)).filter(item => item.job)))
-}
-
-function showFlows(next: WorkItem[]): void {
-  flows = next
-  current = selectFlow(flows, current)
-  const select = $('live-flow-select') as HTMLSelectElement
-  select.replaceChildren(...flows.map(item => new Option(item.label, item.id)))
-  select.value = current
-  reveal(select, flows.length >= 2, 'top left')
-  paintFlow()
-}
-
-function paintFlow(): void {
-  const item = flows.find(flow => flow.id === current)
-  rollText($('live-flow-status'), item ? item.label : scope?.kind === 'chat' ? 'No agents in this chat yet.' : 'No work linked to this session yet.')
-  paintGraph()
-}
-
-function paintGraph(): void {}
-
-function motionAllowed(): boolean {
-  try { return localStorage.getItem('mc.motion.paused') !== 'true' } catch { return true }
+  paintChatAgents((readArray(jobsResult.data.jobs) as unknown as ChatAgent[]).filter(job => job.purpose !== 'chat'))
 }
 
 function paintAgents(agents: WorkItem[]): void {
@@ -290,33 +256,26 @@ function paintAgents(agents: WorkItem[]): void {
 }
 
 async function refresh(): Promise<void> {
-  if (!scope || refreshing || document.hidden || (!($('agents') as HTMLDialogElement).open && $('flow').dataset.open !== 'true')) return
+  if (!scope || refreshing || document.hidden || !($('agents') as HTMLDialogElement).open) return
   const request = generation
   refreshing = true
   if (scope.kind === 'chat') { await refreshChat(scope.chat, request); return }
   const session = scope.session
-  const [jobsResult, flowResult] = await Promise.all([getJson('/api/jobs'), getJson('/api/flow?includeArchived=1')])
+  const jobsResult = await getJson('/api/jobs')
   refreshing = false
   if (request !== generation) return
-  if (!jobsResult.ok || !flowResult.ok) {
-    const failed = !jobsResult.ok ? jobsResult : flowResult
-    for (const id of ['live-agents-status', 'live-flow-status']) $(id).textContent = `Activity unavailable: ${errorText(failed)}. Retrying…`
+  if (!jobsResult.ok) {
+    $('live-agents-status').textContent = `Activity unavailable: ${errorText(jobsResult)}. Retrying…`
     $('live-agents-list').replaceChildren()
-    $('live-flow-steps').replaceChildren()
-    $('live-flow-select').hidden = true
     agentSignature = ''
     return
   }
   const jobs = (readArray(jobsResult.data.jobs) as WorkJob[]).map(job => ({ ...job, threadRoot: job.threadRoot || job.id }))
-  const states = readRecord(flowResult.data.sessions)
   const linked = scopedWork(buildWork(jobs, {}), session.id, session.cwd).flatMap(item => item.members ?? [])
-  showFlows(awarenessFlows(scopedWork(buildWork(linked, states), session.id, session.cwd)))
-  paintAgents(activeAgents(linked, states, session.id, session.cwd))
+  paintAgents(activeAgents(linked, {}, session.id, session.cwd))
 }
 
-;($('live-flow-select') as HTMLSelectElement).onchange = () => { current = ($('live-flow-select') as HTMLSelectElement).value; paintFlow() }
-for (const id of ['open-agents', 'toggle-flow']) $(id).addEventListener('click', () => void refresh())
-for (const id of ['toggle-flow', 'close-flow']) $(id).addEventListener('click', paintGraph)
+$('open-agents').addEventListener('click', () => void refresh())
 addEventListener('quiet:activity-scope', (event) => { const session = (event as CustomEvent<Session | null>).detail; setActivityScope(session ? { kind: 'session', session } : null) })
 addEventListener('quiet:chat-agents', (event) => { const chat = (event as CustomEvent<string | null>).detail; if (chat) setActivityScope({ kind: 'chat', chat }) })
 if (document.body.dataset.chat) setActivityScope({ kind: 'chat', chat: document.body.dataset.chat })

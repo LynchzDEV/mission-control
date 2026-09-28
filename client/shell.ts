@@ -23,6 +23,7 @@ function toggleFlow(open: boolean): void {
   flow.inert = !open
   flow.setAttribute('aria-hidden', String(!open))
   $('toggle-flow').setAttribute('aria-expanded', String(open))
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: open }))
 }
 
 const mobileAgents = matchMedia('(max-width: 600px)')
