@@ -45,10 +45,15 @@ export const ENGINES: Record<EngineName, EngineDefinition> = {
 }
 
 // MC_FAKE_ENGINES=1 swaps real CLIs for /bin/echo stubs so tests/dev run without the real binaries.
+// MC_FAKE_ENGINE_CMD overrides the stub, e.g. for an end-to-end run with scripts/fake-pass-engine.sh.
+function fakeEngineCmd(): string {
+  return process.env.MC_FAKE_ENGINE_CMD || '/bin/echo'
+}
+
 export const FAKE_ENGINES: Record<EngineName, EngineDefinition> = {
-  claude: { cmd: '/bin/echo', envFor: () => ({}) },
-  glm: { cmd: '/bin/echo', envFor: glmEnvFor },
-  codex: { cmd: '/bin/echo', envFor: () => ({}) },
+  claude: { get cmd() { return fakeEngineCmd() }, envFor: () => ({}) },
+  glm: { get cmd() { return fakeEngineCmd() }, envFor: glmEnvFor },
+  codex: { get cmd() { return fakeEngineCmd() }, envFor: () => ({}) },
 }
 
 export function fakeEnginesEnabled(): boolean {

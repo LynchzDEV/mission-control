@@ -23,6 +23,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-engines-'))
   process.env.MISSION_CONTROL_CONFIG_DIR = dir
   delete process.env.MC_FAKE_ENGINES
+  delete process.env.MC_FAKE_ENGINE_CMD
   delete process.env.ANTHROPIC_BASE_URL
   delete process.env.ANTHROPIC_AUTH_TOKEN
 })
@@ -30,6 +31,7 @@ beforeEach(async () => {
 afterEach(async () => {
   delete process.env.MISSION_CONTROL_CONFIG_DIR
   delete process.env.MC_FAKE_ENGINES
+  delete process.env.MC_FAKE_ENGINE_CMD
   await rm(dir, { recursive: true, force: true })
 })
 
@@ -191,5 +193,12 @@ describe('MC_FAKE_ENGINES', () => {
     const env = await buildEnv('glm')
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe(TOKEN)
     expect(resolveEngine('glm').cmd).toBe('/bin/echo')
+  })
+
+  test('MC_FAKE_ENGINE_CMD overrides the stub cmd, read fresh at resolve time', () => {
+    process.env.MC_FAKE_ENGINES = '1'
+    expect(resolveEngine('glm').cmd).toBe('/bin/echo')
+    process.env.MC_FAKE_ENGINE_CMD = '/x/y'
+    expect(resolveEngine('glm').cmd).toBe('/x/y')
   })
 })
