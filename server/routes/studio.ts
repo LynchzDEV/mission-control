@@ -7,7 +7,7 @@ import { listModels } from '../models'
 import { modelsCache } from './models'
 import { composeWorkflowPrompt, identifier, type WorkflowStore } from '../workflows'
 import type { WorkflowBuilder } from '../workflow-builder'
-import { RunActionError, type ApprovalContext, type WorkflowRunner } from '../workflow-runner'
+import { RunActionError, type ApprovalContext, type WorkflowRun, type WorkflowRunner } from '../workflow-runner'
 import { readConfig } from '../secrets'
 import { eventStreamResponse, type RunEvents } from '../run-events'
 import { scopeSnapshot, versionView } from '../run-view'
@@ -20,6 +20,8 @@ function approvalContext(request: Request, body: unknown): ApprovalContext {
   const { version, ...session } = sessionBody.parse(body ?? {})
   return fromBrowser(request) ? { via: 'drawer', ...(version ? { version } : {}) } : { via: 'conversation', ...session, ...(version ? { version } : {}) }
 }
+
+const publicRun = (run: WorkflowRun) => ({ ...run, versions: run.versions.map(versionView) })
 
 function workflowIdFor(label: string, runId: string): string {
   const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
@@ -90,15 +92,15 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
     .get('/api/studio/runs', ({ query }) => ({ runs: runner.list()
       .filter(run => (!query.chat || run.chatId === query.chat) && (!query.terminal || run.terminalId === query.terminal))
       .map(run => ({ id: run.id, label: run.label, status: run.status, error: run.error, workflowName: run.workflow.name, revision: run.workflow.revision, currentNodeId: run.currentNodeId, createdAt: run.createdAt, origin: run.origin, pending: run.versions.some(version => version.state === 'pending') })) }))
-    .post('/api/studio/runs', ({ body, request }) => runner.start(body, { startedByUser: fromBrowser(request) }))
+    .post('/api/studio/runs', ({ body, request }) => runner.start(body, { startedByUser: fromBrowser(request) }).then(publicRun))
     .get('/api/studio/runs/:id', ({ params, set }) => {
       const run = runner.get(params.id)
       if (!run) { set.status = 404; return { error: 'Run not found' } }
-      return { ...run, versions: run.versions.map(versionView) }
+      return publicRun(run)
     })
-    .post('/api/studio/runs/:id/approve', ({ params, body, request }) => runner.approve(params.id, approvalContext(request, body)))
-    .post('/api/studio/runs/:id/reject', ({ params, body, request }) => runner.reject(params.id, approvalContext(request, body)))
-    .post('/api/studio/runs/:id/changes', ({ params, body, request }) => runner.propose(params.id, changeBody.parse(body), approvalContext(request, body)))
+    .post('/api/studio/runs/:id/approve', ({ params, body, request }) => runner.approve(params.id, approvalContext(request, body)).then(publicRun))
+    .post('/api/studio/runs/:id/reject', ({ params, body, request }) => runner.reject(params.id, approvalContext(request, body)).then(publicRun))
+    .post('/api/studio/runs/:id/changes', ({ params, body, request }) => runner.propose(params.id, changeBody.parse(body), approvalContext(request, body)).then(publicRun))
     .post('/api/studio/runs/:id/save', async ({ params, request }) => {
       if (!fromBrowser(request)) throw new RunActionError('Save from the drawer', 403)
       const run = runner.get(params.id)
@@ -108,8 +110,8 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
       const { revision: _revision, createdAt: _createdAt, ...graph } = run.workflow
       return store.save({ ...graph, id, name: run.label })
     })
-    .post('/api/studio/runs/:id/pause', ({ params }) => runner.pause(params.id))
-    .post('/api/studio/runs/:id/resume', ({ params }) => runner.resume(params.id))
-    .post('/api/studio/runs/:id/stop', ({ params }) => runner.stop(params.id))
-    .post('/api/studio/runs/:id/retry', ({ params }) => runner.retry(params.id))
+    .post('/api/studio/runs/:id/pause', ({ params }) => runner.pause(params.id).then(publicRun))
+    .post('/api/studio/runs/:id/resume', ({ params }) => runner.resume(params.id).then(publicRun))
+    .post('/api/studio/runs/:id/stop', ({ params }) => runner.stop(params.id).then(publicRun))
+    .post('/api/studio/runs/:id/retry', ({ params }) => runner.retry(params.id).then(publicRun))
 }

@@ -262,6 +262,7 @@ test('reading runs never returns the graph, agents or skills of a version', asyn
   const run = await (await post('/api/studio/runs', await runBody(), { 'sec-fetch-site': 'same-origin' })).json()
   const proposed = await post(`/api/studio/runs/${run.id}/changes`, { graph: withMigrate(), reason: 'Needs a migration' }, { 'sec-fetch-site': 'same-origin' })
   expect(proposed.status).toBe(200)
+  for (const version of (await proposed.json()).versions) expect(Object.keys(version)).not.toContain('graph')
   const read = await (await get(`/api/studio/runs/${run.id}`)).json()
   expect(read.versions).toHaveLength(2)
   for (const version of read.versions) {
