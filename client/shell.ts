@@ -90,7 +90,7 @@ $('all-history').onclick = () => { if ($('history').hidden) showHistory(); else 
 
 const sidebarShell = $('sb-shell')
 document.querySelectorAll<HTMLElement>('[data-sidebar-toggle]').forEach(button => {
-  button.onclick = () => sidebarShell.classList.toggle('collapsed')
+  button.onclick = () => { sidebarShell.classList.toggle('collapsed'); dispatchEvent(new Event('quiet:sidebar-toggle')) }
 })
 document.querySelectorAll<HTMLElement>('[data-click]').forEach(button => {
   button.onclick = () => $(button.dataset.click ?? '').click()

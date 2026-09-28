@@ -45,8 +45,10 @@ export function visibleItems(items: readonly HistoryItem[], hidden: Readonly<Rec
   return items.filter(item => { const at = hidden[keyOf(item)]; return at === undefined || item.updatedAt > at })
 }
 
-export function numberedKeys(items: readonly HistoryItem[]): string[] {
-  return items.filter(item => historyOpen(item) !== null).slice(0, SHORTCUT_SLOTS).map(keyOf)
+const inRail = (row: Row): boolean => row.state === 'running' || row.state === 'live'
+
+export function numberedKeys(items: readonly HistoryItem[], collapsed = false): string[] {
+  return items.filter(item => historyOpen(item) !== null && (!collapsed || inRail(rowOf(item)))).slice(0, SHORTCUT_SLOTS).map(keyOf)
 }
 
 function rowOf(item: HistoryItem): Row {
@@ -200,7 +202,7 @@ function paint(items: HistoryItem[]): void {
   if (renaming) return
   const groups = sidebarGroups(visibleItems(withLiveTerminals(items, liveTerminals, Date.now()), hidden), Date.now())
   const rows = groups.flatMap(group => group.items.map(rowOf))
-  const keys = numberedKeys(rows.map(row => row.item))
+  const keys = numberedKeys(rows.map(row => row.item), document.getElementById('sb-shell')?.classList.contains('collapsed'))
   numbered = keys.map(key => rows.find(row => keyOf(row.item) === key)!.item)
   const next = JSON.stringify([groups.map(group => [group.day, group.items.length]), rows.map(row => [row.item.kind, row.item.id, row.item.title, row.state, row.note]), keys])
   if (next === signature) return
@@ -211,7 +213,7 @@ function paint(items: HistoryItem[]): void {
     Object.assign(document.createElement('p'), { className: 'sb-day', textContent: group.day }),
     ...group.items.map(item => rowElement(rowOf(item), 'sb-row')),
   ]))
-  document.getElementById('sidebar-mini')!.replaceChildren(...rows.filter(row => row.state === 'running' || row.state === 'live').map(row => rowElement(row, 'sb-mini')))
+  document.getElementById('sidebar-mini')!.replaceChildren(...rows.filter(inRail).map(row => rowElement(row, 'sb-mini')))
   for (const [key, dot] of dotElements()) blendColor(dot, dots.get(key))
   markSelected()
 }
@@ -230,6 +232,7 @@ if (typeof document !== 'undefined') {
   addEventListener('quiet:chat-open', (event) => { openChatId = (event as CustomEvent<string>).detail; markSelected(); void poll() })
   addEventListener('quiet:terminals', (event) => { liveTerminals = (event as CustomEvent<Session[]>).detail; paint(historyItems); markSelected() })
   addEventListener('quiet:new-chat', () => { openChatId = null; markSelected() })
+  addEventListener('quiet:sidebar-toggle', () => paint(historyItems))
   addEventListener('quiet:terminal-ended', (event) => hide(`terminal:${(event as CustomEvent<string>).detail}`))
   for (const name of ['quiet:screen', 'quiet:activity-scope']) addEventListener(name, markSelected)
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void poll() })
