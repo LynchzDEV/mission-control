@@ -68,13 +68,13 @@ A run starts in `awaiting-approval` (no node dispatched) unless approval is off,
 ### Approval
 
 - `POST /api/studio/runs/:id/approve { version }` and `/reject { version }`.
-- The source is decided by the server from how the request authenticated, never from the body: a local browser request (`requireLocal`) records `approvedVia: 'drawer'`; a Bearer-token request records `approvedVia: 'conversation'` with `relayedBy` = the calling session's engine. The drawer shows which.
-- Setting: `AppConfig.flowApproval: boolean` (default `true`) in `server/secrets.ts`, edited the same way as `autoReview` (`server/routes/roles.ts:17-45`) and exposed in Studio settings.
+- The source is decided by the server from the request, never from the body. A curl call from localhost passes `localRequestAllowed()` just like the browser does (`server/local-access.ts:38-44`), so the signal is the `Sec-Fetch-Site: same-origin` header that browsers send on every fetch: with it → `approvedVia: 'drawer'`; without it (a session AI's curl) → `approvedVia: 'conversation'` with `relayedBy` = the run's origin AI. This keeps the record honest; it is not a security boundary, since both come from processes on the owner's machine. A run started from the browser (Studio's Run button) is recorded `approvedVia: 'user'` and does not wait.
+- Setting: `AppConfig.flowApproval: boolean` (default `true`) in `server/secrets.ts`, served by `GET/PUT /api/flow-approval` (local only) and shown as an "Ask me before a flow runs" switch in the Access dialog (Studio has no settings panel).
 - Approving version 1 dispatches the entry node. Approving a later version switches `run.workflow` to it at the next node boundary (see live edits). Rejecting version 1 sets the run to `stopped`; rejecting a later version keeps the current one.
 
 ### Session AI interface
 
-All through the existing token-allowed `/api/studio/*` routes (`server/auth.ts` `allowToken()`), plus the new approve / reject / changes / pause / resume / events routes added to that allow-list.
+All through the existing token-allowed `/api/studio/*` routes (`server/auth.ts` `allowToken()`), plus the new approve / reject / changes / pause / resume routes added to that allow-list. The events stream stays browser-only; no session AI needs it.
 
 - **Picking:** `GET /api/studio/workflows` returns saved workflows with name and a one-line description (add `description` to the workflow schema, optional, ≤200 chars). The terminal's pinned workflow (`server/workflow-runner.ts:202-207`) becomes the default when the AI names none; it is no longer a lock, since the user approves the flow anyway.
 - **When to use a flow** (instruction text, same in all three places): use a flow for work with more than one step that changes code, or that needs more than one agent. Run quick investigations, questions and small single-file edits directly, without a flow.
