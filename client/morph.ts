@@ -5,22 +5,31 @@ const timing: KeyframeAnimationOptions = { duration: MORPH_MS, easing: MORPH_EAS
 const still = (): boolean => typeof matchMedia === 'undefined' || matchMedia('(prefers-reduced-motion: reduce)').matches
 const onScreen = (el: HTMLElement): boolean => el.isConnected && el.getClientRects().length > 0
 
-export function morph(el: HTMLElement, apply: () => void): void {
-  if (still() || !onScreen(el)) { apply(); return }
-  const before = el.getBoundingClientRect()
-  const was = getComputedStyle(el)
-  const from = { backgroundColor: was.backgroundColor, color: was.color, borderRadius: was.borderRadius }
-  apply()
-  if (!onScreen(el)) return
-  const after = el.getBoundingClientRect()
-  const now = getComputedStyle(el)
-  if (before.width === after.width && before.height === after.height && from.backgroundColor === now.backgroundColor && from.color === now.color) return
+export type Snapshot = { width: number; height: number; backgroundColor: string; color: string; borderRadius: string }
+
+export function snapshot(el: HTMLElement): Snapshot {
+  const { width, height } = el.getBoundingClientRect()
+  const style = getComputedStyle(el)
+  return { width, height, backgroundColor: style.backgroundColor, color: style.color, borderRadius: style.borderRadius }
+}
+
+export function morphFrom(el: HTMLElement, from: Snapshot): void {
+  if (still() || !onScreen(el)) return
+  const to = snapshot(el)
+  if (from.width === to.width && from.height === to.height && from.backgroundColor === to.backgroundColor && from.color === to.color) return
   el.classList.add('morphing')
   el.animate([
-    { width: `${before.width}px`, height: `${before.height}px`, ...from },
-    { width: `${after.width}px`, height: `${after.height}px`, backgroundColor: now.backgroundColor, color: now.color, borderRadius: now.borderRadius },
+    { width: `${from.width}px`, height: `${from.height}px`, backgroundColor: from.backgroundColor, color: from.color, borderRadius: from.borderRadius },
+    { width: `${to.width}px`, height: `${to.height}px`, backgroundColor: to.backgroundColor, color: to.color, borderRadius: to.borderRadius },
   ], timing).onfinish = () => el.classList.remove('morphing')
   for (const child of el.children) (child as HTMLElement).animate([{ opacity: 0, transform: 'translateY(2px)' }, { opacity: 1, transform: 'none' }], timing)
+}
+
+export function morph(el: HTMLElement, apply: () => void): void {
+  if (still() || !onScreen(el)) { apply(); return }
+  const from = snapshot(el)
+  apply()
+  morphFrom(el, from)
 }
 
 export function reveal(el: HTMLElement, show: boolean, origin = 'center', base = ''): void {

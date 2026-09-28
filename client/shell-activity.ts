@@ -1,4 +1,6 @@
 import { activeAgents, awarenessFlows, flowColumns, scopedWork, selectFlow } from './awareness'
+import { confirmButton } from './confirm-button'
+import { morph, morphFrom, reveal, rollText, snapshot, type Snapshot } from './morph'
 import { renderFlowGraph } from './flow-graph'
 import { buildWork, type WorkItem, type WorkJob } from './work'
 import { errorText, getJson, postJson, providerName, readArray, readRecord } from './shared'
@@ -45,11 +47,11 @@ function setActivityScope(next: Scope | null): void {
   $('live-flow').hidden = !next
   document.querySelectorAll<HTMLElement>('#agents .activity-empty, #flow .activity-empty').forEach(node => { node.hidden = !!next })
   $('live-agents-list').replaceChildren()
-  $('agents-summary').textContent = ''
+  rollText($('agents-summary'), '')
   $('live-flow-steps').replaceChildren()
   $('live-flow-select').hidden = true
-  $('live-agents-status').textContent = next?.kind === 'chat' ? 'Loading the chat’s agents…' : 'Loading session activity…'
-  $('live-flow-status').textContent = next?.kind === 'chat' ? 'Loading the chat’s flow…' : 'Loading session flow…'
+  rollText($('live-agents-status'), next?.kind === 'chat' ? 'Loading the chat’s agents…' : 'Loading session activity…')
+  rollText($('live-flow-status'), next?.kind === 'chat' ? 'Loading the chat’s flow…' : 'Loading session flow…')
   if (next) void refresh()
 }
 
@@ -95,24 +97,28 @@ async function loadLog(row: string, job: string): Promise<void> {
   logBox.scrollTop = logBox.scrollHeight
 }
 
-function showDetail(item: HTMLElement, row: AgentRow): void {
+function showDetail(item: HTMLElement, row: AgentRow, animate = false): void {
   item.classList.add('open')
   const detail = item.querySelector('.ag-detail') as HTMLElement
   if (row.jobId) detail.prepend(logBox)
   if (scope?.kind !== 'chat') return
   replyTarget = row.id
   $('agent-reply-label').textContent = `Message ${row.label}`
-  replyForm.hidden = false
   ;(detail.querySelector('.ag-why') as HTMLElement).after(replyForm)
+  if (animate) reveal(replyForm, true, 'top center')
+  else replyForm.hidden = false
 }
 
 function openDetail(item: HTMLElement, row: AgentRow): void {
   const wasOpen = openRow === row.id
-  $('live-agents-list').querySelectorAll('.ag-item.open').forEach(other => other.classList.remove('open'))
-  closeDetail()
+  morph(item, () => {
+    $('live-agents-list').querySelectorAll('.ag-item.open').forEach(other => other.classList.remove('open'))
+    closeDetail()
+    if (wasOpen) return
+    openRow = row.id
+    showDetail(item, row, true)
+  })
   if (wasOpen) return
-  openRow = row.id
-  showDetail(item, row)
   openJob = row.jobId
   watchLog()
 }
@@ -156,6 +162,7 @@ function paintRows(rows: AgentRow[], detail: (row: AgentRow) => HTMLElement): vo
   const box = $('reply') as HTMLTextAreaElement
   const typing = openNow && replyForm.contains(document.activeElement) ? [box.selectionStart, box.selectionEnd] as const : null
   if (openNow) { logBox.remove(); parkReply() } else if (openRow) closeDetail()
+  const pills = new Map<string, { look: Snapshot; text: string; state: string }>([...list.querySelectorAll<HTMLElement>('.ag-item')].flatMap(item => { const pill = item.querySelector<HTMLElement>('.pill-state'); return pill && item.dataset.job ? [[item.dataset.job, { look: snapshot(pill), text: pill.textContent ?? '', state: pill.dataset.s ?? '' }] as const] : [] }))
   list.replaceChildren()
   for (const row of rows) {
     const item = node('div', '', 'ag-item')
@@ -181,6 +188,8 @@ function paintRows(rows: AgentRow[], detail: (row: AgentRow) => HTMLElement): vo
     if (tick) { tick.dataset.job = row.id; item.append(tick) }
     item.append(detail(row))
     list.append(item)
+    const was = pills.get(row.id)
+    if (was && (was.text !== row.pill || was.state !== row.pillState)) morphFrom(pill, was.look)
     if (row === openNow) showDetail(item, row)
     if (tick && row.lineState === 'live' && before && before !== row.line) fadeTo(tick, row.line)
   }
@@ -202,11 +211,11 @@ function chatRow(job: ChatAgent, all: ChatAgent[]): AgentRow {
 }
 
 function summarize(working: number, total: number): void {
-  $('agents-summary').textContent = total ? `${working} working · ${total} total` : ''
+  rollText($('agents-summary'), total ? `${working} working · ${total} total` : '')
 }
 
 function paintChatAgents(agents: ChatAgent[]): void {
-  $('live-agents-status').textContent = agents.length ? '' : 'No agents in this chat yet.'
+  rollText($('live-agents-status'), agents.length ? '' : 'No agents in this chat yet.')
   summarize(agents.filter(job => job.status === 'running').length, agents.length)
   tickTimes()
   const signature = JSON.stringify(agents.map(item => [item.id, item.label, item.status, item.currentActivity, item.reviewedAt]))
@@ -221,9 +230,11 @@ function chatDetail(job: ChatAgent): HTMLElement {
   body.append(node('p', `${providerName(job.engine)}${job.model ? ` · ${job.model}` : ''}${job.reason ? ` — ${job.reason}` : ''}`, 'ag-why'))
   const actions = node('div', '', 'ag-actions0')
   if (job.status === 'running') {
-    const stop = node('button', 'Stop', 'ag-btn danger') as HTMLButtonElement
+    const stop = node('button', '', 'confirm-morph') as HTMLButtonElement
     stop.type = 'button'
-    stop.onclick = async () => { stop.disabled = true; const result = await postJson(`/api/jobs/${encodeURIComponent(job.id)}/kill`, {}); if (!result.ok) $('live-agents-status').textContent = `Could not stop: ${errorText(result)}`; agentSignature = ''; void refresh() }
+    stop.setAttribute('aria-label', `Stop ${job.label}`)
+    stop.append(node('span', 'Stop'), node('span', 'Stop agent'))
+    confirmButton(stop, 'Stop agent', async () => { morph(stop, () => { stop.disabled = true; stop.replaceChildren(node('span', 'Stopping…')) }); const result = await postJson(`/api/jobs/${encodeURIComponent(job.id)}/kill`, {}); if (!result.ok) rollText($('live-agents-status'), `Could not stop: ${errorText(result)}`); agentSignature = ''; void refresh() })
     actions.append(stop)
   }
   body.append(actions)
@@ -234,10 +245,10 @@ async function refreshChat(chat: string, request: number): Promise<void> {
   const [jobsResult, flowResult] = await Promise.all([getJson(`/api/jobs?chat=${encodeURIComponent(chat)}`), getJson('/api/flow?includeArchived=1')])
   refreshing = false
   if (request !== generation) return
-  if (!jobsResult.ok) { $('live-agents-status').textContent = `Agents unavailable: ${errorText(jobsResult)}. Retrying…`; agentSignature = ''; return }
+  if (!jobsResult.ok) { rollText($('live-agents-status'), `Agents unavailable: ${errorText(jobsResult)}. Retrying…`); agentSignature = ''; return }
   const agents = (readArray(jobsResult.data.jobs) as unknown as ChatAgent[]).filter(job => job.purpose !== 'chat')
   paintChatAgents(agents)
-  if (!flowResult.ok) { $('live-flow-status').textContent = `Flow unavailable: ${errorText(flowResult)}. Retrying…`; return }
+  if (!flowResult.ok) { rollText($('live-flow-status'), `Flow unavailable: ${errorText(flowResult)}. Retrying…`); return }
   const jobs = (agents as unknown as WorkJob[]).map(job => ({ ...job, threadRoot: job.threadRoot || job.id }))
   showFlows(awarenessFlows(buildWork(jobs, readRecord(flowResult.data.sessions)).filter(item => item.job)))
 }
@@ -248,13 +259,13 @@ function showFlows(next: WorkItem[]): void {
   const select = $('live-flow-select') as HTMLSelectElement
   select.replaceChildren(...flows.map(item => new Option(item.label, item.id)))
   select.value = current
-  select.hidden = flows.length < 2
+  reveal(select, flows.length >= 2, 'top left')
   paintFlow()
 }
 
 function paintFlow(): void {
   const item = flows.find(flow => flow.id === current)
-  $('live-flow-status').textContent = item ? item.label : scope?.kind === 'chat' ? 'No agents in this chat yet.' : 'No work linked to this session yet.'
+  rollText($('live-flow-status'), item ? item.label : scope?.kind === 'chat' ? 'No agents in this chat yet.' : 'No work linked to this session yet.')
   paintGraph()
 }
 
@@ -268,7 +279,7 @@ function motionAllowed(): boolean {
 }
 
 function paintAgents(agents: WorkItem[]): void {
-  $('live-agents-status').textContent = agents.length ? '' : 'No active agents linked to this session.'
+  rollText($('live-agents-status'), agents.length ? '' : 'No active agents linked to this session.')
   summarize(agents.filter(item => item.state === 'running').length, agents.length)
   tickTimes()
   const signature = JSON.stringify(agents.map(item => [item.id, item.label, item.provider, item.state, item.activity]))
@@ -319,7 +330,7 @@ if (document.body.dataset.chat) setActivityScope({ kind: 'chat', chat: document.
   const text = box.value.trim()
   if (!text || !replyTarget) return
   const result = await postJson(`/api/jobs/${encodeURIComponent(replyTarget)}/reply`, { message: text })
-  if (!result.ok) { $('live-agents-status').textContent = `Could not send: ${errorText(result)}`; return }
+  if (!result.ok) { rollText($('live-agents-status'), `Could not send: ${errorText(result)}`); return }
   box.value = ''
   agentSignature = ''
   void refresh()
