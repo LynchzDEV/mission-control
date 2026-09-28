@@ -7,4 +7,3 @@ export function buildWork(jobs: WorkJob[]): WorkItem[] {
     return { id: thread.threadRoot, label: job.label || job.id, state: job.status, provider: job.engine, activity: job.endedAt ? `Finished ${new Date(job.endedAt).toLocaleString()}` : 'Started ' + new Date(job.startedAt).toLocaleString(), job, members: jobs.filter(member => (member.threadRoot || member.id) === thread.threadRoot) }
   })
 }
-export function reviewable(job?: WorkJob): boolean { return !!job && job.status === 'done' && (!!job.diffStat || !!job.worktree) && job.reviewedAt === null }
