@@ -531,6 +531,7 @@ a.pill:hover { color: var(--accent); }
 .live-stage { flex: 1; min-height: 100px; min-width: 0; position: relative; display: flex; }
 .term-host { flex: 1; min-width: 0; min-height: 0; padding: 12px; border-radius: var(--r-lg); corner-shape: var(--corner); box-shadow: var(--inset); overflow: hidden; }
 .term-host .xterm { height: 100%; }
+.term-host .xterm-viewport { background-color: transparent; }
 
 .drop-stage { position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; }
 .drop-zone { position: absolute; display: grid; place-items: center; border-radius: var(--r-md); corner-shape: var(--corner); font-size: 13px; color: var(--accent); background: #8062bd14; border: 1.5px dashed #8062bd66; pointer-events: none; opacity: 0; transition: opacity 120ms, background 120ms; }
