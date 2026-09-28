@@ -61,8 +61,12 @@ describe('withLiveTerminals', () => {
 })
 
 describe('numberedKeys', () => {
-  test('numbers chats and live terminals in list order, skipping sessions and ended terminals, at most nine', () => {
-    const items = [session('h1', 9), chat('c1', 8), terminal('old', 7, false), terminal('t1', 6), ...Array.from({ length: 10 }, (_, index) => chat(`x${index}`, 5 - index))]
-    expect(numberedKeys(items)).toEqual(['chat:c1', 'terminal:t1', 'chat:x0', 'chat:x1', 'chat:x2', 'chat:x3', 'chat:x4', 'chat:x5', 'chat:x6'])
+  test('numbers every row that can be opened, top to bottom, at most nine', () => {
+    const items = [session('h1', 9), chat('c1', 8), { ...terminal('old', 7, false), sessionId: 's-old' } as HistoryItem, terminal('t1', 6), ...Array.from({ length: 10 }, (_, index) => chat(`x${index}`, 5 - index))]
+    expect(numberedKeys(items)).toEqual(['claude-history:h1', 'chat:c1', 'terminal:old', 'terminal:t1', 'chat:x0', 'chat:x1', 'chat:x2', 'chat:x3', 'chat:x4'])
+  })
+  test('an ended terminal that cannot be resumed takes no number', () => {
+    const codex = { ...terminal('cx', 9, false), engine: 'codex' } as HistoryItem
+    expect(numberedKeys([codex, chat('c1', 8)])).toEqual(['chat:c1'])
   })
 })

@@ -33,7 +33,7 @@ export function withLiveTerminals(items: HistoryItem[], sessions: Session[] | nu
 }
 
 export function numberedKeys(items: readonly HistoryItem[]): string[] {
-  return items.filter(item => item.kind === 'chat' || isLiveTerminal(item)).slice(0, SHORTCUT_SLOTS).map(keyOf)
+  return items.filter(item => historyOpen(item) !== null).slice(0, SHORTCUT_SLOTS).map(keyOf)
 }
 
 function rowOf(item: HistoryItem): Row {
