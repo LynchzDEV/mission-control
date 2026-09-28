@@ -1,4 +1,4 @@
-import { appendFile, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, open, readdir, readFile, rename, rm, stat, writeFile, type FileHandle } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
 import { logSecrets, redactAll } from './log-redaction'
@@ -22,6 +22,7 @@ export type LedgerDeps = {
   now?: () => number
   throttleMs?: number
   readBytes?: number
+  maxLineBytes?: number
 }
 
 type Cursor = { offset: number; state: ParseState; closed?: boolean }
@@ -43,6 +44,7 @@ type Session = {
 export const RECENT_OUTCOMES = 500
 export const SYNC_THROTTLE_MS = 2_000
 export const READ_BYTES_PER_SYNC = 4 * 1024 * 1024
+export const MAX_LINE_BYTES = 64 * 1024 * 1024
 export const OUTCOME_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 const NEWLINE = 10
 const PARSERS: Record<OutcomeParser, (text: string, state: ParseState, context: ParseContext) => ParseResult> = {
@@ -59,19 +61,36 @@ export function sessionFileStem(key: string): string {
   return key.replace(/[^A-Za-z0-9_-]/g, '_')
 }
 
-async function readNewLines(path: string, offset: number, maxBytes: number): Promise<{ text: string; next: number; size: number; modifiedAt: number } | null> {
-  let handle
+type Chunk = { text: string; next: number; size: number; modifiedAt: number }
+
+async function readAt(handle: FileHandle, position: number, length: number): Promise<Buffer> {
+  const buffer = Buffer.alloc(length)
+  const { bytesRead } = await handle.read(buffer, 0, length, position)
+  return buffer.subarray(0, bytesRead)
+}
+
+async function nextNewline(handle: FileHandle, from: number, size: number, step: number): Promise<number> {
+  for (let at = from; at < size; at += step) {
+    const found = (await readAt(handle, at, Math.min(step, size - at))).indexOf(NEWLINE)
+    if (found >= 0) return at + found
+  }
+  return -1
+}
+
+async function readNewLines(path: string, offset: number, maxBytes: number, maxLineBytes: number): Promise<Chunk | null> {
+  let handle: FileHandle | undefined
   try {
     const { size, mtimeMs: modifiedAt } = await stat(path)
     const start = size < offset ? 0 : offset
     if (size === start) return { text: '', next: start, size, modifiedAt }
-    const length = Math.min(size - start, maxBytes)
-    const buffer = Buffer.alloc(length)
     handle = await open(path, 'r')
-    await handle.read(buffer, 0, length, start)
-    const end = buffer.lastIndexOf(NEWLINE)
-    if (end < 0) return { text: '', next: length === maxBytes ? start + length : start, size, modifiedAt }
-    return { text: buffer.subarray(0, end + 1).toString('utf8'), next: start + end + 1, size, modifiedAt }
+    const window = await readAt(handle, start, Math.min(size - start, maxBytes))
+    const end = window.lastIndexOf(NEWLINE)
+    if (end >= 0) return { text: window.subarray(0, end + 1).toString('utf8'), next: start + end + 1, size, modifiedAt }
+    const newline = await nextNewline(handle, start + window.length, size, maxBytes)
+    if (newline < 0) return { text: '', next: start, size, modifiedAt }
+    if (newline + 1 - start > maxLineBytes) return { text: '', next: newline + 1, size, modifiedAt }
+    return { text: (await readAt(handle, start, newline + 1 - start)).toString('utf8'), next: newline + 1, size, modifiedAt }
   } catch {
     return null
   } finally {
@@ -110,6 +129,7 @@ export function createOutcomeLedger(deps: LedgerDeps): OutcomeLedger {
   const now = deps.now ?? Date.now
   const throttleMs = deps.throttleMs ?? SYNC_THROTTLE_MS
   const readBytes = deps.readBytes ?? READ_BYTES_PER_SYNC
+  const maxLineBytes = deps.maxLineBytes ?? MAX_LINE_BYTES
   const secrets = deps.secrets ?? logSecrets
   const sessions = new Map<string, Promise<Session>>()
 
@@ -141,7 +161,7 @@ export function createOutcomeLedger(deps: LedgerDeps): OutcomeLedger {
   async function readFileSource(session: Session, source: FileSource, drafts: OutcomeDraft[]): Promise<ParseState | null> {
     const cursor = session.cursors[source.id] ?? { offset: 0, state: emptyParseState() }
     if (cursor.closed) return cursor.state
-    const chunk = await readNewLines(source.path, cursor.offset, readBytes)
+    const chunk = await readNewLines(source.path, cursor.offset, readBytes, maxLineBytes)
     if (chunk === null) return null
     const parsed = chunk.text === '' ? { outcomes: [], state: cursor.state } : PARSERS[source.parser](chunk.text, cursor.state, { source: source.id, actor: source.actor, now: Math.min(chunk.modifiedAt, now()) })
     drafts.push(...parsed.outcomes)

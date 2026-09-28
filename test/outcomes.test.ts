@@ -16,6 +16,10 @@ let transcript: string
 let clock: number
 let sources: SessionSources | null
 
+const drain = async (store: ReturnType<typeof createOutcomeLedger>, key: string) => {
+  for (let round = 0; round < 50; round += 1) await store.read(key, 0, 50)
+  return store.read(key, 0, 50)
+}
 const ledger = (overrides: Record<string, unknown> = {}) => createOutcomeLedger({ base: join(root, 'outcomes'), resolve: async () => sources, secrets: async () => ['sk-secret-token-123'], now: () => clock, throttleMs: 0, ...overrides })
 
 beforeEach(async () => {
@@ -98,6 +102,18 @@ describe('outcome ledger', () => {
     clock = 5_000_000
     const page = await ledger().read('chat:c1', 0, 50)
     expect(page?.items.map((item) => [item.key, item.at])).toEqual([['job:j1:i1', 1_000_000], ['job:j1', 1_000_000]])
+  })
+
+  test('a line longer than the per-sync read cap is still read whole', async () => {
+    await appendFile(transcript, bash('big', 'bin/ci') + done('big', `Exit code 1\n${'x'.repeat(5_000)}`, true) + bash('next', 'ls') + done('next', 'ok'))
+    const page = await drain(ledger({ readBytes: 256 }), 'terminal:t1')
+    expect(page?.items.map((item) => [item.target, item.ok])).toEqual([['bin/ci', false], ['ls', true]])
+  })
+
+  test('a line beyond the hard line cap is skipped and reading continues after it', async () => {
+    await appendFile(transcript, bash('huge', 'cat big') + `{"type":"user","junk":"${'y'.repeat(4_000)}"}\n` + bash('after', 'pwd') + done('after', 'ok'))
+    const page = await drain(ledger({ readBytes: 256, maxLineBytes: 1_024 }), 'terminal:t1')
+    expect(page?.items.map((item) => item.target)).toEqual(['pwd'])
   })
 
   test('concurrent first reads of a new session share one load and never duplicate seqs', async () => {
