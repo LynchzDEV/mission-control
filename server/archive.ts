@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import type { JobRecord } from './jobs'
-import type { Plan } from './plans'
 import { DIR_MODE, FILE_MODE, configDir } from './secrets'
 
 export const ARCHIVE_FILE = 'archive.jsonl'
@@ -87,10 +86,8 @@ export function bangkokMidnightBoundary(now: number): number {
   return Math.floor(shifted / DAY_MS) * DAY_MS - BANGKOK_OFFSET_MS
 }
 
-// Max of job endedAt / plan updatedAt — the moment a finished session went quiet.
-export function sessionLastActivity(jobs: readonly JobRecord[], plan: Plan | null): number {
-  const jobsMax = jobs.reduce((max, job) => Math.max(max, job.endedAt ?? 0), 0)
-  return Math.max(jobsMax, plan?.updatedAt ?? 0)
+export function sessionLastActivity(jobs: readonly JobRecord[]): number {
+  return jobs.reduce((max, job) => Math.max(max, job.endedAt ?? 0), 0)
 }
 
 export type ArchivableSession = {

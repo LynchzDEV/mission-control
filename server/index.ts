@@ -20,14 +20,11 @@ import { redactedTailReader } from './log-redaction'
 import { createTerminalRegistry } from './terminals'
 import { createTerminalLog } from './terminal-log'
 import { realEngineResolver } from './jobs-engine-iface'
-import { createPlanRunner } from './plan-runner'
-import { createPlanStore } from './plans'
 import { createWorkflowStore } from './workflows'
 import { createWorkflowBuilder } from './workflow-builder'
 import { createWorkflowRunner } from './workflow-runner'
 import { studioRoutes } from './routes/studio'
 import { createRunEvents } from './run-events'
-import { runsRoutes } from './routes/runs'
 import { jobsRoutes } from './routes/jobs'
 import { chatRoutes } from './routes/chat'
 import { metaRoutes } from './routes/meta'
@@ -37,7 +34,6 @@ import { terminalsRoutes } from './routes/terminals'
 import { outcomesRoutes } from './routes/outcomes'
 import { createOutcomeLedger, OUTCOME_RETENTION_MS } from './outcomes'
 import { createSessionResolver } from './outcome-session'
-import { flowRoutes } from './routes/flow'
 import { secretsRoutes } from './routes/secrets'
 import { flowApprovalRoutes, rolesRoutes } from './routes/roles'
 import { claudeSkillsDir, describeSkillInstall, installSkills } from './skill-install'
@@ -150,7 +146,6 @@ export async function createApp(): Promise<Elysia> {
   if (skills.linked.length > 0 || skills.movedAside.length > 0) {
     console.error(`skills: ${describeSkillInstall(skills)} -> ${claudeSkillsDir()}`)
   }
-  const planStore = createPlanStore()
   const workflowStore = createWorkflowStore()
   const runEvents = createRunEvents()
   const jobManager = createJobManager({
@@ -167,7 +162,6 @@ export async function createApp(): Promise<Elysia> {
         void workflowRunner.onJobSettled(record).catch(error => console.error('Workflow settlement failed', error))
         return
       }
-      void planRunner.onJobSettled(record).catch(() => {})
       if (record.chatId) {
         void chatFlusher.onAgentSettled(record).catch(error => console.error('Chat report failed', error))
         return
@@ -195,7 +189,6 @@ export async function createApp(): Promise<Elysia> {
       return id => read(jobManager.logPath(id))
     },
   })
-  const planRunner = createPlanRunner({ manager: jobManager, resolver: realEngineResolver, plans: planStore })
   const workflowBuilder = createWorkflowBuilder({ manager: jobManager, resolver: realEngineResolver, store: workflowStore })
   await workflowRunner.recover()
   await workflowBuilder.recover()
@@ -240,8 +233,6 @@ export async function createApp(): Promise<Elysia> {
     .use(historyRoutes({ manager: jobManager, registry: terminalRegistry }))
     .use(terminalsRoutes(terminalRegistry))
     .use(outcomesRoutes(outcomeLedger))
-    .use(flowRoutes(jobManager, terminalRegistry, planStore))
-    .use(runsRoutes(planRunner))
     .use(studioRoutes(workflowStore, workflowRunner, workflowBuilder, runEvents, () => jobManager.listJobs()))
     .use(secretsRoutes)
     .use(rolesRoutes)

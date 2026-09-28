@@ -27,38 +27,16 @@ describe('allowToken', () => {
     expect(allowToken('/api/jobs/abc/kill', 'POST')).toBe(true)
   })
 
-  test('allows GET only on /api/flow, /api/quota, /api/meta, /api/roles, /api/providers', () => {
-    for (const path of ['/api/flow', '/api/quota', '/api/meta', '/api/roles', '/api/providers']) {
+  test('allows GET only on /api/quota, /api/meta, /api/roles, /api/providers', () => {
+    for (const path of ['/api/quota', '/api/meta', '/api/roles', '/api/providers']) {
       expect(allowToken(path, 'GET')).toBe(true)
       expect(allowToken(path, 'POST')).toBe(false)
     }
   })
 
-  test('allows POST and GET on per-label run endpoints', () => {
-    expect(allowToken('/api/flow/my-ticket/run', 'POST')).toBe(true)
-    expect(allowToken('/api/flow/my-ticket/run', 'GET')).toBe(true)
-    expect(allowToken('/api/flow/my-ticket/run/stop', 'POST')).toBe(true)
-    expect(allowToken('/api/flow/my-ticket/run/stop', 'DELETE')).toBe(false)
-  })
-
-  test('allows POST/PATCH on per-label plan endpoints', () => {
-    expect(allowToken('/api/flow/my-ticket/plan', 'POST')).toBe(true)
-    expect(allowToken('/api/flow/my-ticket/plan/2', 'PATCH')).toBe(true)
-    expect(allowToken('/api/flow/my-ticket/plan', 'GET')).toBe(false)
-    expect(allowToken('/api/flow/my-ticket/plan/x', 'PATCH')).toBe(false)
-    expect(allowToken('/api/flow/my-ticket/other', 'POST')).toBe(false)
-  })
-
-  test('allows POST on per-label archive/unarchive endpoints', () => {
-    expect(allowToken('/api/flow/my-ticket/archive', 'POST')).toBe(true)
-    expect(allowToken('/api/flow/my-ticket/unarchive', 'POST')).toBe(true)
-    expect(allowToken('/api/flow/my-ticket/archive', 'GET')).toBe(false)
-    expect(allowToken('/api/flow/my-ticket/unarchive', 'PATCH')).toBe(false)
-  })
-
   test('is case-insensitive on method', () => {
     expect(allowToken('/api/jobs', 'get')).toBe(true)
-    expect(allowToken('/api/flow', 'get')).toBe(true)
+    expect(allowToken('/api/studio/runs', 'get')).toBe(true)
   })
 
   test('rejects settings, secrets, and terminals paths entirely', () => {
@@ -74,7 +52,7 @@ describe('allowToken', () => {
 
   test('rejects other methods on scoped paths', () => {
     expect(allowToken('/api/jobs', 'DELETE')).toBe(false)
-    expect(allowToken('/api/flow', 'DELETE')).toBe(false)
+    expect(allowToken('/api/quota', 'DELETE')).toBe(false)
   })
 })
 

@@ -9,7 +9,7 @@ import { createApp } from '../server/index'
 import { createJobManager, type JobManager, type JobRecord } from '../server/jobs'
 import { BLOCK_MS, blockClock, createTokenSampler, tokensPerMinute } from '../server/meta'
 import type { QuotaComposite } from '../server/quota'
-import { metaRoutes } from '../server/routes/meta'
+import { awaitsReview, countPendingReviews, metaRoutes } from '../server/routes/meta'
 
 const NOW = Date.parse('2026-08-28T12:00:00.000Z')
 const MINUTE = 60_000
@@ -147,6 +147,29 @@ function reviewableJob(id: string, reviewedAt: number | null): JobRecord {
     reviewedAt,
   }
 }
+
+describe('review predicate', () => {
+  test('a done job with a diff and no review is waiting', () => {
+    expect(awaitsReview(reviewableJob('a', null))).toBe(true)
+  })
+
+  test('a reviewed job is not waiting', () => {
+    expect(awaitsReview(reviewableJob('a', NOW))).toBe(false)
+  })
+
+  test('a running job and a diffless job are not waiting', () => {
+    expect(awaitsReview({ ...reviewableJob('a', null), status: 'running', endedAt: null })).toBe(false)
+    expect(awaitsReview({ ...reviewableJob('a', null), diffStat: null })).toBe(false)
+  })
+
+  test('countPendingReviews excludes reviewed jobs', () => {
+    expect(countPendingReviews([reviewableJob('a', null), reviewableJob('b', NOW), reviewableJob('c', null)])).toBe(2)
+  })
+
+  test('completed worktrees with committed changes count as pending review', () => {
+    expect(countPendingReviews([{ ...reviewableJob('a', null), worktree: '/repo/.worktree/task', diffStat: null }])).toBe(1)
+  })
+})
 
 function stubManager(jobs: JobRecord[]): JobManager {
   const base = createJobManager()

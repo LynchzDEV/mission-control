@@ -61,11 +61,11 @@ describe('bearer token scope', () => {
 
   // /api/quota and /api/meta's scope is covered by the allowToken() unit tests in auth.test.ts —
   // hitting either real route here would shell out to ccusage, same tradeoff meta.test.ts documents.
-  test('works for GET /api/flow', async () => {
-    const response = await app.handle(bearer('/api/flow'))
+  test('works for GET /api/studio/runs', async () => {
+    const response = await app.handle(bearer('/api/studio/runs'))
     expect(response.status).toBe(200)
-    const body = (await response.json()) as { source: string }
-    expect(body.source).toBe('live')
+    const body = (await response.json()) as { runs: unknown[] }
+    expect(body.runs).toEqual([])
   })
 
   test('is rejected on /api/secrets and /api/terminals', async () => {
@@ -77,7 +77,7 @@ describe('bearer token scope', () => {
   test('a wrong token is rejected everywhere', async () => {
     const headers = { authorization: 'Bearer mct_wrong-token-value' }
     expect((await app.handle(new Request(`${NON_LOCAL}/api/jobs`, { headers }))).status).toBe(403)
-    expect((await app.handle(new Request(`${NON_LOCAL}/api/flow`, { headers }))).status).toBe(403)
+    expect((await app.handle(new Request(`${NON_LOCAL}/api/studio/runs`, { headers }))).status).toBe(403)
   })
 
   test('reveal stays out of token scope even with a valid bearer token', async () => {
@@ -88,13 +88,6 @@ describe('bearer token scope', () => {
       }),
     )
     expect(response.status).toBe(403)
-  })
-
-  test('works for POST /api/flow/:label/archive and /unarchive', async () => {
-    const archived = await app.handle(bearer('/api/flow/token-archive-smoke/archive', 'POST', {}))
-    expect(archived.status).toBe(200)
-    const unarchived = await app.handle(bearer('/api/flow/token-archive-smoke/unarchive', 'POST', {}))
-    expect(unarchived.status).toBe(200)
   })
 
   test('a plain local request works alongside the token scope', async () => {

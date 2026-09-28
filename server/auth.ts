@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { localRequestAllowed } from './local-access'
 import { readApiToken } from './secrets'
 
-const TOKEN_SCOPED_GET_ONLY_PATHS = new Set(['/api/flow', '/api/quota', '/api/meta', '/api/roles', '/api/models', '/api/providers'])
+const TOKEN_SCOPED_GET_ONLY_PATHS = new Set(['/api/quota', '/api/meta', '/api/roles', '/api/models', '/api/providers'])
 const TOKEN_SCOPED_PREFIX = '/api/jobs'
 
 // The one shared gate for what a Bearer API token may touch — extend this, not requireLocal's callers.
@@ -14,15 +14,6 @@ export function allowToken(pathname: string, method: string): boolean {
   if (/^\/api\/studio\/runs\/[^/]+\/(stop|retry|approve|reject|pause|resume)$/.test(pathname)) return upperMethod === 'POST'
   if (pathname === TOKEN_SCOPED_PREFIX || pathname.startsWith(`${TOKEN_SCOPED_PREFIX}/`)) {
     return upperMethod === 'GET' || upperMethod === 'POST'
-  }
-  if (/^\/api\/flow\/[^/]+\/plan(\/\d+)?$/.test(pathname)) {
-    return upperMethod === 'POST' || upperMethod === 'PATCH'
-  }
-  if (/^\/api\/flow\/[^/]+\/run(\/stop)?$/.test(pathname)) {
-    return upperMethod === 'POST' || upperMethod === 'GET'
-  }
-  if (/^\/api\/flow\/[^/]+\/(archive|unarchive)$/.test(pathname)) {
-    return upperMethod === 'POST'
   }
   return TOKEN_SCOPED_GET_ONLY_PATHS.has(pathname) && upperMethod === 'GET'
 }

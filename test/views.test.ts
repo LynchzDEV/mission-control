@@ -59,23 +59,12 @@ describe('retired islands', () => {
   })
 })
 
-describe('flow route', () => {
-  test('serves the live session map behind the local-access guard', async () => {
-    expect((await app.handle(new Request('http://rebind.example/api/flow'))).status).toBe(403)
+describe('session flow runs route', () => {
+  test('serves the workflow run list behind the local-access guard', async () => {
+    expect((await app.handle(new Request('http://rebind.example/api/studio/runs'))).status).toBe(403)
 
-    const response = await app.handle(new Request('http://localhost/api/flow'))
+    const response = await app.handle(new Request('http://localhost/api/studio/runs'))
     expect(response.status).toBe(200)
-    const body = (await response.json()) as {
-      source: string
-      current: string
-      sessions: Record<string, Record<string, [string, string]>>
-      reviewCount: number
-      mergedToday: number
-    }
-    expect(body.source).toBe('live')
-    expect(body.sessions).toEqual({})
-    expect(body.current).toBe('')
-    expect(body.reviewCount).toBe(0)
-    expect(body.mergedToday).toBe(0)
+    expect(await response.json()).toEqual({ runs: [] })
   })
 })

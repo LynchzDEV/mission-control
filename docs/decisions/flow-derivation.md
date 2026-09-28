@@ -1,3 +1,5 @@
+Superseded by docs/superpowers/specs/2026-09-28-real-session-flows-design.md (2026-09-28).
+
 # Session-flow derivation
 
 `GET /api/flow` used to serve a hand-written placeholder map. It now serves `deriveFlow()`

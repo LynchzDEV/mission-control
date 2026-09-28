@@ -271,8 +271,8 @@ async function refresh(): Promise<void> {
     return
   }
   const jobs = (readArray(jobsResult.data.jobs) as WorkJob[]).map(job => ({ ...job, threadRoot: job.threadRoot || job.id }))
-  const linked = scopedWork(buildWork(jobs, {}), session.id, session.cwd).flatMap(item => item.members ?? [])
-  paintAgents(activeAgents(linked, {}, session.id, session.cwd))
+  const linked = scopedWork(buildWork(jobs), session.id, session.cwd).flatMap(item => item.members ?? [])
+  paintAgents(activeAgents(linked, session.id, session.cwd))
 }
 
 $('open-agents').addEventListener('click', () => void refresh())

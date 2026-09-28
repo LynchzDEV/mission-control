@@ -12,7 +12,6 @@ import {
   sessionsDueForAutoArchive,
 } from '../server/archive'
 import type { JobRecord } from '../server/jobs'
-import type { Plan } from '../server/plans'
 
 let dir: string
 
@@ -41,10 +40,6 @@ function job(overrides: Partial<JobRecord> = {}): JobRecord {
     reviewedAt: null,
     ...overrides,
   }
-}
-
-function plan(overrides: Partial<Plan> = {}): Plan {
-  return { label: 'demo', steps: [], next: null, updatedAt: 0, ...overrides }
 }
 
 describe('createArchiveStore', () => {
@@ -173,18 +168,13 @@ describe('sessionsDueForAutoArchive', () => {
 })
 
 describe('sessionLastActivity', () => {
-  test('is the max job endedAt when there is no plan', () => {
+  test('is the max job endedAt', () => {
     const jobs = [job({ id: 'a', endedAt: 1_000 }), job({ id: 'b', endedAt: 5_000 })]
-    expect(sessionLastActivity(jobs, null)).toBe(5_000)
-  })
-
-  test('is the plan updatedAt when it is newer than every job', () => {
-    const jobs = [job({ endedAt: 1_000 })]
-    expect(sessionLastActivity(jobs, plan({ updatedAt: 9_000 }))).toBe(9_000)
+    expect(sessionLastActivity(jobs)).toBe(5_000)
   })
 
   test('a running job (endedAt null) does not count as activity', () => {
     const jobs = [job({ endedAt: null }), job({ id: 'b', endedAt: 2_000 })]
-    expect(sessionLastActivity(jobs, null)).toBe(2_000)
+    expect(sessionLastActivity(jobs)).toBe(2_000)
   })
 })

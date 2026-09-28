@@ -1,8 +1,7 @@
 import { Elysia } from 'elysia'
 
 import { requireLocal } from '../auth'
-import { countPendingReviews } from '../flow'
-import type { JobManager } from '../jobs'
+import type { JobManager, JobRecord } from '../jobs'
 import { blockClock, type BlockClock, type TokenSampler } from '../meta'
 import type { QuotaComposite } from '../quota'
 import { quotaCache, tokenSampler } from './quota'
@@ -12,6 +11,14 @@ export type MetaResponse = {
   blockClock: BlockClock | null
   tokPerMin: number | null
   reviewCount: number
+}
+
+export function awaitsReview(job: JobRecord): boolean {
+  return job.status === 'done' && ((job.diffStat !== null && job.diffStat !== '') || typeof job.worktree === 'string') && job.reviewedAt === null
+}
+
+export function countPendingReviews(jobs: readonly JobRecord[]): number {
+  return jobs.filter(awaitsReview).length
 }
 
 export type MetaDeps = {
