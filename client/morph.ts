@@ -55,6 +55,27 @@ export function fold(el: HTMLElement, done: () => void = () => { el.hidden = tru
   ], timing).onfinish = () => { el.style.overflow = ''; done() }
 }
 
+export function settleIn(el: HTMLElement): void {
+  if (still() || !onScreen(el)) return
+  el.animate([{ opacity: 0, transform: 'translateY(2px)' }, { opacity: 1, transform: 'none' }], timing)
+}
+
+export function blendColor(el: HTMLElement, from: string | undefined): void {
+  if (!from || still() || !onScreen(el)) return
+  const to = getComputedStyle(el).backgroundColor
+  if (to !== from) el.animate([{ backgroundColor: from }, { backgroundColor: to }], timing)
+}
+
+export function glide(host: HTMLElement, from: HTMLElement, to: HTMLElement, className: string): void {
+  if (still() || !onScreen(from) || !onScreen(to)) return
+  const base = host.getBoundingClientRect()
+  const place = (el: HTMLElement): Keyframe => { const box = el.getBoundingClientRect(); return { top: `${box.top - base.top + host.scrollTop}px`, left: `${box.left - base.left}px`, width: `${box.width}px`, height: `${box.height}px` } }
+  const ghost = Object.assign(document.createElement('div'), { className })
+  host.prepend(ghost)
+  to.classList.add('arriving')
+  ghost.animate([place(from), place(to)], timing).onfinish = () => { ghost.remove(); to.classList.remove('arriving') }
+}
+
 export function rollText(el: HTMLElement, text: string): void {
   if (el.textContent === text) return
   el.textContent = text

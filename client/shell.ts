@@ -1,3 +1,5 @@
+import { fold, reveal } from './morph'
+
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const screens = ['welcome', 'history', 'conversation', 'studio'] as const
 const agents = $('agents') as HTMLDialogElement
@@ -99,8 +101,13 @@ addEventListener('quiet:history-painted', () => $('chat-search').dispatchEvent(n
 $('chat-search').oninput = () => {
   const query = ($('chat-search') as HTMLInputElement).value.trim().toLowerCase()
   const items = [...document.querySelectorAll<HTMLElement>('#history .history-item')]
-  items.forEach(item => { item.hidden = !(item.textContent ?? '').toLowerCase().includes(query) })
-  $('no-results').hidden = items.some(item => !item.hidden)
+  const matches = (item: HTMLElement): boolean => (item.textContent ?? '').toLowerCase().includes(query)
+  for (const item of items) {
+    if (matches(item) === !item.hidden) continue
+    if (matches(item)) reveal(item, true, 'top center')
+    else fold(item)
+  }
+  $('no-results').hidden = items.some(matches)
 }
 
 

@@ -1,4 +1,5 @@
 import { getJson, readArray } from './shared'
+import { blendColor, fold, glide, settleIn } from './morph'
 import { chatSignal, historyDay, historyOpen, type HistoryItem } from './chat-view'
 import { renameValue, sessionSlot, type Session } from './terminal-state'
 import { confirmButton } from './confirm-button'
@@ -69,8 +70,10 @@ function readHidden(): Record<string, number> {
 function hide(key: string): void {
   hidden = { ...hidden, [key]: Date.now() }
   try { localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden)) } catch {}
-  signature = ''
-  paint(historyItems)
+  const repaint = (): void => { signature = ''; paint(historyItems) }
+  const row = document.querySelector<HTMLElement>(`#sidebar-list .sb-row[data-key="${CSS.escape(key)}"]`)?.closest<HTMLElement>('.sb-item')
+  if (row) fold(row, repaint)
+  else repaint()
 }
 let renaming = false
 
@@ -92,6 +95,7 @@ function startRename(item: HistoryItem, text: HTMLElement): void {
   const input = Object.assign(document.createElement('input'), { className: 'sb-rename', value: item.title, maxLength: 60 })
   input.setAttribute('aria-label', 'Terminal name')
   text.replaceWith(input)
+  settleIn(input)
   let settled = false
   const finish = (save: boolean): void => {
     if (settled) return
@@ -99,6 +103,7 @@ function startRename(item: HistoryItem, text: HTMLElement): void {
     renaming = false
     const title = save ? renameValue(item.title, input.value) : null
     input.replaceWith(text)
+    settleIn(text)
     if (title !== null) dispatchEvent(new CustomEvent('quiet:terminal-rename', { detail: { id: item.id, title } }))
     signature = ''
     paint(historyItems)
@@ -164,13 +169,30 @@ function rowElement(row: Row, className: 'sb-row' | 'sb-mini'): HTMLElement {
   return wrap
 }
 
+function dotElements(): Array<[string, HTMLElement]> {
+  const inList = [...document.querySelectorAll<HTMLElement>('#sidebar-list .sb-morph')].map((dot): [string, HTMLElement] => [(dot.previousElementSibling as HTMLElement | null)?.dataset.key ?? '', dot])
+  const inRail = [...document.querySelectorAll<HTMLElement>('#sidebar-mini .sb-dot')].map((dot): [string, HTMLElement] => [`rail:${(dot.parentElement as HTMLElement).dataset.key}`, dot])
+  return [...inList, ...inRail]
+}
+
+function dotColors(): Map<string, string> {
+  return new Map(dotElements().map(([key, dot]) => [key, getComputedStyle(dot).backgroundColor]))
+}
+
+let lastSelected: HTMLElement | null = null
+
 function markSelected(): void {
   const key = selectedKey()
+  const list = document.getElementById('sidebar-list')
+  const from = list?.querySelector<HTMLElement>('.sb-row.sel') ?? (lastSelected?.isConnected ? lastSelected : null)
   document.querySelectorAll<HTMLElement>('#sidebar .sb-row, #sidebar .sb-mini').forEach(element => {
     const selected = element.dataset.key === key
     element.classList.toggle('sel', selected)
     if (selected) element.setAttribute('aria-current', 'page'); else element.removeAttribute('aria-current')
   })
+  const to = list?.querySelector<HTMLElement>('.sb-row.sel') ?? null
+  if (list && from && to && from !== to) glide(list, from, to, 'sb-glide')
+  if (to) lastSelected = to
 }
 
 function paint(items: HistoryItem[]): void {
@@ -184,11 +206,13 @@ function paint(items: HistoryItem[]): void {
   if (next === signature) return
   signature = next
   const list = document.getElementById('sidebar-list')!
+  const dots = dotColors()
   list.replaceChildren(...groups.flatMap(group => [
     Object.assign(document.createElement('p'), { className: 'sb-day', textContent: group.day }),
     ...group.items.map(item => rowElement(rowOf(item), 'sb-row')),
   ]))
   document.getElementById('sidebar-mini')!.replaceChildren(...rows.filter(row => row.state === 'running' || row.state === 'live').map(row => rowElement(row, 'sb-mini')))
+  for (const [key, dot] of dotElements()) blendColor(dot, dots.get(key))
   markSelected()
 }
 
