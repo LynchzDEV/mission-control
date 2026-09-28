@@ -820,6 +820,30 @@ describe('job loop progress', () => {
     expect(reloaded?.lastTool).toBe('Bash')
   })
 
+  test('counts each top-level Agent or Task call once as a sub-agent, persists it and reports progress', async () => {
+    const repo = join(home, 'sub-agents')
+    await initGitRepo(repo)
+    const progress: JobRecord[] = []
+    const manager = createJobManager({ home, onJobProgress: (record) => { progress.push(record) } })
+    const created = await manager.createJob({ engine: 'claude', cwd: repo, prompt: '', label: 'sub-agents' }, sleepResolver)
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    const id = created.job.id
+    const call = (toolId: string, name: string, parent: string | null = null) => JSON.stringify({ type: 'assistant', parent_tool_use_id: parent, message: { content: [{ type: 'tool_use', id: toolId, name, input: {} }] } })
+    try {
+      await appendFile(manager.logPath(id), [call('t1', 'Agent'), call('t2', 'Task'), call('t1', 'Agent'), call('t3', 'Read'), call('t4', 'Agent', 't1'), ''].join('\n'))
+      await Bun.sleep(350)
+      expect(manager.getJob(id)?.subAgents).toBe(2)
+      expect(progress.at(-1)?.subAgents).toBe(2)
+      const saved = JSON.parse((await readFile(join(configDir, JOBS_FILE), 'utf8')).trim().split('\n').at(-1)!)
+      expect(saved.subAgents).toBe(2)
+    } finally {
+      await manager.killJob(id)
+      await waitForStatus(manager, id)
+    }
+    expect(createJobManager({ home }).getJob(id)?.subAgents).toBe(2)
+  })
+
   test('replays an adopted live log without counting persisted turns twice', async () => {
     const repo = join(home, 'adopt-progress')
     await initGitRepo(repo)

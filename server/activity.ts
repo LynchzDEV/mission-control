@@ -293,9 +293,19 @@ function parseStream(logText: string, max: number, limits: Limits): ActivityEven
   return resolved.slice(resolved.length - max)
 }
 
-export function parseJobProgress(logText: string): { turns: number; lastTool: string | null } {
+const SUB_AGENT_TOOLS = new Set(['Agent', 'Task'])
+
+function subAgentCallIds(event: Record<string, unknown>): string[] {
+  if (event.type !== 'assistant' || (event.parent_tool_use_id ?? null) !== null || !isRecord(event.message) || !Array.isArray(event.message.content)) return []
+  return event.message.content.filter(isRecord)
+    .filter(block => block.type === 'tool_use' && SUB_AGENT_TOOLS.has(asString(block.name)) && asString(block.id) !== '')
+    .map(block => asString(block.id))
+}
+
+export function parseJobProgress(logText: string): { turns: number; lastTool: string | null; subAgentIds: string[] } {
   let turns = 0
   let lastTool: string | null = null
+  const subAgentIds: string[] = []
   for (const line of logText.split('\n')) {
     let raw: unknown
     try {
@@ -313,8 +323,9 @@ export function parseJobProgress(logText: string): { turns: number; lastTool: st
     for (const event of events) {
       if (event.kind === 'tool') lastTool = event.title
     }
+    subAgentIds.push(...subAgentCallIds(raw))
   }
-  return { turns, lastTool }
+  return { turns, lastTool, subAgentIds }
 }
 
 export function parseActivity(logText: string, max: number = DEFAULT_ACTIVITY_MAX): ActivityEvent[] {

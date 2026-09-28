@@ -11,10 +11,17 @@ const job = (patch: Partial<JobRecord>) => ({ id: 'j', label: 'Fix badge', engin
 test('run view keeps what the drawer draws and drops prompts, outputs and policy', () => {
   const view = runView(run({}))
   expect(view.nodes.map(node => [node.id, node.engine])).toEqual([['plan', 'claude'], ['verify-plan', 'claude'], ['execute', 'claude'], ['review', 'codex']])
-  expect(view.attempts[0]).toEqual({ nodeId: 'plan', number: 0, jobId: 'j1', status: 'settled', outcome: 'pass', summary: 'Planned', startedAt: 1, endedAt: 2, pathId: 'main', from: [] })
+  expect(view.attempts[0]).toEqual({ nodeId: 'plan', number: 0, jobId: 'j1', status: 'settled', outcome: 'pass', summary: 'Planned', startedAt: 1, endedAt: 2, pathId: 'main', from: [], subAgents: 0 })
   expect(JSON.stringify(view)).not.toContain('long prompt')
   expect(JSON.stringify(view)).not.toContain('long output')
   expect(JSON.stringify(view)).not.toContain('secret request text')
+})
+
+test('an attempt carries its job\'s sub-agent count, and the scope snapshot fills it from the jobs it has', () => {
+  expect(runView(run({}), new Map([['j1', job({ id: 'j1', subAgents: 3 })]])).attempts[0]!.subAgents).toBe(3)
+  expect(runView(run({}), new Map([['j1', job({ id: 'j1' })]])).attempts[0]!.subAgents).toBe(0)
+  const snapshot = scopeSnapshot([run({})], [job({ id: 'j1', terminalId: 't1', workflowRunId: 'run-1', subAgents: 2 })], { terminal: 't1' })
+  expect(snapshot.runs[0]!.attempts[0]!.subAgents).toBe(2)
 })
 
 test('scope snapshot picks the terminal or chat runs, newest first, and flow-less jobs', () => {

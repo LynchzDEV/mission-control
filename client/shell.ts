@@ -42,6 +42,10 @@ $('open-agents').onclick = () => {
   $('open-agents').setAttribute('aria-expanded', String(agents.open))
 }
 agents.addEventListener('close', () => $('open-agents').setAttribute('aria-expanded', String(agents.open)))
+addEventListener('quiet:agent-open', () => {
+  if (!agents.open) showAgents()
+  $('open-agents').setAttribute('aria-expanded', String(agents.open))
+})
 agents.onkeydown = (event) => {
   if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); agents.close(); $('open-agents').focus() }
 }
@@ -69,11 +73,15 @@ function leaveTo(back: { screen: (typeof screens)[number]; live: boolean }): voi
   showScreen(back.screen)
   if (back.live) dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: { restore: true } }))
 }
-$('open-studio').onclick = () => {
-  if (!$('studio').hidden) { const back = beforeStudio ?? { screen: 'welcome' as const, live: false }; beforeStudio = null; leaveTo(back); return }
+function enterStudio(): void {
   beforeStudio = currentView()
   showScreen('studio')
 }
+$('open-studio').onclick = () => {
+  if (!$('studio').hidden) { const back = beforeStudio ?? { screen: 'welcome' as const, live: false }; beforeStudio = null; leaveTo(back); return }
+  enterStudio()
+}
+addEventListener('quiet:studio-run', () => { if ($('studio').hidden) enterStudio() })
 function showHistory(): void {
   beforeHistory = currentView()
   showScreen('history')

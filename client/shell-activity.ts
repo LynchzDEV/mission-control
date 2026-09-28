@@ -18,7 +18,10 @@ const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElemen
 let scope: Scope | null = null
 let replyTarget: string | null = null
 let generation = 0
-let refreshing = false
+let inflight: Promise<void> | null = null
+let extra: { row: AgentRow; job: ChatAgent } | null = null
+let paintedRows: AgentRow[] = []
+let repaint: (() => void) | null = null
 let agentSignature = ''
 let openRow: string | null = null
 let logTimer: ReturnType<typeof setInterval> | undefined
@@ -37,6 +40,9 @@ function setActivityScope(next: Scope | null): void {
   generation++
   scope = next
   agentSignature = ''
+  extra = null
+  repaint = null
+  paintedRows = []
   closeDetail()
   $('live-agents').hidden = !next
   document.querySelectorAll<HTMLElement>('#agents .activity-empty').forEach(node => { node.hidden = !!next })
@@ -146,7 +152,12 @@ function fadeTo(tick: HTMLElement, text: string): void {
   setTimeout(() => { tick.textContent = text; tick.classList.remove('out') }, FADE_MS)
 }
 
-function paintRows(rows: AgentRow[], detail: (row: AgentRow) => HTMLElement): void {
+function paintRows(shownRows: AgentRow[], shownDetail: (row: AgentRow) => HTMLElement): void {
+  const kept = extra
+  const rows = kept && !shownRows.some(row => row.jobId === kept.row.jobId) ? [...shownRows, kept.row] : shownRows
+  const detail = (row: AgentRow): HTMLElement => row === kept?.row ? chatDetail(kept.job) : shownDetail(row)
+  paintedRows = rows
+  repaint = () => paintRows(shownRows, shownDetail)
   const list = $('live-agents-list')
   const shown = new Map([...list.querySelectorAll<HTMLElement>('.ag-tick')].map(tick => [tick.dataset.job, tick.textContent ?? '']))
   const openNow = rows.find(row => row.id === openRow)
@@ -234,7 +245,6 @@ function chatDetail(job: ChatAgent): HTMLElement {
 
 async function refreshChat(chat: string, request: number): Promise<void> {
   const jobsResult = await getJson(`/api/jobs?chat=${encodeURIComponent(chat)}`)
-  refreshing = false
   if (request !== generation) return
   if (!jobsResult.ok) { rollText($('live-agents-status'), `Agents unavailable: ${errorText(jobsResult)}. Retrying…`); agentSignature = ''; return }
   paintChatAgents((readArray(jobsResult.data.jobs) as unknown as ChatAgent[]).filter(job => job.purpose !== 'chat'))
@@ -255,14 +265,16 @@ function paintAgents(agents: WorkItem[]): void {
   })), row => { const body = node('div', '', 'ag-detail'); body.append(node('p', providerName(row.engine), 'ag-why')); return body })
 }
 
-async function refresh(): Promise<void> {
-  if (!scope || refreshing || document.hidden || !($('agents') as HTMLDialogElement).open) return
-  const request = generation
-  refreshing = true
-  if (scope.kind === 'chat') { await refreshChat(scope.chat, request); return }
-  const session = scope.session
+function refresh(): Promise<void> {
+  if (inflight) return inflight
+  if (!scope || document.hidden || !($('agents') as HTMLDialogElement).open) return Promise.resolve()
+  const running = scope.kind === 'chat' ? refreshChat(scope.chat, generation) : refreshSession(scope.session, generation)
+  inflight = running.finally(() => { inflight = null })
+  return inflight
+}
+
+async function refreshSession(session: Session, request: number): Promise<void> {
   const jobsResult = await getJson('/api/jobs')
-  refreshing = false
   if (request !== generation) return
   if (!jobsResult.ok) {
     $('live-agents-status').textContent = `Activity unavailable: ${errorText(jobsResult)}. Retrying…`
@@ -275,7 +287,37 @@ async function refresh(): Promise<void> {
   paintAgents(activeAgents(linked, session.id, session.cwd))
 }
 
+async function jobFromServer(jobId: string): Promise<ChatAgent | undefined> {
+  const result = await getJson('/api/jobs')
+  return result.ok ? (readArray(result.data.jobs) as unknown as ChatAgent[]).find(job => job.id === jobId) : undefined
+}
+
+function revealJob(jobId: string): void {
+  const row = paintedRows.find(candidate => candidate.jobId === jobId)
+  const item = row ? [...$('live-agents-list').querySelectorAll<HTMLElement>('.ag-item')].find(candidate => candidate.dataset.job === row.id) : undefined
+  if (!row || !item) return
+  if (openRow !== row.id) openDetail(item, row)
+  item.scrollIntoView({ block: 'nearest' })
+}
+
+async function openAgentFor(jobId: string): Promise<void> {
+  const request = generation
+  await inflight
+  agentSignature = ''
+  await refresh()
+  if (request !== generation) return
+  if (!paintedRows.some(row => row.jobId === jobId)) {
+    const job = await jobFromServer(jobId)
+    if (request !== generation) return
+    if (!job) { dispatchEvent(new CustomEvent('quiet:agent-open-missing', { detail: { jobId } })); return }
+    extra = { row: chatRow(job, [job]), job }
+    repaint?.()
+  }
+  revealJob(jobId)
+}
+
 $('open-agents').addEventListener('click', () => void refresh())
+addEventListener('quiet:agent-open', (event) => void openAgentFor((event as CustomEvent<{ jobId: string }>).detail.jobId))
 addEventListener('quiet:activity-scope', (event) => { const session = (event as CustomEvent<Session | null>).detail; setActivityScope(session ? { kind: 'session', session } : null) })
 addEventListener('quiet:chat-agents', (event) => { const chat = (event as CustomEvent<string | null>).detail; if (chat) setActivityScope({ kind: 'chat', chat }) })
 if (document.body.dataset.chat) setActivityScope({ kind: 'chat', chat: document.body.dataset.chat })

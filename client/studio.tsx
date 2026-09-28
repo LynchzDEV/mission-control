@@ -63,6 +63,9 @@ function graphEdges(graph: Workflow): Edge[] { return graph.edges.map(edge => ({
 function fresh(graph: Workflow): WorkflowRevision { return { ...graph, id: `workflow-${crypto.randomUUID().slice(0, 8)}`, revision: '', createdAt: 0 } }
 function dateLabel(time: number): string { return time ? new Date(time).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Built-in version' }
 
+let pendingRunId: string | null = null
+addEventListener('quiet:studio-run', event => { pendingRunId = (event as CustomEvent<{ runId: string }>).detail?.runId ?? null })
+
 function Studio() {
   const [screen, setScreen] = useState<Screen>('home')
   const [panel, setPanel] = useState<Panel>(null)
@@ -86,6 +89,7 @@ function Studio() {
   const [revisions, setRevisions] = useState<WorkflowRevision[]>([])
   const [runs, setRuns] = useState<RunSummary[]>([])
   const [run, setRun] = useState<WorkflowRun | null>(null)
+  const [revealRunId, setRevealRunId] = useState<string | null>(null)
   const [canvasRun, setCanvasRun] = useState<WorkflowRun | null>(null)
   const [policy, setPolicy] = useState<PolicyRevision | null>(null)
   const [policyText, setPolicyText] = useState('')
@@ -126,6 +130,25 @@ function Studio() {
   useEffect(() => { let active = true; Promise.all([refreshWorkflows(), refreshConnections(), api<PolicyRevision>('/policy'), api<{ draft: DraftJob | null }>('/drafts')]).then(([, , policy, drafting]) => { if (active) { setPolicy(policy); setPolicyText(policy.template); if (drafting.draft) setDraftJob(drafting.draft) } }).catch(error => setError(error.message)); return () => { active = false } }, [])
   useEffect(() => { const guard = (event: BeforeUnloadEvent) => { if (dirty || building) event.preventDefault() }; addEventListener('beforeunload', guard); return () => removeEventListener('beforeunload', guard) }, [dirty, building])
   useEffect(() => { if (modal) dialog.current?.showModal() }, [modal])
+  useEffect(() => {
+    const consume = () => {
+      const runId = pendingRunId
+      if (!runId) return
+      pendingRunId = null
+      go('runs')
+      api<WorkflowRun>(`/runs/${encodeURIComponent(runId)}`).then(result => { setRun(() => result); setRevealRunId(() => runId) }).catch(error => setError((error as Error).message))
+    }
+    consume()
+    addEventListener('quiet:studio-run', consume)
+    return () => removeEventListener('quiet:studio-run', consume)
+  }, [])
+  useEffect(() => {
+    if (!revealRunId || screen !== 'runs') return
+    const item = [...document.querySelectorAll<HTMLElement>('.runs-view .history-item')].find(element => element.dataset.run === revealRunId)
+    if (!item) return
+    item.scrollIntoView({ block: 'nearest' })
+    setRevealRunId(null)
+  }, [revealRunId, runs, run?.id, screen])
   useEffect(() => { setNodes(current => current.map(node => ({ ...node, data: { ...node.data, agentLabel: label(node.data) } }))) }, [providers])
   useEffect(() => { if (screen === 'runs') void refreshRuns().catch(error => setError(error.message)); if (screen === 'rules') void api<{ revisions: PolicyRevision[] }>('/policy/revisions').then(result => setPolicyRevisions(result.revisions)).catch(error => setError(error.message)) }, [screen, run?.status])
   useEffect(() => { if (panel === 'history' && graph?.revision) void api<{ revisions: WorkflowRevision[] }>(`/workflows/${graph.id}/revisions`).then(result => setRevisions(result.revisions)).catch(error => setError(error.message)) }, [panel, graph?.id, graph?.revision])
@@ -253,7 +276,7 @@ function Studio() {
     {screen === 'runs' && <section className="studio-view secondary-studio runs-view">
       <div className="runs-heading"><h2>Recent runs</h2><button type="button" className="text-button" disabled={busy} onClick={() => void action(refreshRuns)}>Refresh</button></div>
       {runs.length === 0 && <p className="muted">Your workflow runs will appear here.</p>}
-      <div className="history-list">{runs.map(item => <details key={item.id} className="history-item" open={run?.id === item.id} onToggle={event => { if (event.currentTarget.open && run?.id !== item.id) void action(async () => setRun(await api<WorkflowRun>(`/runs/${item.id}`))) }}>
+      <div className="history-list">{runs.map(item => <details key={item.id} className="history-item" data-run={item.id} open={run?.id === item.id} onToggle={event => { if (event.currentTarget.open && run?.id !== item.id) void action(async () => setRun(await api<WorkflowRun>(`/runs/${item.id}`))) }}>
         <summary><span>{item.label}</span><span className="status" data-state={item.status}>{item.status}</span></summary>
         {run?.id === item.id ? <div className="run-detail">
           <div className="run-actions"><span className="muted">{run.workflow.name} · {dateLabel(run.createdAt)}</span>{isLiveRun(run.status) ? <button type="button" className="text-button danger" disabled={busy} onClick={() => void action(async () => setRun(await api<WorkflowRun>(`/runs/${run.id}/stop`, {})))}>Stop run</button> : ['failed', 'blocked', 'stopped'].includes(run.status) && <button type="button" className="text-button" disabled={busy} onClick={() => void action(async () => setRun(await api<WorkflowRun>(`/runs/${run.id}/retry`, {})))}>Retry current step</button>}</div>

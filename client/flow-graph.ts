@@ -2,7 +2,7 @@ import type { RunView } from '../server/run-view'
 
 export type StepState = 'done' | 'active' | 'failed' | 'pending' | 'conditional' | 'proposed' | 'removed'
 export type EdgeState = 'done' | 'flowing' | 'failed' | 'idle' | 'proposed'
-export type GraphStep = { id: string; title: string; detail: string; state: StepState; engine: string; kind: string; since?: number }
+export type GraphStep = { id: string; title: string; detail: string; state: StepState; engine: string; kind: string; since?: number; jobId?: string }
 export type GraphEdge = { source: string; target: string; outcome: 'pass' | 'fail' | 'blocked'; state: EdgeState; label?: string }
 export type Placed = { id: string; x: number; y: number }
 export type Route = { source: string; target: string; shape: 'forward' | 'down' | 'up' | 'back'; d: string }
@@ -237,13 +237,25 @@ function stepIcon(step: GraphStep): Element {
   return glyph
 }
 
+const isSectionBox = (id: string): boolean => id.startsWith('section:')
+
+export function describeCard(card: HTMLElement, step: GraphStep): void {
+  card.title = step.title
+  const box = isSectionBox(step.id)
+  if (!box && !step.jobId) { card.setAttribute('aria-label', `${step.title}, ${step.detail}`); return }
+  card.setAttribute('role', 'button')
+  card.tabIndex = 0
+  card.setAttribute('aria-label', `${step.title}, ${step.detail}, ${box ? 'show its steps' : 'open its agent'}`)
+  if (box) card.setAttribute('aria-expanded', 'false')
+}
+
 function stepCard(step: GraphStep, place: Placed): HTMLElement {
   const card = document.createElement('div')
   card.className = 'flow-step'
   card.dataset.step = step.id
   card.dataset.state = step.state
   card.dataset.kind = step.kind
-  card.setAttribute('role', 'listitem')
+  describeCard(card, step)
   card.style.left = `${place.x}px`
   card.style.top = `${place.y}px`
   const title = document.createElement('strong')
@@ -351,6 +363,7 @@ export function renderRunGraph(host: HTMLElement, steps: GraphStep[], edges: Gra
   frames.set(host, frame)
   const graph = document.createElement('div')
   graph.className = options.animate ? 'flow-run' : 'flow-run still'
+  graph.setAttribute('role', 'group')
   graph.style.width = `${frame.width}px`
   graph.style.height = `${frame.height}px`
   const svg = document.createElementNS(SVG, 'svg')

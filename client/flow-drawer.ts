@@ -1,6 +1,6 @@
 import type { QuickJobView, RunAttemptView, RunView, ScopeSnapshot } from '../server/run-view'
 import { confirmButton } from './confirm-button'
-import { renderRunGraph, type EdgeState, type GraphEdge, type GraphStep, type StepState } from './flow-graph'
+import { describeCard, renderRunGraph, type EdgeState, type GraphEdge, type GraphStep, type StepState } from './flow-graph'
 import { mountViewport } from './flow-viewport'
 import { rollText } from './morph'
 import { errorText, postJson, providerName, type ApiResult, type JsonRecord } from './shared'
@@ -18,6 +18,8 @@ const LIVE = new Set(['awaiting-approval', 'running', 'paused'])
 const SUMMARY_CHARS = 60
 const TICK_MS = 1000
 const EMPTY_TITLE = 'Session flow'
+const MISSING_JOB = "That step's job is no longer available."
+const NOTICE_MS = 4000
 const NO_BANNER: Banner = { tone: null, text: '', actions: [] }
 
 const isLive = (run: RunView): boolean => LIVE.has(run.status)
@@ -112,7 +114,9 @@ function attemptStatus(run: RunView, tries: RunAttemptView[], now: number): Step
   const retry = tries.length > 1 ? `Try ${tries.length} · ` : ''
   if (latest.status !== 'settled') {
     if (!isLive(run)) return { state: 'failed', detail: run.status === 'stopped' ? 'Stopped' : 'Did not finish' }
-    return { state: 'active', detail: `${tries.length > 1 ? `Try ${tries.length}` : 'Working'} · ${elapsed(now - latest.startedAt)}`, since: latest.startedAt }
+    const subAgents = latest.subAgents ?? 0
+    const doing = [tries.length > 1 ? `Try ${tries.length}` : '', subAgents > 0 ? `${subAgents} sub-agent${subAgents === 1 ? '' : 's'}` : ''].filter(Boolean)
+    return { state: 'active', detail: `${(doing.length ? doing : ['Working']).join(' · ')} · ${elapsed(now - latest.startedAt)}`, since: latest.startedAt }
   }
   if (latest.outcome === 'pass') return { state: 'done', detail: `${retry}Done · ${elapsed((latest.endedAt ?? now) - latest.startedAt)}` }
   const summary = (latest.summary ?? '').slice(0, SUMMARY_CHARS)
@@ -126,10 +130,11 @@ export function stepsFor(run: RunView, now: number): GraphStep[] {
   const current = run.nodes.map(node => {
     const tries = attempts.filter(attempt => attempt.nodeId === node.id)
     const status = stepStatus(run, node.kind, node.id, node.engine, tries, reachable, now)
+    const jobId = tries.filter(attempt => attempt.jobId).at(-1)?.jobId
     const proposed = proposal?.removed.includes(node.id) ? { state: 'removed' as const, detail: `Removed in v${proposal.number}` }
       : !tries.length && proposal?.changed.includes(node.id) ? { state: status.state, detail: `Changed in v${proposal.number}` }
         : status
-    return { id: node.id, title: node.title, engine: node.engine, kind: node.kind, ...proposed }
+    return { id: node.id, title: node.title, engine: node.engine, kind: node.kind, ...proposed, ...(jobId ? { jobId } : {}) }
   })
   const known = new Set(run.nodes.map(node => node.id))
   const ghosts = (run.proposal?.nodes ?? []).filter(node => !known.has(node.id))
@@ -307,7 +312,15 @@ function mountFlowDrawer(): void {
   const title = $('flow-title'), meta = $('flow-meta'), pills = $('flow-pills'), runsSelect = $('flow-runs') as HTMLSelectElement
   const pause = $('flow-pause') as HTMLButtonElement, stop = $('flow-stop') as HTMLButtonElement, save = $('flow-save') as HTMLButtonElement
   const banner = $('flow-banner'), stage = $('flow-stage'), canvas = $('flow-canvas'), quick = $('flow-quick'), quickList = $('flow-quick-list'), empty = $('flow-empty')
+  const studio = $('flow-studio') as HTMLButtonElement
   const viewport = mountViewport(stage, canvas, { animate: motionAllowed })
+  const notice = document.createElement('p')
+  notice.className = 'flow-notice'
+  notice.setAttribute('role', 'status')
+  notice.hidden = true
+  banner.after(notice)
+  let noticeTimer: ReturnType<typeof setTimeout> | undefined
+  let pressedStep: string | null = null
   let scopeQuery: string | null = null
   let open = false
   let source: EventSource | null = null
@@ -322,8 +335,9 @@ function mountFlowDrawer(): void {
   const expandedByRun = new Map<string, Set<string>>()
   const expandedFor = (runId: string): Set<string> => expandedByRun.get(runId) ?? expandedByRun.set(runId, new Set()).get(runId)!
   const compose = (run: RunView, now: number): Composed => collapseSections(stepsFor(run, now), edgesFor(run), run.sections, expandedFor(run.id), run.attempts, now)
+  const cardFor = (id: string | null | undefined): HTMLElement | null => id ? [...canvas.querySelectorAll<HTMLElement>('.flow-step')].find(card => card.dataset.step === id) ?? null : null
   const cardAt = (id: string | undefined): Point | null => {
-    const card = id ? canvas.querySelector<HTMLElement>(`.flow-step[data-step="${id}"]`) : null
+    const card = cardFor(id)
     return card ? { x: parseFloat(card.style.left) || 0, y: parseFloat(card.style.top) || 0 } : null
   }
 
@@ -464,6 +478,7 @@ function mountFlowDrawer(): void {
     pause.hidden = run?.status !== 'running' && run?.status !== 'paused'
     pause.textContent = run?.status === 'paused' ? 'Resume' : 'Pause'
     stop.hidden = !run || !isLive(run)
+    studio.hidden = !run
     paintSave(run)
   }
 
@@ -502,9 +517,12 @@ function mountFlowDrawer(): void {
       paintHeader(run, run.label)
       meta.replaceChildren(...(run.origin.by === 'you' ? [] : [logo(run.origin.by, '')]), metaFor(run))
       const composed = compose(run, Date.now())
+      const focused = document.activeElement instanceof HTMLElement && canvas.contains(document.activeElement) ? document.activeElement.closest<HTMLElement>('.flow-step')?.dataset.step : undefined
       const frame = renderRunGraph(canvas, composed.steps, composed.edges, run.entry, { animate: motionAllowed(), sections: composed.bands, runId: run.id })
       const after = keep ? cardAt(keep.id) : null
       viewport.paint(run.id, frame, frame.focus, keep && after ? { before: keep.before, after } : undefined)
+      const refocus = cardFor(focused)
+      if (refocus && document.activeElement !== refocus) refocus.focus({ preventScroll: true })
       return
     }
     const newest = snapshot.jobs[0]
@@ -522,7 +540,9 @@ function mountFlowDrawer(): void {
       canvas.querySelectorAll<HTMLElement>('.flow-step').forEach(card => {
         const detail = card.querySelector<HTMLElement>('small[data-since]')
         const step = steps.get(card.dataset.step ?? '')
-        if (detail && step) detail.textContent = step.detail
+        if (!detail || !step) return
+        detail.textContent = step.detail
+        describeCard(card, step)
       })
       return
     }
@@ -559,13 +579,40 @@ function mountFlowDrawer(): void {
     paint(before && to ? { id: to, before } : undefined)
   }
 
-  canvas.addEventListener('click', (event) => {
-    const target = event.target as Element
-    const collapse = target.closest<HTMLElement>('[data-collapse]')
+  function activateStep(id: string | null | undefined): void {
+    if (!id || !current) return
+    if (id.startsWith(sectionBox(''))) { toggleSection(id.slice(sectionBox('').length), true); return }
+    const jobId = compose(current, Date.now()).steps.find(step => step.id === id)?.jobId
+    if (jobId) dispatchEvent(new CustomEvent('quiet:agent-open', { detail: { jobId } }))
+  }
+
+  function showNotice(text: string): void {
+    clearTimeout(noticeTimer)
+    notice.textContent = text
+    notice.hidden = false
+    noticeTimer = setTimeout(() => { notice.hidden = true }, NOTICE_MS)
+  }
+
+  const stepOf = (target: EventTarget | null): string | undefined => (target as Element | null)?.closest?.<HTMLElement>('.flow-step')?.dataset.step
+  stage.addEventListener('pointerdown', (event) => { pressedStep = stepOf(event.target) ?? null })
+  const forgetPress = (): void => { setTimeout(() => { pressedStep = null }, 0) }
+  stage.addEventListener('pointerup', forgetPress)
+  stage.addEventListener('pointercancel', forgetPress)
+  stage.addEventListener('click', (event) => {
+    const collapse = (event.target as Element).closest<HTMLElement>('[data-collapse]')
+    const pressed = pressedStep
+    pressedStep = null
     if (collapse) { toggleSection(collapse.dataset.collapse!, false); return }
-    const box = target.closest<HTMLElement>('.flow-step[data-step^="section:"]')
-    if (box) toggleSection(box.dataset.step!.slice(sectionBox('').length), true)
+    activateStep(pressed ?? stepOf(event.target))
   })
+  stage.addEventListener('keydown', (event) => {
+    const card = (event.target as Element).closest<HTMLElement>('.flow-step[tabindex]')
+    if (!card || (event.key !== 'Enter' && event.key !== ' ')) return
+    event.preventDefault()
+    activateStep(card.dataset.step)
+  })
+  studio.onclick = () => { if (current) dispatchEvent(new CustomEvent('quiet:studio-run', { detail: { runId: current.id } })) }
+  addEventListener('quiet:agent-open-missing', () => showNotice(MISSING_JOB))
   runsSelect.onchange = () => { selected = runsSelect.value; paint() }
   pause.onclick = () => void act(current?.status === 'paused' ? 'resume' : 'pause', current?.id)
   let stopTarget: string | undefined

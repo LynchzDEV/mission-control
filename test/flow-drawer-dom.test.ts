@@ -3,7 +3,7 @@ import { JSDOM } from 'jsdom'
 import type { RunView, ScopeSnapshot } from '../server/run-view'
 
 const markup = `<section id="flow" data-open="true"><h2 id="flow-title"></h2><select id="flow-runs" hidden></select><small id="flow-meta"></small><div id="flow-pills"></div>
-<div class="flow-actions"><button id="flow-save" type="button" hidden>Save as workflow</button><button id="flow-pause" type="button" hidden>Pause</button><button id="flow-stop" class="flow-confirm" type="button" aria-label="Stop" hidden><span>Stop</span><span>Stop flow</span></button></div>
+<div class="flow-actions"><button id="flow-save" type="button" hidden>Save as workflow</button><button id="flow-pause" type="button" hidden>Pause</button><button id="flow-stop" class="flow-confirm" type="button" aria-label="Stop" hidden><span>Stop</span><span>Stop flow</span></button><button id="flow-studio" type="button" hidden>Open in Studio</button></div>
 <div id="flow-banner" hidden><span class="flow-mark"></span><p></p><div class="flow-banner-actions"></div></div>
 <div id="flow-stage" hidden><div id="flow-canvas" class="flow-canvas"></div><div class="flow-zoom" hidden><button type="button" data-zoom="out" aria-label="Zoom out">−</button><button type="button" data-zoom="in" aria-label="Zoom in">+</button><button type="button" data-zoom="fit">Fit</button><button type="button" data-zoom="follow" aria-pressed="true">Follow</button></div></div><div id="flow-quick" hidden><ol id="flow-quick-list"></ol></div><p id="flow-empty"></p></section>`
 const { window } = new JSDOM(`<body>${markup}</body>`, { url: 'http://127.0.0.1:7777/' })
@@ -280,5 +280,101 @@ test('clicking the box expands the section in place with a Collapse button; Coll
   tap(collapse)
   expect(card('section:split')).not.toBeNull()
   expect(canvas().querySelectorAll('.flow-band')).toHaveLength(0)
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+const twoSteps = (id: string, secondState: 'running' | 'settled' = 'running'): RunView => ({
+  ...run(id, 60), entry: 'plan', currentNodeId: 'build',
+  nodes: [{ id: 'plan', title: 'Plan', kind: 'plan', engine: 'claude' }, { id: 'build', title: 'Build', kind: 'implement', engine: 'codex' }, { id: 'ship', title: 'Ship', kind: 'task', engine: 'claude' }],
+  edges: [{ source: 'plan', target: 'build', outcome: 'pass' }, { source: 'build', target: 'ship', outcome: 'pass' }],
+  attempts: [
+    { nodeId: 'plan', number: 0, jobId: 'job-plan', status: 'settled', outcome: 'pass', summary: 'ok', startedAt: 0, endedAt: 1000, pathId: 'main', from: [], subAgents: 0 },
+    { nodeId: 'build', number: 1, jobId: 'job-build', status: secondState, outcome: secondState === 'settled' ? 'pass' : null, summary: null, startedAt: 1000, endedAt: secondState === 'settled' ? 2000 : null, pathId: 'main', from: [0], subAgents: 0 },
+  ],
+  tokens: secondState === 'settled' ? [{ nodeId: 'ship', pathId: 'main', state: 'ready', from: [1] }] : [{ nodeId: 'build', pathId: 'main', state: 'working', from: [0] }],
+})
+const opened = (): string[] => {
+  const jobs: string[] = []
+  addEventListener('quiet:agent-open', (event) => jobs.push((event as CustomEvent<{ jobId: string }>).detail.jobId))
+  return jobs
+}
+
+test('a step that ran is a button named for its agent; clicking or pressing Enter opens its job', () => {
+  stageSize.width = 1000
+  const jobs = opened()
+  const stream = openStream()
+  stream.send({ runs: [twoSteps('C')], jobs: [] })
+  const plan = card('plan')!
+  expect([plan.getAttribute('role'), plan.getAttribute('tabindex'), plan.getAttribute('title')]).toEqual(['button', '0', 'Plan'])
+  expect(plan.getAttribute('aria-label')).toBe('Plan, Done · 1s, open its agent')
+  expect(card('ship')!.hasAttribute('tabindex')).toBe(false)
+  expect(canvas().querySelector('.flow-run')!.getAttribute('role')).toBe('group')
+  tap(plan)
+  card('build')!.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  card('build')!.dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))
+  tap(card('ship')!)
+  expect(jobs).toEqual(['job-plan', 'job-build', 'job-build'])
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('a drag that starts on a step pans and opens nothing', () => {
+  stageSize.width = 1000
+  const jobs = opened()
+  const stream = openStream()
+  stream.send({ runs: [twoSteps('D')], jobs: [] })
+  const plan = card('plan')!
+  for (const [type, clientX] of [['pointerdown', 100], ['pointermove', 120], ['pointerup', 120]] as const) plan.dispatchEvent(new window.PointerEvent(type, { pointerId: 3, clientX, clientY: 60, button: 0, bubbles: true }))
+  plan.click()
+  expect(jobs).toEqual([])
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('the focused step keeps focus when the graph repaints', () => {
+  stageSize.width = 1000
+  const stream = openStream()
+  stream.send({ runs: [twoSteps('R')], jobs: [] })
+  card('plan')!.focus()
+  stream.send({ runs: [{ ...twoSteps('R', 'settled'), updatedAt: 61 }], jobs: [] })
+  expect(card('build')!.dataset.state).toBe('done')
+  expect((document.activeElement as HTMLElement).dataset.step).toBe('plan')
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('a collapsed section is a button that says it is collapsed', () => {
+  stageSize.width = 1000
+  const stream = openStream()
+  stream.send({ runs: [forkedRun('X')], jobs: [] })
+  const box = card('section:split')!
+  expect([box.getAttribute('role'), box.getAttribute('tabindex'), box.getAttribute('aria-expanded')]).toEqual(['button', '0', 'false'])
+  box.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  expect(card('section:split')).toBeNull()
+  expect(card('a')).not.toBeNull()
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('Open in Studio sends the showing run to Studio', () => {
+  stageSize.width = 1000
+  const runs: string[] = []
+  addEventListener('quiet:studio-run', (event) => runs.push((event as CustomEvent<{ runId: string }>).detail.runId))
+  const stream = openStream()
+  stream.send({ runs: [twoSteps('S1')], jobs: [] })
+  const studio = document.getElementById('flow-studio') as HTMLButtonElement
+  expect(studio.hidden).toBe(false)
+  studio.click()
+  expect(runs).toEqual(['S1'])
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('a step whose job is gone says so on its own line and leaves the approval banner alone', () => {
+  stageSize.width = 1000
+  const stream = openStream()
+  const waiting: RunView = { ...twoSteps('M'), status: 'awaiting-approval', versions: [{ ...run('M', 60).versions[0]!, state: 'pending', approvedVia: null }] }
+  stream.send({ runs: [waiting], jobs: [] })
+  const approve = buttonNamed('Approve and run')
+  dispatchEvent(new CustomEvent('quiet:agent-open-missing', { detail: { jobId: 'job-plan' } }))
+  const notice = document.querySelector<HTMLElement>('.flow-notice')!
+  expect([notice.hidden, notice.textContent]).toEqual([false, "That step's job is no longer available."])
+  expect(buttonNamed('Approve and run')).toBe(approve)
+  expect(bannerText()).toContain('Nothing runs until you approve')
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })

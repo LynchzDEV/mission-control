@@ -43,6 +43,7 @@ export type JobRecord = {
   status: JobStatus
   startedAt: number
   turns: number
+  subAgents?: number
   slowAt: number | null
   lastTool: string | null
   endedAt: number | null
@@ -284,6 +285,7 @@ export type JobManagerOptions = {
   onJobSlow?: (record: JobRecord) => void
   onJobSettled?: (record: JobRecord) => void
   onJobStarted?: (record: JobRecord) => void
+  onJobProgress?: (record: JobRecord) => void
 }
 
 export function createJobManager(options: JobManagerOptions = {}): JobManager {
@@ -303,6 +305,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   const tails = new Map<string, string>()
   const sessionScans = new Map<string, string>()
   const pendingActivityTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const subAgentCalls = new Map<string, Set<string>>()
 
   function logPath(id: string): string {
     return join(logsDir, `${id}.log`)
@@ -361,12 +364,18 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
         const progress = parseJobProgress(pending.slice(0, end))
         pending = pending.slice(end + 1)
         turns += progress.turns
+        const calls = subAgentCalls.get(id) ?? subAgentCalls.set(id, new Set()).get(id)!
+        for (const callId of progress.subAgentIds) calls.add(callId)
         const record = jobs.get(id)
         if (record !== undefined) {
           const nextTurns = Math.max(record.turns, turns)
           const lastTool = progress.lastTool ?? record.lastTool
-          if (nextTurns !== record.turns || lastTool !== record.lastTool) {
-            void persist({ ...record, turns: nextTurns, lastTool }).catch(() => {})
+          const subAgents = Math.max(record.subAgents ?? 0, calls.size)
+          const subAgentsChanged = subAgents !== (record.subAgents ?? 0)
+          if (nextTurns !== record.turns || lastTool !== record.lastTool || subAgentsChanged) {
+            const next = { ...record, turns: nextTurns, lastTool, ...(subAgents > 0 ? { subAgents } : {}) }
+            void persist(next).catch(() => {})
+            if (subAgentsChanged) options.onJobProgress?.(next)
           }
         }
       }
@@ -405,6 +414,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
 
   async function settleFailed(id: string, record: JobRecord): Promise<void> {
     processes.delete(id)
+    subAgentCalls.delete(id)
     clearPendingActivityTimer(id)
     await persist({
       ...(jobs.get(id) ?? record),
@@ -452,6 +462,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     if (current.status !== 'running') return
     processes.delete(id)
     sessionScans.delete(id)
+    subAgentCalls.delete(id)
     clearPendingActivityTimer(id)
     tails.delete(id)
     const diffStat = status === 'done' ? await captureDiffStat(current.cwd) : null
@@ -489,7 +500,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const log = await readLogFile(logPath(record.id)).catch(() => '')
     const progress = parseJobProgress(log)
     const current = jobs.get(record.id) ?? record
-    await persist({ ...current, turns: Math.max(current.turns, progress.turns), lastTool: progress.lastTool ?? current.lastTool })
+    const subAgents = Math.max(current.subAgents ?? 0, new Set(progress.subAgentIds).size)
+    await persist({ ...current, turns: Math.max(current.turns, progress.turns), lastTool: progress.lastTool ?? current.lastTool, ...(subAgents > 0 ? { subAgents } : {}) })
     const done = reportedJobOutcome(log) === 'done'
     await settleJob(record.id, record, null, done ? 'done' : 'failed')
   }

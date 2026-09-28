@@ -36,6 +36,21 @@ test('steps show done, a second try in progress, a failed test and a conditional
   expect([steps.fix!.state, steps.fix!.detail]).toEqual(['conditional', 'If API tests fails'])
 })
 
+test('a working step counts its sub-agents, after the try number when it was retried', () => {
+  const withAgents = (count: number, attempts = base.attempts): RunView => ({ ...base, attempts: attempts.map(attempt => attempt.status === 'running' ? { ...attempt, subAgents: count } : attempt) })
+  const working = (run: RunView) => stepsFor(run, 308_000).find(step => step.id === 'build')!.detail
+  const firstTry = base.attempts.slice(0, 1).concat({ ...base.attempts[3]!, number: 1 })
+  expect(working(withAgents(3, firstTry))).toBe('3 sub-agents · 48s')
+  expect(working(withAgents(1, firstTry))).toBe('1 sub-agent · 48s')
+  expect(working(withAgents(3))).toBe('Try 2 · 3 sub-agents · 48s')
+  expect(working(withAgents(0))).toBe('Try 2 · 48s')
+})
+
+test('a step carries the job of its latest attempt; a step that never ran has none', () => {
+  const steps = Object.fromEntries(stepsFor(base, 308_000).map(step => [step.id, step]))
+  expect([steps.plan!.jobId, steps.build!.jobId, steps.test!.jobId, steps.fix!.jobId]).toEqual(['a', 'd', 'c', undefined])
+})
+
 test('a run paused between steps names the step that starts on resume', () => {
   const paused: RunView = { ...base, status: 'paused', currentNodeId: 'build', attempts: base.attempts.slice(0, 1), tokens: [{ nodeId: 'build', pathId: 'main', state: 'ready', from: [0] }] }
   const steps = Object.fromEntries(stepsFor(paused, 0).map(step => [step.id, step]))

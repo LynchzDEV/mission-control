@@ -151,6 +151,7 @@ export async function createApp(): Promise<Elysia> {
   const jobManager = createJobManager({
     onJobSlow: notifySlowJob,
     onJobStarted: (record) => { log(jobLine('started', record)); runEvents.changed() },
+    onJobProgress: () => runEvents.changed(),
     onJobSettled: (record) => {
       runEvents.changed()
       log(jobLine(record.stoppedAt ? 'stopped' : record.status === 'done' ? 'done' : 'failed', record))
