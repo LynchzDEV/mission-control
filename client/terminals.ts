@@ -353,28 +353,14 @@ dropStage.addEventListener('drop', (event) => {
   setActiveState(id)
 })
 
-let ending: string | null = null
-const endDialog = $('end-session') as HTMLDialogElement
-
-function askEnd(id: string): void {
-  const session = sessions.find(item => item.id === id)
-  if (!session) return
-  ending = id
-  $('end-session-title').textContent = `End ${session.title}?`
-  endDialog.showModal()
-}
-
 async function endSession(id: string): Promise<void> {
   let ok = false
   try { const response = await fetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'DELETE' }); ok = response.ok || response.status === 404 } catch {}
   if (!ok) { toast('Could not end this terminal. Try again.'); return }
+  dispatchEvent(new CustomEvent('quiet:terminal-ended', { detail: id }))
   await refreshSessions()
   if (canvas.dataset.live === 'true' && activeId) views.get(activeId)?.terminal.focus()
 }
-
-$('end-session-confirm').onclick = () => { const id = ending; endDialog.close(); if (id) void endSession(id) }
-$('end-session-cancel').onclick = () => endDialog.close()
-endDialog.addEventListener('close', () => { ending = null })
 
 async function rename(id: string, title: string): Promise<void> {
   refreshGeneration += 1
@@ -493,7 +479,7 @@ async function resumeSession(resume: ResumeRequest): Promise<void> {
 
 ;($('live-create') as HTMLFormElement).onsubmit = (event) => { event.preventDefault(); void createTerminal() }
 engineSelect.onchange = () => { modelInput.value = ''; updateModelChoices() }
-addEventListener('quiet:terminal-end', (event) => askEnd((event as CustomEvent<string>).detail))
+addEventListener('quiet:terminal-end', (event) => void endSession((event as CustomEvent<string>).detail))
 addEventListener('quiet:terminal-rename', (event) => { const { id, title } = (event as CustomEvent<{ id: string; title: string }>).detail; void rename(id, title) })
 document.addEventListener('dragend', () => paintZones(null, false))
 addEventListener('quiet:design', () => { if (canvas.dataset.live === 'true') visible(false) })

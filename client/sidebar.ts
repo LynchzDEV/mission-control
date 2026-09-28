@@ -1,6 +1,7 @@
 import { getJson, readArray } from './shared'
 import { chatSignal, historyDay, historyOpen, type HistoryItem } from './chat-view'
 import { renameValue, sessionSlot, type Session } from './terminal-state'
+import { confirmButton } from './confirm-button'
 
 type Day = 'Today' | 'Yesterday'
 type Row = { item: HistoryItem; state: 'running' | 'live' | 'landed' | 'needs' | null; note: string }
@@ -10,6 +11,7 @@ const DAYS: Day[] = ['Today', 'Yesterday']
 const CHAT_ICON = '<svg viewBox="0 0 20 20"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3h0A1.5 1.5 0 0 1 4 11.5z"/></svg>'
 const TERMINAL_ICON = '<svg><use href="#terminal-icon"/></svg>'
 const SHORTCUT_SLOTS = 9
+const HIDDEN_KEY = 'mc.sidebar.hidden'
 const keyOf = (item: HistoryItem): string => `${item.kind}:${item.id}`
 const isLiveTerminal = (item: HistoryItem): boolean => item.kind === 'terminal' && item.live
 
@@ -38,6 +40,10 @@ export function withLiveTerminals(items: HistoryItem[], sessions: Session[] | nu
   return [...items.filter(item => !superseded(item)), ...live].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+export function visibleItems(items: readonly HistoryItem[], hidden: Readonly<Record<string, number>>): HistoryItem[] {
+  return items.filter(item => { const at = hidden[keyOf(item)]; return at === undefined || item.updatedAt > at })
+}
+
 export function numberedKeys(items: readonly HistoryItem[]): string[] {
   return items.filter(item => historyOpen(item) !== null).slice(0, SHORTCUT_SLOTS).map(keyOf)
 }
@@ -54,6 +60,18 @@ let signature = ''
 let historyItems: HistoryItem[] = []
 let liveTerminals: Session[] | null = null
 let numbered: HistoryItem[] = []
+let hidden: Record<string, number> = readHidden()
+
+function readHidden(): Record<string, number> {
+  try { return JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? '{}') as Record<string, number> } catch { return {} }
+}
+
+function hide(key: string): void {
+  hidden = { ...hidden, [key]: Date.now() }
+  try { localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden)) } catch {}
+  signature = ''
+  paint(historyItems)
+}
 let renaming = false
 
 function selectedKey(): string | null {
@@ -96,19 +114,23 @@ function startRename(item: HistoryItem, text: HTMLElement): void {
   input.select()
 }
 
-function terminalActions(item: HistoryItem, element: HTMLElement, text: HTMLElement | null): HTMLElement {
+function liveTerminalActions(item: HistoryItem, element: HTMLElement, text: HTMLElement | null): void {
   element.draggable = true
   element.ondragstart = (event) => { event.dataTransfer?.setData('text/x-mc-terminal', item.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move' }
-  if (!text) return element
-  text.ondblclick = (event) => { event.preventDefault(); event.stopPropagation(); startRename(item, text) }
-  const end = Object.assign(document.createElement('button'), { type: 'button', className: 'sb-x', title: 'End this terminal' })
-  end.setAttribute('aria-label', `End ${item.title}`)
-  end.innerHTML = '<svg><use href="#close-icon"/></svg>'
-  end.onclick = () => dispatchEvent(new CustomEvent('quiet:terminal-end', { detail: item.id }))
-  const wrap = document.createElement('div')
-  wrap.className = 'sb-item'
-  wrap.append(element, end)
-  return wrap
+  if (text) text.ondblclick = (event) => { event.preventDefault(); event.stopPropagation(); startRename(item, text) }
+}
+
+function removeButton(item: HistoryItem, wrap: HTMLElement, state: Row['state']): void {
+  const live = isLiveTerminal(item)
+  const button = Object.assign(document.createElement('button'), { type: 'button', className: 'sb-morph', title: live ? 'End and remove this terminal' : 'Remove from sidebar' })
+  if (state) button.dataset.s = state
+  button.setAttribute('aria-label', `Remove ${item.title}`)
+  button.innerHTML = '<svg aria-hidden="true"><use href="#close-icon"/></svg><span>Remove</span>'
+  wrap.append(button)
+  confirmButton(button, 'Remove', () => {
+    if (live) dispatchEvent(new CustomEvent('quiet:terminal-end', { detail: item.id }))
+    else hide(keyOf(item))
+  })
 }
 
 function rowElement(row: Row, className: 'sb-row' | 'sb-mini'): HTMLElement {
@@ -120,16 +142,26 @@ function rowElement(row: Row, className: 'sb-row' | 'sb-mini'): HTMLElement {
   element.onclick = (event) => { event.preventDefault(); open(row.item) }
   const icon = document.createElement('span'); icon.className = 'sb-ic'; icon.innerHTML = row.item.kind === 'chat' ? CHAT_ICON : TERMINAL_ICON
   element.append(icon)
-  let text: HTMLElement | null = null
-  if (className === 'sb-row') {
-    text = document.createElement('span'); text.className = 'sb-t'; text.textContent = row.item.title
-    if (row.note) text.append(Object.assign(document.createElement('small'), { textContent: row.note }))
-    element.append(text)
-  } else element.title = row.item.title
   const slot = numbered.findIndex(item => keyOf(item) === keyOf(row.item))
-  if (slot >= 0) element.append(Object.assign(document.createElement('kbd'), { className: 'sb-key', textContent: `⌘${slot + 1}`, title: `Switch to this terminal · ⌘${slot + 1}` }))
-  if (row.state) { const dot = document.createElement('i'); dot.className = 'sb-dot'; dot.dataset.s = row.state; element.append(dot) }
-  return isLiveTerminal(row.item) ? terminalActions(row.item, element, text) : element
+  const badge = slot < 0 ? null : Object.assign(document.createElement('kbd'), { className: 'sb-key', textContent: `⌘${slot + 1}`, title: `Open · ⌘${slot + 1}` })
+  const dot = row.state ? Object.assign(document.createElement('i'), { className: 'sb-dot' }) : null
+  if (dot) dot.dataset.s = row.state!
+  if (className === 'sb-mini') {
+    element.title = row.item.title
+    element.append(...[badge, dot].filter((part): part is HTMLElement => part !== null))
+    return element
+  }
+  const text = document.createElement('span'); text.className = 'sb-t'; text.textContent = row.item.title
+  if (row.note) text.append(Object.assign(document.createElement('small'), { textContent: row.note }))
+  const trail = document.createElement('span'); trail.className = 'sb-trail'
+  trail.append(...[badge, Object.assign(document.createElement('span'), { className: 'sb-slot' })].filter((part): part is HTMLElement => part !== null))
+  element.append(text, trail)
+  const wrap = document.createElement('div')
+  wrap.className = 'sb-item'
+  wrap.append(element)
+  if (isLiveTerminal(row.item)) liveTerminalActions(row.item, element, text)
+  removeButton(row.item, wrap, row.state)
+  return wrap
 }
 
 function markSelected(): void {
@@ -144,7 +176,7 @@ function markSelected(): void {
 function paint(items: HistoryItem[]): void {
   historyItems = items
   if (renaming) return
-  const groups = sidebarGroups(withLiveTerminals(items, liveTerminals, Date.now()), Date.now())
+  const groups = sidebarGroups(visibleItems(withLiveTerminals(items, liveTerminals, Date.now()), hidden), Date.now())
   const rows = groups.flatMap(group => group.items.map(rowOf))
   const keys = numberedKeys(rows.map(row => row.item))
   numbered = keys.map(key => rows.find(row => keyOf(row.item) === key)!.item)
@@ -174,6 +206,7 @@ if (typeof document !== 'undefined') {
   addEventListener('quiet:chat-open', (event) => { openChatId = (event as CustomEvent<string>).detail; markSelected(); void poll() })
   addEventListener('quiet:terminals', (event) => { liveTerminals = (event as CustomEvent<Session[]>).detail; paint(historyItems); markSelected() })
   addEventListener('quiet:new-chat', () => { openChatId = null; markSelected() })
+  addEventListener('quiet:terminal-ended', (event) => hide(`terminal:${(event as CustomEvent<string>).detail}`))
   for (const name of ['quiet:screen', 'quiet:activity-scope']) addEventListener(name, markSelected)
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void poll() })
   document.addEventListener('keydown', (event) => {

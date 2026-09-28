@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { numberedKeys, sidebarGroups, withLiveTerminals } from '../client/sidebar'
+import { numberedKeys, sidebarGroups, visibleItems, withLiveTerminals } from '../client/sidebar'
 import type { HistoryItem } from '../client/chat-view'
 
 const DAY = 86_400_000
@@ -75,5 +75,17 @@ describe('numberedKeys', () => {
   test('an ended terminal that cannot be resumed takes no number', () => {
     const codex = { ...terminal('cx', 9, false), engine: 'codex' } as HistoryItem
     expect(numberedKeys([codex, chat('c1', 8)])).toEqual(['chat:c1'])
+  })
+})
+
+describe('visibleItems', () => {
+  test('a removed row stays hidden until the item has newer activity', () => {
+    const items = [chat('quiet', 100), chat('busy', 300), session('s1', 50)]
+    const hidden = { 'chat:quiet': 200, 'chat:busy': 200, 'claude-history:s1': 60 }
+    expect(visibleItems(items, hidden).map(item => item.id)).toEqual(['busy'])
+  })
+  test('nothing removed keeps every row', () => {
+    const items = [chat('c1', 1), terminal('t1', 2)]
+    expect(visibleItems(items, {})).toEqual(items)
   })
 })

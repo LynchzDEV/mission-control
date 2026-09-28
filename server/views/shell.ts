@@ -139,13 +139,6 @@ const BODY = `
     <label>API token<span class="token-row"><input id="access-token" value="" readonly aria-describedby="access-token-note"><button type="button" class="text-button" id="access-reveal">Reveal</button><button type="button" class="text-button" id="access-copy" hidden>Copy</button><button type="button" class="text-button danger" id="access-rotate">Rotate</button></span></label><p class="muted" id="access-token-note" role="status">For scripts and the dispatch skill. It grants nothing extra on this machine.</p></div>
     <form id="access-home-form" class="field-stack"><label>Chat home<span class="token-row"><input id="access-home" autocomplete="off" spellcheck="false" placeholder="/Users/you/projects" aria-describedby="access-home-note"><button type="submit" class="text-button">Save</button></span></label><p class="muted" id="access-home-note" role="status"></p></form></dialog>
   <dialog id="access-rotate-confirm" class="access-dialog flat confirm-dialog" aria-labelledby="access-rotate-title"><header class="dialog-heading"><h2 id="access-rotate-title">Make a new API token?</h2><form method="dialog"><button class="round" aria-label="Cancel"><svg><use href="#close-icon"/></svg></button></form></header><p class="muted">Scripts and the dispatch skill using the current token stop working until they read the new one.</p><div class="editor-actions dialog-actions"><button type="button" class="pill" id="access-rotate-cancel">Cancel</button><button type="button" class="pill danger" id="access-rotate-yes">Make a new token</button></div></dialog>
-
-  <dialog id="end-session" class="access-dialog confirm-dialog" aria-labelledby="end-session-title">
-    <header class="dialog-heading"><h2 id="end-session-title">End this terminal?</h2><form method="dialog"><button class="round" aria-label="Cancel"><svg><use href="#close-icon"/></svg></button></form></header>
-    <p id="end-session-text" class="muted">This stops its running process. Its history stays in History.</p>
-    <div class="editor-actions dialog-actions"><button type="button" class="pill" id="end-session-cancel">Cancel</button><button type="button" class="pill danger" id="end-session-confirm">End session</button></div>
-  </dialog>
-
   <dialog id="live-launch" class="access-dialog flat" aria-labelledby="live-launch-title">
     <header class="dialog-heading"><h2 id="live-launch-title">Open terminal</h2><form method="dialog"><button class="round" aria-label="Close terminal launcher"><svg><use href="#close-icon"/></svg></button></form></header>
     <p id="live-error" role="status"></p>
