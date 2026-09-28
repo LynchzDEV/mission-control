@@ -38,7 +38,7 @@ import { createOutcomeLedger, OUTCOME_RETENTION_MS } from './outcomes'
 import { createSessionResolver } from './outcome-session'
 import { flowRoutes } from './routes/flow'
 import { secretsRoutes } from './routes/secrets'
-import { rolesRoutes } from './routes/roles'
+import { flowApprovalRoutes, rolesRoutes } from './routes/roles'
 import { claudeSkillsDir, describeSkillInstall, installSkills } from './skill-install'
 import { syncEngineAssets } from './engine-assets'
 import { ShellPage } from './views/shell'
@@ -241,6 +241,7 @@ export async function createApp(): Promise<Elysia> {
     .use(studioRoutes(workflowStore, workflowRunner, workflowBuilder))
     .use(secretsRoutes)
     .use(rolesRoutes)
+    .use(flowApprovalRoutes)
     .use(modelsRoutes)
     .use(providersRoutes)
 

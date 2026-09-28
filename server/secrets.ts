@@ -37,6 +37,7 @@ export type AppConfig = {
   roles: EngineRoles
   autoReview: boolean
   chatHome: string | null
+  flowApproval: boolean
 }
 
 export type PublicSecretsView = {
@@ -148,6 +149,7 @@ export async function readConfig(): Promise<AppConfig> {
     roles: readRoles(raw.roles),
     autoReview: raw.autoReview === true,
     chatHome: asString(raw.chatHome),
+    flowApproval: raw.flowApproval !== false,
   }
 }
 

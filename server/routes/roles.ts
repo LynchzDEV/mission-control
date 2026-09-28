@@ -70,3 +70,12 @@ export const rolesRoutes = new Elysia()
     })
     return { ...config.roles, autoReview: config.autoReview }
   })
+
+export const flowApprovalRoutes = new Elysia()
+  .onBeforeHandle(requireLocal)
+  .get('/api/flow-approval', async () => ({ flowApproval: (await readConfig()).flowApproval }))
+  .put('/api/flow-approval', async ({ body, set }) => {
+    const value = (body as { flowApproval?: unknown } | null)?.flowApproval
+    if (typeof value !== 'boolean') { set.status = 400; return { error: 'flowApproval must be true or false' } }
+    return { flowApproval: (await writeConfig({ flowApproval: value })).flowApproval }
+  })
