@@ -29,6 +29,9 @@ describe('chat rules', () => {
     for (const phrase of ['more than one step that changes code', 'GET $MC_URL/api/studio/workflows', '"status":"awaiting-approval"', '/approve {"chat":"$MC_CHAT_ID"}', 'Never approve without the owner saying so']) expect(CHAT_RULES).toContain(phrase)
     expect(CHAT_RULES).not.toContain('Naming a Studio workflow is optional')
   })
+  test('chat rules explain how to draft a flow and change a running one', () => {
+    for (const phrase of ['"graph" instead of "workflowId"', '/changes', 'Never mark scopeGrew false to avoid approval']) expect(CHAT_RULES).toContain(phrase)
+  })
   test('state the chat\'s own engine and model', () => {
     expect(chatRules({ chatId: 'r', home: '/h', project: null, edit: false, memory: '', engine: 'claude', model: 'claude-opus-4' })).toContain('Your AI: engine claude, model claude-opus-4.')
     expect(chatRules({ chatId: 'r', home: '/h', project: null, edit: false, memory: '', engine: 'glm', model: null })).toContain('Your AI: engine glm, default model.')
