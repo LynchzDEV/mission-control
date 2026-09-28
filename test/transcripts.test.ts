@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { defaultProjectsDir, listSessions, projectSlug } from '../server/transcripts'
+import { defaultProjectsDir, listSessions, listUserSessions, projectSlug } from '../server/transcripts'
 
 let projectsDir: string
 let sessionDir: string
@@ -123,5 +123,51 @@ describe('listSessions', () => {
     const sessions = await listSessions('no-such-cwd-anywhere', { projectsDir })
 
     expect(sessions).toEqual([])
+  })
+})
+
+describe('listUserSessions', () => {
+  const session = (entrypoint: string, sessionCwd: string, prompt: string) => jsonl([
+    { type: 'queue-operation', operation: 'enqueue' },
+    { type: 'user', entrypoint, cwd: sessionCwd, message: { role: 'user', content: '<command-name>/clear</command-name>' }, timestamp: TS },
+    { type: 'user', entrypoint, cwd: sessionCwd, message: { role: 'user', content: prompt }, timestamp: TS },
+  ])
+  const write = async (folder: string, id: string, text: string, mtime: number) => {
+    await mkdir(join(projectsDir, folder), { recursive: true })
+    const path = join(projectsDir, folder, `${id}.jsonl`)
+    await writeFile(path, text)
+    await utimes(path, new Date(mtime), new Date(mtime))
+  }
+  const now = Date.parse('2026-09-28T00:00:00.000Z')
+
+  test('lists only sessions a person started, from every folder, newest first, with their real folder', async () => {
+    await write('-Users-x-api', 'mine-old', session('cli', '/Users/x/api', 'fix the runtime specs'), now - 5_000)
+    await write('-Users-x', 'mine-new', session('cli', '/Users/x', 'what is in my home'), now - 1_000)
+    await write('-Users-x-api', 'hook', session('sdk-cli', '/Users/x/api', 'Summarize this shell command for a permission prompt'), now - 500)
+    await write('-Users-x-claude-mem', 'observer', session('sdk-cli', '/Users/x/.claude-mem', 'observe'), now - 400)
+    const sessions = await listUserSessions({ projectsDir, since: now - 86_400_000, limit: 10 })
+    expect(sessions.map((item) => [item.id, item.cwd, item.title])).toEqual([
+      ['mine-new', '/Users/x', 'what is in my home'],
+      ['mine-old', '/Users/x/api', 'fix the runtime specs'],
+    ])
+  })
+
+  test('skips sessions older than the window, stops at the limit and ignores sub-agent folders', async () => {
+    await write('-Users-x-api', 'stale', session('cli', '/Users/x/api', 'old'), now - 10 * 86_400_000)
+    for (const index of [1, 2, 3]) await write('-Users-x-api', `s${index}`, session('cli', '/Users/x/api', `task ${index}`), now - index * 1_000)
+    await write('-Users-x-api/s1/subagents', 'agent-a1', session('cli', '/Users/x/api', 'sub'), now)
+    expect((await listUserSessions({ projectsDir, since: now - 86_400_000, limit: 2 })).map((item) => item.id)).toEqual(['s1', 's2'])
+  })
+
+  test('a session with no prompt yet appears once its first prompt is written', async () => {
+    await write('-Users-x-api', 'fresh', jsonl([{ type: 'user', entrypoint: 'cli', cwd: '/Users/x/api', message: { role: 'user', content: '<local-command-caveat>x</local-command-caveat>' }, timestamp: TS }]), now - 1_000)
+    const since = now - 86_400_000
+    expect(await listUserSessions({ projectsDir, since, limit: 10 })).toEqual([])
+    await write('-Users-x-api', 'fresh', session('cli', '/Users/x/api', 'now a real prompt'), now - 500)
+    expect((await listUserSessions({ projectsDir, since, limit: 10 })).map((item) => item.title)).toEqual(['now a real prompt'])
+  })
+
+  test('a missing projects folder is empty', async () => {
+    expect(await listUserSessions({ projectsDir: join(projectsDir, 'nope'), since: 0, limit: 10 })).toEqual([])
   })
 })

@@ -117,3 +117,83 @@ export async function listSessions(
   summaries.sort((a, b) => b.updatedAt - a.updatedAt)
   return summaries.slice(0, opts.limit ?? DEFAULT_LIMIT)
 }
+
+export type UserSession = SessionSummary & { cwd: string }
+type SessionHead = { entrypoint: string | null; cwd: string | null; prompt: Prompt | null }
+type SessionFile = { path: string; id: string; mtimeMs: number; size: number }
+
+const INTERACTIVE_ENTRYPOINT = 'cli'
+const heads = new Map<string, { size: number; head: SessionHead }>()
+
+function recordFromLine(line: string): JsonRecord | null {
+  try {
+    const parsed: unknown = JSON.parse(line)
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as JsonRecord : null
+  } catch {
+    return null
+  }
+}
+
+async function readSessionHead(filePath: string): Promise<SessionHead> {
+  const head: SessionHead = { entrypoint: null, cwd: null, prompt: null }
+  const stream = createReadStream(filePath, { start: 0, end: SCAN_LIMIT_BYTES - 1 })
+  const lines = createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY })
+  try {
+    for await (const line of lines) {
+      const entry = recordFromLine(line)
+      if (entry === null) continue
+      if (head.entrypoint === null && typeof entry.entrypoint === 'string') head.entrypoint = entry.entrypoint
+      if (head.cwd === null && typeof entry.cwd === 'string') head.cwd = entry.cwd
+      if (head.entrypoint !== null && head.entrypoint !== INTERACTIVE_ENTRYPOINT) break
+      const prompt = promptFromLine(line)
+      if (prompt !== null && !prompt.text.startsWith('<')) head.prompt = prompt
+      if (head.prompt !== null && head.entrypoint !== null && head.cwd !== null) break
+    }
+  } finally {
+    lines.close()
+    stream.destroy()
+  }
+  return head
+}
+
+async function sessionHead(file: SessionFile): Promise<SessionHead> {
+  const cached = heads.get(file.path)
+  if (cached !== undefined) {
+    const nonInteractive = cached.head.entrypoint !== null && cached.head.entrypoint !== INTERACTIVE_ENTRYPOINT
+    if (nonInteractive || cached.head.prompt !== null || cached.size === file.size) return cached.head
+  }
+  const head = await readSessionHead(file.path)
+  heads.set(file.path, { size: file.size, head })
+  return head
+}
+
+async function recentSessionFiles(projectsDir: string, since: number): Promise<SessionFile[]> {
+  let folders: string[]
+  try {
+    folders = await readdir(projectsDir)
+  } catch {
+    return []
+  }
+  const files = await Promise.all(folders.map(async (folder) => {
+    const dir = join(projectsDir, folder)
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    const found = await Promise.all(entries.filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl')).map(async (entry): Promise<SessionFile | null> => {
+      const path = join(dir, entry.name)
+      const info = await stat(path).catch(() => null)
+      return info === null || info.mtimeMs < since ? null : { path, id: entry.name.slice(0, -'.jsonl'.length), mtimeMs: info.mtimeMs, size: info.size }
+    }))
+    return found.filter((file): file is SessionFile => file !== null)
+  }))
+  return files.flat().sort((a, b) => b.mtimeMs - a.mtimeMs)
+}
+
+export async function listUserSessions(opts: { projectsDir?: string; since: number; limit: number }): Promise<UserSession[]> {
+  const sessions: UserSession[] = []
+  for (const file of await recentSessionFiles(opts.projectsDir ?? defaultProjectsDir(), opts.since)) {
+    if (sessions.length >= opts.limit) break
+    const head = await sessionHead(file).catch(() => null)
+    if (head?.entrypoint !== INTERACTIVE_ENTRYPOINT || head.prompt === null || head.cwd === null) continue
+    sessions.push({ id: file.id, title: head.prompt.text.replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX), startedAt: head.prompt.timestamp, updatedAt: file.mtimeMs, bytes: file.size, cwd: head.cwd })
+  }
+  return sessions
+}
