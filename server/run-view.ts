@@ -1,13 +1,13 @@
 import type { JobRecord } from './jobs'
 import type { ApprovalVia, ResolvedAgent, RunOrigin, RunVersion, WorkflowRun } from './workflow-runner'
-import type { WorkflowRevision } from './workflows'
+import type { WorkflowNode, WorkflowRevision } from './workflows'
 
 export type Scope = { chat?: string; terminal?: string }
 export type RunStepView = { id: string; title: string; kind: string; engine: string }
 export type RunAttemptView = { nodeId: string; number: number; jobId: string | null; status: string; outcome: 'pass' | 'fail' | 'blocked' | null; summary: string | null; startedAt: number; endedAt: number | null }
 export type RunEdgeView = { source: string; target: string; outcome: 'pass' | 'fail' | 'blocked' }
 export type RunVersionView = Omit<RunVersion, 'graph' | 'agents' | 'skills'>
-export type RunProposalView = { number: number; reason: string; nodes: RunStepView[]; edges: RunEdgeView[] }
+export type RunProposalView = { number: number; reason: string; nodes: RunStepView[]; edges: RunEdgeView[]; removed: string[]; changed: string[] }
 export type RunChangeView = { number: number; reason: string; size: 'small' | 'big'; approvedVia: ApprovalVia | null; state: string }
 export type RunView = { id: string; label: string; status: string; error: string | null; workflowName: string; revision: string; entry: string; currentNodeId: string; origin: RunOrigin; versions: RunVersionView[]; nodes: RunStepView[]; edges: RunEdgeView[]; attempts: RunAttemptView[]; createdAt: number; updatedAt: number; proposal: RunProposalView | null; latestChange: RunChangeView | null }
 export type QuickJobView = { id: string; label: string; engine: string; status: string; startedAt: number; endedAt: number | null }
@@ -25,10 +25,15 @@ function edgeViews(workflow: WorkflowRevision): RunEdgeView[] {
   return workflow.edges.map(edge => ({ source: edge.source, target: edge.target, outcome: edge.outcome }))
 }
 
+const behaviour = (node: WorkflowNode): string => JSON.stringify([node.kind, node.instructions, node.agent, node.checks, node.mcpServers])
+
 function proposalView(run: WorkflowRun): RunProposalView | null {
   const pending = run.versions.find(version => version.state === 'pending' && version.number > 1 && version.graph)
   if (!pending) return null
-  return { number: pending.number, reason: pending.reason, nodes: stepViews(pending.graph!, pending.agents ?? {}), edges: edgeViews(pending.graph!) }
+  const next = new Map(pending.graph!.nodes.map(node => [node.id, node]))
+  const removed = run.workflow.nodes.filter(node => !next.has(node.id)).map(node => node.id)
+  const changed = run.workflow.nodes.filter(node => next.has(node.id) && behaviour(next.get(node.id)!) !== behaviour(node)).map(node => node.id)
+  return { number: pending.number, reason: pending.reason, nodes: stepViews(pending.graph!, pending.agents ?? {}), edges: edgeViews(pending.graph!), removed, changed }
 }
 
 function latestChangeView(run: WorkflowRun): RunChangeView | null {

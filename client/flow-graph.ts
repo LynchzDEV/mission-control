@@ -1,4 +1,4 @@
-export type StepState = 'done' | 'active' | 'failed' | 'pending' | 'conditional' | 'proposed'
+export type StepState = 'done' | 'active' | 'failed' | 'pending' | 'conditional' | 'proposed' | 'removed'
 export type EdgeState = 'done' | 'flowing' | 'failed' | 'idle' | 'proposed'
 export type GraphStep = { id: string; title: string; detail: string; state: StepState; engine: string; kind: string; since?: number }
 export type GraphEdge = { source: string; target: string; outcome: 'pass' | 'fail' | 'blocked'; state: EdgeState; label?: string }

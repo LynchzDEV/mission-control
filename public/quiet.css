@@ -259,6 +259,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .flow-step[data-state="conditional"] { opacity: .62; border-style: dashed; }
 .flow-step[data-state="proposed"] { border: 1.5px dashed var(--accent); background: #fbfaff; }
 .flow-step[data-state="proposed"] small { color: #6b4fb0; }
+.flow-step[data-state="removed"] { opacity: .55; }
+.flow-step[data-state="removed"] strong { text-decoration: line-through; }
 #flow-save[data-saved]:disabled { opacity: 1; cursor: default; }
 .flow-step-logo { flex: none; width: 14px; height: 14px; }
 .flow-step-glyph { width: 14px; height: 14px; fill: none; stroke: #7a869b; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }

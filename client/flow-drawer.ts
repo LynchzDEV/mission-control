@@ -77,10 +77,14 @@ function attemptStatus(run: RunView, tries: RunAttemptView[], now: number): Step
 export function stepsFor(run: RunView, now: number): GraphStep[] {
   const reachable = reachableByPass(run)
   const attempts = inOrder(run)
+  const proposal = run.proposal
   const current = run.nodes.map(node => {
     const tries = attempts.filter(attempt => attempt.nodeId === node.id)
     const status = tries.length ? attemptStatus(run, tries, now) : unstartedStatus(run, node.id, node.engine, reachable)
-    return { id: node.id, title: node.title, engine: node.engine, kind: node.kind, ...status }
+    const proposed = proposal?.removed.includes(node.id) ? { state: 'removed' as const, detail: `Removed in v${proposal.number}` }
+      : !tries.length && proposal?.changed.includes(node.id) ? { state: status.state, detail: `Changed in v${proposal.number}` }
+        : status
+    return { id: node.id, title: node.title, engine: node.engine, kind: node.kind, ...proposed }
   })
   const known = new Set(run.nodes.map(node => node.id))
   const ghosts = (run.proposal?.nodes ?? []).filter(node => !known.has(node.id))
@@ -112,7 +116,7 @@ function labelled(run: RunView, edge: Edge, state: EdgeState): GraphEdge {
 
 export function edgesFor(run: RunView): GraphEdge[] {
   const proposed = run.proposal?.edges
-  const current = run.edges.map(edge => labelled(run, edge, proposed && !proposed.some(other => sameEdge(other, edge)) ? 'idle' : edgeState(run, edge)))
+  const current = run.edges.map(edge => labelled(run, edge, edgeState(run, edge)))
   const added = (proposed ?? []).filter(edge => !run.edges.some(other => sameEdge(other, edge))).map(edge => labelled(run, edge, 'proposed'))
   return [...current, ...added]
 }

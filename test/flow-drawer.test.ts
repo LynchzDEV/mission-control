@@ -100,6 +100,7 @@ const proposing: RunView = {
     number: 2, reason: 'The export needs a new column.',
     nodes: [...base.nodes, { id: 'migrate', title: 'DB migration', kind: 'implement', engine: 'claude' }],
     edges: [{ source: 'plan', target: 'build', outcome: 'pass' }, { source: 'build', target: 'migrate', outcome: 'pass' }, { source: 'migrate', target: 'test', outcome: 'pass' }, { source: 'test', target: 'build', outcome: 'fail' }, { source: 'test', target: 'fix', outcome: 'blocked' }, { source: 'migrate', target: 'fix', outcome: 'fail' }],
+    removed: [], changed: [],
   },
   latestChange: { number: 2, reason: 'The export needs a new column.', size: 'big', approvedVia: null, state: 'pending' },
 }
@@ -112,13 +113,13 @@ test('a proposed change adds ghost steps and keeps the real states of existing s
   expect(pillsFor(proposing)).toEqual({ running: 1, done: 1, waiting: 1 })
 })
 
-test('a proposed change draws new routes as proposed and routes it drops as idle', () => {
+test('a proposed change draws new routes as proposed and keeps a dropped route it already took', () => {
   const edges = Object.fromEntries(edgesFor(proposing).map(edge => [`${edge.source}>${edge.target}`, edge]))
   expect(Object.keys(edges)).toEqual(['plan>build', 'build>test', 'test>build', 'test>fix', 'build>migrate', 'migrate>test', 'migrate>fix'])
   expect(edges['build>migrate']!.state).toBe('proposed')
   expect(edges['migrate>test']!.state).toBe('proposed')
   expect(edges['migrate>fix']!).toEqual(expect.objectContaining({ state: 'proposed', label: 'if DB migration fails' }))
-  expect(edges['build>test']!.state).toBe('idle')
+  expect(edges['build>test']!.state).toBe('done')
   expect(edges['plan>build']!.state).toBe('done')
   expect(edges['test>build']!).toEqual(expect.objectContaining({ state: 'failed', label: 'API tests failed · retried' }))
 })
@@ -138,4 +139,23 @@ test('a big change applied because approval is off says so and offers to turn ap
 test('a drafted flow waiting for approval says the AI drafted it', () => {
   const drafted: RunView = { ...base, status: 'awaiting-approval', attempts: [], origin: { ...base.origin, source: 'drafted' }, versions: [{ ...base.versions[0]!, state: 'pending', approvedVia: null }] }
   expect(bannerFor(drafted)).toEqual({ tone: 'ask', text: 'Codex drafted a flow for this task. Nothing runs until you approve, or say "go" to Codex.', actions: ['reject', 'approve'] })
+})
+
+test('a route the proposal drops turns idle only if the run never took it', () => {
+  const dropping: RunView = { ...proposing, proposal: { ...proposing.proposal!, edges: proposing.proposal!.edges.filter(edge => !(edge.source === 'test' && edge.target === 'fix')) } }
+  const edges = Object.fromEntries(edgesFor(dropping).map(edge => [`${edge.source}>${edge.target}`, edge]))
+  expect(edges['test>fix']!.state).toBe('idle')
+  expect(edges['test>build']!.state).toBe('failed')
+  expect(edges['build>test']!.state).toBe('done')
+})
+
+test('a proposal strikes the steps it removes and marks the unstarted steps it edits', () => {
+  const removing: RunView = { ...proposing, proposal: { ...proposing.proposal!, nodes: proposing.proposal!.nodes.filter(node => node.id !== 'fix'), removed: ['fix'], changed: [] } }
+  const removed = stepsFor(removing, 308_000).find(step => step.id === 'fix')!
+  expect([removed.state, removed.detail]).toEqual(['removed', 'Removed in v2'])
+  expect(pillsFor(removing).waiting).toBe(0)
+  const editing: RunView = { ...proposing, proposal: { ...proposing.proposal!, changed: ['fix', 'test'] } }
+  const steps = Object.fromEntries(stepsFor(editing, 308_000).map(step => [step.id, step]))
+  expect([steps.fix!.state, steps.fix!.detail]).toEqual(['conditional', 'Changed in v2'])
+  expect([steps.test!.state, steps.test!.detail]).toEqual(['failed', 'Failed · Tests failed in export_spec'])
 })

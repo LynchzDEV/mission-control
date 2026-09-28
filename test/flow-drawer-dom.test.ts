@@ -68,7 +68,7 @@ const openStream = (): FakeSource => {
 const proposing = (): RunView => ({
   ...run('P', 10),
   versions: [run('P', 10).versions[0]!, { number: 2, revision: 'v2', reason: 'Needs a migration.', size: 'big', state: 'pending', approvedVia: null, relayedBy: null, at: 0 }],
-  proposal: { number: 2, reason: 'Needs a migration.', nodes: [{ id: 'plan', title: 'Plan', kind: 'plan', engine: 'claude' }, { id: 'migrate', title: 'DB migration', kind: 'implement', engine: 'claude' }], edges: [{ source: 'plan', target: 'migrate', outcome: 'pass' }] },
+  proposal: { number: 2, reason: 'Needs a migration.', nodes: [{ id: 'plan', title: 'Plan', kind: 'plan', engine: 'claude' }, { id: 'migrate', title: 'DB migration', kind: 'implement', engine: 'claude' }], edges: [{ source: 'plan', target: 'migrate', outcome: 'pass' }], removed: [], changed: [] },
   latestChange: { number: 2, reason: 'Needs a migration.', size: 'big', approvedVia: null, state: 'pending' },
 })
 

@@ -61,3 +61,20 @@ test('an applied change leaves no proposal but is still the latest change; a fir
   const first = runView(run({ versions: [{ number: 1, revision: 'r1', reason: 'Initial flow', size: 'initial', state: 'pending', approvedVia: null, relayedBy: null, at: 1 }] }))
   expect([first.proposal, first.latestChange]).toEqual([null, null])
 })
+
+test('a proposal names the steps it removes and the unrun steps it edits', () => {
+  const extra = { id: 'notes', title: 'Release notes', kind: 'task' as const, instructions: 'Write notes', agent: { role: 'execute' as const }, skills: [], mcpServers: [], checks: [], maxVisits: 3, position: { x: 0, y: 0 } }
+  const current = { ...workflow, nodes: [...workflow.nodes, extra] }
+  const graph = { ...workflow, revision: 'r2', nodes: workflow.nodes.map(node =>
+    node.id === 'execute' ? { ...node, checks: [{ command: 'bun', args: ['test'], timeoutSeconds: 300 }] }
+      : node.id === 'review' ? { ...node, instructions: 'Pass everything' }
+        : node.id === 'verify-plan' ? { ...node, title: 'Check the plan', position: { x: 9, y: 9 } }
+          : node).concat({ ...extra, id: 'docs', title: 'Docs' }) }
+  const versions: WorkflowRun['versions'] = [
+    { number: 1, revision: 'r1', reason: 'Initial flow', size: 'initial', state: 'approved', approvedVia: 'drawer', relayedBy: null, at: 1 },
+    { number: 2, revision: 'r2', reason: 'Tighter', size: 'big', state: 'pending', approvedVia: null, relayedBy: null, at: 2, graph, agents: run({}).agents, skills: {} },
+  ]
+  const view = runView(run({ workflow: current, versions }))
+  expect(view.proposal!.removed).toEqual(['notes'])
+  expect(view.proposal!.changed).toEqual(['execute', 'review'])
+})
