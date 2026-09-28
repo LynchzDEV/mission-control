@@ -84,7 +84,7 @@ function waitingAtJoin(run: RunView, nodeId: string, tries: RunAttemptView[]): S
   if (!section || !isLive(run) || tries.some(attempt => attempt.status !== 'settled')) return null
   const pathIds = new Set(section.paths.map(path => path.pathId))
   const arrived = new Set(run.tokens.filter(token => token.nodeId === nodeId && token.state === 'waiting' && pathIds.has(token.pathId)).map(token => token.pathId))
-  return { state: 'pending', detail: `Waiting for ${section.paths.length - arrived.size} of ${section.paths.length} paths` }
+  return { state: 'pending', detail: `Waiting for ${section.paths.length - arrived.size} of ${section.paths.length}` }
 }
 
 function joinedStatus(run: RunView, nodeId: string, status: StepStatus, latest: RunAttemptView): StepStatus {

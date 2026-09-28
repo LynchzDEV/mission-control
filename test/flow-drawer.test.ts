@@ -179,7 +179,7 @@ const forked: RunView = {
 test('a run mid-fork shows the working path, the join waiting for the other path and the step after it', () => {
   const steps = Object.fromEntries(stepsFor(forked, 50).map(step => [step.id, step]))
   expect(steps.a!.state).toBe('active')
-  expect([steps.b!.state, steps.join!.state, steps.join!.detail, steps.join!.engine]).toEqual(['done', 'pending', 'Waiting for 1 of 2 paths', ''])
+  expect([steps.b!.state, steps.join!.state, steps.join!.detail, steps.join!.engine]).toEqual(['done', 'pending', 'Waiting for 1 of 2', ''])
   expect([steps.review!.state, steps.review!.detail]).toEqual(['pending', 'Waiting'])
 })
 
@@ -204,6 +204,6 @@ test('every working path counts as running and the steps after them are up next'
   const both: RunView = { ...forked, attempts: [...forked.attempts.slice(0, 3), { ...forked.attempts[3]!, status: 'running', outcome: null, summary: null, endedAt: null }, forked.attempts[4]!], tokens: [{ nodeId: 'a', pathId: 'a3-1', state: 'working', from: [3] }, { nodeId: 'b', pathId: 'a3-2', state: 'working', from: [3] }] }
   const steps = Object.fromEntries(stepsFor(both, 50).map(step => [step.id, step]))
   expect([steps.a!.state, steps.b!.state]).toEqual(['active', 'active'])
-  expect(steps.join!.detail).toBe('Waiting for 2 of 2 paths')
+  expect(steps.join!.detail).toBe('Waiting for 2 of 2')
   expect(pillsFor(both).running).toBe(2)
 })
