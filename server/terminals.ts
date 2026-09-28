@@ -19,6 +19,7 @@ import { validateWorkspaceCwd } from './workspace'
 import { connectionEnvironment, createConnectionStore, type AgentConnection } from './agent-connections'
 import { configDir, listenTarget } from './secrets'
 import { createWorkflowStore } from './workflows'
+import type { PastTerminal, TerminalLog } from './terminal-log'
 
 export const RING_BUFFER_BYTES = 64 * 1024
 export const DEFAULT_COLS = 80
@@ -63,6 +64,7 @@ export type CloseListener = () => void
 export type TerminalRegistry = {
   createTerminal(params: CreateTerminalParams): Promise<CreateTerminalResult>
   list(): TerminalRecord[]
+  ended(): PastTerminal[]
   get(id: string): TerminalRecord | undefined
   write(id: string, data: string): boolean
   resize(id: string, cols: unknown, rows: unknown): boolean
@@ -148,16 +150,20 @@ function terminalCommand(engine: EngineName): string {
 
 export type TerminalRegistryOptions = {
   home?: string
+  log?: TerminalLog
 }
 
 export function createTerminalRegistry(options: TerminalRegistryOptions = {}): TerminalRegistry {
   const sessions = new Map<string, Session>()
   const home = options.home
+  const log = options.log
+  const remember = (record: TerminalRecord, endedAt: number | null): void => log?.record({ id: record.id, engine: record.engine, cwd: record.cwd, title: record.title, sessionId: record.sessionId, createdAt: record.createdAt, endedAt })
 
   function forget(id: string): void {
     const session = sessions.get(id)
     if (session === undefined) return
     sessions.delete(id)
+    remember(session.record, Date.now())
     const subscribers = [...session.listeners]
     session.listeners.clear()
     for (const subscriber of subscribers) subscriber.close?.()
@@ -232,6 +238,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     }
     const session: Session = { record, pty, buffer: createRingBuffer(), listeners: new Set(), transcript: sessionId === null ? null : claudeTranscriptPath(env.CLAUDE_CONFIG_DIR, cwdCheck.path, sessionId) }
     sessions.set(id, session)
+    remember(record, null)
 
     pty.onData((chunk) => {
       pushToRingBuffer(session.buffer, chunk, RING_BUFFER_BYTES)
@@ -262,6 +269,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       const clean = normalizeTitle(title)
       if (session === undefined || clean === null) return false
       session.record = { ...session.record, title: clean }
+      remember(session.record, null)
       return true
     },
     list() {
@@ -271,6 +279,9 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     },
     get(id) {
       return sessions.get(id)?.record
+    },
+    ended() {
+      return (log?.list() ?? []).filter((entry) => !sessions.has(entry.id))
     },
     write(id, data) {
       const session = sessions.get(id)

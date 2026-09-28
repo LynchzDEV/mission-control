@@ -18,6 +18,7 @@ import { chatQueuePath, createChatQueue } from './chat-queue'
 import { threadRootOf } from './threads'
 import { redactedTailReader } from './log-redaction'
 import { createTerminalRegistry } from './terminals'
+import { createTerminalLog } from './terminal-log'
 import { realEngineResolver } from './jobs-engine-iface'
 import { createPlanRunner } from './plan-runner'
 import { createPlanStore } from './plans'
@@ -172,7 +173,7 @@ export async function createApp(): Promise<Elysia> {
       void maybeAutoReview(record, jobManager, { resolver: realEngineResolver }).catch(() => {})
     },
   })
-  const terminalRegistry = createTerminalRegistry()
+  const terminalRegistry = createTerminalRegistry({ log: createTerminalLog() })
   const workflowRunner = createWorkflowRunner({
     manager: jobManager,
     resolver: realEngineResolver,
