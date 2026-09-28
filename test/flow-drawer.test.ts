@@ -99,6 +99,11 @@ test('pills count running, done and waiting steps', () => {
   expect(pillsFor(base)).toEqual({ running: 1, done: 1, waiting: 1 })
 })
 
+test('a finished flow counts no step as waiting', () => {
+  const done: RunView = { ...base, status: 'done', attempts: base.attempts.map(attempt => ({ ...attempt, status: 'settled', outcome: 'pass', endedAt: attempt.startedAt + 1000 })) }
+  expect(pillsFor(done).waiting).toBe(0)
+})
+
 test('pickRun keeps a run the user picked, else follows the newest live run, else the newest', () => {
   const done = { ...base, id: 'done', status: 'done', createdAt: 5 }
   const blocked = { ...base, id: 'blocked', status: 'blocked', createdAt: 1 }

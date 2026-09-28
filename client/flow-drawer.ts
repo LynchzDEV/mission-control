@@ -265,7 +265,7 @@ export function metaFor(run: RunView): string {
 export function pillsFor(run: RunView): { running: number; done: number; waiting: number } {
   const states = stepsFor(run, Date.now()).map(step => step.state)
   const count = (...wanted: StepState[]): number => states.filter(state => wanted.includes(state)).length
-  return { running: count('active'), done: count('done'), waiting: count('pending', 'conditional') }
+  return { running: count('active'), done: count('done'), waiting: isLive(run) ? count('pending', 'conditional') : 0 }
 }
 
 export function bannerFor(run: RunView): Banner {
