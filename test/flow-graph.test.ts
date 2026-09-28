@@ -190,3 +190,36 @@ test('routes draw in only on the first paint of a run, not when its steps change
   delete proto.getTotalLength
   delete proto.animate
 })
+
+test('a section forked on a failure lane gets its own rows beside a main section: no cards or sibling bands intersect', () => {
+  const pass = (source: string, target: string) => ({ source, target, outcome: 'pass' })
+  const edges = [pass('plan', 'split'), pass('split', 'a'), pass('split', 'b'), pass('a', 'a2'), pass('b', 'b2'), pass('a2', 'join'), pass('b2', 'join'), pass('join', 'review'),
+    { source: 'plan', target: 'triage', outcome: 'fail' }, pass('triage', 't2'), pass('t2', 't3'), pass('t3', 'x'), pass('t3', 'y'), pass('x', 'j2'), pass('y', 'j2')]
+  const path = (...nodes: string[]) => ({ nodes, title: nodes[0]!, firstNodeId: nodes[0]!, pathId: null, branch: null })
+  const sections: RunView['sections'] = [
+    { fork: 'split', join: 'join', state: 'open', joined: [], paths: [path('a', 'a2'), path('b', 'b2')] },
+    { fork: 't3', join: 'j2', state: 'open', joined: [], paths: [path('x'), path('y')] },
+  ]
+  const layout = layoutRun(ids('plan', 'split', 'a', 'b', 'a2', 'b2', 'join', 'review', 'triage', 't2', 't3', 'x', 'y', 'j2'), edges, 'plan', sections)
+  const cards = layout.placed.map(place => ({ id: place.id, x: place.x, y: place.y, width: STEP_W, height: STEP_H }))
+  for (const [index, card] of cards.entries()) for (const other of cards.slice(index + 1)) expect([card.id, other.id, overlaps(card, other)]).toEqual([card.id, other.id, false])
+  for (const [index, band] of layout.bands.entries()) for (const other of layout.bands.slice(index + 1)) expect([band.key, other.key, overlaps(band, other)]).toEqual([band.key, other.key, false])
+  const outside = (key: string, members: string[]) => cards.filter(card => !members.includes(card.id)).map(card => [key, card.id, overlaps(layout.bands.find(band => band.key === key)!, card)])
+  for (const [key, members] of [['split:0', ['a', 'a2']], ['split:1', ['b', 'b2']], ['t3:0', ['x']], ['t3:1', ['y']]] as const) expect(outside(key, [...members]).filter(([, , hit]) => hit)).toEqual([])
+})
+
+test('routes draw in once per run: coming back to a run already shown does not draw it in again', () => {
+  const drawn: unknown[] = []
+  const proto = window.SVGElement.prototype as unknown as Record<string, unknown>
+  Object.assign(proto, { getTotalLength: () => 10, animate: (frames: unknown) => { drawn.push(frames) } })
+  const host = document.createElement('div')
+  const step = (id: string): GraphStep => ({ id, title: id, detail: '', state: 'pending', engine: 'claude', kind: 'task' })
+  const edge: GraphEdge = { source: 'a', target: 'b', outcome: 'pass', state: 'idle' }
+  renderRunGraph(host, [step('a'), step('b')], [edge], 'a', { animate: true, runId: 'A' })
+  renderRunGraph(host, [step('a'), step('b')], [edge], 'a', { animate: true, runId: 'B' })
+  expect(drawn).toHaveLength(2)
+  renderRunGraph(host, [step('a'), step('b')], [edge], 'a', { animate: true, runId: 'A' })
+  expect(drawn).toHaveLength(2)
+  delete proto.getTotalLength
+  delete proto.animate
+})

@@ -127,34 +127,40 @@ function placeLanes(top: Lane, column: Map<string, number>): { y: Map<string, nu
   const bottomOf = (ids: string[]): number => Math.max(-Infinity, ...ids.map(id => y.get(id)! + STEP_H))
   const place = (lane: Lane, laneTop: number): number => {
     const rowTop = laneTop + headerOf(lane)
-    const spans = lane.sections.map(({ paths }) => { const cols = paths.flatMap(subtree).map(id => column.get(id)!); return [Math.min(...cols), Math.max(...cols)] as const })
-    const spanning = (id: string) => spans.map((span, index) => ({ span, index })).filter(({ span }) => column.get(id)! >= span[0] && column.get(id)! <= span[1]).map(({ index }) => index)
-    const rows = new Map<number, number>()
-    const stack = (id: string, floor: number): void => {
-      const col = column.get(id)!
-      const row = rows.get(col) ?? 0
-      rows.set(col, row + 1)
+    const colOf = (id: string): number => column.get(id)!
+    const blocks = lane.sections
+      .map(({ section, paths }) => { const cols = paths.flatMap(subtree).map(colOf); return { section, paths, span: [Math.min(...cols), Math.max(...cols)] as const } })
+      .sort((a, b) => (column.get(a.section.fork) ?? 0) - (column.get(b.section.fork) ?? 0))
+    const within = (col: number, span: readonly [number, number]): boolean => col >= span[0] && col <= span[1]
+    const spanned = (id: string): boolean => blocks.some(({ span }) => within(colOf(id), span))
+    const placedBlocks: { span: readonly [number, number]; bottom: number }[] = []
+    const topRows = new Map<number, number>(), belowRows = new Map<number, number>()
+    const stack = (id: string, floor: number, rows: Map<number, number>): void => {
+      const row = rows.get(colOf(id)) ?? 0
+      rows.set(colOf(id), row + 1)
       y.set(id, floor + row * ROW_STEP)
     }
-    for (const id of lane.own) if (!spanning(id).length) stack(id, rowTop)
-    const blockBottoms = lane.sections.map(({ section, paths }) => {
-      let pathTop = (y.get(section.fork) ?? rowTop) - headerOf(paths[0]!)
+    const stackBelowBlocks = (id: string): void => {
+      const under = placedBlocks.filter(({ span }) => within(colOf(id), span)).map(({ bottom }) => bottom)
+      stack(id, Math.max(rowTop - BAND_GAP, ...under) + BAND_GAP, belowRows)
+    }
+    for (const id of lane.own) if (!spanned(id)) stack(id, rowTop, topRows)
+    for (const { section, paths, span } of blocks) {
+      if (lane.own.includes(section.fork) && !y.has(section.fork)) stackBelowBlocks(section.fork)
+      const overlapping = placedBlocks.filter(block => block.span[0] <= span[1] && block.span[1] >= span[0]).map(({ bottom }) => bottom + BAND_GAP)
+      let pathTop = Math.max((y.get(section.fork) ?? rowTop) - headerOf(paths[0]!), ...overlapping)
       for (const path of paths) {
         const bottom = place(path, pathTop)
-        const cols = subtree(path).map(id => column.get(id)!)
+        const cols = subtree(path).map(colOf)
         const x = Math.min(...cols) * COL_STEP - BAND_PAD
         const band = { key: `${section.fork}:${path.band!.index}`, x, y: pathTop, width: Math.max(...cols) * COL_STEP + STEP_W + BAND_PAD - x, height: bottom + BAND_PAD - pathTop, ...bandLabel(section, path.band!.index) }
         bands.push(band)
         pathTop = band.y + band.height + BAND_GAP
       }
-      return pathTop - BAND_GAP
-    })
-    rows.clear()
-    for (const id of lane.own) {
-      const under = spanning(id)
-      if (under.length) stack(id, Math.max(...under.map(index => blockBottoms[index]!)) + BAND_GAP)
+      placedBlocks.push({ span, bottom: pathTop - BAND_GAP })
     }
-    return Math.max(rowTop + STEP_H, bottomOf(lane.own), ...blockBottoms)
+    for (const id of lane.own) if (!y.has(id)) stackBelowBlocks(id)
+    return Math.max(rowTop + STEP_H, bottomOf(lane.own), ...placedBlocks.map(({ bottom }) => bottom))
   }
   place(top, 0)
   return { y, bands }
@@ -343,6 +349,7 @@ function collapsibleFork(band: Band, sections: Section[]): string | null {
 }
 
 const frames = new WeakMap<HTMLElement, GraphFrame>()
+const drawnRuns = new WeakMap<HTMLElement, Set<string>>()
 const EMPTY_FRAME: GraphFrame = { width: 0, height: 0, focus: null }
 
 export function renderRunGraph(host: HTMLElement, steps: GraphStep[], edges: GraphEdge[], entry: string, options: { animate: boolean; sections?: Section[]; runId?: string }): GraphFrame {
@@ -351,8 +358,9 @@ export function renderRunGraph(host: HTMLElement, steps: GraphStep[], edges: Gra
   const paintSignature = JSON.stringify([options.animate, runKey, entry, steps, edges, sections])
   if (host.dataset.sig === paintSignature && host.firstChild) return frames.get(host) ?? EMPTY_FRAME
   host.dataset.sig = paintSignature
-  const shouldDrawIn = options.animate && host.dataset.drawnRun !== runKey
-  host.dataset.drawnRun = runKey
+  const drawn = drawnRuns.get(host) ?? drawnRuns.set(host, new Set()).get(host)!
+  const shouldDrawIn = options.animate && !drawn.has(runKey)
+  drawn.add(runKey)
   if (!steps.length) { host.replaceChildren(); frames.set(host, EMPTY_FRAME); return EMPTY_FRAME }
 
   const layout = layoutRun(steps, edges, entry, sections)

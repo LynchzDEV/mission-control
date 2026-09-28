@@ -434,3 +434,24 @@ test('a focused step that the flow leaves off-screen keeps focus without turning
   expect(following()).toBe('false')
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })
+
+test('closing the drawer clears the job-gone notice and its timer', () => {
+  stageSize.width = 1000
+  const stream = openStream()
+  stream.send({ runs: [twoSteps('N')], jobs: [] })
+  const [realSet, realClear] = [globalThis.setTimeout, globalThis.clearTimeout]
+  const delays = new Map<unknown, number | undefined>()
+  const cleared: unknown[] = []
+  globalThis.setTimeout = ((handler: () => void, ms?: number) => { const id = realSet(handler, ms); delays.set(id, ms); return id }) as typeof setTimeout
+  globalThis.clearTimeout = ((id: Parameters<typeof clearTimeout>[0]) => { cleared.push(id); realClear(id) }) as typeof clearTimeout
+  try {
+    dispatchEvent(new CustomEvent('quiet:agent-open-missing', { detail: { jobId: 'job-plan' } }))
+    const noticeTimer = [...delays].find(([, ms]) => ms === 4000)![0]
+    dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+    expect(cleared).toContain(noticeTimer)
+    expect(document.querySelector<HTMLElement>('.flow-notice')!.hidden).toBe(true)
+  } finally {
+    globalThis.setTimeout = realSet
+    globalThis.clearTimeout = realClear
+  }
+})

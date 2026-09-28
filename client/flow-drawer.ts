@@ -586,11 +586,17 @@ function mountFlowDrawer(): void {
     if (jobId) dispatchEvent(new CustomEvent('quiet:agent-open', { detail: { jobId } }))
   }
 
-  function showNotice(text: string): void {
+  function hideNotice(): void {
     clearTimeout(noticeTimer)
+    noticeTimer = undefined
+    notice.hidden = true
+  }
+
+  function showNotice(text: string): void {
+    hideNotice()
     notice.textContent = text
     notice.hidden = false
-    noticeTimer = setTimeout(() => { notice.hidden = true }, NOTICE_MS)
+    noticeTimer = setTimeout(hideNotice, NOTICE_MS)
   }
 
   const stepOf = (target: EventTarget | null): string | undefined => (target as Element | null)?.closest?.<HTMLElement>('.flow-step')?.dataset.step
@@ -619,7 +625,7 @@ function mountFlowDrawer(): void {
   stop.addEventListener('click', () => { if (stop.dataset.armed !== 'true') stopTarget = current?.id }, { capture: true })
   confirmButton(stop, 'Stop flow', () => void act('stop', stopTarget))
   save.onclick = () => void saveRun(current?.id)
-  addEventListener('quiet:flow-open', (event) => { open = (event as CustomEvent<boolean>).detail; connect() })
+  addEventListener('quiet:flow-open', (event) => { open = (event as CustomEvent<boolean>).detail; if (!open) hideNotice(); connect() })
   addEventListener('quiet:activity-scope', (event) => { const session = (event as CustomEvent<{ id: string; cwd: string } | null>).detail; setScope(session ? `terminal=${encodeURIComponent(session.id)}` : null) })
   addEventListener('quiet:chat-agents', (event) => { const chat = (event as CustomEvent<string | null>).detail; if (chat) setScope(`chat=${encodeURIComponent(chat)}`) })
   if (document.body.dataset.chat) setScope(`chat=${encodeURIComponent(document.body.dataset.chat)}`)

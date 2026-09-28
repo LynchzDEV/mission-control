@@ -423,6 +423,8 @@ dialog[open]::backdrop { opacity: 1; }
   .toolbar nav:last-child { margin-left: auto; }
   .flow-card { width: calc(100% - 28px); padding: 14px; }
   .flow-head { flex-wrap: wrap; row-gap: 8px; }
+  .flow-actions { flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-end; }
+  .flow-wide { display: none; }
   .studio-heading { gap: 24px; margin-bottom: 28px; }
   .studio-heading nav { flex-wrap: wrap; gap: 20px; }
   .describe-home { margin-top: 24px; }

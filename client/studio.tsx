@@ -6,7 +6,7 @@ import '@xyflow/react/dist/style.css'
 import type { Workflow, WorkflowNode, WorkflowRevision, PolicyRevision, Outcome } from '../server/workflows'
 import type { RunStatus, WorkflowRun } from '../server/workflow-runner'
 import type { DraftJob, WorkflowDraft } from '../server/workflow-builder'
-import { api } from './studio-api'
+import { api, openRun } from './studio-api'
 import { Connections, StepAttachments, type ConnectionList } from './studio-settings'
 import { agentLabel, insertWorkflowStep, kindIcon, nodeRunStates, roleWord, removeWorkflowStep, stepPresets, taskPreset, workflowTemplates, type NodeRunState, type Provider } from './studio-graph'
 
@@ -136,7 +136,7 @@ function Studio() {
       if (!runId) return
       pendingRunId = null
       go('runs')
-      api<WorkflowRun>(`/runs/${encodeURIComponent(runId)}`).then(result => { setRun(() => result); setRevealRunId(() => runId) }).catch(error => setError((error as Error).message))
+      openRun<WorkflowRun>(runId, refreshRuns).then(result => { setRun(() => result); setRevealRunId(() => runId) }).catch(error => setError((error as Error).message))
     }
     consume()
     addEventListener('quiet:studio-run', consume)

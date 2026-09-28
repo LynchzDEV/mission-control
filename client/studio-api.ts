@@ -8,3 +8,7 @@ export async function apiDelete(path: string): Promise<void> {
   const response = await fetch(`/api/studio${path}`, { method: 'DELETE' })
   if (!response.ok) { const result = await response.json().catch(() => ({})) as { error?: string }; throw new Error(result.error ?? `Request failed (${response.status})`) }
 }
+export async function openRun<T>(runId: string, refreshRuns: () => Promise<void>): Promise<T> {
+  const [run] = await Promise.all([api<T>(`/runs/${encodeURIComponent(runId)}`), refreshRuns()])
+  return run
+}

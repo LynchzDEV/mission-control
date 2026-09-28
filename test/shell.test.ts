@@ -41,6 +41,15 @@ describe('quiet shell', () => {
     expect(markup).toContain('class="sb-shell collapsed"')
   })
 
+  test('on a narrow screen the flow header Studio pill reads Studio and its actions wrap under the title', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    expect(markup).toContain('<button id="flow-studio" class="pill flow-sm" type="button" aria-label="Open in Studio" hidden><span class="flow-wide">Open in </span>Studio</button>')
+    const quiet = await Bun.file(join(import.meta.dir, '../public/quiet.css')).text()
+    const narrow = [...quiet.matchAll(/@media \(max-width: 600px\) \{([^@]*)\n\}/g)].map(match => match[1]).join('\n')
+    expect(narrow).toContain('.flow-wide { display: none; }')
+    expect(narrow).toContain('.flow-actions { flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-end; }')
+  })
+
   test('neumo-ui loads once, layered beneath quiet.css', async () => {
     const markup = await (await app.handle(new Request('http://localhost/'))).text()
     expect(markup).not.toContain('href="/vendor/neumo-ui.css"')
