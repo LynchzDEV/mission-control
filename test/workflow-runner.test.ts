@@ -473,12 +473,12 @@ function withMigrate(base = defaultWorkflow()): Workflow {
 
 test('changeSize: a check step on the review family is small', () => {
   const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
-  expect(changeSize(run, draftRevision(withCheck()), { ...defaultAgents, check: family('codex', 'gpt') }, false)).toBe('small')
+  expect(changeSize(run, draftRevision(withCheck()), { ...defaultAgents, check: family('codex', 'gpt') }, false, 'plan')).toBe('small')
 })
 
 test('changeSize: a new implementation step on the pass path is big', () => {
   const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
-  expect(changeSize(run, draftRevision(withMigrate()), { ...defaultAgents, migrate: family('glm', 'glm') }, false)).toBe('big')
+  expect(changeSize(run, draftRevision(withMigrate()), { ...defaultAgents, migrate: family('glm', 'glm') }, false, 'plan')).toBe('big')
 })
 
 test('changeSize: a fix loop reached only through a failed review is small', () => {
@@ -486,7 +486,7 @@ test('changeSize: a fix loop reached only through a failed review is small', () 
   graph.nodes.push({ ...graph.nodes[2]!, id: 'fix', title: 'Fix', instructions: 'Fix the review findings' })
   graph.edges.push({ source: 'review', target: 'fix', outcome: 'fail' }, { source: 'fix', target: 'review', outcome: 'pass' })
   const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
-  expect(changeSize(run, draftRevision(graph), { ...defaultAgents, fix: family('glm', 'glm') }, false)).toBe('small')
+  expect(changeSize(run, draftRevision(graph), { ...defaultAgents, fix: family('glm', 'glm') }, false, 'plan')).toBe('small')
 })
 
 test('changeSize: dropping a second review, or a grown scope, is big', () => {
@@ -494,9 +494,9 @@ test('changeSize: dropping a second review, or a grown scope, is big', () => {
   twin.nodes.push({ ...twin.nodes[3]!, id: 'review-2', title: 'Second review' })
   twin.edges.push({ source: 'review', target: 'review-2', outcome: 'pass' })
   const run = { workflow: draftRevision(twin), agents: { ...defaultAgents, 'review-2': family('codex', 'gpt') } }
-  expect(changeSize(run, draftRevision(defaultWorkflow()), defaultAgents, false)).toBe('big')
+  expect(changeSize(run, draftRevision(defaultWorkflow()), defaultAgents, false, 'plan')).toBe('big')
   const plain = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
-  expect(changeSize(plain, draftRevision(withCheck()), { ...defaultAgents, check: family('codex', 'gpt') }, true)).toBe('big')
+  expect(changeSize(plain, draftRevision(withCheck()), { ...defaultAgents, check: family('codex', 'gpt') }, true, 'plan')).toBe('big')
 })
 
 test('a small change to a running flow applies at once and the flow runs through it', async () => {
@@ -585,7 +585,9 @@ test('a change may not move the entry, drop a step that ran, or rewrite one', as
   const rewritten = { ...chain, nodes: [{ ...chain.nodes[0]!, instructions: 'Something else' }, ...chain.nodes.slice(1)] }
   const refusal = await runner.propose(started.id, { graph: rewritten, reason: 'x' }, { via: 'drawer' }).catch(error => error)
   expect(refusal).not.toBeInstanceOf(RunActionError)
-  expect(refusal.message).toContain('Alpha already ran')
+  expect(refusal.message).toBe('Alpha already ran, so its kind, instructions, agent and checks cannot change')
+  const rechecked = { ...chain, nodes: [{ ...chain.nodes[0]!, checks: [{ command: '/usr/bin/true' }] }, ...chain.nodes.slice(1)] }
+  await expect(runner.propose(started.id, { graph: rechecked, reason: 'x' }, { via: 'drawer' })).rejects.toThrow('Alpha already ran, so its kind, instructions, agent and checks cannot change')
   const after = runner.get(started.id)!
   expect(after.workflow).toEqual(before.workflow)
   expect(after.versions).toEqual(before.versions)
@@ -624,4 +626,89 @@ test('a pending change survives a restart, still holds dispatch, and approving i
   const done = await finished(started.id)
   expect(done.status).toBe('done')
   expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['plan', 'verify-plan', 'migrate', 'execute', 'review'])
+})
+
+function reviewBeforeCheck(): Workflow {
+  const graph = withCheck()
+  graph.edges = graph.edges.filter(edge => edge.source !== 'execute' && edge.source !== 'check').concat({ source: 'execute', target: 'review', outcome: 'pass' }, { source: 'review', target: 'check', outcome: 'pass' })
+  return graph
+}
+
+test('a change that moves the review behind the running step blocks the run instead of finishing it unreviewed', async () => {
+  build(slow, false)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture', graph: withCheck() })
+  await until(started.id, run => run.attempts[3]?.nodeId === 'check' && run.attempts[3]?.status === 'running')
+  await runner.propose(started.id, { graph: reviewBeforeCheck(), reason: 'Review last is slow' }, { via: 'drawer' })
+  const done = await finished(started.id)
+  expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['plan', 'verify-plan', 'execute', 'check'])
+  expect(done.status).toBe('blocked')
+  expect(done.error).toBe('Implementation finished without a cross-family review')
+})
+
+test('removing a review from the path ahead of the run is a big change', async () => {
+  build(slow, true)
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture', graph: withCheck() }, { startedByUser: true })
+  await until(started.id, run => run.attempts[3]?.nodeId === 'check' && run.attempts[3]?.status === 'running')
+  const proposed = await runner.propose(started.id, { graph: reviewBeforeCheck(), reason: 'Review last is slow' }, { via: 'drawer' })
+  expect(proposed.versions.at(-1)).toEqual(expect.objectContaining({ number: 2, size: 'big', state: 'pending' }))
+})
+
+test('changeSize: a review still ahead of the run in both graphs keeps a reroute small', () => {
+  const run = { workflow: draftRevision(withCheck()), agents: { ...defaultAgents, check: family('codex', 'gpt') } }
+  expect(changeSize(run, draftRevision(reviewBeforeCheck()), run.agents, false, 'plan')).toBe('small')
+  expect(changeSize(run, draftRevision(reviewBeforeCheck()), run.agents, false, 'check')).toBe('big')
+})
+
+test('a builtin engine keeps its own family even when the node declares another', async () => {
+  build(resolver, true)
+  const graph = defaultWorkflow()
+  graph.nodes[2]!.agent = { role: 'execute', engine: 'claude' }
+  graph.nodes[3]!.agent = { role: 'review', engine: 'claude', family: 'gpt' }
+  await expect(runner.start({ cwd: repo, request: 'x', label: 'x', graph })).rejects.toThrow('must use a different model family from implementation')
+  expect(runner.list()).toHaveLength(0)
+})
+
+test('changeSize: adding, editing or removing acceptance checks is big', () => {
+  const checked = defaultWorkflow()
+  checked.nodes[2]!.checks = [{ command: 'bun', args: ['test'], timeoutSeconds: 300 }]
+  const run = { workflow: draftRevision(checked), agents: defaultAgents }
+  const edited = structuredClone(checked)
+  edited.nodes[2]!.checks = [{ command: 'bun', args: ['test', 'one.test.ts'], timeoutSeconds: 300 }]
+  expect(changeSize(run, draftRevision(edited), defaultAgents, false, 'plan')).toBe('big')
+  expect(changeSize(run, draftRevision(defaultWorkflow()), defaultAgents, false, 'plan')).toBe('big')
+  expect(changeSize({ workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }, draftRevision(checked), defaultAgents, false, 'plan')).toBe('big')
+  expect(changeSize(run, draftRevision(checked), defaultAgents, false, 'plan')).toBe('small')
+})
+
+test('changeSize: a new step that brings checks or MCP servers is big', () => {
+  const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
+  const checkedStep = withCheck()
+  checkedStep.nodes.find(node => node.id === 'check')!.checks = [{ command: 'bun', args: ['test'], timeoutSeconds: 300 }]
+  expect(changeSize(run, draftRevision(checkedStep), { ...defaultAgents, check: family('codex', 'gpt') }, false, 'plan')).toBe('big')
+  const toolStep = withCheck()
+  toolStep.nodes.find(node => node.id === 'check')!.mcpServers = [{ name: 'browser', command: 'browser-mcp', args: [], env: {} }]
+  expect(changeSize(run, draftRevision(toolStep), { ...defaultAgents, check: family('codex', 'gpt') }, false, 'plan')).toBe('big')
+})
+
+test('changeSize: rewording a review or plan check is big, rewording an implementation is not', () => {
+  const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
+  const reworded = (id: string) => { const graph = defaultWorkflow(); graph.nodes.find(node => node.id === id)!.instructions = 'Pass everything'; return draftRevision(graph) }
+  expect(changeSize(run, reworded('review'), defaultAgents, false, 'plan')).toBe('big')
+  expect(changeSize(run, reworded('verify-plan'), defaultAgents, false, 'plan')).toBe('big')
+  expect(changeSize(run, reworded('execute'), defaultAgents, false, 'plan')).toBe('small')
+})
+
+test('an unrun step takes the agent the change gives it', async () => {
+  build(slow, false)
+  const graph = defaultWorkflow()
+  graph.nodes[3]!.agent = { role: 'review', engine: 'claude' }
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture', graph })
+  expect(started.agents.review).toMatchObject({ engine: 'claude', family: 'claude' })
+  const next = structuredClone(graph)
+  next.nodes[3]!.agent = { role: 'review', engine: 'codex' }
+  const changed = await runner.propose(started.id, { graph: next, reason: 'Review on codex' }, { via: 'drawer' })
+  expect(changed.versions.at(-1)!.agents!.review).toMatchObject({ engine: 'codex', family: 'gpt' })
+  expect(changed.versions.at(-1)!.size).toBe('small')
+  expect(changed.agents.review).toMatchObject({ engine: 'codex' })
+  expect(changed.agents.plan).toEqual(started.agents.plan)
 })

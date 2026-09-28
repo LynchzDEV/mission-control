@@ -57,9 +57,9 @@ export function readNodeResult(log: string): NodeResult | null {
   return null
 }
 
-function passReachable(graph: WorkflowRevision): Set<string> {
+function passReachable(graph: WorkflowRevision, from = graph.entry): Set<string> {
   const reached = new Set<string>()
-  const queue = [graph.entry]
+  const queue = graph.nodes.some(node => node.id === from) ? [from] : []
   while (queue.length) {
     const id = queue.shift()!
     if (reached.has(id)) continue
@@ -69,12 +69,34 @@ function passReachable(graph: WorkflowRevision): Set<string> {
   return reached
 }
 
-export function changeSize(run: Pick<WorkflowRun, 'workflow' | 'agents'>, next: WorkflowRevision, nextAgents: Record<string, ResolvedAgent>, scopeGrew: boolean): 'small' | 'big' {
+function reviewsAhead(graph: WorkflowRevision, from: string): Set<string> {
+  const ahead = passReachable(graph, from)
+  return new Set(graph.nodes.filter(node => node.kind === 'review' && ahead.has(node.id)).map(node => node.id))
+}
+
+const GATING_KINDS: ReadonlySet<WorkflowNode['kind']> = new Set(['review', 'verify-plan'])
+
+function weakensGates(before: WorkflowRevision, after: WorkflowRevision): boolean {
+  const ids = new Set([...before.nodes, ...after.nodes].map(node => node.id))
+  for (const id of ids) {
+    const old = before.nodes.find(node => node.id === id)
+    const next = after.nodes.find(node => node.id === id)
+    if (JSON.stringify(old?.checks ?? []) !== JSON.stringify(next?.checks ?? [])) return true
+    if (JSON.stringify(old?.mcpServers ?? []) !== JSON.stringify(next?.mcpServers ?? [])) return true
+    if (old && next && GATING_KINDS.has(old.kind) && old.instructions !== next.instructions) return true
+  }
+  return false
+}
+
+export function changeSize(run: Pick<WorkflowRun, 'workflow' | 'agents'>, next: WorkflowRevision, nextAgents: Record<string, ResolvedAgent>, scopeGrew: boolean, from: string): 'small' | 'big' {
   if (scopeGrew) return 'big'
   const families = new Set(Object.values(run.agents).map(agent => agent.family))
   if (next.nodes.some(node => !families.has(nextAgents[node.id]?.family ?? null))) return 'big'
   const reviews = (graph: WorkflowRevision) => graph.nodes.filter(node => node.kind === 'review').length
   if (reviews(next) < reviews(run.workflow)) return 'big'
+  const reviewsStillAhead = reviewsAhead(next, from)
+  if ([...reviewsAhead(run.workflow, from)].some(id => !reviewsStillAhead.has(id))) return 'big'
+  if (weakensGates(run.workflow, next)) return 'big'
   const wasImplement = new Set(run.workflow.nodes.filter(node => node.kind === 'implement').map(node => node.id))
   const onPassPath = passReachable(next)
   return next.nodes.some(node => node.kind === 'implement' && onPassPath.has(node.id) && !wasImplement.has(node.id)) ? 'big' : 'small'
@@ -87,8 +109,21 @@ function guardChange(run: WorkflowRun, next: WorkflowRevision): void {
     const before = run.workflow.nodes.find(node => node.id === id)!
     const after = next.nodes.find(node => node.id === id)
     if (!after) throw new Error(`${before.title} already ran and cannot be removed`)
-    if (after.kind !== before.kind || after.instructions !== before.instructions || JSON.stringify(after.agent) !== JSON.stringify(before.agent)) throw new Error(`${before.title} already ran, so its kind, instructions and agent cannot change`)
+    const frozen = (node: WorkflowNode) => JSON.stringify([node.kind, node.instructions, node.agent, node.checks])
+    if (frozen(after) !== frozen(before)) throw new Error(`${before.title} already ran, so its kind, instructions, agent and checks cannot change`)
   }
+}
+
+function positionOf(run: WorkflowRun): string {
+  const last = run.attempts.at(-1)
+  if (last?.status !== 'settled' || !last.result) return run.currentNodeId
+  return run.workflow.edges.find(edge => edge.source === last.nodeId && edge.outcome === last.result!.outcome)?.target ?? run.currentNodeId
+}
+
+function unreviewedImplementation(run: WorkflowRun): boolean {
+  const kindOf = (attempt: WorkflowAttempt) => run.workflow.nodes.find(node => node.id === attempt.nodeId)?.kind
+  const lastReview = run.attempts.findLastIndex(attempt => kindOf(attempt) === 'review' && attempt.result?.outcome === 'pass')
+  return run.attempts.slice(lastReview + 1).some(attempt => kindOf(attempt) === 'implement')
 }
 
 async function snapshotSkills(node: WorkflowNode, cwd: string): Promise<Array<{ path: string; content: string }>> {
@@ -174,7 +209,8 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       const builtin = BUILTIN_AGENTS.includes(engine as typeof BUILTIN_AGENTS[number])
       const connection = builtin ? undefined : await connections.get(engine)
       if (node.mcpServers.length && (!connection || connection.adapter === 'cli')) throw new Error(`${node.title}: attached MCP servers need an ACP connection`)
-      const family = (modelFamily(model) ?? node.agent.family ?? connection?.family ?? (builtin ? engine === 'codex' ? 'gpt' : engine : null))?.toLowerCase() ?? null
+      const ownFamily = builtin ? engine === 'codex' ? 'gpt' : engine : connection?.family ?? node.agent.family
+      const family = (modelFamily(model) ?? ownFamily)?.toLowerCase() ?? null
       return { engine, model, family, ...(connection ? { connection } : {}) }
     }
     const agents: Record<string, ResolvedAgent> = Object.fromEntries(await Promise.all(workflow.nodes.map(async node => [node.id, await resolveAgent(node, chatDefault)] as const)))
@@ -337,6 +373,8 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       if (run.status === 'running' && !incoming.has(run.id)) await dispatch(run)
     } else if (changePending(run) || incoming.has(run.id)) {
       await persist(run)
+    } else if (result.outcome === 'pass' && unreviewedImplementation(run)) {
+      await block(run, 'Implementation finished without a cross-family review')
     } else {
       await finish(run, result.outcome === 'pass' ? 'done' : result.outcome === 'fail' ? 'failed' : 'blocked', result.outcome === 'pass' ? null : result.summary)
     }
@@ -473,11 +511,11 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     if (run.versions.some(version => version.state === 'pending')) throw new RunActionError('A change is already waiting', 409)
     const next = draftRevision(change.graph)
     guardChange(run, next)
-    const existing = new Set(run.workflow.nodes.map(node => node.id))
-    const kept = Object.fromEntries(Object.entries(run.agents).filter(([nodeId]) => existing.has(nodeId) && next.nodes.some(node => node.id === nodeId)))
+    const ran = new Set(run.attempts.map(attempt => attempt.nodeId))
+    const kept = Object.fromEntries(Object.entries(run.agents).filter(([nodeId]) => ran.has(nodeId)))
     const agents = { ...await agentsFor(next), ...kept }
-    const skills = Object.fromEntries(await Promise.all(next.nodes.filter(node => !existing.has(node.id)).map(async node => [node.id, await snapshotSkills(node, run.cwd)] as const)))
-    const size = changeSize(run, next, agents, !!change.scopeGrew)
+    const skills = Object.fromEntries(await Promise.all(next.nodes.filter(node => !ran.has(node.id)).map(async node => [node.id, await snapshotSkills(node, run.cwd)] as const)))
+    const size = changeSize(run, next, agents, !!change.scopeGrew, positionOf(run))
     const waits = size === 'big' && await requireApproval()
     return { number: run.versions.length + 1, revision: next.revision, reason: change.reason, size, state: waits ? 'pending' : 'approved', approvedVia: waits ? null : 'auto', relayedBy: null, at: Date.now(), graph: next, agents, skills }
   }
