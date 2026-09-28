@@ -9,6 +9,9 @@ import { composeWorkflowPrompt, identifier, type WorkflowStore } from '../workfl
 import type { WorkflowBuilder } from '../workflow-builder'
 import { RunActionError, type ApprovalContext, type WorkflowRunner } from '../workflow-runner'
 import { readConfig } from '../secrets'
+import { eventStreamResponse, type RunEvents } from '../run-events'
+import { scopeSnapshot } from '../run-view'
+import type { JobRecord } from '../jobs'
 import { join } from 'node:path'
 
 const sessionBody = z.object({ chat: z.string().min(1).max(200).optional(), terminalId: identifier.optional(), version: z.number().int().min(1).optional() }).default({})
@@ -17,7 +20,7 @@ function approvalContext(request: Request, body: unknown): ApprovalContext {
   return fromBrowser(request) ? { via: 'drawer', ...(version ? { version } : {}) } : { via: 'conversation', ...session, ...(version ? { version } : {}) }
 }
 
-export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, builder?: WorkflowBuilder) {
+export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, builder?: WorkflowBuilder, events?: RunEvents, jobs?: () => JobRecord[]) {
   const connections = createConnectionStore()
   return new Elysia()
     .onBeforeHandle(requireLocal)
@@ -66,6 +69,11 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
         if (code !== 0) throw new Error(events.at(-1)?.result ?? 'Agent probe failed')
         return events.find(event => event.type === 'mc_capabilities') ?? { error: 'Agent did not advertise capabilities' }
       } finally { clearTimeout(timer) }
+    })
+    .get('/api/studio/events', ({ query, request }) => {
+      if (!events || !jobs) throw new Error('Live updates unavailable')
+      const scope = { chat: query.chat || undefined, terminal: query.terminal || undefined }
+      return eventStreamResponse(events, () => scopeSnapshot(runner.list(), jobs(), scope), request.signal)
     })
     .get('/api/studio/runs', ({ query }) => ({ runs: runner.list()
       .filter(run => (!query.chat || run.chatId === query.chat) && (!query.terminal || run.terminalId === query.terminal))

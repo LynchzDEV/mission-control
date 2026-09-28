@@ -26,6 +26,7 @@ import { createWorkflowStore } from './workflows'
 import { createWorkflowBuilder } from './workflow-builder'
 import { createWorkflowRunner } from './workflow-runner'
 import { studioRoutes } from './routes/studio'
+import { createRunEvents } from './run-events'
 import { runsRoutes } from './routes/runs'
 import { jobsRoutes } from './routes/jobs'
 import { chatRoutes } from './routes/chat'
@@ -151,10 +152,12 @@ export async function createApp(): Promise<Elysia> {
   }
   const planStore = createPlanStore()
   const workflowStore = createWorkflowStore()
+  const runEvents = createRunEvents()
   const jobManager = createJobManager({
     onJobSlow: notifySlowJob,
-    onJobStarted: (record) => log(jobLine('started', record)),
+    onJobStarted: (record) => { log(jobLine('started', record)); runEvents.changed() },
     onJobSettled: (record) => {
+      runEvents.changed()
       log(jobLine(record.stoppedAt ? 'stopped' : record.status === 'done' ? 'done' : 'failed', record))
       if (record.purpose === 'workflow-design') {
         void workflowBuilder.cleanup(record).catch(error => console.error('Workflow designer cleanup failed', error))
@@ -180,6 +183,7 @@ export async function createApp(): Promise<Elysia> {
     store: workflowStore,
     terminals: terminalRegistry,
     onRunSettled: run => { void chatFlusher.onRunSettled(run).catch(error => console.error('Workflow chat report failed', error)) },
+    onChange: () => runEvents.changed(),
   })
   const chatQueue = createChatQueue(chatQueuePath())
   const chatFlusher = createChatFlusher(jobManager, realEngineResolver, {
@@ -238,7 +242,7 @@ export async function createApp(): Promise<Elysia> {
     .use(outcomesRoutes(outcomeLedger))
     .use(flowRoutes(jobManager, terminalRegistry, planStore))
     .use(runsRoutes(planRunner))
-    .use(studioRoutes(workflowStore, workflowRunner, workflowBuilder))
+    .use(studioRoutes(workflowStore, workflowRunner, workflowBuilder, runEvents, () => jobManager.listJobs()))
     .use(secretsRoutes)
     .use(rolesRoutes)
     .use(flowApprovalRoutes)
