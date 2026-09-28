@@ -1,0 +1,27 @@
+:root { --oc-ok: #6f9c7e; --oc-bad: #b0556a; --oc-size: 8px; --oc-gap: 3px; }
+.oc-strip { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.oc-cells { display: flex; gap: var(--oc-gap); align-items: center; }
+.oc-sq { display: block; flex: none; width: var(--oc-size); height: var(--oc-size); border-radius: 2px; background: var(--oc-ok); cursor: default; transition: transform 120ms; }
+.oc-sq[data-ok="false"] { background: var(--oc-bad); }
+.oc-sq[data-by="spawned"] { background: color-mix(in srgb, var(--oc-ok) 22%, var(--paper)); box-shadow: inset 0 0 0 1.5px var(--oc-ok); }
+.oc-sq[data-by="spawned"][data-ok="false"] { background: color-mix(in srgb, var(--oc-bad) 22%, var(--paper)); box-shadow: inset 0 0 0 1.5px var(--oc-bad); }
+.oc-sq:hover, .oc-sq.hot { transform: scale(1.45); }
+.oc-sum { display: inline-flex; gap: 8px; font-size: 11.5px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.oc-sum b { font-weight: 600; }
+.oc-sum .ok { color: #3f7352; }
+.oc-sum .bad { color: #a13f58; }
+
+.oc-tip { position: fixed; z-index: 100; width: max-content; max-width: 340px; padding: 10px 12px; border: 1px solid #ffffff88; border-radius: var(--r-md); corner-shape: var(--corner); background: var(--paper); box-shadow: 6px 8px 22px #b4c1d677, -3px -3px 12px #ffffff99; font-size: 12.5px; color: #505e75; pointer-events: none; }
+.oc-tip[hidden] { display: none; }
+.oc-tip-head { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+.oc-tip-head code { font: 500 12px/1.3 Menlo, monospace; color: #344155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 250px; }
+.oc-tip-result { margin: 6px 0 0; font-weight: 500; }
+.oc-tip-result[data-ok="true"] { color: #3f7352; }
+.oc-tip-result[data-ok="false"] { color: #a13f58; }
+.oc-tip-detail { margin: 3px 0 0; font: 11.5px/1.35 Menlo, monospace; color: var(--muted); white-space: pre-wrap; }
+.oc-tip-meta { display: flex; align-items: center; gap: 6px; margin: 7px 0 0; padding-top: 7px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--muted); }
+.oc-tip-meta img { width: 12px; height: 12px; }
+
+.oc-new { outline: 2px dashed #8062bd99; outline-offset: 4px; border-radius: var(--r-sm); }
+.oc-label { position: fixed; left: 16px; bottom: 14px; z-index: 200; padding: 6px 10px; border-radius: var(--r-sm); background: #344155; color: #fff; font: 500 12px system-ui; }
+.oc-label a { color: #d9ccf2; margin-left: 10px; }

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Outcome strip — placements</title>
+<link rel="stylesheet" href="assets/quiet.css">
+<link rel="stylesheet" href="strip.css">
+<style>
+  body { padding: 40px 48px; min-height: 100vh; background: var(--paper); color: #344155; }
+  h1 { font-size: 22px; font-weight: 500; margin: 0 0 6px; }
+  p.lead { margin: 0 0 28px; color: var(--muted); max-width: 720px; line-height: 1.5; }
+  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; max-width: 1200px; }
+  .card { display: grid; gap: 10px; padding: 18px; border-radius: var(--r-lg); corner-shape: var(--corner); background: var(--paper); box-shadow: var(--raised); color: inherit; text-decoration: none; }
+  .card h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .card p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .card nav { display: flex; gap: 12px; font-size: 13px; }
+  .card nav a { color: var(--accent); }
+  .legend { display: flex; gap: 18px; align-items: center; margin: 0 0 28px; font-size: 13px; color: var(--muted); }
+  .legend span { display: inline-flex; gap: 7px; align-items: center; }
+</style>
+</head>
+<body>
+<h1>Outcome strip — where does it live?</h1>
+<p class="lead">One square per AI action in this session (shell commands, file edits, spawned agents and jobs finishing). Newest on the right. Hover any square for what it was, how it ended and who did it. Add <code>#hover</code> to a screen's URL to pin the tooltip on the latest failure.</p>
+<div class="legend">
+  <span><i class="oc-sq" data-ok="true" data-by="main"></i>Main agent passed</span>
+  <span><i class="oc-sq" data-ok="false" data-by="main"></i>Main agent failed</span>
+  <span><i class="oc-sq" data-ok="true" data-by="spawned"></i>Spawned agent / job passed</span>
+  <span><i class="oc-sq" data-ok="false" data-by="spawned"></i>Spawned agent / job failed</span>
+</div>
+<div class="grid">
+  <div class="card"><h2>NOW</h2><p>Today's terminal and chat, unchanged.</p><nav><a href="now-terminal.html">Terminal</a><a href="now-chat.html">Chat</a></nav></div>
+  <div class="card"><h2>A · Session pill</h2><p>Last 20 squares inside the top-right pill, between the session name and Live. Chat gets the same pill. Smallest footprint; no totals.</p><nav><a href="a-terminal.html">Terminal</a><a href="a-chat.html">Chat</a></nav></div>
+  <div class="card"><h2>B · Status line</h2><p>A full-width line on the bottom edge: room for the whole session plus "passed / failed" totals. In chat it sits just above the composer.</p><nav><a href="b-terminal.html">Terminal</a><a href="b-chat.html">Chat</a></nav></div>
+  <div class="card"><h2>C · Sidebar rows</h2><p>A tiny strip under every session title, so all sessions can be compared at a glance. Hidden when the sidebar is collapsed.</p><nav><a href="c-terminal.html">Terminal</a><a href="c-chat.html">Chat</a></nav></div>
+</div>
+</body>
+</html>
