@@ -18,7 +18,7 @@ const LIVE = new Set(['awaiting-approval', 'running', 'paused'])
 const SUMMARY_CHARS = 60
 const TICK_MS = 1000
 const EMPTY_TITLE = 'Session flow'
-const MISSING_JOB = "That step's job is no longer available."
+const MISSING_JOB = "That step’s job is no longer available."
 const NOTICE_MS = 4000
 const NO_BANNER: Banner = { tone: null, text: '', actions: [] }
 

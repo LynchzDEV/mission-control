@@ -373,7 +373,7 @@ test('a step whose job is gone says so on its own line and leaves the approval b
   const approve = buttonNamed('Approve and run')
   dispatchEvent(new CustomEvent('quiet:agent-open-missing', { detail: { jobId: 'job-plan' } }))
   const notice = document.querySelector<HTMLElement>('.flow-notice')!
-  expect([notice.hidden, notice.textContent]).toEqual([false, "That step's job is no longer available."])
+  expect([notice.hidden, notice.textContent]).toEqual([false, "That step’s job is no longer available."])
   expect(buttonNamed('Approve and run')).toBe(approve)
   expect(bannerText()).toContain('Nothing runs until you approve')
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
