@@ -100,7 +100,8 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
     })
     .post('/api/studio/runs/:id/approve', ({ params, body, request }) => runner.approve(params.id, approvalContext(request, body)).then(publicRun))
     .post('/api/studio/runs/:id/reject', ({ params, body, request }) => runner.reject(params.id, approvalContext(request, body)).then(publicRun))
-    .post('/api/studio/runs/:id/changes', ({ params, body, request }) => runner.propose(params.id, changeBody.parse(body), approvalContext(request, body)).then(publicRun))
+    .post('/api/studio/runs/:id/steps/:nodeId', ({ params, body, request }) => runner.report(params.id, params.nodeId, body, approvalContext(request, body)).then(publicRun))
+    .post('/api/studio/runs/:id/changes',({ params, body, request }) => runner.propose(params.id, changeBody.parse(body), approvalContext(request, body)).then(publicRun))
     .post('/api/studio/runs/:id/save', async ({ params, request }) => {
       if (!fromBrowser(request)) throw new RunActionError('Save from the drawer', 403)
       const run = runner.get(params.id)

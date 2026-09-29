@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join, sep } from 'node:path'
 import { z } from 'zod'
 import { parseThread } from './activity'
-import { BUILTIN_AGENTS, createConnectionStore } from './agent-connections'
+import { BUILTIN_AGENTS, createConnectionStore, SESSION_ENGINE } from './agent-connections'
 import { git } from './job-worktrees'
 import { readLogFile, type JobManager, type JobRecord } from './jobs'
 import type { EngineResolver } from './jobs-engine-iface'
@@ -24,7 +24,7 @@ export function readWorkflowDraft(log: string, agents: string[], approvedNodes: 
   const errors = validateWorkflow(draft.workflow)
   if (errors.length) throw new Error(`The proposed workflow needs correction: ${errors.join('; ')}`)
   for (const node of draft.workflow.nodes) {
-    if (node.agent.engine && !agents.includes(node.agent.engine)) throw new Error(`${node.agent.engine} is not connected. Add it in Manage AIs or choose another AI.`)
+    if (node.agent.engine && node.agent.engine !== SESSION_ENGINE && !agents.includes(node.agent.engine)) throw new Error(`${node.agent.engine} is not connected. Add it in Manage AIs or choose another AI.`)
     for (const field of ['checks', 'skills', 'mcpServers'] as const) {
       const approved = new Set(approvedNodes.flatMap(item => item[field].map(value => JSON.stringify(value))))
       if (node[field].some(item => !approved.has(JSON.stringify(item)))) throw new Error('The AI proposed a new tool, skill, or executable check. Add it yourself in step settings, then ask AI to use the saved workflow.')

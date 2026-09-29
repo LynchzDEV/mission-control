@@ -49,3 +49,7 @@ test('a missing connection reads as not configured instead of a filesystem path'
   const dir = await mkdtemp(join(tmpdir(), 'mc-conn-missing-'))
   try { await expect(createConnectionStore(dir).get('ghost')).rejects.toThrow('Connection "ghost" is not configured') } finally { await rm(dir, { recursive: true, force: true }) }
 })
+
+test('a connection cannot take the id reserved for In Session steps', async () => {
+  await expect(createConnectionStore(dir).save({ id: 'session', name: 'Session', adapter: 'acp', command: 'agent' })).rejects.toThrow('"session" is reserved for In Session steps')
+})

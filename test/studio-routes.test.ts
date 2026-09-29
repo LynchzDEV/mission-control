@@ -278,3 +278,23 @@ test('reading runs never returns the graph, agents or skills of a version', asyn
     expect(version).not.toHaveProperty('skills')
   }
 })
+
+test('the owning terminal reports an In Session step with its token; the browser cannot', async () => {
+  const store = createWorkflowStore(dir)
+  const cwd = await scratchRepo()
+  const graph = await store.get('default')
+  const terminal = { id: 'terminal-a', engine: 'claude', cwd, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, workflow: { id: graph.id, name: graph.name, revision: graph.revision, selectedDefault: true } }
+  runner = createWorkflowRunner({ manager, resolver: fakeEchoResolver, store, requireApproval: async () => true, terminals: { get: id => id === terminal.id ? terminal : undefined } })
+  app = new Elysia().use(studioRoutes(store, runner))
+  const token = { authorization: 'Bearer fixture-token' }
+  const run = await (await post('/api/studio/runs', { cwd, request: 'x', label: 'fixture', terminalId: terminal.id }, token)).json()
+  expect((await post(`/api/studio/runs/${run.id}/approve`, { terminalId: terminal.id }, token)).status).toBe(200)
+  const report = { outcome: 'pass', summary: 'Planned', evidence: ['plan written'], output: 'THE PLAN', terminalId: terminal.id }
+  const fromDrawer = await post(`/api/studio/runs/${run.id}/steps/plan`, report, { 'sec-fetch-site': 'same-origin' })
+  expect(fromDrawer.status).toBe(403)
+  const reported = await post(`/api/studio/runs/${run.id}/steps/plan`, report, token)
+  expect(reported.status).toBe(200)
+  const body = await reported.json()
+  expect(body.attempts[0]).toMatchObject({ nodeId: 'plan', status: 'settled', output: 'THE PLAN' })
+  expect(body.versions[0]).not.toHaveProperty('graph')
+})

@@ -40,6 +40,11 @@ function build(agent: EngineResolver = resolver, approval = false) {
   runner = createWorkflowRunner({ manager, resolver: agent, store, base: dir, requireApproval: async () => approval, onRunSettled: run => { settled.push(run) } })
   return store
 }
+function withoutSession(): Workflow {
+  const graph = defaultWorkflow()
+  graph.nodes[0]!.agent = { role: 'plan' }
+  return graph
+}
 async function finished(id: string) {
   for (let i = 0; i < 200; i++) { const run = runner.get(id)!; if (!['running', 'paused', 'awaiting-approval'].includes(run.status)) return run; await Bun.sleep(20) }
   throw new Error('Run did not settle')
@@ -61,7 +66,7 @@ test('default workflow executes four nodes with pinned policy and no mandatory c
 
 test('terminal runs default to their pinned workflow, let a named workflow override it, and reject unknown terminals', async () => {
   const store = build()
-  const first = await store.save({ ...defaultWorkflow(), id: 'terminal-workflow', name: 'Original terminal workflow' })
+  const first = await store.save({ ...withoutSession(), id: 'terminal-workflow', name: 'Original terminal workflow' })
   const terminal: TerminalRecord = { id: 'terminal-a', engine: 'claude', cwd: repo, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, workflow: { id: first.id, name: first.name, revision: first.revision, selectedDefault: true } }
   runner = createWorkflowRunner({ manager, resolver, store, base: dir, terminals: { get: id => id === terminal.id ? terminal : undefined }, requireApproval: async () => false })
   const next = await store.save({ ...first, name: 'Changed after terminal opened' }, first.revision)
@@ -74,8 +79,9 @@ test('terminal runs default to their pinned workflow, let a named workflow overr
   expect(started.terminalId).toBe(terminal.id)
   expect((await finished(started.id)).status).toBe('done')
   expect(manager.listJobs().every(job => job.terminalId === terminal.id)).toBe(true)
-  const named = await runner.start({ ...input, workflowId: 'default' })
-  expect(named.workflow.id).toBe('default')
+  await store.save({ ...withoutSession(), id: 'named' })
+  const named = await runner.start({ ...input, workflowId: 'named' })
+  expect(named.workflow.id).toBe('named')
   await finished(named.id)
 })
 
@@ -234,9 +240,10 @@ test('a chat run puts Chat decides steps on the chat AI, keeps pinned steps, and
 })
 
 test('a chat run without an engine uses the chat root AI for Chat decides steps', async () => {
-  build()
+  const store = build()
+  await store.save({ ...withoutSession(), id: 'chat-decides' })
   const root = await chatRoot('glm')
-  const run = await runner.start({ cwd: repo, request: 'Ship it', label: 'ship', chat: root.id })
+  const run = await runner.start({ workflowId: 'chat-decides', cwd: repo, request: 'Ship it', label: 'ship', chat: root.id })
   expect(run.agents.plan).toMatchObject({ engine: 'glm' })
   expect(run.agents.execute).toMatchObject({ engine: 'glm' })
   expect(run.agents.review).toMatchObject({ engine: 'codex' })
@@ -486,7 +493,7 @@ test('changeSize: a new implementation step on the pass path is big', () => {
 test('changeSize: a fix loop reached only through a failed review is small', () => {
   const graph = defaultWorkflow()
   graph.nodes.push({ ...graph.nodes[2]!, id: 'fix', title: 'Fix', instructions: 'Fix the review findings' })
-  graph.edges.push({ source: 'review', target: 'fix', outcome: 'fail' }, { source: 'fix', target: 'review', outcome: 'pass' })
+  graph.edges = graph.edges.filter(edge => edge.source !== 'review').concat({ source: 'review', target: 'fix', outcome: 'fail' }, { source: 'fix', target: 'review', outcome: 'pass' })
   const run = { workflow: draftRevision(defaultWorkflow()), agents: defaultAgents }
   expect(changeSize(run, draftRevision(graph), { ...defaultAgents, fix: family('glm', 'glm') }, false, ['plan'])).toBe('small')
 })
@@ -1105,4 +1112,140 @@ test('with two open paths, a change that drops the second path’s review is big
   skipped.edges = skipped.edges.filter(edge => !(edge.source === 'b' && edge.target === 'rb')).concat({ source: 'b', target: 'join', outcome: 'pass' }, { source: 'b', target: 'rb', outcome: 'fail' })
   const proposed = await runner.propose(started.id, { graph: skipped, reason: 'Skip the second review' }, { via: 'drawer' })
   expect(proposed.versions.at(-1)).toEqual(expect.objectContaining({ number: 2, size: 'big', state: 'pending' }))
+})
+
+async function sessionRunner(agent: EngineResolver = resolver, engine = 'claude', workflow?: Workflow) {
+  const store = build(agent, true)
+  const graph = workflow ? await store.save(workflow) : await store.get('default')
+  const terminal: TerminalRecord = { id: 'terminal-a', engine, cwd: repo, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, workflow: { id: graph.id, name: graph.name, revision: graph.revision, selectedDefault: true } }
+  const sessionSteps: WorkflowRun[] = []
+  const terminals = { get: (id: string) => id === terminal.id ? terminal : undefined }
+  const make = () => createWorkflowRunner({ manager, resolver: agent, store, base: dir, terminals, requireApproval: async () => true, onSessionStep: run => { sessionSteps.push(run) } })
+  runner = make()
+  const owner = { via: 'conversation' as const, terminalId: terminal.id }
+  const begin = async () => {
+    const started = await runner.start({ terminalId: terminal.id, cwd: repo, request: 'Implement the fixture', label: 'fixture' })
+    return runner.approve(started.id, owner)
+  }
+  return { terminal, sessionSteps, owner, begin, make }
+}
+const planReport = { outcome: 'pass', summary: 'Planned', evidence: ['plan written'], output: 'THE PLAN' }
+
+test('an In Session plan waits for the terminal AI, creates no job, and its report feeds the plan check', async () => {
+  const { sessionSteps, owner, begin } = await sessionRunner()
+  const approved = await begin()
+  expect(approved.agents.plan).toEqual({ engine: 'claude', model: null, family: 'claude', inSession: true })
+  expect(approved.attempts).toEqual([expect.objectContaining({ nodeId: 'plan', inSession: true, jobId: null, status: 'running', sessionNotifiedAt: null })])
+  expect(approved.tokens[0]).toMatchObject({ state: 'working', attempt: 0 })
+  expect(manager.listJobs()).toHaveLength(0)
+  expect(sessionSteps).toHaveLength(1)
+  const reported = await runner.report(approved.id, 'plan', planReport, owner)
+  expect(reported.attempts[0]).toMatchObject({ status: 'settled', output: 'THE PLAN', result: { outcome: 'pass', summary: 'Planned', evidence: ['plan written'] } })
+  expect(reported.attempts[0]!.workspace).not.toBeNull()
+  expect(reported.attempts[1]).toMatchObject({ nodeId: 'verify-plan', status: 'running' })
+  expect(reported.attempts[1]!.inSession).toBeUndefined()
+  expect(manager.getJob(reported.attempts[1]!.jobId!)!.prompt).toContain('THE PLAN')
+  expect((await finished(approved.id)).status).toBe('done')
+  expect(sessionSteps).toHaveLength(1)
+})
+
+test('a failed plan check sends the plan back to the session with the findings in its prompt', async () => {
+  let calls = 0
+  const rejectOnce = JSON.stringify({ type: 'result', result: `MC_RESULT ${JSON.stringify({ outcome: 'fail', summary: 'Plan misses the migration', evidence: [] })}` })
+  const { sessionSteps, owner, begin } = await sessionRunner(() => ({ cmd: '/bin/echo', args: [calls++ === 0 ? rejectOnce : report()], env: {} }))
+  const approved = await begin()
+  await runner.report(approved.id, 'plan', planReport, owner)
+  const replanning = await until(approved.id, run => run.attempts.length === 3)
+  expect(replanning.attempts.map(attempt => attempt.nodeId)).toEqual(['plan', 'verify-plan', 'plan'])
+  expect(replanning.attempts[2]).toMatchObject({ inSession: true, jobId: null, status: 'running' })
+  expect(replanning.attempts[2]!.prompt).toContain('Plan misses the migration')
+  expect(sessionSteps).toHaveLength(2)
+  await runner.report(approved.id, 'plan', { ...planReport, output: 'THE REVISED PLAN' }, owner)
+  expect((await finished(approved.id)).status).toBe('done')
+})
+
+test('only the owning session can report a waiting step, and only once', async () => {
+  const { owner, begin } = await sessionRunner()
+  const approved = await begin()
+  await expect(runner.report(approved.id, 'plan', planReport, { via: 'drawer' })).rejects.toMatchObject({ status: 403, message: 'Only the session that owns this flow can report its step' })
+  await expect(runner.report(approved.id, 'plan', planReport, { via: 'conversation', terminalId: 'terminal-b' })).rejects.toMatchObject({ status: 403, message: 'This flow belongs to a different session' })
+  await expect(runner.report(approved.id, 'verify-plan', planReport, owner)).rejects.toMatchObject({ status: 409, message: 'That step is not waiting for the session' })
+  await expect(runner.report(approved.id, 'plan', { ...planReport, evidence: [] }, owner)).rejects.toThrow('A passing step needs evidence')
+  await expect(runner.report('no-such-run', 'plan', planReport, owner)).rejects.toMatchObject({ status: 404 })
+  expect(runner.get(approved.id)!.attempts[0]!.status).toBe('running')
+  const results = await Promise.allSettled([runner.report(approved.id, 'plan', planReport, owner), runner.report(approved.id, 'plan', planReport, owner)])
+  expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+  expect(((results.find(result => result.status === 'rejected') as PromiseRejectedResult).reason as RunActionError)).toMatchObject({ status: 409, message: 'That step is not waiting for the session' })
+  expect(runner.get(approved.id)!.attempts.filter(attempt => attempt.nodeId === 'plan')).toHaveLength(1)
+})
+
+test('a restart keeps an In Session step waiting and a later report settles it', async () => {
+  const { owner, begin, make } = await sessionRunner()
+  const approved = await begin()
+  runner = make()
+  await runner.recover()
+  const recovered = runner.get(approved.id)!
+  expect(recovered.status).toBe('running')
+  expect(recovered.attempts[0]).toMatchObject({ inSession: true, status: 'running' })
+  expect(recovered.tokens[0]).toMatchObject({ state: 'working', attempt: 0 })
+  const reported = await runner.report(approved.id, 'plan', planReport, owner)
+  expect(reported.attempts[0]!.status).toBe('settled')
+  expect(reported.attempts[1]!.nodeId).toBe('verify-plan')
+  expect((await finished(approved.id)).status).toBe('done')
+})
+
+test('an In Session review on the implementation family is refused before the run starts', async () => {
+  const graph = defaultWorkflow()
+  graph.id = 'session-review'
+  graph.nodes[0]!.agent = { role: 'plan' }
+  graph.nodes[3]!.agent = { role: 'review', engine: 'session' }
+  graph.nodes[2]!.agent = { role: 'execute', engine: 'glm' }
+  const { terminal } = await sessionRunner(resolver, 'glm', graph)
+  await expect(runner.start({ terminalId: terminal.id, cwd: repo, request: 'Implement', label: 'fixture' })).rejects.toThrow('Cross-family review must use a different model family from implementation')
+  expect(runner.list()).toHaveLength(0)
+})
+
+test('stopping while an In Session step waits ends the run, a late report is a conflict, and retry waits again', async () => {
+  const { sessionSteps, owner, begin } = await sessionRunner()
+  const approved = await begin()
+  const stopped = await runner.stop(approved.id)
+  expect(stopped.status).toBe('stopped')
+  expect(stopped.attempts[0]).toMatchObject({ status: 'settled', result: { outcome: 'blocked' } })
+  await expect(runner.report(approved.id, 'plan', planReport, owner)).rejects.toMatchObject({ status: 409, message: 'That step is not waiting for the session' })
+  const retried = await runner.retry(approved.id)
+  expect(retried.attempts[1]).toMatchObject({ nodeId: 'plan', inSession: true, jobId: null, status: 'running' })
+  expect(sessionSteps).toHaveLength(2)
+  expect(manager.listJobs()).toHaveLength(0)
+})
+
+test('a report while paused settles the step and the next one waits for resume', async () => {
+  const { owner, begin } = await sessionRunner()
+  const approved = await begin()
+  await runner.pause(approved.id)
+  const reported = await runner.report(approved.id, 'plan', planReport, owner)
+  expect(reported.status).toBe('paused')
+  expect(reported.attempts).toHaveLength(1)
+  expect(reported.attempts[0]!.status).toBe('settled')
+  expect(manager.listJobs()).toHaveLength(0)
+  await runner.resume(approved.id)
+  expect((await finished(approved.id)).status).toBe('done')
+})
+
+test('the session is notified once per In Session attempt and the notice is recorded on it', async () => {
+  const { sessionSteps, begin, make } = await sessionRunner()
+  const approved = await begin()
+  expect(sessionSteps.map(run => run.attempts.at(-1)!.number)).toEqual([0])
+  await runner.markSessionNotified(approved.id, 0, 4321)
+  expect(runner.get(approved.id)!.attempts[0]!.sessionNotifiedAt).toBe(4321)
+  expect(make().get(approved.id)!.attempts[0]!.sessionNotifiedAt).toBe(4321)
+})
+
+test('a run started from Studio resolves an In Session step like Chat decides', async () => {
+  build()
+  const run = await runner.start({ cwd: repo, request: 'Implement', label: 'studio' })
+  expect(run.agents.plan).toMatchObject({ engine: 'claude', family: 'claude' })
+  expect(run.agents.plan!.inSession).toBeUndefined()
+  const done = await finished(run.id)
+  expect(done.status).toBe('done')
+  expect(done.attempts.every(attempt => attempt.inSession === undefined && attempt.jobId)).toBe(true)
 })

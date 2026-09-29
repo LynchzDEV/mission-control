@@ -155,3 +155,13 @@ test('the big-flow fixture is a valid 22-step flow with two splits, a nested spl
   expect(graph.nodes).toHaveLength(22)
   expect(forkSections(workflowSchema.parse(graph)).map(section => [section.fork, section.join])).toEqual([['split', 'join'], ['split2', 'join2'], ['ui-split', 'ui-join']])
 })
+
+test('the built-in default plans In Session and loops failed checks back to the step they judge', () => {
+  const graph = defaultWorkflow()
+  expect(graph.nodes.find(node => node.id === 'plan')!.agent.engine).toBe('session')
+  expect(graph.edges).toContainEqual({ source: 'verify-plan', target: 'plan', outcome: 'fail' })
+  expect(graph.edges).toContainEqual({ source: 'review', target: 'execute', outcome: 'fail' })
+  expect(graph.nodes.find(node => node.id === 'plan')!.instructions).toContain('If an upstream plan check failed, revise the plan to fix every finding it lists.')
+  expect(graph.nodes.find(node => node.id === 'execute')!.instructions).toContain('If an upstream review failed, fix every finding it lists.')
+  expect(validateWorkflow(graph)).toEqual([])
+})

@@ -6,7 +6,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import { parseThread } from './activity'
-import { BUILTIN_AGENTS, createConnectionStore, modelFamily, type AgentConnection } from './agent-connections'
+import { BUILTIN_AGENTS, createConnectionStore, modelFamily, SESSION_ENGINE, type AgentConnection } from './agent-connections'
 import { resolveBinary } from './engines'
 import { addPathWorktree, applyPath, changedFileCount, commitPath, git, gitTimed, removePathWorktree, snapshotCommit } from './job-worktrees'
 import { type JobManager, type JobRecord, readLogFile, redactSecrets } from './jobs'
@@ -21,8 +21,9 @@ const jobId = z.string().min(1).max(200)
 const GIT_TIMEOUT = 120_000
 const startSchema = z.object({ terminalId: identifier.optional(), workflowId: identifier.optional(), revision: identifier.optional(), cwd: z.string().min(1).max(2048), request: z.string().trim().min(1).max(32000), label: z.string().trim().min(1).max(120), chat: jobId.optional(), chatTurn: jobId.optional(), engine: identifier.optional(), model: z.string().min(1).max(200).optional(), graph: z.unknown().optional() })
 const resultSchema = z.object({ outcome: z.enum(['pass', 'fail', 'blocked']), summary: z.string().trim().min(1).max(16000), evidence: z.array(z.string().min(1).max(4000)).max(100) })
+const stepReportSchema = resultSchema.extend({ output: z.string().max(64000).optional() })
 type NodeResult = z.infer<typeof resultSchema>
-export type ResolvedAgent = { engine: string; model: string | null; family: string | null; connection?: AgentConnection }
+export type ResolvedAgent = { engine: string; model: string | null; family: string | null; connection?: AgentConnection; inSession?: true }
 type ChatDefault = { engine: string; model: string | null }
 export type CheckResult = { command: string; args: string[]; exitCode: number | null; output: string; timedOut: boolean }
 export type WorkflowAttempt = {
@@ -30,6 +31,7 @@ export type WorkflowAttempt = {
   prompt: string; startedAt: number; endedAt: number | null; result: NodeResult | null; checks: CheckResult[];
   output: string; checkPid?: number; workspace: { head: string; diffHash: string } | null;
   tokenId: string; pathId: string; from: number[];
+  inSession?: true; sessionNotifiedAt?: number | null;
 }
 export type TokenState = 'ready' | 'working' | 'settled' | 'waiting'
 export type WorkflowToken = { id: string; nodeId: string; pathId: string; workspace: string; state: TokenState; attempt: number | null; from: number[] }
@@ -207,7 +209,7 @@ async function workspaceSnapshot(cwd: string): Promise<{ head: string; diffHash:
   return { head, diffHash: hash.digest('hex') }
 }
 
-export function createWorkflowRunner(deps: { manager: JobManager; resolver: EngineResolver; store: WorkflowStore; base?: string; terminals?: Pick<TerminalRegistry, 'get'>; onRunSettled?: (run: WorkflowRun) => void; requireApproval?: () => Promise<boolean>; onChange?: (run: WorkflowRun) => void }) {
+export function createWorkflowRunner(deps: { manager: JobManager; resolver: EngineResolver; store: WorkflowStore; base?: string; terminals?: Pick<TerminalRegistry, 'get'>; onRunSettled?: (run: WorkflowRun) => void; requireApproval?: () => Promise<boolean>; onChange?: (run: WorkflowRun) => void; onSessionStep?: (run: WorkflowRun) => void }) {
   const root = join(deps.base ?? configDir(), 'workflow-runs')
   const requireApproval = deps.requireApproval ?? (async () => (await readConfig()).flowApproval)
   const runs = new Map<string, WorkflowRun>()
@@ -276,7 +278,15 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   function workspaceBusy(cwd: string, except?: string): boolean {
     return [...runs.values()].some(run => run.id !== except && run.cwd === cwd && LIVE_STATUSES.has(run.status)) || deps.manager.listJobs().some(job => job.cwd === cwd && job.status === 'running' && job.purpose !== 'chat' && job.workflowRunId !== except)
   }
-  async function agentsFor(workflow: WorkflowRevision, chatDefault?: ChatDefault): Promise<Record<string, ResolvedAgent>> {
+  function sessionOf(run: Pick<WorkflowRun, 'terminalId' | 'chatId'>): ChatDefault | undefined {
+    if (run.terminalId) {
+      const terminal = deps.terminals?.get(run.terminalId)
+      return terminal ? { engine: terminal.engine, model: null } : undefined
+    }
+    const root = run.chatId ? deps.manager.getJob(run.chatId) : undefined
+    return root ? { engine: root.engine, model: root.model ?? null } : undefined
+  }
+  async function agentsFor(workflow: WorkflowRevision, chatDefault?: ChatDefault, session?: ChatDefault): Promise<Record<string, ResolvedAgent>> {
     const roles = (await readConfig()).roles
     const connections = createConnectionStore(deps.base)
     async function resolveAgent(node: WorkflowNode, fallback: ChatDefault | undefined): Promise<ResolvedAgent> {
@@ -290,11 +300,23 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       const family = (modelFamily(model) ?? ownFamily)?.toLowerCase() ?? null
       return { engine, model, family, ...(connection ? { connection } : {}) }
     }
+    const inSession = (node: WorkflowNode) => node.agent.engine === SESSION_ENGINE
+    const detached = (node: WorkflowNode): WorkflowNode => {
+      if (!inSession(node)) return node
+      const { engine: _engine, model: _model, ...agent } = node.agent
+      return { ...node, agent }
+    }
+    async function resolveNode(node: WorkflowNode): Promise<ResolvedAgent> {
+      if (!inSession(node) || !session) return resolveAgent(detached(node), chatDefault)
+      const { connection: _connection, ...agent } = await resolveAgent({ ...node, agent: { ...detached(node).agent, engine: session.engine, ...(session.model ? { model: session.model } : {}) } }, undefined)
+      return { ...agent, inSession: true }
+    }
     const working = workflow.nodes.filter(node => node.kind !== 'join')
-    const agents: Record<string, ResolvedAgent> = Object.fromEntries(await Promise.all(working.map(async node => [node.id, await resolveAgent(node, chatDefault)] as const)))
+    const agents: Record<string, ResolvedAgent> = Object.fromEntries(await Promise.all(working.map(async node => [node.id, await resolveNode(node)] as const)))
     const implementationFamilies = new Set(workflow.nodes.filter(node => node.kind === 'implement').map(node => agents[node.id]!.family))
-    for (const review of workflow.nodes.filter(node => chatDefault && node.kind === 'review' && !node.agent.engine && implementationFamilies.has(agents[node.id]!.family))) {
-      agents[review.id] = await resolveAgent(review, undefined)
+    const chatDecides = (node: WorkflowNode) => !node.agent.engine || (inSession(node) && !session)
+    for (const review of workflow.nodes.filter(node => chatDefault && node.kind === 'review' && chatDecides(node) && implementationFamilies.has(agents[node.id]!.family))) {
+      agents[review.id] = await resolveAgent(detached(review), undefined)
     }
     for (const implementation of workflow.nodes.filter(node => node.kind === 'implement')) {
       if (!agents[implementation.id]!.family) throw new Error(`${implementation.title}: select or declare the model family for cross-family review`)
@@ -339,12 +361,13 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const latest = new Map(related.filter(attempt => attempt.result).map(attempt => [attempt.nodeId, attempt]))
     const inputs = [...latest.values()].map(attempt => ({ node: attempt.nodeId, outcome: attempt.result, output: attempt.output, checks: attempt.checks, workspace: attempt.workspace }))
     const prompt = composeWorkflowPrompt(run.policy, run.workflow, node, run.request, inputs, run.skills[node.id])
-    const attempt: WorkflowAttempt = { nodeId: node.id, number: run.attempts.length, jobId: null, status: 'starting', prompt, startedAt: Date.now(), endedAt: null, result: null, checks: [], output: '', workspace: null, tokenId: token.id, pathId: token.pathId, from: token.from }
+    const agent = run.agents[node.id]!
+    const attempt: WorkflowAttempt = { nodeId: node.id, number: run.attempts.length, jobId: null, status: agent.inSession ? 'running' : 'starting', prompt, startedAt: Date.now(), endedAt: null, result: null, checks: [], output: '', workspace: null, tokenId: token.id, pathId: token.pathId, from: token.from, ...(agent.inSession ? { inSession: true, sessionNotifiedAt: null } : {}) }
     if (prompt.length > 500000) return block(run, 'Combined task inputs exceed 500 KB; use artifact paths for large outputs')
     run.attempts.push(attempt)
     Object.assign(token, { state: 'working', attempt: attempt.number })
     await persist(run)
-    const agent = run.agents[node.id]!
+    if (agent.inSession) { deps.onSessionStep?.(structuredClone(run)); return }
     const chat = run.chatId ? { chatId: run.chatId, ...(run.chatTurn ? { chatTurn: run.chatTurn } : {}), reason: `Studio · ${run.workflow.name} · ${node.title}` } : {}
     const result = await deps.manager.createJob({ engine: agent.engine, model: agent.model ?? undefined, connection: agent.connection, cwd: token.workspace, ...(token.workspace === run.cwd ? {} : { baseRepo: run.cwd }), label: run.chatId ? node.title : run.label, prompt, ...chat, coreRules: node.kind === 'implement' ? `${run.policy.coreRules}\n\n${run.policy.implementationRules}` : run.policy.coreRules, mcpServers: node.mcpServers, workflowRunId: run.id, workflowNodeId: node.id, workflowAttempt: attempt.number, terminalId: run.terminalId }, deps.resolver)
     if (!result.ok) return block(run, result.error)
@@ -378,7 +401,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       if (terminal && !selection) throw new Error('This terminal has no pinned workflow; open a new terminal')
       const workflow = input.graph !== undefined ? draftRevision(input.graph) : input.workflowId ? await deps.store.get(input.workflowId, input.revision) : selection ? await deps.store.get(selection.id, selection.revision) : await deps.store.selected()
       if (workspaceBusy(cwd.path)) throw new Error('Workspace already has running work')
-      const agents = await agentsFor(workflow, chatDefault)
+      const agents = await agentsFor(workflow, chatDefault, sessionOf({ terminalId: input.terminalId, chatId: input.chat }))
       const policy = await deps.store.policy()
       const skills = Object.fromEntries(await Promise.all(workflow.nodes.map(async node => [node.id, await snapshotSkills(node, cwd.path)])))
       const chat = input.chat ? { chatId: input.chat, ...(input.chatTurn ? { chatTurn: input.chatTurn } : {}), reportedAt: null } : {}
@@ -436,13 +459,16 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const attempt = run.attempts.find(attempt => attempt.jobId === record.id)
     if (!attempt || attempt.status === 'settled' || attempt.status === 'checking') return null
     const token = run.tokens.find(token => token.id === attempt.tokenId)!
-    const node = run.workflow.nodes.find(node => node.id === attempt.nodeId)!
     const log = await redactRunOutput(run, await readLogFile(deps.manager.logPath(record.id)))
     const messages = parseThread(log)
     attempt.output = (messages.findLast(event => event.kind === 'result')?.detail ?? messages.filter(event => event.kind === 'text').map(event => event.detail).join('\n')).slice(-64000)
     let result = readNodeResult(log)
     if (record.status !== 'done' && result?.outcome !== 'blocked') result = { outcome: 'fail', summary: `Agent process failed (${record.exitCode ?? 'unknown exit'})`, evidence: [] }
     if (!result || (result.outcome === 'pass' && !result.evidence.length)) result = { outcome: 'blocked', summary: 'Agent did not provide a valid MC_RESULT with evidence', evidence: [] }
+    return accept(run, attempt, token, result)
+  }
+  async function accept(run: WorkflowRun, attempt: WorkflowAttempt, token: WorkflowToken, result: NodeResult): Promise<Checking | null> {
+    const node = run.workflow.nodes.find(node => node.id === attempt.nodeId)!
     attempt.result = result
     if (result.outcome === 'pass' && node.checks.length) {
       attempt.status = 'checking'
@@ -614,32 +640,61 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       await persist(run)
     } catch (error) { await block(run, error instanceof Error ? error.message : 'Workflow failed to continue') }
   }
-  async function settleJob(run: WorkflowRun, record: JobRecord): Promise<void> {
-    const fail = (error: unknown) => block(run, error instanceof Error ? error.message : 'Workflow settlement failed')
-    const checking = await exclusive(run.id, async () => {
-      try {
-        if (run.status === 'running' || run.status === 'paused') return await settle(run, record)
-        await persist(run)
-      } catch (error) { await fail(error) }
+  async function guarded(run: WorkflowRun, action: () => Promise<Checking | null>): Promise<Checking | null> {
+    try { return await action() } catch (error) {
+      await block(run, error instanceof Error ? error.message : 'Workflow settlement failed')
       return null
-    })
+    }
+  }
+  async function check(run: WorkflowRun, checking: Checking | null): Promise<void> {
     if (!checking) return
     const outcome = await acceptance(run, checking)
-    await exclusive(run.id, async () => {
-      try { await conclude(run, checking.attempt, checking.token, outcome.result, outcome.checks) } catch (error) { await fail(error) }
-    })
+    await exclusive(run.id, () => guarded(run, async () => { await conclude(run, checking.attempt, checking.token, outcome.result, outcome.checks); return null }))
+  }
+  async function settleJob(run: WorkflowRun, record: JobRecord): Promise<void> {
+    await check(run, await exclusive(run.id, () => guarded(run, async () => {
+      if (run.status === 'running' || run.status === 'paused') return settle(run, record)
+      await persist(run)
+      return null
+    })))
+  }
+  async function tracked<T>(id: string, work: Promise<T>): Promise<T> {
+    const inFlight = settling.get(id) ?? new Set<Promise<void>>()
+    const done = work.then(() => {}, () => {})
+    settling.set(id, inFlight.add(done))
+    try { return await work } finally {
+      inFlight.delete(done)
+      if (!inFlight.size) settling.delete(id)
+    }
   }
   async function onJobSettled(record: JobRecord): Promise<void> {
     if (!record.workflowRunId || record.status === 'running') return
     const run = runs.get(record.workflowRunId)
     if (!run) return
-    const work = settleJob(run, record)
-    const inFlight = settling.get(run.id) ?? new Set<Promise<void>>()
-    settling.set(run.id, inFlight.add(work))
-    try { await work } finally {
-      inFlight.delete(work)
-      if (!inFlight.size) settling.delete(run.id)
-    }
+    await tracked(run.id, settleJob(run, record))
+  }
+  function waitingInSession(run: WorkflowRun, nodeId: string): WorkflowToken | undefined {
+    if ((run.status !== 'running' && run.status !== 'paused') || stopping.has(run.id)) return undefined
+    return run.tokens.find(token => {
+      const attempt = token.state === 'working' ? run.attempts[token.attempt!] : undefined
+      return attempt?.inSession && attempt.nodeId === nodeId && attempt.status === 'running'
+    })
+  }
+  async function report(id: string, nodeId: string, value: unknown, context: ApprovalContext): Promise<WorkflowRun> {
+    const accepting = exclusive(id, async () => {
+      const run = mustGet(id)
+      if (context.via !== 'conversation') throw new RunActionError('Only the session that owns this flow can report its step', 403)
+      owned(run, context)
+      const { output, ...result } = stepReportSchema.parse(value)
+      if (result.outcome === 'pass' && !result.evidence.length) throw new Error('A passing step needs evidence')
+      const token = waitingInSession(run, nodeId)
+      if (!token) throw new RunActionError('That step is not waiting for the session', 409)
+      const attempt = run.attempts[token.attempt!]!
+      attempt.output = output ?? result.summary
+      return { run, checking: await guarded(run, () => accept(run, attempt, token, result)) }
+    })
+    const { run } = await tracked(id, accepting.then(async accepted => { await check(accepted.run, accepted.checking); return accepted }))
+    return structuredClone(run)
   }
   async function stop(id: string): Promise<WorkflowRun> {
     const run = runs.get(id)
@@ -684,9 +739,10 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       const taken = claimPaths(run)
       if (taken) { await block(run, `Another run owns ${taken}`); continue }
       if (unsettled.some(attempt => kindOf(run, attempt) === 'join')) { await block(run, 'Join interrupted; Retry resumes it'); continue }
-      const adopted = unsettled.map(attempt => ({ attempt, job: deps.manager.listJobs().find(job => job.workflowRunId === run.id && job.workflowAttempt === attempt.number) }))
+      const waiting = unsettled.filter(attempt => attempt.inSession && attempt.status === 'running')
+      const adopted = unsettled.filter(attempt => !waiting.includes(attempt)).map(attempt => ({ attempt, job: deps.manager.listJobs().find(job => job.workflowRunId === run.id && job.workflowAttempt === attempt.number) }))
       const broken = adopted.find(({ attempt, job }) => !job || attempt.status === 'checking')
-      if (!adopted.length || broken) { await block(run, `Interrupted transition or acceptance check; inspect evidence${broken?.attempt.checkPid ? ` and process ${broken.attempt.checkPid}` : ''} before retrying`); continue }
+      if ((!adopted.length && !waiting.length) || broken) { await block(run, `Interrupted transition or acceptance check; inspect evidence${broken?.attempt.checkPid ? ` and process ${broken.attempt.checkPid}` : ''} before retrying`); continue }
       for (const { attempt, job } of adopted) {
         attempt.jobId = job!.id; attempt.status = 'running'
         const token = run.tokens.find(token => token.id === attempt.tokenId)
@@ -769,7 +825,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     guardChange(run, next)
     const ran = new Set(run.attempts.map(attempt => attempt.nodeId))
     const kept = Object.fromEntries(Object.entries(run.agents).filter(([nodeId]) => ran.has(nodeId)))
-    const agents = { ...await agentsFor(next), ...kept }
+    const agents = { ...await agentsFor(next, undefined, sessionOf(run)), ...kept }
     const skills = Object.fromEntries(await Promise.all(next.nodes.filter(node => !ran.has(node.id)).map(async node => [node.id, await snapshotSkills(node, run.cwd)] as const)))
     const size = changeSize(run, next, agents, !!change.scopeGrew, positionsOf(run))
     const waits = size === 'big' && await requireApproval()
@@ -790,6 +846,15 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       return structuredClone(run)
     })
   }
+  async function markSessionNotified(id: string, attempt: number, at: number): Promise<void> {
+    await exclusive(id, async () => {
+      const run = runs.get(id)
+      const notified = run?.attempts[attempt]
+      if (!run || !notified?.inSession) return
+      notified.sessionNotifiedAt = at
+      await persist(run)
+    })
+  }
   async function markReported(id: string, at: number): Promise<void> {
     await exclusive(id, async () => {
       const run = runs.get(id)
@@ -798,6 +863,6 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       await persist(run)
     })
   }
-  return { start, stop, retry, recover, approve, reject, propose, pause, resume, onJobSettled, markReported, get: (id: string) => { const run = runs.get(id); return run ? structuredClone(run) : undefined }, list: () => [...runs.values()].map(run => structuredClone(run)).sort((a, b) => b.createdAt - a.createdAt) }
+  return { start, stop, retry, recover, approve, reject, propose, pause, resume, onJobSettled, report, markSessionNotified, markReported, get: (id: string) => { const run = runs.get(id); return run ? structuredClone(run) : undefined }, list: () => [...runs.values()].map(run => structuredClone(run)).sort((a, b) => b.createdAt - a.createdAt) }
 }
 export type WorkflowRunner = ReturnType<typeof createWorkflowRunner>

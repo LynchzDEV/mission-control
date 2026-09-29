@@ -5,6 +5,7 @@ import { atomicJson, identifier } from './workflows'
 import { configDir } from './secrets'
 
 export const BUILTIN_AGENTS = ['claude', 'glm', 'codex'] as const
+export const SESSION_ENGINE = 'session'
 const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
 const targetEnvName = envName.refine(name => !['MC_JOB_ID', 'MC_TERMINAL_ID', 'MISSION_CONTROL_CONFIG_DIR'].includes(name), 'Mission Control identity cannot be overridden')
 export const connectionSchema = z.object({
@@ -89,6 +90,7 @@ export function createConnectionStore(base = configDir()) {
   }
   async function save(input: unknown): Promise<AgentConnection> {
     const connection = connectionSchema.parse(input)
+    if (connection.id === SESSION_ENGINE) throw new Error(`"${SESSION_ENGINE}" is reserved for In Session steps`)
     await mkdir(root, { recursive: true, mode: 0o700 })
     await atomicJson(join(root, `${connection.id}.json`), connection)
     return connection

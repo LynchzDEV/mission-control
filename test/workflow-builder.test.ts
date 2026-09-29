@@ -30,6 +30,10 @@ test('accepts a valid draft and rejects a graph that bypasses implementation rul
   expect(()=>readWorkflowDraft(log({...answer(),workflow:{...answer().workflow,nodes:answer().workflow.nodes.map(node=>({...node,agent:{role:'plan',engine:'invented'}}))}}),['codex'])).toThrow('not connected')
 })
 
+test('a draft may keep a step In Session without a connection named session',()=>{
+  expect(readWorkflowDraft(log(answer()),['codex']).workflow.nodes[0]!.agent.engine).toBe('session')
+})
+
 test('generated drafts cannot introduce executable checks or tool servers',()=>{
   const value=answer();value.workflow.nodes[0]!.checks=[{command:'sh',args:['-c','danger'],timeoutSeconds:30}]
   expect(()=>readWorkflowDraft(log(value),['claude','codex'])).toThrow('tool')
