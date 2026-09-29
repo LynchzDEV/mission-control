@@ -20,6 +20,7 @@ const BODY = `
     <symbol id="check-circle-icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><path d="m7 10 2 2 4-4"/></symbol>
     <symbol id="code-icon" viewBox="0 0 20 20"><path d="m7 6-4 4 4 4M13 6l4 4-4 4"/></symbol>
     <symbol id="eye-icon" viewBox="0 0 20 20"><path d="M2 10s3-5 8-5 8 5 8 5-3 5-8 5-8-5-8-5z"/><circle cx="10" cy="10" r="2.5"/></symbol>
+    <symbol id="session-icon" viewBox="0 0 20 20"><path d="M4 4h12a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 16 14h-7l-4 3v-3H4a1.5 1.5 0 0 1-1.5-1.5v-7A1.5 1.5 0 0 1 4 4z"/></symbol>
     <symbol id="auto-icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="6.5"/><path d="M10 6.5V10l2.5 1.5"/></symbol>
     <symbol id="terminal-icon" viewBox="0 0 20 20"><rect x="2.5" y="4" width="15" height="12" rx="2"/><path d="m6 8 2.5 2L6 12M10.5 12H14"/></symbol>
     <symbol id="file-icon" viewBox="0 0 20 20"><path d="M5 2.5h6.5L15 6v11.5H5Z"/><path d="M11.5 2.5V6H15"/></symbol>

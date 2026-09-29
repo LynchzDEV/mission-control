@@ -6,7 +6,7 @@ import { rollText } from './morph'
 import { errorText, postJson, providerName, type ApiResult, type JsonRecord } from './shared'
 
 type RunAction = 'approve' | 'reject' | 'retry' | 'stop' | 'pause' | 'resume'
-type BannerAction = 'approve' | 'reject' | 'retry' | 'stop' | 'keep' | 'approval-on'
+type BannerAction = 'approve' | 'reject' | 'retry' | 'stop' | 'keep' | 'approval-on' | 'remind'
 type Banner = { tone: 'ask' | 'problem' | 'notice' | null; text: string; actions: BannerAction[] }
 type Edge = RunView['edges'][number]
 type StepStatus = { state: StepState; detail: string; since?: number }
@@ -114,7 +114,7 @@ function attemptStatus(run: RunView, engine: string, tries: RunAttemptView[], no
   const retry = tries.length > 1 ? `Try ${tries.length} · ` : ''
   if (latest.status !== 'settled') {
     if (!isLive(run)) return { state: 'failed', detail: run.status === 'stopped' ? 'Stopped' : 'Did not finish' }
-    if (latest.inSession) return { state: 'active', detail: `In Session · ${providerName(engine)}` }
+    if (latest.inSession) return { state: 'session', detail: `In Session · ${providerName(engine)} · ${elapsed(now - latest.startedAt)}`, since: latest.startedAt }
     const subAgents = latest.subAgents ?? 0
     const doing = [tries.length > 1 ? `Try ${tries.length}` : '', subAgents > 0 ? `${subAgents} sub-agent${subAgents === 1 ? '' : 's'}` : ''].filter(Boolean)
     return { state: 'active', detail: `${(doing.length ? doing : ['Working']).join(' · ')} · ${elapsed(now - latest.startedAt)}`, since: latest.startedAt }
@@ -266,7 +266,7 @@ export function metaFor(run: RunView): string {
 export function pillsFor(run: RunView): { running: number; done: number; waiting: number } {
   const states = stepsFor(run, Date.now()).map(step => step.state)
   const count = (...wanted: StepState[]): number => states.filter(state => wanted.includes(state)).length
-  return { running: count('active'), done: count('done'), waiting: isLive(run) ? count('pending', 'conditional') : 0 }
+  return { running: count('active', 'session'), done: count('done'), waiting: isLive(run) ? count('pending', 'conditional') : 0 }
 }
 
 function waitingInSession(run: RunView): RunView['nodes'][number] | undefined {
@@ -287,7 +287,7 @@ export function bannerFor(run: RunView): Banner {
     return { tone: 'problem', text: run.error ? `${word}: ${run.error}` : word, actions: ['retry'] }
   }
   const inSession = waitingInSession(run)
-  if (inSession) return { tone: 'notice', text: `${inSession.title} is being done In Session by ${providerName(inSession.engine)}. Talk to it here; the flow continues when it reports the step.`, actions: [] }
+  if (inSession) return { tone: 'notice', text: `${inSession.title} is being done In Session by ${providerName(inSession.engine)}. Talk to it here; the flow continues when it reports the step.`, actions: ['remind'] }
   const change = run.latestChange
   if (change?.size === 'big' && change.approvedVia === 'auto' && isLive(run)) {
     return { tone: 'notice', text: `v${change.number} applied automatically. ${change.reason} Approval is off, so it did not wait.`, actions: ['approval-on'] }
@@ -339,6 +339,8 @@ function mountFlowDrawer(): void {
   let current: RunView | null = null
   let bannerKey = ''
   let saving: string | null = null
+  let reminded: string | null = null
+  let remindTimer: ReturnType<typeof setTimeout> | undefined
   const savedAs = new Map<string, string>()
   const approvalRestored = new Set<string>()
   const expandedByRun = new Map<string, Set<string>>()
@@ -413,6 +415,33 @@ function mountFlowDrawer(): void {
     paintSave(current)
   }
 
+  function forgetReminder(): void {
+    clearTimeout(remindTimer)
+    remindTimer = undefined
+    reminded = null
+  }
+
+  async function remind(run: RunView, nodeId: string): Promise<boolean> {
+    const result = await postJson(`/api/studio/runs/${encodeURIComponent(run.id)}/steps/${encodeURIComponent(nodeId)}/remind`, {})
+    if (!result.ok) { showError(`Could not remind: ${errorText(result)}`); return false }
+    forgetReminder()
+    reminded = `${run.id}:${nodeId}`
+    remindTimer = setTimeout(() => { forgetReminder(); paintBanner(current, true) }, NOTICE_MS)
+    paintBanner(current, true)
+    return true
+  }
+
+  function remindButton(button: HTMLButtonElement, run: RunView | null): HTMLButtonElement {
+    const node = run && waitingInSession(run)
+    button.classList.add('flow-ghost')
+    if (!run || !node) return button
+    const sent = reminded === `${run.id}:${node.id}`
+    button.textContent = sent ? 'Reminded' : `Remind ${providerName(node.engine)}`
+    button.disabled = sent
+    button.onclick = () => void whileBusy(button, () => remind(run, node.id))
+    return button
+  }
+
   function actionButton(action: BannerAction, run: RunView | null): HTMLButtonElement {
     const runId = run?.id
     const button = make('button', '', 'pill flow-sm') as HTMLButtonElement
@@ -437,6 +466,7 @@ function mountFlowDrawer(): void {
       button.onclick = busy(() => run ? restoreApproval(run) : Promise.resolve(false))
       return button
     }
+    if (action === 'remind') return remindButton(button, run)
     if (action === 'retry') { button.textContent = 'Retry step'; button.onclick = busy(() => act('retry', runId)); return button }
     const [idle, armed] = action === 'reject' ? ['Reject', 'Reject flow'] : ['Stop', 'Stop flow']
     button.classList.add('flow-ghost', 'flow-confirm')
@@ -454,6 +484,7 @@ function mountFlowDrawer(): void {
 
   function bannerMark(run: RunView | null, next: Banner): string {
     if (next.tone === 'problem') return 'failed'
+    if (next.actions.includes('remind')) return 'session'
     if (next.tone === 'notice') return 'done'
     return run?.proposal ? 'proposed' : 'active'
   }
@@ -634,7 +665,7 @@ function mountFlowDrawer(): void {
   stop.addEventListener('click', () => { if (stop.dataset.armed !== 'true') stopTarget = current?.id }, { capture: true })
   confirmButton(stop, 'Stop flow', () => void act('stop', stopTarget))
   save.onclick = () => void saveRun(current?.id)
-  addEventListener('quiet:flow-open', (event) => { open = (event as CustomEvent<boolean>).detail; if (!open) hideNotice(); connect() })
+  addEventListener('quiet:flow-open', (event) => { open = (event as CustomEvent<boolean>).detail; if (!open) { hideNotice(); forgetReminder() } connect() })
   addEventListener('quiet:activity-scope', (event) => { const session = (event as CustomEvent<{ id: string; cwd: string } | null>).detail; setScope(session ? `terminal=${encodeURIComponent(session.id)}` : null) })
   addEventListener('quiet:chat-agents', (event) => { const chat = (event as CustomEvent<string | null>).detail; if (chat) setScope(`chat=${encodeURIComponent(chat)}`) })
   if (document.body.dataset.chat) setScope(`chat=${encodeURIComponent(document.body.dataset.chat)}`)

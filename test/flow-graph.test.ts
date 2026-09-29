@@ -95,6 +95,24 @@ test('a paint reports the graph size and the box Follow aims at: working steps, 
   expect(renderRunGraph(host, [step('a', 'pending'), step('b', 'pending'), step('c', 'pending'), step('d', 'pending')], edges, 'a', { animate: false }).focus).toEqual({ x: 0, y: 0, width: STEP_W, height: STEP_H })
 })
 
+test('a step done In Session draws its own state on the card and the mark, and Follow aims at it', () => {
+  const host = document.createElement('div')
+  const step = (id: string, state: GraphStep['state']): GraphStep => ({ id, title: id, detail: '', state, engine: 'claude', kind: 'plan' })
+  const edges: GraphEdge[] = [{ source: 'a', target: 'b', outcome: 'pass', state: 'idle' }]
+  const frame = renderRunGraph(host, [step('a', 'done'), { ...step('b', 'session'), detail: 'In Session · Claude · 5s', since: 1 }], edges, 'a', { animate: false })
+  const card = host.querySelector<HTMLElement>('.flow-step[data-step="b"]')!
+  expect([card.dataset.state, card.querySelector<HTMLElement>('.flow-mark')!.dataset.state]).toEqual(['session', 'session'])
+  expect(card.querySelector('small')!.getAttribute('data-since')).toBe('1')
+  expect(frame.focus).toEqual({ x: COL_STEP, y: 0, width: STEP_W, height: STEP_H })
+})
+
+test('the session state has an accent ring and no pulse', () => {
+  const css = readFileSync(join(import.meta.dir, '../public/quiet.css'), 'utf8')
+  expect(css).toMatch(/\.flow-step\[data-state="session"\] \{[^}]*border-color: var\(--accent\)/)
+  expect(css).toMatch(/\.flow-mark\[data-state="session"\] \{[^}]*box-shadow: inset 0 0 0 1\.5px var\(--accent\)/)
+  expect(css).not.toMatch(/data-state="session"\][^{]*\{[^}]*animation/)
+})
+
 test('a back edge makes room below the graph for its dip and label', () => {
   const host = document.createElement('div')
   const step = (id: string): GraphStep => ({ id, title: id, detail: '', state: 'pending', engine: 'claude', kind: 'task' })

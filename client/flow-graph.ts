@@ -1,6 +1,6 @@
 import type { RunView } from '../server/run-view'
 
-export type StepState = 'done' | 'active' | 'failed' | 'pending' | 'conditional' | 'proposed' | 'removed'
+export type StepState = 'done' | 'active' | 'session' | 'failed' | 'pending' | 'conditional' | 'proposed' | 'removed'
 export type EdgeState = 'done' | 'flowing' | 'failed' | 'idle' | 'proposed'
 export type GraphStep = { id: string; title: string; detail: string; state: StepState; engine: string; kind: string; since?: number; jobId?: string }
 export type GraphEdge = { source: string; target: string; outcome: 'pass' | 'fail' | 'blocked'; state: EdgeState; label?: string }
@@ -310,9 +310,9 @@ function boxAround(places: Placed[]): Box | null {
 }
 
 function focusBox(steps: GraphStep[], places: Map<string, Placed>, entry: string): Box | null {
-  const placesIn = (state: StepState): Placed[] => steps.filter(step => step.state === state && places.has(step.id)).map(step => places.get(step.id)!)
-  for (const state of ['active', 'failed'] as const) {
-    const box = boxAround(placesIn(state))
+  const placesIn = (states: StepState[]): Placed[] => steps.filter(step => states.includes(step.state) && places.has(step.id)).map(step => places.get(step.id)!)
+  for (const states of [['active', 'session'], ['failed']] as StepState[][]) {
+    const box = boxAround(placesIn(states))
     if (box) return box
   }
   return boxAround(places.has(entry) ? [places.get(entry)!] : [])

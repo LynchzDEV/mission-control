@@ -41,6 +41,15 @@ export function agentHelp(engine: string | undefined): string {
   if (engine === IN_SESSION) return 'The AI in the chat or terminal that started the flow does this step there, where you can see it.'
   return 'Always use this AI for this step.'
 }
+export type AgentIcon = { symbol: string } | { image: string }
+export function agentIcon(engine: string | undefined): AgentIcon {
+  if (engine === IN_SESSION) return { symbol: 'session-icon' }
+  return engine ? { image: `/providers/${engine}.svg` } : { symbol: 'auto-icon' }
+}
+export function showsModelFields(engine: string | undefined): boolean { return engine !== IN_SESSION }
+export function runNote(graph: Pick<Workflow, 'nodes'>): string | null {
+  return graph.nodes.some(node => node.agent.engine === IN_SESSION) ? 'In Session steps run as agents when started from Studio.' : null
+}
 const kindIcons: Record<WorkflowNode['kind'], string> = { plan: 'plan-icon', 'verify-plan': 'check-circle-icon', implement: 'code-icon', review: 'eye-icon', task: 'spark-icon', join: 'spark-icon' }
 export function kindIcon(kind: WorkflowNode['kind']): string { return kindIcons[kind] }
 export function roleWord(role: 'plan' | 'execute' | 'review'): string { return role[0]!.toUpperCase() + role.slice(1) }

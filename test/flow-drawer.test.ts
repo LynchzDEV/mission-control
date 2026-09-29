@@ -101,14 +101,19 @@ const inSession: RunView = {
   tokens: [{ nodeId: 'plan', pathId: 'main', state: 'working', from: [] }],
 }
 
-test('a step waiting In Session names the AI doing it and keeps its engine', () => {
+test('a step waiting In Session names the AI doing it, ticks like a working step and keeps its engine', () => {
   const plan = stepsFor(inSession, 90_000).find(step => step.id === 'plan')!
-  expect([plan.state, plan.detail, plan.engine]).toEqual(['active', 'In Session · Claude', 'claude'])
+  expect([plan.state, plan.detail, plan.engine, plan.since]).toEqual(['session', 'In Session · Claude · 1m 30s', 'claude', 0])
   expect(plan.jobId).toBeUndefined()
+  expect(stepsFor({ ...inSession, attempts: [{ ...inSession.attempts[0]!, startedAt: 30_000 }] }, 42_000).find(step => step.id === 'plan')!.detail).toBe('In Session · Claude · 12s')
 })
 
-test('a step waiting In Session gets a notice banner with no actions, unless a problem or an approval comes first', () => {
-  expect(bannerFor(inSession)).toEqual({ tone: 'notice', text: 'Plan is being done In Session by Claude. Talk to it here; the flow continues when it reports the step.', actions: [] })
+test('a step waiting In Session counts as running', () => {
+  expect(pillsFor(inSession).running).toBe(1)
+})
+
+test('a step waiting In Session gets a notice banner that can remind the AI, unless a problem or an approval comes first', () => {
+  expect(bannerFor(inSession)).toEqual({ tone: 'notice', text: 'Plan is being done In Session by Claude. Talk to it here; the flow continues when it reports the step.', actions: ['remind'] })
   expect(bannerFor({ ...inSession, status: 'paused' }).text).toBe('Plan is being done In Session by Claude. Talk to it here; the flow continues when it reports the step.')
   expect(bannerFor({ ...inSession, status: 'blocked', error: 'limit' }).tone).toBe('problem')
   expect(bannerFor({ ...inSession, status: 'stopped' })).toEqual({ tone: null, text: '', actions: [] })

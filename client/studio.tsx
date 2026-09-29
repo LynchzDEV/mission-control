@@ -8,7 +8,7 @@ import type { RunStatus, WorkflowRun } from '../server/workflow-runner'
 import type { DraftJob, WorkflowDraft } from '../server/workflow-builder'
 import { api, openRun } from './studio-api'
 import { Connections, StepAttachments, type ConnectionList } from './studio-settings'
-import { agentHelp, agentLabel, IN_SESSION, insertWorkflowStep, kindIcon, nodeRunStates, roleWord, removeWorkflowStep, stepPresets, taskPreset, workflowTemplates, type NodeRunState, type Provider } from './studio-graph'
+import { agentHelp, agentIcon, agentLabel, IN_SESSION, insertWorkflowStep, kindIcon, nodeRunStates, roleWord, removeWorkflowStep, runNote, showsModelFields, stepPresets, taskPreset, workflowTemplates, type NodeRunState, type Provider } from './studio-graph'
 
 type TaskNode = Node<WorkflowNode & { agentLabel: string; branches: Outcome[]; runState?: NodeRunState; runSince?: number }, 'task'>
 type Screen = 'home' | 'templates' | 'editor' | 'connections' | 'runs' | 'rules'
@@ -39,11 +39,15 @@ const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>)
     <strong>{data.title}</strong>
     <p>{data.instructions.split(/(?<=[.!?])\s/)[0]}</p>
     {data.runState && <span className={`run-state run-${data.runState}`}>{runLabels[data.runState]}{data.runState === 'running' && data.runSince ? <Elapsed since={data.runSince} /> : null}</span>}
-    <footer><small style={engine && engineTints[engine] ? { '--engine': engineTints[engine] } as CSSProperties : undefined}>{engine && engine !== IN_SESSION ? <img src={`/providers/${engine}.svg`} alt="" /> : <Icon id="auto-icon" />}{roleWord(data.agent.role)} AI · {data.agentLabel}</small></footer>
+    <footer><small style={engine && engineTints[engine] ? { '--engine': engineTints[engine] } as CSSProperties : undefined}><AgentGlyph engine={engine} />{roleWord(data.agent.role)} AI · {data.agentLabel}</small></footer>
     <Handle type="source" id="pass" position={Position.Right} />
     {data.branches.filter(outcome => outcome !== 'pass').map((outcome, index) => <Handle key={outcome} title={outcomeLabels[outcome]} aria-label={outcomeLabels[outcome]} type="source" id={outcome} position={Position.Bottom} className={`handle-${outcome}`} style={{ left: index ? '70%' : '30%' }} />)}
   </div>
 })
+function AgentGlyph({ engine }: { engine: string | undefined }) {
+  const icon = agentIcon(engine)
+  return 'image' in icon ? <img src={icon.image} alt="" /> : <Icon id={icon.symbol} />
+}
 const nodeTypes = { task: TaskCard }
 function FlowEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, sourceHandleId, markerEnd, label, style }: EdgeProps) {
   const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition })
@@ -251,9 +255,9 @@ function Studio() {
             <details><summary>More options</summary>
               <label>Task purpose<select value={current.kind} onChange={event => patch({ kind: event.target.value as WorkflowNode['kind'] })}>{Object.entries(purposeLabels).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>
               {outcomes.map(outcome => <label key={outcome}>{outcomeLabels[outcome]}<select value={edges.find(edge => edge.source === current.id && edge.sourceHandle === outcome)?.target ?? ''} onChange={event => wire(current.id, outcome, event.target.value, edges.find(edge => edge.source === current.id && edge.sourceHandle === outcome)?.target)}><option value="">End the workflow</option>{nodes.filter(node => node.id !== current.id).map(node => <option key={node.id} value={node.id}>{node.data.title}</option>)}</select></label>)}
-              <label>Model<input list="studio-models" value={current.agent.model ?? ''} placeholder="Use this AI's default" onChange={event => patch({ agent: { ...current.agent, model: event.target.value || undefined } })} /><datalist id="studio-models">{modelsOf(current.agent.engine).map(model => <option key={model} value={model} />)}</datalist></label>
+              {showsModelFields(current.agent.engine) && <label>Model<input list="studio-models" value={current.agent.model ?? ''} placeholder="Use this AI's default" onChange={event => patch({ agent: { ...current.agent, model: event.target.value || undefined } })} /><datalist id="studio-models">{modelsOf(current.agent.engine).map(model => <option key={model} value={model} />)}</datalist></label>}
               <label>Maximum attempts<input type="number" min={1} max={10} value={current.maxVisits} onChange={event => patch({ maxVisits: Number(event.target.value) })} /></label>
-              <label>Model family (if unknown)<input value={current.agent.family ?? ''} onChange={event => patch({ agent: { ...current.agent, family: event.target.value || undefined } })} /></label>
+              {showsModelFields(current.agent.engine) && <label>Model family (if unknown)<input value={current.agent.family ?? ''} onChange={event => patch({ agent: { ...current.agent, family: event.target.value || undefined } })} /></label>}
               <button type="button" className="text-button" disabled={dirty || busy} title={dirty ? 'Save first to preview the exact instructions' : undefined} onClick={() => void action(async () => setPromptPreview((await api<{ prompt: string }>('/preview', { id: graph.id, revision: graph.revision, nodeId: current.id, request: request || 'Preview request' })).prompt))}>Preview full instructions</button>
               {promptPreview && <pre className="studio-output">{promptPreview}</pre>}
             </details>
@@ -313,6 +317,7 @@ function Studio() {
           <label>Project folder<input required value={cwd} onChange={event => setCwd(event.target.value)} placeholder="/Users/you/projects/my-project" /></label>
           <label>What should this run accomplish?<textarea required rows={4} value={request} onChange={event => setRequest(event.target.value)} /></label>
           <p className="muted">Your AIs will work in this folder using the workflow's configured tools and checks.</p>
+          {runNote({ nodes: nodes.map(node => node.data) }) && <p className="muted">{runNote({ nodes: nodes.map(node => node.data) })}</p>}
           {error && <p role="alert" className="chat-error">{error}</p>}
           <button disabled={busy} className="pill" type="submit">{busy ? 'Starting…' : 'Start run'}</button>
         </form>}

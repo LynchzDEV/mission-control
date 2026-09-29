@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { defaultWorkflow, validateWorkflow } from '../server/workflows'
-import { agentHelp, agentLabel, insertWorkflowStep, kindIcon, nodeRunStates, roleWord, removeWorkflowStep, taskPreset, workflowTemplates } from '../client/studio-graph'
+import { agentHelp, agentIcon, agentLabel, insertWorkflowStep, runNote, showsModelFields, kindIcon, nodeRunStates, roleWord, removeWorkflowStep, taskPreset, workflowTemplates } from '../client/studio-graph'
 
 test('adding a custom step keeps the following review connected and preserves failure routes',()=>{
   const graph=defaultWorkflow()
@@ -91,4 +91,24 @@ test('nodeRunStates marks every step that holds a working token as running',()=>
 
 test('nodeRunStates does not mark a step whose token is only ready as running',()=>{
   expect(nodeRunStates({status:'paused',currentNodeId:'review',tokens:[{nodeId:'review',state:'ready'}],attempts:[settled('execute','pass',1)]})).toEqual({execute:'passed'})
+})
+
+test('an In Session step shows the session icon, never a provider image; Chat decides shows auto',()=>{
+  expect(agentIcon('session')).toEqual({symbol:'session-icon'})
+  expect(agentIcon(undefined)).toEqual({symbol:'auto-icon'})
+  expect(agentIcon('codex')).toEqual({image:'/providers/codex.svg'})
+})
+
+test('the step panel hides Model and Family for an In Session step only',()=>{
+  expect(showsModelFields('session')).toBe(false)
+  expect(showsModelFields(undefined)).toBe(true)
+  expect(showsModelFields('claude')).toBe(true)
+})
+
+test('the Run workflow modal notes that In Session steps run as agents from Studio, only when the graph has one',()=>{
+  const graph=defaultWorkflow()
+  const withSession={...graph,nodes:graph.nodes.map(node=>node.id==='plan'?{...node,agent:{role:'plan' as const,engine:'session'}}:node)}
+  const without={...graph,nodes:graph.nodes.map(node=>({...node,agent:{role:node.agent.role}}))}
+  expect(runNote(withSession)).toBe('In Session steps run as agents when started from Studio.')
+  expect(runNote(without)).toBeNull()
 })

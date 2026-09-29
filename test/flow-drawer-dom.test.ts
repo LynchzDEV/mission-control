@@ -455,3 +455,82 @@ test('closing the drawer clears the job-gone notice and its timer', () => {
     globalThis.clearTimeout = realClear
   }
 })
+
+const waitingInSession = (id: string): RunView => ({
+  ...run(id, 50),
+  attempts: [{ nodeId: 'plan', number: 0, jobId: null, status: 'running', outcome: null, summary: null, startedAt: Date.now() - 5_000, endedAt: null, pathId: 'main', from: [], subAgents: 0, inSession: true }],
+})
+const remindButton = (): HTMLButtonElement => buttonNamed('Remind Claude') ?? buttonNamed('Reminded')
+
+test('a step waiting In Session shows its own state on the card and in the banner mark, with a Remind button', () => {
+  sent.length = 0
+  const stream = openStream()
+  stream.send({ runs: [waitingInSession('S1')], jobs: [] })
+  const card = document.querySelector<HTMLElement>('.flow-step[data-step="plan"]')!
+  expect(card.dataset.state).toBe('session')
+  expect(card.querySelector('small')!.textContent).toMatch(/^In Session · Claude · \d+s$/)
+  expect(document.querySelector<HTMLElement>('#flow-banner .flow-mark')!.dataset.state).toBe('session')
+  expect(bannerText()).toBe('Plan is being done In Session by Claude. Talk to it here; the flow continues when it reports the step.')
+  expect(buttonNamed('Remind Claude')).toBeDefined()
+  expect(sent).toEqual([])
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('Remind posts to the waiting step, is busy while posting, then says Reminded for 4 s', async () => {
+  sent.length = 0
+  const stream = openStream()
+  stream.send({ runs: [waitingInSession('S2')], jobs: [] })
+  const [realSet, realClear] = [globalThis.setTimeout, globalThis.clearTimeout]
+  const timers = new Map<unknown, { handler: () => void; ms?: number }>()
+  const cleared: unknown[] = []
+  globalThis.setTimeout = ((handler: () => void, ms?: number) => { const id = realSet(handler, ms === 4000 ? 60_000 : ms); timers.set(id, { handler, ms }); return id }) as typeof setTimeout
+  globalThis.clearTimeout = ((id: Parameters<typeof clearTimeout>[0]) => { cleared.push(id); realClear(id) }) as typeof clearTimeout
+  try {
+    let release: (response: Response) => void = () => {}
+    respond = () => new Promise(resolve => { release = resolve })
+    const remind = remindButton()
+    remind.click()
+    expect([remind.disabled, remind.getAttribute('aria-busy')]).toEqual([true, 'true'])
+    release(json(200, waitingInSession('S2')))
+    await Bun.sleep(0)
+    await Bun.sleep(0)
+    expect(sent).toEqual([{ url: '/api/studio/runs/S2/steps/plan/remind', method: 'POST', body: {} }])
+    expect(remindButton().textContent).toBe('Reminded')
+    expect(remindButton().hasAttribute('aria-busy')).toBe(false)
+    const [timerId, timer] = [...timers].find(([, entry]) => entry.ms === 4000)!
+    stream.send({ runs: [{ ...waitingInSession('S2'), updatedAt: 99 }], jobs: [] })
+    expect(remindButton().textContent).toBe('Reminded')
+    timer.handler()
+    expect(remindButton().textContent).toBe('Remind Claude')
+    expect(remindButton().disabled).toBe(false)
+    respond = ok
+    remindButton().click()
+    await Bun.sleep(0)
+    await Bun.sleep(0)
+    const [secondId] = [...timers].filter(([, entry]) => entry.ms === 4000).at(-1)!
+    expect(secondId).not.toBe(timerId)
+    dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+    expect(cleared).toContain(secondId)
+  } finally {
+    globalThis.setTimeout = realSet
+    globalThis.clearTimeout = realClear
+    respond = ok
+    dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+  }
+})
+
+test('a refused Remind says why in the banner and frees the button', async () => {
+  sent.length = 0
+  const stream = openStream()
+  stream.send({ runs: [waitingInSession('S3')], jobs: [] })
+  respond = () => json(409, { error: 'That step is not waiting for the session' })
+  const remind = remindButton()
+  remind.click()
+  await Bun.sleep(0)
+  await Bun.sleep(0)
+  expect(sent).toEqual([{ url: '/api/studio/runs/S3/steps/plan/remind', method: 'POST', body: {} }])
+  expect(bannerText()).toBe('Could not remind: That step is not waiting for the session')
+  expect([remind.textContent, remind.disabled]).toEqual(['Remind Claude', false])
+  respond = ok
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
