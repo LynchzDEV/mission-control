@@ -230,8 +230,8 @@ function tickRunning(): void {
   }
 }
 
-function toBottom(): void {
-  stage.scrollTo({ top: stage.scrollHeight, behavior: 'smooth' })
+function toBottom(behavior: ScrollBehavior = 'smooth'): void {
+  stage.scrollTo({ top: stage.scrollHeight, behavior })
 }
 
 function assistantRow(turn: Turn, rows: TeamRow[], project: string | null): HTMLElement {
@@ -253,6 +253,7 @@ function signature(turn: Turn, rows: TeamRow[]): string {
 function paint(turns: Turn[], project: string | null): void {
   const existing = new Map([...messages.querySelectorAll<HTMLElement>('[data-turn]')].map(node => [`${node.dataset.turn}:${node.dataset.part}`, node]))
   const atBottom = stage.scrollHeight - stage.scrollTop - stage.clientHeight < 80
+  const firstPaint = messages.childElementCount === 0
   const ordered: HTMLElement[] = []
   let grew = false
   shownTurns = turns
@@ -275,7 +276,7 @@ function paint(turns: Turn[], project: string | null): void {
   }
   const reordered = ordered.some((node, index) => messages.children[index] !== node) || messages.children.length !== ordered.length
   if (reordered) messages.replaceChildren(...ordered)
-  if (atBottom && (reordered || grew)) toBottom()
+  if (atBottom && (reordered || grew)) toBottom(firstPaint ? 'auto' : 'smooth')
 }
 
 async function refresh(): Promise<void> {

@@ -8,6 +8,7 @@ const message = $('message') as HTMLTextAreaElement
 const composer = $('composer') as HTMLFormElement
 
 function showScreen(name: (typeof screens)[number]): void {
+  const changed = $(name).hidden
   if (name !== 'history') { beforeHistory = null; $('search').setAttribute('aria-pressed', 'false') }
   if (name !== 'studio' && name !== 'history') beforeStudio = null
   $('open-studio').setAttribute('aria-pressed', String(name === 'studio'))
@@ -15,7 +16,8 @@ function showScreen(name: (typeof screens)[number]): void {
   dispatchEvent(new CustomEvent('quiet:screen', { detail: name }))
   for (const screen of screens) $(screen).hidden = screen !== name
   ;(document.querySelector('.canvas') as HTMLElement).dataset.screen = name
-  ;(document.querySelector('.stage') as HTMLElement).scrollTop = 0
+  const stage = document.querySelector('.stage') as HTMLElement
+  if (changed) stage.scrollTop = name === 'conversation' ? stage.scrollHeight : 0
 }
 
 function toggleFlow(open: boolean): void {
