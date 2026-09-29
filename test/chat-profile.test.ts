@@ -36,7 +36,7 @@ describe('chat rules', () => {
     for (const phrase of ['kind "join"', 'its own git worktree', '"setup" commands', 'Keep fail edges inside their own path']) expect(CHAT_RULES).toContain(phrase)
   })
   test('chat rules explain In Session steps and how to report them, without a background watcher', () => {
-    for (const phrase of ['"In Session"', 'POST $MC_URL/api/studio/runs/<id>/steps/<nodeId>', '"inSession": true', 'A failed plan check sends the plan back to you']) expect(CHAT_RULES).toContain(phrase)
+    for (const phrase of ['"In Session"', 'POST $MC_URL/api/studio/runs/<id>/steps/<nodeId>', 'GET $MC_URL/api/studio/runs/<id>/steps/<nodeId> returns its assignment', 'A failed plan check sends the plan back to you']) expect(CHAT_RULES).toContain(phrase)
     expect(CHAT_RULES).not.toContain('background watcher')
   })
   test('state the chat\'s own engine and model', () => {

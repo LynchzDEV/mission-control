@@ -13,9 +13,9 @@ import { type JobManager, type JobRecord, readLogFile, redactSecrets } from './j
 import type { EngineResolver } from './jobs-engine-iface'
 import type { TerminalRegistry } from './terminals'
 import { threadRootOf } from './threads'
-import { configDir, readConfig, readSecrets } from './secrets'
+import { configDir, mcUrl, readConfig, readSecrets } from './secrets'
 import { validateWorkspaceCwd } from './workspace'
-import { atomicJson, composeWorkflowPrompt, draftRevision, forkSections, identifier, passTargets, type Outcome, type PolicyRevision, type WorkflowNode, type WorkflowRevision, type WorkflowStore } from './workflows'
+import { atomicJson, composeWorkflowPrompt, draftRevision, forkSections, identifier, passTargets, sessionRules, type Outcome, type PolicyRevision, type WorkflowNode, type WorkflowRevision, type WorkflowStore } from './workflows'
 
 const jobId = z.string().min(1).max(200)
 const GIT_TIMEOUT = 120_000
@@ -25,13 +25,15 @@ const stepReportSchema = resultSchema.extend({ output: z.string().max(64000).opt
 type NodeResult = z.infer<typeof resultSchema>
 export type ResolvedAgent = { engine: string; model: string | null; family: string | null; connection?: AgentConnection; inSession?: true }
 type ChatDefault = { engine: string; model: string | null }
+type WorkspaceState = { head: string; diffHash: string }
 export type CheckResult = { command: string; args: string[]; exitCode: number | null; output: string; timedOut: boolean }
 export type WorkflowAttempt = {
   nodeId: string; number: number; jobId: string | null; status: 'starting' | 'running' | 'checking' | 'settled';
   prompt: string; startedAt: number; endedAt: number | null; result: NodeResult | null; checks: CheckResult[];
-  output: string; checkPid?: number; workspace: { head: string; diffHash: string } | null;
+  output: string; checkPid?: number; workspace: WorkspaceState | null;
   tokenId: string; pathId: string; from: number[];
-  inSession?: true; sessionNotifiedAt?: number | null;
+  inSession?: true; sessionNotifiedAt?: number | null; workspaceSnapshot?: WorkspaceState;
+  reportedBy?: { via: ApprovalContext['via']; id: string; at: number };
 }
 export type TokenState = 'ready' | 'working' | 'settled' | 'waiting'
 export type WorkflowToken = { id: string; nodeId: string; pathId: string; workspace: string; state: TokenState; attempt: number | null; from: number[] }
@@ -195,7 +197,7 @@ async function snapshotSkills(node: WorkflowNode, cwd: string): Promise<Array<{ 
   }))
 }
 
-async function workspaceSnapshot(cwd: string): Promise<{ head: string; diffHash: string }> {
+async function workspaceSnapshot(cwd: string): Promise<WorkspaceState> {
   const [head, diff, untracked] = await Promise.all([git(cwd, 'rev-parse', 'HEAD'), git(cwd, 'diff', '--binary', 'HEAD'), git(cwd, 'ls-files', '--others', '--exclude-standard', '-z')])
   const hash = createHash('sha256').update(diff)
   for (const path of untracked.split('\0').filter(Boolean).sort()) {
@@ -360,9 +362,11 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     if (node.kind === 'review' && unreviewedImplementations(run, token.pathId).some(attempt => run.agents[attempt.nodeId]!.family === run.agents[node.id]!.family)) return block(run, 'Review must use a different model family from implementation; change the blueprint and start a new run')
     const latest = new Map(related.filter(attempt => attempt.result).map(attempt => [attempt.nodeId, attempt]))
     const inputs = [...latest.values()].map(attempt => ({ node: attempt.nodeId, outcome: attempt.result, output: attempt.output, checks: attempt.checks, workspace: attempt.workspace }))
-    const prompt = composeWorkflowPrompt(run.policy, run.workflow, node, run.request, inputs, run.skills[node.id])
     const agent = run.agents[node.id]!
-    const attempt: WorkflowAttempt = { nodeId: node.id, number: run.attempts.length, jobId: null, status: agent.inSession ? 'running' : 'starting', prompt, startedAt: Date.now(), endedAt: null, result: null, checks: [], output: '', workspace: null, tokenId: token.id, pathId: token.pathId, from: token.from, ...(agent.inSession ? { inSession: true, sessionNotifiedAt: null } : {}) }
+    const policy = agent.inSession ? { ...run.policy, coreRules: sessionRules(mcUrl(), run.id, node.id) } : run.policy
+    const prompt = composeWorkflowPrompt(policy, run.workflow, node, run.request, inputs, run.skills[node.id])
+    const session = agent.inSession ? { inSession: true as const, sessionNotifiedAt: null, workspaceSnapshot: await workspaceSnapshot(token.workspace) } : {}
+    const attempt: WorkflowAttempt = { nodeId: node.id, number: run.attempts.length, jobId: null, status: agent.inSession ? 'running' : 'starting', prompt, startedAt: Date.now(), endedAt: null, result: null, checks: [], output: '', workspace: null, tokenId: token.id, pathId: token.pathId, from: token.from, ...session }
     if (prompt.length > 500000) return block(run, 'Combined task inputs exceed 500 KB; use artifact paths for large outputs')
     run.attempts.push(attempt)
     Object.assign(token, { state: 'working', attempt: attempt.number })
@@ -680,21 +684,41 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       return attempt?.inSession && attempt.nodeId === nodeId && attempt.status === 'running'
     })
   }
+  function waitingStep(id: string, nodeId: string) {
+    const run = mustGet(id)
+    const token = waitingInSession(run, nodeId)
+    if (!token) throw new RunActionError('That step is not waiting for the session', 404)
+    const attempt = run.attempts[token.attempt!]!
+    const node = run.workflow.nodes.find(node => node.id === nodeId)!
+    return { runId: run.id, nodeId, title: node.title, kind: node.kind, prompt: attempt.prompt, waitingSince: attempt.startedAt }
+  }
+  async function changedCode(attempt: WorkflowAttempt, cwd: string): Promise<boolean> {
+    const before = attempt.workspaceSnapshot
+    if (!before) return false
+    const now = await workspaceSnapshot(cwd)
+    return now.head !== before.head || now.diffHash !== before.diffHash
+  }
   async function report(id: string, nodeId: string, value: unknown, context: ApprovalContext): Promise<WorkflowRun> {
     const accepting = exclusive(id, async () => {
       const run = mustGet(id)
       if (context.via !== 'conversation') throw new RunActionError('Only the session that owns this flow can report its step', 403)
       owned(run, context)
-      const { output, ...result } = stepReportSchema.parse(value)
-      if (result.outcome === 'pass' && !result.evidence.length) throw new Error('A passing step needs evidence')
+      const { output, ...reported } = stepReportSchema.parse(value)
+      if (reported.outcome === 'pass' && !reported.evidence.length) throw new Error('A passing step needs evidence')
       const token = waitingInSession(run, nodeId)
       if (!token) throw new RunActionError('That step is not waiting for the session', 409)
       const attempt = run.attempts[token.attempt!]!
-      attempt.output = output ?? result.summary
+      if (reported.outcome === 'pass' && kindOf(run, attempt) === 'plan' && await changedCode(attempt, token.workspace)) throw new RunActionError('A plan step must not change code', 409)
+      const redact = (text: string) => redactRunOutput(run, text)
+      const result: NodeResult = { outcome: reported.outcome, summary: await redact(reported.summary), evidence: await Promise.all(reported.evidence.map(redact)) }
+      attempt.output = await redact(output ?? reported.summary)
+      attempt.reportedBy = { via: context.via, id: context.terminalId && context.terminalId === run.terminalId ? context.terminalId : context.chat!, at: Date.now() }
       return { run, checking: await guarded(run, () => accept(run, attempt, token, result)) }
     })
-    const { run } = await tracked(id, accepting.then(async accepted => { await check(accepted.run, accepted.checking); return accepted }))
-    return structuredClone(run)
+    const { run, checking } = await tracked(id, accepting)
+    const cloned = structuredClone(run)
+    void tracked(id, check(run, checking)).catch(error => console.error(`In Session acceptance check failed for run ${id}`, error))
+    return cloned
   }
   async function stop(id: string): Promise<WorkflowRun> {
     const run = runs.get(id)
@@ -863,6 +887,6 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       await persist(run)
     })
   }
-  return { start, stop, retry, recover, approve, reject, propose, pause, resume, onJobSettled, report, markSessionNotified, markReported, get: (id: string) => { const run = runs.get(id); return run ? structuredClone(run) : undefined }, list: () => [...runs.values()].map(run => structuredClone(run)).sort((a, b) => b.createdAt - a.createdAt) }
+  return { start, stop, retry, recover, approve, reject, propose, pause, resume, onJobSettled, report, waitingStep, markSessionNotified, markReported, get: (id: string) => { const run = runs.get(id); return run ? structuredClone(run) : undefined }, list: () => [...runs.values()].map(run => structuredClone(run)).sort((a, b) => b.createdAt - a.createdAt) }
 }
 export type WorkflowRunner = ReturnType<typeof createWorkflowRunner>

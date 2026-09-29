@@ -53,6 +53,11 @@ export function listenTarget(): BindTarget {
   return { hostname: '127.0.0.1', port: Number.isInteger(port) && port > 0 && port < 65536 ? port : 7777 }
 }
 
+export function mcUrl(): string {
+  const target = listenTarget()
+  return `http://${target.hostname}:${target.port}`
+}
+
 export function configDir(): string {
   const override = process.env.MISSION_CONTROL_CONFIG_DIR
   if (override !== undefined && override !== '') return override

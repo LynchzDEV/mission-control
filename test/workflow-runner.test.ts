@@ -1194,15 +1194,11 @@ test('a restart keeps an In Session step waiting and a later report settles it',
   expect((await finished(approved.id)).status).toBe('done')
 })
 
-test('an In Session review on the implementation family is refused before the run starts', async () => {
+test('an In Session review is refused when the workflow is saved', async () => {
   const graph = defaultWorkflow()
   graph.id = 'session-review'
-  graph.nodes[0]!.agent = { role: 'plan' }
   graph.nodes[3]!.agent = { role: 'review', engine: 'session' }
-  graph.nodes[2]!.agent = { role: 'execute', engine: 'glm' }
-  const { terminal } = await sessionRunner(resolver, 'glm', graph)
-  await expect(runner.start({ terminalId: terminal.id, cwd: repo, request: 'Implement', label: 'fixture' })).rejects.toThrow('Cross-family review must use a different model family from implementation')
-  expect(runner.list()).toHaveLength(0)
+  await expect(sessionRunner(resolver, 'glm', graph)).rejects.toThrow('Cross-family review: In Session is for plan and task steps')
 })
 
 test('stopping while an In Session step waits ends the run, a late report is a conflict, and retry waits again', async () => {
@@ -1248,4 +1244,66 @@ test('a run started from Studio resolves an In Session step like Chat decides', 
   const done = await finished(run.id)
   expect(done.status).toBe('done')
   expect(done.attempts.every(attempt => attempt.inSession === undefined && attempt.jobId)).toBe(true)
+})
+
+test('an In Session step is assigned with the session preamble instead of the worker rules', async () => {
+  const { begin } = await sessionRunner()
+  const approved = await begin()
+  const prompt = approved.attempts[0]!.prompt
+  expect(prompt).toContain('You are doing this step In Session, in your own conversation, where the user can see it. Do the step with the user; do not start other steps.')
+  expect(prompt).toContain(`/api/studio/runs/${approved.id}/steps/plan with {"outcome":"pass|fail|blocked","summary","evidence":[...],"output":"<the full result>"} plus your terminalId or chat.`)
+  expect(prompt).toContain('A plan step must not change code.')
+  expect(prompt).toContain('If an upstream plan check failed')
+  expect(prompt).not.toContain('Never dispatch')
+})
+
+test('the waiting step is readable on its own and disappears once reported', async () => {
+  const { owner, begin } = await sessionRunner()
+  const approved = await begin()
+  expect(runner.waitingStep(approved.id, 'plan')).toEqual({ runId: approved.id, nodeId: 'plan', title: 'Plan', kind: 'plan', prompt: approved.attempts[0]!.prompt, waitingSince: approved.attempts[0]!.startedAt })
+  expect(() => runner.waitingStep(approved.id, 'verify-plan')).toThrow(expect.objectContaining({ status: 404 }))
+  expect(() => runner.waitingStep('no-such-run', 'plan')).toThrow(expect.objectContaining({ status: 404 }))
+  await runner.report(approved.id, 'plan', planReport, owner)
+  expect(() => runner.waitingStep(approved.id, 'plan')).toThrow(expect.objectContaining({ status: 404 }))
+})
+
+test('a report with acceptance checks answers at once, checks in the background and refuses a second report', async () => {
+  const graph = defaultWorkflow()
+  graph.id = 'checked-plan'
+  graph.nodes[0]!.checks = [{ command: '/bin/sleep', args: ['1'], timeoutSeconds: 30 }]
+  const { owner, begin } = await sessionRunner(resolver, 'claude', graph)
+  const approved = await begin()
+  const started = Date.now()
+  const reported = await runner.report(approved.id, 'plan', planReport, owner)
+  expect(Date.now() - started).toBeLessThan(800)
+  expect(reported.attempts[0]!.status).toBe('checking')
+  await expect(runner.report(approved.id, 'plan', planReport, owner)).rejects.toMatchObject({ status: 409, message: 'That step is not waiting for the session' })
+  const checked = await until(approved.id, run => run.attempts.length === 2)
+  expect(checked.attempts[0]).toMatchObject({ status: 'settled', result: { outcome: 'pass' } })
+  expect(checked.attempts[0]!.checks[0]!.exitCode).toBe(0)
+})
+
+test('a report is redacted and records who reported it', async () => {
+  const secret = 'fixture-secret-7f3a9c2e1b5d4a6f8e0c'
+  await writeFile(join(dir, 'secrets.json'), JSON.stringify({ zaiAuthToken: secret }))
+  const { owner, begin } = await sessionRunner()
+  const approved = await begin()
+  const before = Date.now()
+  const reported = await runner.report(approved.id, 'plan', { outcome: 'pass', summary: `Planned with ${secret}`, evidence: [`token ${secret}`], output: `THE PLAN ${secret}` }, owner)
+  const attempt = reported.attempts[0]!
+  expect(JSON.stringify([attempt.result, attempt.output])).not.toContain(secret)
+  expect(attempt.output).toContain('THE PLAN')
+  expect(attempt.reportedBy).toEqual({ via: 'conversation', id: 'terminal-a', at: expect.any(Number) })
+  expect(attempt.reportedBy!.at).toBeGreaterThanOrEqual(before)
+})
+
+test('a plan step that changed code cannot pass', async () => {
+  const { owner, begin } = await sessionRunner()
+  const approved = await begin()
+  expect(approved.attempts[0]!.workspaceSnapshot).toEqual({ head: expect.any(String), diffHash: expect.any(String) })
+  await writeFile(join(repo, 'changed-by-plan.txt'), 'code')
+  await expect(runner.report(approved.id, 'plan', planReport, owner)).rejects.toMatchObject({ status: 409, message: 'A plan step must not change code' })
+  expect(runner.get(approved.id)!.attempts[0]!.status).toBe('running')
+  await rm(join(repo, 'changed-by-plan.txt'))
+  expect((await runner.report(approved.id, 'plan', planReport, owner)).attempts[0]!.status).toBe('settled')
 })

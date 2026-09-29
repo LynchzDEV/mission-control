@@ -165,3 +165,18 @@ test('the built-in default plans In Session and loops failed checks back to the 
   expect(graph.nodes.find(node => node.id === 'execute')!.instructions).toContain('If an upstream review failed, fix every finding it lists.')
   expect(validateWorkflow(graph)).toEqual([])
 })
+
+test('In Session is only for plan and task steps', () => {
+  const inSession = (kinds: string[]) => forkSteps().map(node => kinds.includes(node.id) ? { ...node, agent: { role: 'plan', engine: 'session' } } : node)
+  expect(validateWorkflow(flow(inSession(['plan']), forkLinks()))).toEqual([])
+  const errors = errorsOf(flow(inSession(['verify', 'review']), forkLinks()))
+  expect(errors).toContain('Verify: In Session is for plan and task steps')
+  expect(errors).toContain('Review: In Session is for plan and task steps')
+})
+
+test('In Session steps cannot run on a parallel path', () => {
+  const nodes = [...forkSteps().filter(node => node.id !== 'a'), { ...step('a'), agent: { role: 'execute', engine: 'session' } }]
+  expect(errorsOf(flow(nodes, forkLinks()))).toContain('A: In Session steps cannot run on a parallel path')
+  const splitting = forkSteps().map(node => node.id === 'split' ? { ...node, agent: { role: 'execute', engine: 'session' } } : node)
+  expect(validateWorkflow(flow(splitting, forkLinks()))).toEqual([])
+})

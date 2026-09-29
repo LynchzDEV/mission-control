@@ -10,8 +10,9 @@ const TOKEN_SCOPED_PREFIX = '/api/jobs'
 export function allowToken(pathname: string, method: string): boolean {
   const upperMethod = method.toUpperCase()
   if (pathname === '/api/studio/workflows' || pathname === '/api/studio/policy' || /^\/api\/studio\/workflows\/[^/]+\/revisions$/.test(pathname)) return upperMethod === 'GET'
+  if (/^\/api\/studio\/runs\/[^/]+\/steps\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(pathname)) return upperMethod === 'GET' || upperMethod === 'POST'
   if (pathname === '/api/studio/runs' || /^\/api\/studio\/runs\/[^/]+$/.test(pathname)) return upperMethod === 'GET' || (pathname === '/api/studio/runs' && upperMethod === 'POST')
-  if (/^\/api\/studio\/runs\/[^/]+\/(stop|retry|approve|reject|pause|resume|changes|steps\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,63})$/.test(pathname)) return upperMethod === 'POST'
+  if (/^\/api\/studio\/runs\/[^/]+\/(stop|retry|approve|reject|pause|resume|changes)$/.test(pathname)) return upperMethod === 'POST'
   if (pathname === TOKEN_SCOPED_PREFIX || pathname.startsWith(`${TOKEN_SCOPED_PREFIX}/`)) {
     return upperMethod === 'GET' || upperMethod === 'POST'
   }

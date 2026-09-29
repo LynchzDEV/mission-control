@@ -298,3 +298,21 @@ test('the owning terminal reports an In Session step with its token; the browser
   expect(body.attempts[0]).toMatchObject({ nodeId: 'plan', status: 'settled', output: 'THE PLAN' })
   expect(body.versions[0]).not.toHaveProperty('graph')
 })
+
+test('the owner reads a waiting In Session step with its token, and it is gone once reported', async () => {
+  const store = createWorkflowStore(dir)
+  const cwd = await scratchRepo()
+  const graph = await store.get('default')
+  const terminal = { id: 'terminal-a', engine: 'claude', cwd, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, inSessionAware: true as const, workflow: { id: graph.id, name: graph.name, revision: graph.revision, selectedDefault: true } }
+  runner = createWorkflowRunner({ manager, resolver: fakeEchoResolver, store, requireApproval: async () => true, terminals: { get: id => id === terminal.id ? terminal : undefined } })
+  app = new Elysia().use(studioRoutes(store, runner))
+  const token = { authorization: 'Bearer fixture-token' }
+  const run = await (await post('/api/studio/runs', { cwd, request: 'x', label: 'fixture', terminalId: terminal.id }, token)).json()
+  expect((await post(`/api/studio/runs/${run.id}/approve`, { terminalId: terminal.id }, token)).status).toBe(200)
+  const step = await get(`/api/studio/runs/${run.id}/steps/plan`)
+  expect(step.status).toBe(200)
+  expect(await step.json()).toMatchObject({ runId: run.id, nodeId: 'plan', title: 'Plan', kind: 'plan', prompt: expect.stringContaining('You are doing this step In Session'), waitingSince: expect.any(Number) })
+  expect((await get(`/api/studio/runs/${run.id}/steps/verify-plan`)).status).toBe(404)
+  await post(`/api/studio/runs/${run.id}/steps/plan`, { outcome: 'pass', summary: 'Planned', evidence: ['plan written'], terminalId: terminal.id }, token)
+  expect((await get(`/api/studio/runs/${run.id}/steps/plan`)).status).toBe(404)
+})

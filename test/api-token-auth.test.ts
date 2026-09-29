@@ -118,7 +118,8 @@ test('dispatch tokens can propose a change to a run but not save it as a workflo
   expect(allowToken('/api/studio/runs/x/save', 'POST')).toBe(false)
 })
 
-test('dispatch tokens can report an In Session step', () => {
+test('dispatch tokens can read and report an In Session step', () => {
   expect(allowToken('/api/studio/runs/x/steps/plan', 'POST')).toBe(true)
-  expect(allowToken('/api/studio/runs/x/steps/plan', 'GET')).toBe(false)
+  expect(allowToken('/api/studio/runs/x/steps/plan', 'GET')).toBe(true)
+  expect(allowToken('/api/studio/runs/x/steps/plan', 'DELETE')).toBe(false)
 })

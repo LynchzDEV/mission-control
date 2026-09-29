@@ -1,11 +1,11 @@
 import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { atomicJson, identifier } from './workflows'
+import { atomicJson, identifier, SESSION_ENGINE } from './workflows'
 import { configDir } from './secrets'
 
 export const BUILTIN_AGENTS = ['claude', 'glm', 'codex'] as const
-export const SESSION_ENGINE = 'session'
+export { SESSION_ENGINE }
 const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
 const targetEnvName = envName.refine(name => !['MC_JOB_ID', 'MC_TERMINAL_ID', 'MISSION_CONTROL_CONFIG_DIR'].includes(name), 'Mission Control identity cannot be overridden')
 export const connectionSchema = z.object({

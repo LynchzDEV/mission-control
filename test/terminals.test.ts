@@ -320,7 +320,7 @@ test('terminal instructions explain when to use a flow and how to relay approval
   if (!started.ok) return
   await waitFor(() => registry.replay(started.terminal.id).includes('Never approve without the user saying so'))
   const output = registry.replay(started.terminal.id)
-  for (const phrase of ['more than one step that changes code', '/approve', '"terminalId"', 'Never approve without the user saying so', '"graph" instead of "workflowId"', '/changes', 'Never mark scopeGrew false to avoid approval', 'kind "join"', 'its own git worktree', '"setup" commands', 'Keep fail edges inside their own path', '"In Session"', '/steps/', 'background watcher']) expect(output).toContain(phrase)
+  for (const phrase of ['more than one step that changes code', '/approve', '"terminalId"', 'Never approve without the user saying so', '"graph" instead of "workflowId"', '/changes', 'Never mark scopeGrew false to avoid approval', 'kind "join"', 'its own git worktree', '"setup" commands', 'Keep fail edges inside their own path', '"In Session"', '/steps/', '/steps/<nodeId> returns its assignment', 'background watcher']) expect(output).toContain(phrase)
   expect(output).not.toContain('pinned workflow')
   registry.kill(started.terminal.id)
 })
