@@ -1330,6 +1330,15 @@ test('a plan step that changed code cannot pass', async () => {
   expect((await runner.report(approved.id, 'plan', planReport, owner)).attempts[0]!.status).toBe('settled')
 })
 
+test('a repo holding an untracked nested repo, like a .worktree folder, can still run a plan step', async () => {
+  await initScratchGitRepo(join(repo, '.worktree', 'feature'))
+  const { owner, begin } = await sessionRunner()
+  const approved = await begin()
+  expect(approved.error ?? null).toBeNull()
+  expect(approved.attempts[0]!.workspaceSnapshot).toEqual({ head: expect.any(String), diffHash: expect.any(String) })
+  expect((await runner.report(approved.id, 'plan', planReport, owner)).attempts[0]!.status).toBe('settled')
+})
+
 test('a terminal opened before In Session existed gets the plan as an agent job', async () => {
   const { terminal, begin } = await sessionRunner()
   delete terminal.inSessionAware

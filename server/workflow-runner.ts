@@ -217,6 +217,7 @@ async function workspaceSnapshot(cwd: string): Promise<WorkspaceState> {
     hash.update(path)
     if (!resolved.startsWith(cwd + sep)) { hash.update(resolved); continue }
     const info = await stat(resolved)
+    if (info.isDirectory()) continue
     if (info.size > 10_000_000) throw new Error(`Untracked artifact too large to fingerprint: ${path}`)
     hash.update(await readFile(resolved))
   }
