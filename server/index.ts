@@ -230,7 +230,7 @@ export async function createApp(): Promise<Elysia> {
     .use(healthApi())
     .use(quotaRoutes({ externalSessions: () => externalSessionsCache.get() }))
     .use(metaRoutes(jobManager))
-    .use(jobsRoutes(jobManager, realEngineResolver, { queue: chatQueue }))
+    .use(jobsRoutes(jobManager, realEngineResolver, { queue: chatQueue, terminals: terminalRegistry }))
     .use(chatRoutes({ knownDirectories }))
     .use(historyRoutes({ manager: jobManager, registry: terminalRegistry }))
     .use(terminalsRoutes(terminalRegistry))

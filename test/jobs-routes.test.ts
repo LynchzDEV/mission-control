@@ -184,6 +184,18 @@ describe('GET /api/jobs', () => {
 
     await pollUntilDone(app, job.id)
   })
+
+  test('carries the Claude session of the terminal that started a job, even after that terminal ended', async () => {
+    const terminals = { list: () => [{ id: 'live', sessionId: 'conv-2' }], ended: () => [{ id: 'gone', sessionId: 'conv-1' }] }
+    const app = new Elysia().use(jobsRoutes(createJobManager(), echoResolver, { terminals }))
+    const started = await Promise.all(['gone', 'live', 'unknown'].map(async (terminalId) => (await (await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: terminalId, terminalId }))).json()) as { id: string }))
+    await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'none' }))
+
+    const { jobs } = (await (await app.handle(get('/api/jobs'))).json()) as { jobs: Array<{ label: string; terminalSessionId?: string }> }
+    expect(Object.fromEntries(jobs.map((entry) => [entry.label, entry.terminalSessionId ?? null]))).toEqual({ gone: 'conv-1', live: 'conv-2', unknown: null, none: null })
+
+    await Promise.all(started.map((job) => pollUntilDone(app, job.id)))
+  })
 })
 
 describe('POST /api/jobs/:id/reviewed', () => {

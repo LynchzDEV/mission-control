@@ -192,7 +192,13 @@ export function createLogStreamResponse(path: string, signal: AbortSignal, secre
   return new Response(stream, { headers: sseHeaders() })
 }
 
-export type JobsRoutesOptions = { notify?: (title: string, body: string) => Promise<void>; queue?: ChatQueue }
+type TerminalSessions = { list(): Array<{ id: string; sessionId: string | null }>; ended(): Array<{ id: string; sessionId: string | null }> }
+export type JobsRoutesOptions = { notify?: (title: string, body: string) => Promise<void>; queue?: ChatQueue; terminals?: TerminalSessions }
+
+function terminalSessionIds(terminals: TerminalSessions | undefined): Map<string, string> {
+  if (!terminals) return new Map()
+  return new Map([...terminals.ended(), ...terminals.list()].flatMap((terminal) => (terminal.sessionId ? [[terminal.id, terminal.sessionId] as const] : [])))
+}
 
 export function jobsRoutes(manager: JobManager, resolver: EngineResolver, options: JobsRoutesOptions = {}): Elysia {
   const notify = options.notify ?? notifyChat
@@ -263,7 +269,8 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       const chat = typeof query.chat === 'string' && query.chat !== '' ? query.chat : null
       const jobs = chat === null ? manager.listJobs() : manager.listJobs().filter((job) => job.chatId === chat || job.threadRoot === chat)
       const redact = await activityRedactor()
-      return { jobs: jobs.map((job) => ({ ...job, currentActivity: redact(manager.currentActivity(job.id)) })) }
+      const sessions = terminalSessionIds(options.terminals)
+      return { jobs: jobs.map((job) => { const terminalSessionId = job.terminalId ? sessions.get(job.terminalId) : undefined; return { ...job, currentActivity: redact(manager.currentActivity(job.id)), ...(terminalSessionId ? { terminalSessionId } : {}) } }) }
     })
     .patch('/api/jobs/:id', async ({ params, body, set }) => {
       const root = manager.getJob(params.id)
