@@ -143,4 +143,13 @@ describe('parseAgentReport', () => {
   test('a prompt without the agent head is not a report', () => {
     expect(parseAgentReport('hello')).toBeNull()
   })
+
+  test('an In Session nudge reads as the step and workflow waiting on your turn', () => {
+    const nudge = '[workflow Plan, verify, execute, review · your turn] Plan is In Session. Read it with GET /api/studio/runs/r1/steps/plan, do it here with the user, then report it: POST /api/studio/runs/r1/steps/plan.'
+    expect(parseAgentReport(nudge)).toEqual({ label: 'Plan · Plan, verify, execute, review', engine: 'workflow', outcome: 'your turn', body: 'Plan is In Session. Read it with GET /api/studio/runs/r1/steps/plan, do it here with the user, then report it: POST /api/studio/runs/r1/steps/plan.' })
+  })
+
+  test('a finished workflow report keeps its step lines as the body', () => {
+    expect(parseAgentReport('[workflow Ship it · blocked]\nPlan · pass · ok\nReason: no owner')).toEqual({ label: 'Ship it', engine: 'workflow', outcome: 'blocked', body: 'Plan · pass · ok\nReason: no owner' })
+  })
 })

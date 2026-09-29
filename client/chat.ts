@@ -139,7 +139,7 @@ function userRow(turn: Turn): HTMLElement {
 
 function outcomeTone(outcome: string): string {
   if (outcome === 'done') return 'done'
-  return outcome.startsWith('failed') ? 'failed' : 'other'
+  return outcome.startsWith('failed') || outcome === 'blocked' ? 'failed' : 'other'
 }
 
 function agentRow(turn: Turn): HTMLElement {
@@ -150,8 +150,11 @@ function agentRow(turn: Turn): HTMLElement {
   row.style.setProperty('--engine', ENGINE_COLORS[report.engine] ?? '#b5a5d8')
   const head = document.createElement('div'); head.className = 'agent-report-head'
   const disc = document.createElement('span'); disc.className = 'engine-tile'
-  const logo = document.createElement('img'); logo.src = `/providers/${report.engine}.svg`; logo.alt = engineName(report.engine)
-  disc.append(logo)
+  if (report.engine === 'workflow') disc.insertAdjacentHTML('afterbegin', '<svg aria-hidden="true" style="width:14px;height:14px"><use href="#flow-icon"/></svg>')
+  else {
+    const logo = document.createElement('img'); logo.src = `/providers/${report.engine}.svg`; logo.alt = engineName(report.engine)
+    disc.append(logo)
+  }
   const label = document.createElement('span'); label.className = 'agent-report-label'; label.textContent = report.label
   const pill = document.createElement('span'); pill.className = 'outcome-pill'; pill.dataset.tone = outcomeTone(report.outcome)
   pill.textContent = report.outcome.charAt(0).toUpperCase() + report.outcome.slice(1)

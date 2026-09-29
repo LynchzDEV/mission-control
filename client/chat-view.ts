@@ -86,6 +86,12 @@ export type AgentReport = { label: string; engine: string; outcome: string; body
 
 export function parseAgentReport(prompt: string): AgentReport | null {
   const [first = '', ...rest] = prompt.split('\n')
+  const flow = /^\[workflow (.+) · ([^\]·]+)\] ?(.*)$/.exec(first)
+  if (flow) {
+    const [, name, outcome, tail] = flow as unknown as [string, string, string, string]
+    const step = /^(.+?) is In Session\./.exec(tail)?.[1]
+    return { label: step ? `${step} · ${name}` : name, engine: 'workflow', outcome, body: [tail, ...rest].join('\n').trim() }
+  }
   const match = /^\[agent (.+) · (\S+)\] (.+)$/.exec(first)
   if (!match) return null
   const [, label, engine, outcome] = match as unknown as [string, string, string, string]
