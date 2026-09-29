@@ -45,7 +45,7 @@ export function visibleItems(items: readonly HistoryItem[], hidden: Readonly<Rec
   return items.filter(item => { const at = hidden[keyOf(item)]; return at === undefined || item.updatedAt > at })
 }
 
-const inRail = (row: Row): boolean => row.state === 'running' || row.state === 'live'
+const inRail = (row: Row): boolean => row.item.kind === 'chat' || row.state === 'live'
 
 export function numberedKeys(items: readonly HistoryItem[], collapsed = false): string[] {
   return items.filter(item => historyOpen(item) !== null && (!collapsed || inRail(rowOf(item)))).slice(0, SHORTCUT_SLOTS).map(keyOf)

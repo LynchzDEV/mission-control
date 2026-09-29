@@ -76,10 +76,10 @@ describe('numberedKeys', () => {
     const codex = { ...terminal('cx', 9, false), engine: 'codex' } as HistoryItem
     expect(numberedKeys([codex, chat('c1', 8)])).toEqual(['chat:c1'])
   })
-  test('collapsed, only the live rows the rail shows are numbered, starting at one', () => {
+  test('collapsed, every chat and live terminal the rail shows is numbered, starting at one', () => {
     const busy = { ...chat('busy', 7), running: true } as HistoryItem
     const items = [session('h1', 9), terminal('t1', 8), chat('c1', 8), busy, terminal('old', 6, false)]
-    expect(numberedKeys(items, true)).toEqual(['terminal:t1', 'chat:busy'])
+    expect(numberedKeys(items, true)).toEqual(['terminal:t1', 'chat:c1', 'chat:busy'])
   })
 })
 
