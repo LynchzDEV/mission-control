@@ -194,6 +194,8 @@ function detached(node: WorkflowNode): WorkflowNode {
   return { ...node, agent }
 }
 
+const ENTER_DELAY_MS = 150
+const oneLine = (text: string) => text.replace(/[\x00-\x1f\x7f]+/g, ' ')
 const sessionClosed = (title: string) => `The session that owned ${title} closed; Retry runs it as an agent`
 
 async function snapshotSkills(node: WorkflowNode, cwd: string): Promise<Array<{ path: string; content: string }>> {
@@ -221,7 +223,7 @@ async function workspaceSnapshot(cwd: string): Promise<WorkspaceState> {
   return { head, diffHash: hash.digest('hex') }
 }
 
-export function createWorkflowRunner(deps: { manager: JobManager; resolver: EngineResolver; store: WorkflowStore; base?: string; terminals?: Pick<TerminalRegistry, 'get'>; onRunSettled?: (run: WorkflowRun) => void; requireApproval?: () => Promise<boolean>; onChange?: (run: WorkflowRun) => void; onSessionStep?: (run: WorkflowRun) => void }) {
+export function createWorkflowRunner(deps: { manager: JobManager; resolver: EngineResolver; store: WorkflowStore; base?: string; terminals?: Pick<TerminalRegistry, 'get'> & Partial<Pick<TerminalRegistry, 'write'>>; onRunSettled?: (run: WorkflowRun) => void; requireApproval?: () => Promise<boolean>; onChange?: (run: WorkflowRun) => void; onSessionStep?: (run: WorkflowRun) => void }) {
   const root = join(deps.base ?? configDir(), 'workflow-runs')
   const requireApproval = deps.requireApproval ?? (async () => (await readConfig()).flowApproval)
   const runs = new Map<string, WorkflowRun>()
@@ -732,6 +734,29 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     void tracked(id, check(run, checking)).catch(error => console.error(`In Session acceptance check failed for run ${id}`, error))
     return cloned
   }
+  async function remind(id: string, nodeId: string): Promise<WorkflowRun> {
+    const terminalId = await exclusive(id, async () => {
+      const run = mustGet(id)
+      const token = waitingInSession(run, nodeId)
+      if (!token) throw new RunActionError('That step is not waiting for the session', 409)
+      const attempt = run.attempts[token.attempt!]!
+      if (run.chatId) {
+        attempt.sessionNotifiedAt = null
+        await persist(run)
+        deps.onSessionStep?.(structuredClone(run))
+        return null
+      }
+      const title = run.workflow.nodes.find(node => node.id === nodeId)!.title
+      const line = `Mission Control: the flow "${oneLine(run.label)}" is waiting for you at "${oneLine(title)}" (In Session). Read GET ${mcUrl()}/api/studio/runs/${run.id}/steps/${nodeId}, do it here with the user, then report it.`
+      if (!run.terminalId || !deps.terminals?.write?.(run.terminalId, line)) throw new RunActionError('The terminal that owns this flow is closed', 409)
+      return run.terminalId
+    })
+    if (terminalId) {
+      await new Promise(resolveDelay => setTimeout(resolveDelay, ENTER_DELAY_MS))
+      deps.terminals?.write?.(terminalId, '\r')
+    }
+    return structuredClone(mustGet(id))
+  }
   async function stop(id: string): Promise<WorkflowRun> {
     const run = runs.get(id)
     if (!run) throw new Error('Run not found')
@@ -906,6 +931,6 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       await persist(run)
     })
   }
-  return { start, stop, retry, recover, approve, reject, propose, pause, resume, onJobSettled, report, waitingStep, markSessionNotified, markReported, get: (id: string) => { const run = runs.get(id); return run ? structuredClone(run) : undefined }, list: () => [...runs.values()].map(run => structuredClone(run)).sort((a, b) => b.createdAt - a.createdAt) }
+  return { start, stop, retry, recover, approve, reject, propose, pause, resume, onJobSettled, report, waitingStep, remind, markSessionNotified, markReported, get: (id: string) => { const run = runs.get(id); return run ? structuredClone(run) : undefined }, list: () => [...runs.values()].map(run => structuredClone(run)).sort((a, b) => b.createdAt - a.createdAt) }
 }
 export type WorkflowRunner = ReturnType<typeof createWorkflowRunner>

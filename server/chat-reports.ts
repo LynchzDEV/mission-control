@@ -23,6 +23,7 @@ export const RESTART_CATCH_UP = '[Mission Control restarted — catching up]'
 
 export type ChatRunSource = {
   list(): WorkflowRun[]
+  get(id: string): WorkflowRun | undefined
   markReported(id: string, at: number): Promise<void>
   markSessionNotified(id: string, attempt: number, at: number): Promise<void>
 }
@@ -77,13 +78,16 @@ export function workflowReport(run: WorkflowRun): AgentReport {
 
 export function sessionStepNudge(run: WorkflowRun, attempt: WorkflowAttempt): AgentReport {
   const title = run.workflow.nodes.find((node) => node.id === attempt.nodeId)?.title ?? attempt.nodeId
-  const message = `[workflow ${oneLine(run.workflow.name, LABEL_MAX)} · your turn] ${oneLine(title, LABEL_MAX)} is In Session. Read it with GET /api/studio/runs/${run.id} (the attempt with "inSession": true has the full assignment in "prompt"), do it here with the user, then report it: POST /api/studio/runs/${run.id}/steps/${attempt.nodeId}.`
+  const step = `/api/studio/runs/${run.id}/steps/${attempt.nodeId}`
+  const message = `[workflow ${oneLine(run.workflow.name, LABEL_MAX)} · your turn] ${oneLine(title, LABEL_MAX)} is In Session. Read it with GET ${step}, do it here with the user, then report it: POST ${step}.`
   return { message, needsYou: false }
 }
 
+const waitsForSession = (run: WorkflowRun, attempt: WorkflowAttempt | undefined): attempt is WorkflowAttempt =>
+  Boolean(run.chatId) && LIVE_STATUSES.has(run.status) && attempt?.inSession === true && attempt.status === 'running'
+
 export function sessionStepsToNudge(run: WorkflowRun): WorkflowAttempt[] {
-  if (!run.chatId || !LIVE_STATUSES.has(run.status)) return []
-  return run.attempts.filter((attempt) => attempt.inSession === true && attempt.status !== 'settled' && attempt.sessionNotifiedAt == null)
+  return run.attempts.filter((attempt) => waitsForSession(run, attempt) && attempt.sessionNotifiedAt == null)
 }
 
 export function runNeedsReport(run: WorkflowRun): boolean {
@@ -127,7 +131,7 @@ export function needsReport(job: JobRecord): boolean {
   return Boolean(job.chatId) && job.status !== 'running' && !job.workflowRunId && job.reportedAt === null
 }
 
-type Pending = { id: string; label: string; startedAt: number; report: (readLog: LogReader) => Promise<AgentReport>; mark: (at: number) => Promise<void> }
+type Pending = { id: string; label: string; startedAt: number; report: (readLog: LogReader) => Promise<AgentReport | null>; mark: (at: number) => Promise<void>; nudge?: true }
 type Reported = { pending: Pending; report: AgentReport }
 
 function turnPrompt(users: readonly ChatQueueItem[], reports: readonly Reported[], catchingUp: boolean): string {
@@ -167,8 +171,13 @@ export function createChatFlusher(manager: JobManager, resolver: EngineResolver,
     id: `${run.id}:${attempt.number}`,
     label: `workflow ${run.workflow.name}`,
     startedAt: attempt.startedAt,
-    report: async () => sessionStepNudge(run, attempt),
+    report: async () => {
+      const current = opts.runs?.get(run.id)
+      const waiting = current?.attempts[attempt.number]
+      return current && waitsForSession(current, waiting) ? sessionStepNudge(current, waiting) : null
+    },
     mark: async (at) => { await opts.runs?.markSessionNotified(run.id, attempt.number, at) },
+    nudge: true,
   })
   const unreportedRuns = (): WorkflowRun[] => (opts.runs?.list() ?? []).filter(runNeedsReport)
   const runsWithSessionSteps = (): WorkflowRun[] => (opts.runs?.list() ?? []).filter((run) => sessionStepsToNudge(run).length > 0)
@@ -197,7 +206,7 @@ export function createChatFlusher(manager: JobManager, resolver: EngineResolver,
   }
 
   const noSession = async (root: JobRecord, reports: readonly Reported[]): Promise<void> => {
-    await markReported(reports)
+    await markReported(reports.filter(({ pending }) => !pending.nudge))
     for (const { pending } of reports) console.error(`chat report dropped: chat ${root.id} ${pending.label} (chat has no session to resume)`)
     await needsYouNotice(root, reports)
   }
@@ -234,7 +243,12 @@ export function createChatFlusher(manager: JobManager, resolver: EngineResolver,
     }
     if (threadIsRunning(threadChain(manager.listJobs(), chatId))) return wait(root, agents, hasUserMessages)
     const readLog = await opts.logReader()
-    const reports = await Promise.all(agents.map(async (pending) => ({ pending, report: await pending.report(readLog) })))
+    const reports = (await Promise.all(agents.map(async (pending) => ({ pending, report: await pending.report(readLog) }))))
+      .filter((reported): reported is Reported => reported.report !== null)
+    if (reports.length === 0 && !hasUserMessages) {
+      attempts.delete(chatId)
+      return
+    }
     const memory = root.project ? await projectMemory(manager.listJobs(), root.project, chatId, readLog) : ''
     const chain = threadChain(manager.listJobs(), chatId)
     if (threadIsRunning(chain)) return wait(root, agents, hasUserMessages)

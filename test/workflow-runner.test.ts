@@ -9,6 +9,7 @@ import { changeSize, covers, createWorkflowRunner, lineage, RunActionError, type
 import * as worktrees from '../server/job-worktrees'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 import type { TerminalRecord } from '../server/terminals'
+import { mcUrl } from '../server/secrets'
 
 let dir: string, repo: string, manager: JobManager, runner: WorkflowRunner, settledRuns: WorkflowRun[]
 const report = (outcome = 'pass') => JSON.stringify({ type: 'result', result: `MC_RESULT ${JSON.stringify({ outcome, summary: 'Completed fixture', evidence: ['fixture assertion'] })}` })
@@ -1120,7 +1121,8 @@ async function sessionRunner(agent: EngineResolver = resolver, engine = 'claude'
   const terminal: TerminalRecord = { id: 'terminal-a', engine, cwd: repo, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, inSessionAware: true, workflow: { id: graph.id, name: graph.name, revision: graph.revision, selectedDefault: true } }
   const sessionSteps: WorkflowRun[] = []
   let open = true
-  const terminals = { get: (id: string) => open && id === terminal.id ? terminal : undefined }
+  const writes: Array<[string, string]> = []
+  const terminals = { get: (id: string) => open && id === terminal.id ? terminal : undefined, write: (id: string, data: string) => { if (!open || id !== terminal.id) return false; writes.push([id, data]); return true } }
   const make = () => createWorkflowRunner({ manager, resolver: agent, store, base: dir, terminals, requireApproval: async () => true, onSessionStep: run => { sessionSteps.push(run) } })
   runner = make()
   const owner = { via: 'conversation' as const, terminalId: terminal.id }
@@ -1128,7 +1130,7 @@ async function sessionRunner(agent: EngineResolver = resolver, engine = 'claude'
     const started = await runner.start({ terminalId: terminal.id, cwd: repo, request: 'Implement the fixture', label: 'fixture' })
     return runner.approve(started.id, owner)
   }
-  return { terminal, sessionSteps, owner, begin, make, close: () => { open = false } }
+  return { terminal, sessionSteps, owner, begin, make, writes, close: () => { open = false } }
 }
 const planReport = { outcome: 'pass', summary: 'Planned', evidence: ['plan written'], output: 'THE PLAN' }
 
@@ -1393,4 +1395,38 @@ test('interrupted attempts do not count toward the visit limit', async () => {
   expect(retried.attempts).toHaveLength(2)
   expect(retried.attempts[0]!.interrupted).toBe(true)
   await runner.stop(run.id)
+})
+
+test('reminding a terminal types one line into it and presses Enter', async () => {
+  const { begin, writes, close } = await sessionRunner()
+  const approved = await begin()
+  const reminded = await runner.remind(approved.id, 'plan')
+  expect(reminded.id).toBe(approved.id)
+  expect(writes).toEqual([
+    ['terminal-a', `Mission Control: the flow "fixture" is waiting for you at "Plan" (In Session). Read GET ${mcUrl()}/api/studio/runs/${approved.id}/steps/plan, do it here with the user, then report it.`],
+    ['terminal-a', '\r'],
+  ])
+  await expect(runner.remind(approved.id, 'verify-plan')).rejects.toMatchObject({ status: 409, message: 'That step is not waiting for the session' })
+  close()
+  await expect(runner.remind(approved.id, 'plan')).rejects.toMatchObject({ status: 409, message: 'The terminal that owns this flow is closed' })
+})
+
+test('a reminder types the flow label on one line', async () => {
+  const { writes, terminal } = await sessionRunner()
+  const started = await runner.start({ terminalId: terminal.id, cwd: repo, request: 'Implement', label: 'two\u001b[2Jlines' })
+  await runner.approve(started.id, { via: 'drawer' })
+  await runner.remind(started.id, 'plan')
+  expect(writes[0]![1]).toContain('the flow "two [2Jlines"')
+})
+
+test('reminding a chat sends its nudge again', async () => {
+  build(resolver, true)
+  const nudged: number[] = []
+  runner = createWorkflowRunner({ manager, resolver, store: createWorkflowStore(dir), base: dir, requireApproval: async () => false, onSessionStep: run => { nudged.push(run.attempts[0]!.sessionNotifiedAt ?? 0) } })
+  const root = await chatRoot('claude')
+  const run = await runner.start({ cwd: repo, request: 'Ship it', label: 'ship', chat: root.id })
+  await runner.markSessionNotified(run.id, 0, 4321)
+  const reminded = await runner.remind(run.id, 'plan')
+  expect(reminded.attempts[0]!.sessionNotifiedAt).toBeNull()
+  expect(nudged).toEqual([0, 0])
 })

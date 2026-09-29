@@ -316,3 +316,29 @@ test('the owner reads a waiting In Session step with its token, and it is gone o
   await post(`/api/studio/runs/${run.id}/steps/plan`, { outcome: 'pass', summary: 'Planned', evidence: ['plan written'], terminalId: terminal.id }, token)
   expect((await get(`/api/studio/runs/${run.id}/steps/plan`)).status).toBe(404)
 })
+
+test('only the drawer reminds the owning terminal of a waiting step', async () => {
+  const store = createWorkflowStore(dir)
+  const cwd = await scratchRepo()
+  const graph = await store.get('default')
+  const terminal = { id: 'terminal-a', engine: 'claude', cwd, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, inSessionAware: true as const, workflow: { id: graph.id, name: graph.name, revision: graph.revision, selectedDefault: true } }
+  const writes: string[] = []
+  runner = createWorkflowRunner({ manager, resolver: fakeEchoResolver, store, requireApproval: async () => true, terminals: { get: id => id === terminal.id ? terminal : undefined, write: (_id, data) => { writes.push(data); return true } } })
+  app = new Elysia().use(studioRoutes(store, runner))
+  const token = { authorization: 'Bearer fixture-token' }
+  const run = await (await post('/api/studio/runs', { cwd, request: 'x', label: 'fixture', terminalId: terminal.id }, token)).json()
+  expect((await post(`/api/studio/runs/${run.id}/approve`, { terminalId: terminal.id }, token)).status).toBe(200)
+  const fromSession = await post(`/api/studio/runs/${run.id}/steps/plan/remind`, { terminalId: terminal.id }, {})
+  expect(fromSession.status).toBe(403)
+  expect(await fromSession.json()).toEqual({ error: 'Remind from the drawer' })
+  expect((await post(`/api/studio/runs/${run.id}/steps/plan/remind`, {}, { ...token, 'sec-fetch-site': 'same-origin' })).status).toBe(403)
+  expect(writes).toEqual([])
+  const reminded = await post(`/api/studio/runs/${run.id}/steps/plan/remind`, {}, { 'sec-fetch-site': 'same-origin' })
+  expect(reminded.status).toBe(200)
+  const body = await reminded.json()
+  expect(body.id).toBe(run.id)
+  expect(body.versions[0]).not.toHaveProperty('graph')
+  expect(writes).toHaveLength(2)
+  expect(writes[0]).toContain(`/api/studio/runs/${run.id}/steps/plan`)
+  expect((await post(`/api/studio/runs/${run.id}/steps/verify-plan/remind`, {}, { 'sec-fetch-site': 'same-origin' })).status).toBe(409)
+})

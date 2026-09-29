@@ -123,3 +123,7 @@ test('dispatch tokens can read and report an In Session step', () => {
   expect(allowToken('/api/studio/runs/x/steps/plan', 'GET')).toBe(true)
   expect(allowToken('/api/studio/runs/x/steps/plan', 'DELETE')).toBe(false)
 })
+
+test('dispatch tokens cannot remind a session; only the drawer can', () => {
+  expect(allowToken('/api/studio/runs/x/steps/plan/remind', 'POST')).toBe(false)
+})
