@@ -33,7 +33,7 @@ export type WorkflowAttempt = {
   output: string; checkPid?: number; workspace: WorkspaceState | null;
   tokenId: string; pathId: string; from: number[];
   inSession?: true; sessionNotifiedAt?: number | null; workspaceSnapshot?: WorkspaceState;
-  reportedBy?: { via: ApprovalContext['via']; id: string; at: number };
+  reportedBy?: { via: ApprovalContext['via']; id: string; at: number }; interrupted?: true;
 }
 export type TokenState = 'ready' | 'working' | 'settled' | 'waiting'
 export type WorkflowToken = { id: string; nodeId: string; pathId: string; workspace: string; state: TokenState; attempt: number | null; from: number[] }
@@ -270,7 +270,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   }
   function interrupt(run: WorkflowRun): void {
     for (const attempt of run.attempts.filter(attempt => attempt.status !== 'settled')) {
-      Object.assign(attempt, { status: 'settled', endedAt: Date.now(), result: { outcome: 'blocked', summary: 'Interrupted before it finished', evidence: [] } })
+      Object.assign(attempt, { status: 'settled', endedAt: Date.now(), interrupted: true, result: { outcome: 'blocked', summary: 'Interrupted before it finished', evidence: [] } })
       const token = run.tokens.find(token => token.id === attempt.tokenId && token.attempt === attempt.number)
       if (token) Object.assign(token, { nodeId: attempt.nodeId, state: 'ready', attempt: null })
     }
@@ -363,7 +363,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     if (stopping.has(run.id) || run.status !== 'running' || changePending(run)) return
     const node = run.workflow.nodes.find(node => node.id === token.nodeId)!
     if (node.kind === 'join') return block(run, `${node.title} has no open paths to join`)
-    const limit = visitLimit(run, node)
+    const limit = visitLimit(run, node, attempt => !attempt.interrupted)
     if (limit) return block(run, limit)
     const related = run.attempts.filter(attempt => lineage(attempt.pathId, token.pathId))
     const lastPlan = related.findLastIndex(attempt => kindOf(run, attempt) === 'plan')
@@ -479,7 +479,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const messages = parseThread(log)
     attempt.output = (messages.findLast(event => event.kind === 'result')?.detail ?? messages.filter(event => event.kind === 'text').map(event => event.detail).join('\n')).slice(-64000)
     let result = readNodeResult(log)
-    if (record.status !== 'done' && result?.outcome !== 'blocked') result = { outcome: 'fail', summary: `Agent process failed (${record.exitCode ?? 'unknown exit'})`, evidence: [] }
+    if (record.status !== 'done' && result?.outcome !== 'fail' && result?.outcome !== 'blocked') result = { outcome: 'blocked', summary: `Agent process failed (${record.exitCode ?? 'unknown exit'})`, evidence: [] }
     if (!result || (result.outcome === 'pass' && !result.evidence.length)) result = { outcome: 'blocked', summary: 'Agent did not provide a valid MC_RESULT with evidence', evidence: [] }
     return accept(run, attempt, token, result)
   }

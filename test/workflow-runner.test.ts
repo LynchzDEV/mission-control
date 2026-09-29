@@ -159,7 +159,7 @@ test('restart adopts an existing running job and continues without dispatching i
 test('a terminal agent error overrides an earlier claimed pass even with exit zero', async () => {
   build(() => ({ cmd: '/usr/bin/printf', args: ['%s\n%s\n', report(), JSON.stringify({ type: 'result', is_error: true, result: 'Provider failed' })], env: {} }))
   const run = await runner.start({ cwd: repo, request: 'Inspect', label: 'false-success' })
-  expect((await finished(run.id)).status).toBe('failed')
+  expect((await finished(run.id)).status).toBe('blocked')
   expect(manager.listJobs()).toHaveLength(1)
 })
 
@@ -1356,4 +1356,41 @@ test('a chat run plans In Session on the chat root AI, never the engine it names
   const plain = await runner.start({ cwd: repo, request: 'Ship it', label: 'ship', chat: root.id })
   expect(plain.agents.plan).toMatchObject({ engine: 'claude', inSession: true })
   expect(plain.agents['verify-plan']).toMatchObject({ engine: 'codex', family: 'gpt' })
+})
+
+async function crashFlow(script: string) {
+  const store = build(() => ({ cmd: '/bin/sh', args: ['-c', script], env: {} }))
+  await store.save({ ...defaultWorkflow(), id: 'crash', entry: 'test', nodes: [{ id: 'test', title: 'Test', instructions: 'Check', maxVisits: 1 }, { id: 'fix', title: 'Fix', instructions: 'Fix' }], edges: [{ source: 'test', target: 'fix', outcome: 'fail' }] })
+  return finished((await runner.start({ workflowId: 'crash', cwd: repo, request: 'Test', label: 'crash' })).id)
+}
+
+test('a crashed job blocks the run instead of taking the fail edge', async () => {
+  const done = await crashFlow('exit 3')
+  expect(done.status).toBe('blocked')
+  expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['test'])
+  expect(done.attempts[0]!.result).toMatchObject({ outcome: 'blocked', summary: 'Agent process failed (3)' })
+})
+
+test('a crashed job that claimed a pass blocks too', async () => {
+  const done = await crashFlow(`printf '%s\\n' '${report()}'; exit 2`)
+  expect(done.status).toBe('blocked')
+  expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['test'])
+})
+
+test('a fail the agent reported still takes the fail edge when its process exits unsuccessfully', async () => {
+  const done = await crashFlow(`printf '%s\\n' '${report('fail')}'; exit 1`)
+  expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['test', 'fix'])
+  expect(done.attempts[0]!.result!.outcome).toBe('fail')
+})
+
+test('interrupted attempts do not count toward the visit limit', async () => {
+  const store = build(() => ({ cmd: '/bin/sleep', args: ['20'], env: {} }))
+  await store.save({ ...defaultWorkflow(), id: 'once', entry: 'test', nodes: [{ id: 'test', title: 'Test', instructions: 'Check', maxVisits: 1 }], edges: [] })
+  const run = await runner.start({ workflowId: 'once', cwd: repo, request: 'Test', label: 'once' })
+  await runner.stop(run.id)
+  const retried = await runner.retry(run.id)
+  expect(retried.status).toBe('running')
+  expect(retried.attempts).toHaveLength(2)
+  expect(retried.attempts[0]!.interrupted).toBe(true)
+  await runner.stop(run.id)
 })
