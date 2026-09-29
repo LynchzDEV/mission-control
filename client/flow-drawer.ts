@@ -105,15 +105,16 @@ function stepStatus(run: RunView, kind: string, nodeId: string, engine: string, 
   const waiting = kind === 'join' ? waitingAtJoin(run, nodeId, tries) : null
   if (waiting) return waiting
   if (!tries.length) return unstartedStatus(run, nodeId, engine, reachable)
-  const status = attemptStatus(run, tries, now)
+  const status = attemptStatus(run, engine, tries, now)
   return kind === 'join' ? joinedStatus(run, nodeId, status, tries.at(-1)!) : status
 }
 
-function attemptStatus(run: RunView, tries: RunAttemptView[], now: number): StepStatus {
+function attemptStatus(run: RunView, engine: string, tries: RunAttemptView[], now: number): StepStatus {
   const latest = tries.at(-1)!
   const retry = tries.length > 1 ? `Try ${tries.length} · ` : ''
   if (latest.status !== 'settled') {
     if (!isLive(run)) return { state: 'failed', detail: run.status === 'stopped' ? 'Stopped' : 'Did not finish' }
+    if (latest.inSession) return { state: 'active', detail: `In Session · ${providerName(engine)}` }
     const subAgents = latest.subAgents ?? 0
     const doing = [tries.length > 1 ? `Try ${tries.length}` : '', subAgents > 0 ? `${subAgents} sub-agent${subAgents === 1 ? '' : 's'}` : ''].filter(Boolean)
     return { state: 'active', detail: `${(doing.length ? doing : ['Working']).join(' · ')} · ${elapsed(now - latest.startedAt)}`, since: latest.startedAt }
@@ -268,6 +269,12 @@ export function pillsFor(run: RunView): { running: number; done: number; waiting
   return { running: count('active'), done: count('done'), waiting: isLive(run) ? count('pending', 'conditional') : 0 }
 }
 
+function waitingInSession(run: RunView): RunView['nodes'][number] | undefined {
+  if (!isLive(run)) return undefined
+  const waiting = run.attempts.find(attempt => attempt.inSession && attempt.status !== 'settled')
+  return waiting && run.nodes.find(node => node.id === waiting.nodeId)
+}
+
 export function bannerFor(run: RunView): Banner {
   const by = providerName(run.origin.by)
   if (run.status === 'awaiting-approval' && run.versions.some(version => version.state === 'pending')) {
@@ -279,6 +286,8 @@ export function bannerFor(run: RunView): Banner {
     const word = run.status === 'blocked' ? 'Blocked' : 'Failed'
     return { tone: 'problem', text: run.error ? `${word}: ${run.error}` : word, actions: ['retry'] }
   }
+  const inSession = waitingInSession(run)
+  if (inSession) return { tone: 'notice', text: `${inSession.title} is being done In Session by ${providerName(inSession.engine)}. Talk to it here; the flow continues when it reports the step.`, actions: [] }
   const change = run.latestChange
   if (change?.size === 'big' && change.approvedVia === 'auto' && isLive(run)) {
     return { tone: 'notice', text: `v${change.number} applied automatically. ${change.reason} Approval is off, so it did not wait.`, actions: ['approval-on'] }

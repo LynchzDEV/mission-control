@@ -3,7 +3,7 @@ import type { ChatQueue, ChatQueueItem } from './chat-queue'
 import type { JobManager, JobRecord } from './jobs'
 import type { EngineResolver } from './jobs-engine-iface'
 import { replySessionId, threadChain, threadIsRunning, threadRootOf } from './threads'
-import { LIVE_STATUSES, type WorkflowRun } from './workflow-runner'
+import { LIVE_STATUSES, type WorkflowAttempt, type WorkflowRun } from './workflow-runner'
 
 const REPORT_TEXT_MAX = 1200
 const MEMORY_TEXT_MAX = 160
@@ -24,6 +24,7 @@ export const RESTART_CATCH_UP = '[Mission Control restarted — catching up]'
 export type ChatRunSource = {
   list(): WorkflowRun[]
   markReported(id: string, at: number): Promise<void>
+  markSessionNotified(id: string, attempt: number, at: number): Promise<void>
 }
 
 export type ChatFlusherOptions = {
@@ -41,6 +42,7 @@ export type ChatFlusher = {
   kick(chatId: string): Promise<void>
   onAgentSettled(record: JobRecord): Promise<void>
   onRunSettled(run: WorkflowRun): Promise<void>
+  onSessionStep(run: WorkflowRun): Promise<void>
   recoverAll(): Promise<void>
 }
 
@@ -71,6 +73,17 @@ export function workflowReport(run: WorkflowRun): AgentReport {
   const reason = run.error ? [`Reason: ${oneLine(run.error, RUN_LINE_MAX)}`] : []
   const message = [`[workflow ${oneLine(run.workflow.name, LABEL_MAX)} · ${run.status}]`, ...lines, ...reason].join('\n')
   return { message, needsYou: run.status === 'failed' || run.status === 'blocked' }
+}
+
+export function sessionStepNudge(run: WorkflowRun, attempt: WorkflowAttempt): AgentReport {
+  const title = run.workflow.nodes.find((node) => node.id === attempt.nodeId)?.title ?? attempt.nodeId
+  const message = `[workflow ${oneLine(run.workflow.name, LABEL_MAX)} · your turn] ${oneLine(title, LABEL_MAX)} is In Session. Read it with GET /api/studio/runs/${run.id} (the attempt with "inSession": true has the full assignment in "prompt"), do it here with the user, then report it: POST /api/studio/runs/${run.id}/steps/${attempt.nodeId}.`
+  return { message, needsYou: false }
+}
+
+export function sessionStepsToNudge(run: WorkflowRun): WorkflowAttempt[] {
+  if (!run.chatId || !LIVE_STATUSES.has(run.status)) return []
+  return run.attempts.filter((attempt) => attempt.inSession === true && attempt.status !== 'settled' && attempt.sessionNotifiedAt == null)
 }
 
 export function runNeedsReport(run: WorkflowRun): boolean {
@@ -150,10 +163,19 @@ export function createChatFlusher(manager: JobManager, resolver: EngineResolver,
     report: async () => workflowReport(run),
     mark: async (at) => { await opts.runs?.markReported(run.id, at) },
   })
+  const sessionPending = (run: WorkflowRun, attempt: WorkflowAttempt): Pending => ({
+    id: `${run.id}:${attempt.number}`,
+    label: `workflow ${run.workflow.name}`,
+    startedAt: attempt.startedAt,
+    report: async () => sessionStepNudge(run, attempt),
+    mark: async (at) => { await opts.runs?.markSessionNotified(run.id, attempt.number, at) },
+  })
   const unreportedRuns = (): WorkflowRun[] => (opts.runs?.list() ?? []).filter(runNeedsReport)
+  const runsWithSessionSteps = (): WorkflowRun[] => (opts.runs?.list() ?? []).filter((run) => sessionStepsToNudge(run).length > 0)
   const unreported = (chatId: string): Pending[] => [
     ...manager.listJobs().filter((job) => job.chatId === chatId && needsReport(job)).map(agentPending),
     ...unreportedRuns().filter((run) => run.chatId === chatId).map(runPending),
+    ...runsWithSessionSteps().filter((run) => run.chatId === chatId).flatMap((run) => sessionStepsToNudge(run).map((attempt) => sessionPending(run, attempt))),
   ]
   const settledBeforeBoot = (pending: Pending): boolean => pending.startedAt < bootAt
   const labels = (items: readonly Pending[]): string => items.map((item) => item.label).join(', ')
@@ -255,8 +277,11 @@ export function createChatFlusher(manager: JobManager, resolver: EngineResolver,
     onRunSettled(run) {
       return run.chatId ? kick(run.chatId) : Promise.resolve()
     },
+    onSessionStep(run) {
+      return run.chatId && sessionStepsToNudge(run).length > 0 ? kick(run.chatId) : Promise.resolve()
+    },
     async recoverAll() {
-      const chats = new Set([...opts.queue.chats(), ...manager.listJobs().filter(needsReport).map((job) => job.chatId as string), ...unreportedRuns().map((run) => run.chatId as string)])
+      const chats = new Set([...opts.queue.chats(), ...manager.listJobs().filter(needsReport).map((job) => job.chatId as string), ...unreportedRuns().map((run) => run.chatId as string), ...runsWithSessionSteps().map((run) => run.chatId as string)])
       await Promise.all([...chats].map(kick))
     },
   }

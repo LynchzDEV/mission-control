@@ -29,10 +29,17 @@ export function workflowTemplates(defaultFlow: Workflow): Workflow[] {
   })]
 }
 export type Provider = { id: string; name: string; models: string[]; builtin?: boolean; family?: string | null }
+export const IN_SESSION = 'session'
 export function agentLabel(node: Pick<WorkflowNode, 'agent'>, providers: readonly Provider[]): string {
   const engine = node.agent.engine
   if (!engine) return 'Chat decides'
+  if (engine === IN_SESSION) return 'In Session'
   return providers.find(provider => provider.id === engine)?.name ?? `Unavailable · ${engine}`
+}
+export function agentHelp(engine: string | undefined): string {
+  if (!engine) return 'The chat picks the AI for this step from its strengths and usage.'
+  if (engine === IN_SESSION) return 'The AI in the chat or terminal that started the flow does this step there, where you can see it.'
+  return 'Always use this AI for this step.'
 }
 const kindIcons: Record<WorkflowNode['kind'], string> = { plan: 'plan-icon', 'verify-plan': 'check-circle-icon', implement: 'code-icon', review: 'eye-icon', task: 'spark-icon', join: 'spark-icon' }
 export function kindIcon(kind: WorkflowNode['kind']): string { return kindIcons[kind] }

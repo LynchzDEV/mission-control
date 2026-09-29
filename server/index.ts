@@ -178,6 +178,7 @@ export async function createApp(): Promise<Elysia> {
     store: workflowStore,
     terminals: terminalRegistry,
     onRunSettled: run => { void chatFlusher.onRunSettled(run).catch(error => console.error('Workflow chat report failed', error)) },
+    onSessionStep: run => { void chatFlusher.onSessionStep(run).catch(error => console.error('In Session chat nudge failed', error)) },
     onChange: () => runEvents.changed(),
   })
   const chatQueue = createChatQueue(chatQueuePath())

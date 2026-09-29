@@ -434,8 +434,65 @@ describe('createChatFlusher', () => {
     return {
       list: () => runs.map((run) => structuredClone(run)),
       markReported: async (id: string, at: number) => { const run = runs.find((candidate) => candidate.id === id); if (run) run.reportedAt = at },
+      markSessionNotified: async (id: string, number: number, at: number) => {
+        notified.push([id, number])
+        const target = runs.find((candidate) => candidate.id === id)?.attempts.find((candidate) => candidate.number === number)
+        if (target) target.sessionNotifiedAt = at
+      },
     }
   }
+  const notified: [string, number][] = []
+  beforeEach(() => { notified.length = 0 })
+
+  const sessionRun = (fields: Partial<WorkflowRun> = {}): WorkflowRun => runFixture({
+    status: 'running', reportedAt: null,
+    workflow: { ...defaultWorkflow(), revision: 'r1' } as unknown as WorkflowRun['workflow'],
+    attempts: [{ ...attempt('plan', null), number: 0, inSession: true, sessionNotifiedAt: null }],
+    ...fields,
+  })
+
+  test('a step waiting In Session in a chat-owned run nudges the chat once and marks the attempt notified', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const root = await settled(manager, (await chatRoot(manager)).id)
+    const runs = [sessionRun({ chatId: root.id })]
+    const notes: string[] = []
+    const flusher = flusherFor(manager, { runs: runSource(runs), notify: async (title, body) => { notes.push(`${title}|${body}`) } })
+    await flusher.onSessionStep(runs[0]!)
+    const turns = agentTurns(manager)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.prompt).toBe('[workflow Plan, verify, execute, review · your turn] Plan is In Session. Read it with GET /api/studio/runs/run-1 (the attempt with "inSession": true has the full assignment in "prompt"), do it here with the user, then report it: POST /api/studio/runs/run-1/steps/plan.')
+    expect(notified).toEqual([['run-1', 0]])
+    expect(typeof runs[0]!.attempts[0]!.sessionNotifiedAt).toBe('number')
+    expect(runs[0]!.reportedAt).toBeNull()
+    expect(notes).toEqual([])
+    await settled(manager, turns[0]!.id)
+    await flusher.onSessionStep(runs[0]!)
+    await flusher.recoverAll()
+    expect(agentTurns(manager)).toHaveLength(1)
+  })
+
+  test('a step waiting In Session in a terminal run or an already-notified attempt sends nothing', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const root = await settled(manager, (await chatRoot(manager)).id)
+    const runs = [
+      sessionRun({ id: 'terminal-run', chatId: undefined, terminalId: 't1' }),
+      sessionRun({ id: 'told', chatId: root.id, attempts: [{ ...attempt('plan', null), inSession: true, sessionNotifiedAt: 5 }] }),
+    ]
+    const flusher = flusherFor(manager, { runs: runSource(runs) })
+    await flusher.onSessionStep(runs[0]!)
+    await flusher.onSessionStep(runs[1]!)
+    expect(agentTurns(manager)).toHaveLength(0)
+    expect(notified).toEqual([])
+  })
+
+  test('a settled In Session attempt is not a nudge', async () => {
+    const manager = createJobManager({ home: homedir() })
+    const root = await settled(manager, (await chatRoot(manager)).id)
+    const runs = [sessionRun({ chatId: root.id, attempts: [{ ...attempt('plan', 'pass', 'Planned'), inSession: true, sessionNotifiedAt: null }] })]
+    const flusher = flusherFor(manager, { runs: runSource(runs) })
+    await flusher.onSessionStep(runs[0]!)
+    expect(agentTurns(manager)).toHaveLength(0)
+  })
 
   test('a settled chat workflow run reports once as one turn and is marked reported', async () => {
     const manager = createJobManager({ home: homedir() })

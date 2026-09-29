@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { defaultWorkflow, validateWorkflow } from '../server/workflows'
-import { agentLabel, insertWorkflowStep, kindIcon, nodeRunStates, roleWord, removeWorkflowStep, taskPreset, workflowTemplates } from '../client/studio-graph'
+import { agentHelp, agentLabel, insertWorkflowStep, kindIcon, nodeRunStates, roleWord, removeWorkflowStep, taskPreset, workflowTemplates } from '../client/studio-graph'
 
 test('adding a custom step keeps the following review connected and preserves failure routes',()=>{
   const graph=defaultWorkflow()
@@ -32,6 +32,16 @@ test('agentLabel reads Chat decides, the provider name, or Unavailable for a rem
   expect(agentLabel({agent:{role:'execute'}},providers)).toBe('Chat decides')
   expect(agentLabel({agent:{role:'execute',engine:'qwen'}},providers)).toBe('Qwen Code')
   expect(agentLabel({agent:{role:'execute',engine:'grok'}},providers)).toBe('Unavailable · grok')
+})
+
+test('agentLabel reads In Session for the session engine, whatever the providers are',()=>{
+  expect(agentLabel({agent:{role:'plan',engine:'session'}},[])).toBe('In Session')
+})
+
+test('agentHelp explains Chat decides, In Session and a fixed AI',()=>{
+  expect(agentHelp(undefined)).toBe('The chat picks the AI for this step from its strengths and usage.')
+  expect(agentHelp('session')).toBe('The AI in the chat or terminal that started the flow does this step there, where you can see it.')
+  expect(agentHelp('claude')).toBe('Always use this AI for this step.')
 })
 
 test('kindIcon names the symbol drawn on each step kind',()=>{

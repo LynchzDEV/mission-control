@@ -11,10 +11,15 @@ const job = (patch: Partial<JobRecord>) => ({ id: 'j', label: 'Fix badge', engin
 test('run view keeps what the drawer draws and drops prompts, outputs and policy', () => {
   const view = runView(run({}))
   expect(view.nodes.map(node => [node.id, node.engine])).toEqual([['plan', 'claude'], ['verify-plan', 'claude'], ['execute', 'claude'], ['review', 'codex']])
-  expect(view.attempts[0]).toEqual({ nodeId: 'plan', number: 0, jobId: 'j1', status: 'settled', outcome: 'pass', summary: 'Planned', startedAt: 1, endedAt: 2, pathId: 'main', from: [], subAgents: 0 })
+  expect(view.attempts[0]).toEqual({ nodeId: 'plan', number: 0, jobId: 'j1', status: 'settled', outcome: 'pass', summary: 'Planned', startedAt: 1, endedAt: 2, pathId: 'main', from: [], subAgents: 0, inSession: false })
   expect(JSON.stringify(view)).not.toContain('long prompt')
   expect(JSON.stringify(view)).not.toContain('long output')
   expect(JSON.stringify(view)).not.toContain('secret request text')
+})
+
+test('an attempt done In Session says so', () => {
+  const waiting = run({ attempts: [{ nodeId: 'plan', number: 0, jobId: null, status: 'running', prompt: 'p', startedAt: 1, endedAt: null, result: null, checks: [], output: '', workspace: null, tokenId: 'tok-1', pathId: 'main', from: [], inSession: true, sessionNotifiedAt: null }] })
+  expect(runView(waiting).attempts[0]!.inSession).toBe(true)
 })
 
 test('an attempt carries its job\'s sub-agent count, and the scope snapshot fills it from the jobs it has', () => {

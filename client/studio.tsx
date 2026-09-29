@@ -8,7 +8,7 @@ import type { RunStatus, WorkflowRun } from '../server/workflow-runner'
 import type { DraftJob, WorkflowDraft } from '../server/workflow-builder'
 import { api, openRun } from './studio-api'
 import { Connections, StepAttachments, type ConnectionList } from './studio-settings'
-import { agentLabel, insertWorkflowStep, kindIcon, nodeRunStates, roleWord, removeWorkflowStep, stepPresets, taskPreset, workflowTemplates, type NodeRunState, type Provider } from './studio-graph'
+import { agentHelp, agentLabel, IN_SESSION, insertWorkflowStep, kindIcon, nodeRunStates, roleWord, removeWorkflowStep, stepPresets, taskPreset, workflowTemplates, type NodeRunState, type Provider } from './studio-graph'
 
 type TaskNode = Node<WorkflowNode & { agentLabel: string; branches: Outcome[]; runState?: NodeRunState; runSince?: number }, 'task'>
 type Screen = 'home' | 'templates' | 'editor' | 'connections' | 'runs' | 'rules'
@@ -39,7 +39,7 @@ const TaskCard = memo(function TaskCard({ data, selected }: NodeProps<TaskNode>)
     <strong>{data.title}</strong>
     <p>{data.instructions.split(/(?<=[.!?])\s/)[0]}</p>
     {data.runState && <span className={`run-state run-${data.runState}`}>{runLabels[data.runState]}{data.runState === 'running' && data.runSince ? <Elapsed since={data.runSince} /> : null}</span>}
-    <footer><small style={engine && engineTints[engine] ? { '--engine': engineTints[engine] } as CSSProperties : undefined}>{engine ? <img src={`/providers/${engine}.svg`} alt="" /> : <Icon id="auto-icon" />}{roleWord(data.agent.role)} AI · {data.agentLabel}</small></footer>
+    <footer><small style={engine && engineTints[engine] ? { '--engine': engineTints[engine] } as CSSProperties : undefined}>{engine && engine !== IN_SESSION ? <img src={`/providers/${engine}.svg`} alt="" /> : <Icon id="auto-icon" />}{roleWord(data.agent.role)} AI · {data.agentLabel}</small></footer>
     <Handle type="source" id="pass" position={Position.Right} />
     {data.branches.filter(outcome => outcome !== 'pass').map((outcome, index) => <Handle key={outcome} title={outcomeLabels[outcome]} aria-label={outcomeLabels[outcome]} type="source" id={outcome} position={Position.Bottom} className={`handle-${outcome}`} style={{ left: index ? '70%' : '30%' }} />)}
   </div>
@@ -193,7 +193,7 @@ function Studio() {
   const heading = navHost ? createPortal(screen === 'editor'
     ? <button type="button" className="text-button" onClick={() => go('home')}><Icon id="back-icon" />Workflows</button>
     : NAV.map(([id, text]) => <button key={id} type="button" className="text-button" aria-current={screen === id || (screen === 'templates' && id === 'home') ? 'page' : undefined} onClick={() => go(id)}>{text}</button>), navHost) : null
-  const providerOptions = providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)
+  const providerOptions = providers.filter(provider => provider.id !== IN_SESSION).map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)
   const draftProviders = providers.filter(provider => !list.connections.some(connection => connection.id === provider.id && connection.adapter === 'cli'))
   const promptBox = (small = false) => <form className="workflow-prompt" onSubmit={event => { event.preventDefault(); void generate() }}>
     <textarea aria-label={small ? 'Ask AI to change the workflow' : 'Describe your workflow'} rows={small ? 6 : 4} value={description} disabled={disabled} onChange={event => setDescription(event.target.value)} placeholder={small ? 'Add a testing step before the review…' : 'Plan the work, build it, then ask another AI to review…'} required />
@@ -246,7 +246,7 @@ function Studio() {
           {panel === 'step' && (current ? <fieldset disabled={disabled} className="step-editor"><h2>Edit step</h2>
             <label>Step name<input value={current.title} onChange={event => patch({ title: event.target.value })} /></label>
             <label>What should happen?<textarea rows={6} value={current.instructions} onChange={event => patch({ instructions: event.target.value })} /></label>
-            <label>Who should do it?<select value={current.agent.engine ?? ''} onChange={event => event.target.value === 'connect' ? go('connections') : patch({ agent: event.target.value ? { role: current.agent.role, engine: event.target.value } : { role: current.agent.role } })}><option value="">Chat decides</option>{providerOptions}{current.agent.engine && !providers.some(provider => provider.id === current.agent.engine) && <option value={current.agent.engine}>Unavailable · {current.agent.engine}</option>}<option value="connect">+ Connect another AI</option></select><small className="muted">{current.agent.engine ? 'Always use this AI for this step.' : 'The chat picks the AI for this step from its strengths and usage.'}</small></label>
+            <label>Who should do it?<select value={current.agent.engine ?? ''} onChange={event => event.target.value === 'connect' ? go('connections') : patch({ agent: event.target.value ? { role: current.agent.role, engine: event.target.value } : { role: current.agent.role } })}><option value="">Chat decides</option><option value={IN_SESSION}>In Session</option>{providerOptions}{current.agent.engine && current.agent.engine !== IN_SESSION && !providers.some(provider => provider.id === current.agent.engine) && <option value={current.agent.engine}>Unavailable · {current.agent.engine}</option>}<option value="connect">+ Connect another AI</option></select><small className="muted">{agentHelp(current.agent.engine)}</small></label>
             <details><summary>Tools, skills & checks{current.skills.length + current.mcpServers.length + current.checks.length ? ` (${current.skills.length + current.mcpServers.length + current.checks.length})` : ''}</summary><StepAttachments node={current} onChange={patch} /></details>
             <details><summary>More options</summary>
               <label>Task purpose<select value={current.kind} onChange={event => patch({ kind: event.target.value as WorkflowNode['kind'] })}>{Object.entries(purposeLabels).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>

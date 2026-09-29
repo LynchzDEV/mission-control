@@ -95,6 +95,26 @@ test('a blocked run offers a retry with the reason', () => {
   expect(bannerFor(base)).toEqual({ tone: null, text: '', actions: [] })
 })
 
+const inSession: RunView = {
+  ...base, currentNodeId: 'plan',
+  attempts: [{ nodeId: 'plan', number: 0, jobId: null, status: 'running', outcome: null, summary: null, startedAt: 0, endedAt: null, pathId: 'main', from: [], subAgents: 0, inSession: true }],
+  tokens: [{ nodeId: 'plan', pathId: 'main', state: 'working', from: [] }],
+}
+
+test('a step waiting In Session names the AI doing it and keeps its engine', () => {
+  const plan = stepsFor(inSession, 90_000).find(step => step.id === 'plan')!
+  expect([plan.state, plan.detail, plan.engine]).toEqual(['active', 'In Session · Claude', 'claude'])
+  expect(plan.jobId).toBeUndefined()
+})
+
+test('a step waiting In Session gets a notice banner with no actions, unless a problem or an approval comes first', () => {
+  expect(bannerFor(inSession)).toEqual({ tone: 'notice', text: 'Plan is being done In Session by Claude. Talk to it here; the flow continues when it reports the step.', actions: [] })
+  expect(bannerFor({ ...inSession, status: 'paused' }).text).toBe('Plan is being done In Session by Claude. Talk to it here; the flow continues when it reports the step.')
+  expect(bannerFor({ ...inSession, status: 'blocked', error: 'limit' }).tone).toBe('problem')
+  expect(bannerFor({ ...inSession, status: 'stopped' })).toEqual({ tone: null, text: '', actions: [] })
+  expect(bannerFor({ ...inSession, attempts: [{ ...inSession.attempts[0]!, status: 'settled', outcome: 'pass', endedAt: 1 }] })).toEqual({ tone: null, text: '', actions: [] })
+})
+
 test('pills count running, done and waiting steps', () => {
   expect(pillsFor(base)).toEqual({ running: 1, done: 1, waiting: 1 })
 })
