@@ -125,3 +125,13 @@ export function pathsFromUriList(text: string): string[] {
 export function providerName(engine: string): string {
   return ({claude:'Claude',codex:'Codex',glm:'GLM'} as Record<string,string>)[engine] ?? engine
 }
+
+export async function uploadDrop(file: File): Promise<string> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('lastModified', String(file.lastModified))
+  const response = await fetch('/api/terminals/drops', { method: 'POST', body: form })
+  const payload = (await response.json().catch(() => ({}))) as { error?: string; path?: string }
+  if (!response.ok || typeof payload.path !== 'string') throw new Error(payload.error ?? `Upload failed (${response.status})`)
+  return payload.path
+}

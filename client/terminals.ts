@@ -2,7 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import { errorText, getJson, pathsFromUriList, postJson, providerName, readArray, readRecord, shellQuote } from './shared'
+import { errorText, getJson, pathsFromUriList, postJson, providerName, readArray, readRecord, shellQuote, uploadDrop } from './shared'
 import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
 import { dragKind, dropCopy, findCount, findKeys, restoreTarget, nextActive, sessionSlot, sessionState, splitPlan, statusPill, terminalKeys, type Session, type TerminalKey, type SessionState } from './terminal-state'
 import { createPanes, type PaneHeader } from './terminal-panes'
@@ -313,15 +313,6 @@ addEventListener('quiet:toast', (event) => toast(String((event as CustomEvent<st
 function dropTarget(event: DragEvent): TerminalView | null {
   const id = (event.target as Element | null)?.closest<HTMLElement>('.term-host')?.dataset.id ?? activeId
   return id ? views.get(id) ?? null : null
-}
-async function uploadDrop(file: File): Promise<string> {
-  const form = new FormData()
-  form.append('file', file)
-  form.append('lastModified', String(file.lastModified))
-  const response = await fetch('/api/terminals/drops', { method: 'POST', body: form })
-  const payload = (await response.json().catch(() => ({}))) as { error?: string; path?: string }
-  if (!response.ok || typeof payload.path !== 'string') throw new Error(payload.error ?? `Upload failed (${response.status})`)
-  return payload.path
 }
 async function dropFiles(transfer: DataTransfer | null, view: TerminalView): Promise<void> {
   if (view.socket?.readyState !== WebSocket.OPEN) { toast('That terminal is not connected'); return }

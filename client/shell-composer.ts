@@ -1,4 +1,4 @@
-import { getJson, readArray } from './shared'
+import { getJson, pathsFromUriList, readArray, shellQuote, uploadDrop } from './shared'
 import { morph, reveal } from './morph'
 import { customModelChoice, launchChoice, readRecentDirectories, type LaunchProvider } from './shell-launch'
 
@@ -110,6 +110,45 @@ document.addEventListener('click', (event) => {
   closeMenus()
 })
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMenus() })
+
+const composer = $('composer')
+const message = $('message') as HTMLTextAreaElement
+const toast = (text: string): void => { dispatchEvent(new CustomEvent('quiet:toast', { detail: text })) }
+const hasFiles = (transfer: DataTransfer | null): boolean => !!transfer && (transfer.types.includes('Files') || transfer.types.includes('text/uri-list'))
+const fileCount = (count: number): string => `${count} file${count === 1 ? '' : 's'}`
+
+async function attach(files: File[], dropped: string[]): Promise<void> {
+  if (files.length === 0 && dropped.length === 0) { toast('Nothing to add'); return }
+  let paths = dropped
+  if (paths.length === 0) {
+    toast(`Adding ${fileCount(files.length)}…`)
+    try { paths = await Promise.all(files.map(uploadDrop)) }
+    catch (error) { toast(error instanceof Error ? error.message : 'Upload failed'); return }
+  }
+  message.focus()
+  message.setRangeText(`${paths.map(shellQuote).join(' ')} `, message.selectionStart, message.selectionEnd, 'end')
+  message.dispatchEvent(new Event('input', { bubbles: true }))
+  toast(`Added ${fileCount(paths.length)}`)
+}
+
+message.addEventListener('paste', (event) => {
+  const files = Array.from(event.clipboardData?.files ?? [])
+  if (files.length === 0) return
+  event.preventDefault()
+  void attach(files, [])
+})
+composer.addEventListener('dragover', (event) => {
+  if (!hasFiles(event.dataTransfer)) return
+  event.preventDefault()
+  composer.dataset.drop = 'true'
+})
+composer.addEventListener('dragleave', (event) => { if (!composer.contains(event.relatedTarget as Node | null)) delete composer.dataset.drop })
+composer.addEventListener('drop', (event) => {
+  if (!hasFiles(event.dataTransfer)) return
+  event.preventDefault()
+  delete composer.dataset.drop
+  void attach(Array.from(event.dataTransfer?.files ?? []), pathsFromUriList(event.dataTransfer?.getData('text/uri-list') ?? ''))
+})
 
 paintProject()
 paintEdit()
