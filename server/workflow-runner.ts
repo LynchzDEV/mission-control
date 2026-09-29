@@ -224,7 +224,7 @@ async function workspaceSnapshot(cwd: string): Promise<WorkspaceState> {
   return { head, diffHash: hash.digest('hex') }
 }
 
-export function createWorkflowRunner(deps: { manager: JobManager; resolver: EngineResolver; store: WorkflowStore; base?: string; terminals?: Pick<TerminalRegistry, 'get'> & Partial<Pick<TerminalRegistry, 'write'>>; onRunSettled?: (run: WorkflowRun) => void; requireApproval?: () => Promise<boolean>; onChange?: (run: WorkflowRun) => void; onSessionStep?: (run: WorkflowRun) => void }) {
+export function createWorkflowRunner(deps: { manager: JobManager; resolver: EngineResolver; store: WorkflowStore; base?: string; terminals?: Pick<TerminalRegistry, 'get'> & Partial<Pick<TerminalRegistry, 'write' | 'list' | 'ended'>>; onRunSettled?: (run: WorkflowRun) => void; requireApproval?: () => Promise<boolean>; onChange?: (run: WorkflowRun) => void; onSessionStep?: (run: WorkflowRun) => void }) {
   const root = join(deps.base ?? configDir(), 'workflow-runs')
   const requireApproval = deps.requireApproval ?? (async () => (await readConfig()).flowApproval)
   const runs = new Map<string, WorkflowRun>()
@@ -293,7 +293,19 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   function workspaceBusy(cwd: string, except?: string): boolean {
     return [...runs.values()].some(run => run.id !== except && run.cwd === cwd && LIVE_STATUSES.has(run.status)) || deps.manager.listJobs().some(job => job.cwd === cwd && job.status === 'running' && job.purpose !== 'chat' && job.workflowRunId !== except)
   }
+  function followResumedTerminals(targets: Array<Pick<WorkflowRun, 'terminalId'>>): void {
+    const orphaned = targets.filter(run => run.terminalId && !deps.terminals?.get(run.terminalId))
+    if (!orphaned.length || !deps.terminals?.ended || !deps.terminals.list) return
+    const sessionIds = new Map(deps.terminals.ended().map(past => [past.id, past.sessionId]))
+    const live = deps.terminals.list()
+    for (const run of orphaned) {
+      const sessionId = sessionIds.get(run.terminalId!)
+      const resumed = sessionId ? live.find(terminal => terminal.sessionId === sessionId) : undefined
+      if (resumed) run.terminalId = resumed.id
+    }
+  }
   function sessionOf(run: Pick<WorkflowRun, 'terminalId' | 'chatId'>): ChatDefault | undefined {
+    followResumedTerminals([run])
     if (run.terminalId) {
       const terminal = deps.terminals?.get(run.terminalId)
       return terminal?.inSessionAware ? { engine: terminal.engine, model: null } : undefined
@@ -750,6 +762,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       }
       const title = run.workflow.nodes.find(node => node.id === nodeId)!.title
       const line = `Mission Control: the flow "${oneLine(run.label)}" is waiting for you at "${oneLine(title)}" (In Session). Read GET ${mcUrl()}/api/studio/runs/${run.id}/steps/${nodeId}, do it here with the user, then report it.`
+      followResumedTerminals([run])
       if (!run.terminalId || !deps.terminals?.write?.(run.terminalId, line)) throw new RunActionError('The terminal that owns this flow is closed', 409)
       return run.terminalId
     })
@@ -824,6 +837,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   }
   function owned(run: WorkflowRun, context: ApprovalContext): void {
     if (context.via !== 'conversation') return
+    followResumedTerminals([run])
     const matches = (context.chat && context.chat === run.chatId) || (context.terminalId && context.terminalId === run.terminalId)
     if (!matches) throw new RunActionError('This flow belongs to a different session', 403)
   }
@@ -933,6 +947,6 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       await persist(run)
     })
   }
-  return { start, stop, retry, recover, approve, reject, propose, pause, resume, onJobSettled, report, waitingStep, remind, markSessionNotified, markReported, get: (id: string) => { const run = runs.get(id); return run ? structuredClone(run) : undefined }, list: () => [...runs.values()].map(run => structuredClone(run)).sort((a, b) => b.createdAt - a.createdAt) }
+  return { start, stop, retry, recover, approve, reject, propose, pause, resume, onJobSettled, report, waitingStep, remind, markSessionNotified, markReported, get: (id: string) => { const run = runs.get(id); return run ? structuredClone(run) : undefined }, list: () => { followResumedTerminals([...runs.values()]); return [...runs.values()].map(run => structuredClone(run)).sort((a, b) => b.createdAt - a.createdAt) } }
 }
 export type WorkflowRunner = ReturnType<typeof createWorkflowRunner>

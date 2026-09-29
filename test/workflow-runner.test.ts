@@ -1137,11 +1137,19 @@ test('with two open paths, a change that drops the second path’s review is big
 async function sessionRunner(agent: EngineResolver = resolver, engine = 'claude', workflow?: Workflow) {
   const store = build(agent, true)
   const graph = workflow ? await store.save(workflow) : await store.get('default')
-  const terminal: TerminalRecord = { id: 'terminal-a', engine, cwd: repo, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, inSessionAware: true, workflow: { id: graph.id, name: graph.name, revision: graph.revision, selectedDefault: true } }
+  const terminal: TerminalRecord = { id: 'terminal-a', engine, cwd: repo, pid: 1, createdAt: 0, title: 'Terminal', sessionId: 'claude-session-a', inSessionAware: true, workflow: { id: graph.id, name: graph.name, revision: graph.revision, selectedDefault: true } }
   const sessionSteps: WorkflowRun[] = []
   let open = true
+  const others: TerminalRecord[] = []
   const writes: Array<[string, string]> = []
-  const terminals = { get: (id: string) => open && id === terminal.id ? terminal : undefined, write: (id: string, data: string) => { if (!open || id !== terminal.id) return false; writes.push([id, data]); return true } }
+  const live = () => [...(open ? [terminal] : []), ...others]
+  const terminals = {
+    get: (id: string) => live().find(record => record.id === id),
+    list: live,
+    ended: () => open ? [] : [{ id: terminal.id, engine, cwd: repo, title: terminal.title, sessionId: terminal.sessionId, createdAt: 0, endedAt: null }],
+    write: (id: string, data: string) => { if (!live().some(record => record.id === id)) return false; writes.push([id, data]); return true },
+  }
+  const reopen = (id: string, sessionId: string | null) => { others.push({ ...terminal, id, sessionId }); return { via: 'conversation' as const, terminalId: id } }
   const make = () => createWorkflowRunner({ manager, resolver: agent, store, base: dir, terminals, requireApproval: async () => true, onSessionStep: run => { sessionSteps.push(run) } })
   runner = make()
   const owner = { via: 'conversation' as const, terminalId: terminal.id }
@@ -1149,7 +1157,7 @@ async function sessionRunner(agent: EngineResolver = resolver, engine = 'claude'
     const started = await runner.start({ terminalId: terminal.id, cwd: repo, request: 'Implement the fixture', label: 'fixture' })
     return runner.approve(started.id, owner)
   }
-  return { terminal, sessionSteps, owner, begin, make, writes, close: () => { open = false } }
+  return { terminal, sessionSteps, owner, begin, make, writes, reopen, close: () => { open = false } }
 }
 const planReport = { outcome: 'pass', summary: 'Planned', evidence: ['plan written'], output: 'THE PLAN' }
 
@@ -1337,6 +1345,23 @@ test('a repo holding an untracked nested repo, like a .worktree folder, can stil
   expect(approved.error ?? null).toBeNull()
   expect(approved.attempts[0]!.workspaceSnapshot).toEqual({ head: expect.any(String), diffHash: expect.any(String) })
   expect((await runner.report(approved.id, 'plan', planReport, owner)).attempts[0]!.status).toBe('settled')
+})
+
+test('a terminal resumed after a restart keeps its flow: Retry stays In Session and the resumed terminal reports', async () => {
+  const { sessionSteps, close, reopen } = await sessionRunner()
+  const started = await runner.start({ terminalId: 'terminal-a', cwd: repo, request: 'Implement the fixture', label: 'fixture' })
+  close()
+  expect((await runner.approve(started.id, { via: 'drawer' })).status).toBe('blocked')
+  reopen('terminal-unrelated', 'claude-session-b')
+  const resumed = reopen('terminal-b', 'claude-session-a')
+  const retried = await runner.retry(started.id)
+  expect(retried.terminalId).toBe('terminal-b')
+  expect(retried.agents.plan).toMatchObject({ engine: 'claude', inSession: true })
+  expect(retried.attempts[0]).toMatchObject({ nodeId: 'plan', inSession: true, jobId: null })
+  expect(manager.listJobs()).toHaveLength(0)
+  expect(sessionSteps).toHaveLength(1)
+  await expect(runner.report(started.id, 'plan', planReport, { via: 'conversation', terminalId: 'terminal-unrelated' })).rejects.toMatchObject({ status: 403 })
+  expect((await runner.report(started.id, 'plan', planReport, resumed)).attempts[0]).toMatchObject({ status: 'settled', reportedBy: { id: 'terminal-b' } })
 })
 
 test('a terminal opened before In Session existed gets the plan as an agent job', async () => {
