@@ -29,7 +29,8 @@ core prompt, selected blueprint, and current assignment for each node.
 Use the terminal-provided `MC_URL` and `MISSION_CONTROL_CONFIG_DIR` for this
 service. Never send a terminal from one MC instance to another instance.
 When `MC_TERMINAL_ID` is present, start `POST /api/studio/runs` with
-`terminalId`, the terminal directory as `cwd`, `label`, and the complete
+`terminalId`, the git repo the task targets as `cwd` (the terminal directory,
+or a repo inside it when the terminal is opened on a folder of repos), `label`, and the complete
 user `request`. The server uses that terminal’s pinned workflow.
 `MC_WORKFLOW_ID` and `MC_WORKFLOW_REVISION` identify the selection; do not
 replace it with a newer global default. To choose another workflow or

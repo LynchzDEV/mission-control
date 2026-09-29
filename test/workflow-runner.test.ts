@@ -86,6 +86,25 @@ test('terminal runs default to their pinned workflow, let a named workflow overr
   await finished(named.id)
 })
 
+test('a terminal opened on a folder of repos runs its flow in a repo inside that folder, never outside it', async () => {
+  const store = build()
+  const pinned = await store.save({ ...withoutSession(), id: 'folder-workflow' })
+  const terminalAt = (cwd: string): TerminalRecord => ({ id: 'terminal-a', engine: 'claude', cwd, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, workflow: { id: pinned.id, name: pinned.name, revision: pinned.revision, selectedDefault: true } })
+  const startIn = (terminalCwd: string) => {
+    const terminal = terminalAt(terminalCwd)
+    runner = createWorkflowRunner({ manager, resolver, store, base: dir, terminals: { get: id => id === terminal.id ? terminal : undefined }, requireApproval: async () => false })
+    return runner.start({ terminalId: terminal.id, cwd: repo, request: 'Inspect this project', label: 'nested repo' })
+  }
+  const outside = await mkdtemp(join(tmpdir(), 'mc-other-folder-'))
+  try {
+    await expect(startIn(outside)).rejects.toThrow('inside this terminal')
+    await expect(startIn(`${repo}-sibling`)).rejects.toThrow('inside this terminal')
+  } finally { await rm(outside, { recursive: true, force: true }) }
+  const started = await startIn(homedir())
+  expect(started.terminalId).toBe('terminal-a')
+  expect((await finished(started.id)).status).toBe('done')
+})
+
 test('free-form E2E nodes require real checks; a failing check overrides AI pass', async () => {
   const store = build()
   const graph = await store.save({ ...defaultWorkflow(), id: 'e2e', entry: 'test', nodes: [{ id: 'test', title: 'E2E', instructions: 'Test with Jev', checks: [{ command: '/usr/bin/false' }] }], edges: [] })

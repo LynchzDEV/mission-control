@@ -414,7 +414,8 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       if (!cwd.ok) throw new Error(cwd.error)
       const terminal = input.terminalId ? deps.terminals?.get(input.terminalId) : undefined
       if (input.terminalId && !terminal) throw new Error('Terminal not found; open a new terminal before starting its workflow')
-      if (terminal && terminal.cwd !== cwd.path) throw new Error('Use this terminal’s project directory')
+      const terminalRoot = terminal ? await realpath(terminal.cwd).catch(() => terminal.cwd) : null
+      if (terminalRoot !== null && cwd.path !== terminalRoot && !cwd.path.startsWith(terminalRoot.endsWith(sep) ? terminalRoot : terminalRoot + sep)) throw new Error('Use this terminal’s folder or a repo inside this terminal’s folder')
       const selection = terminal?.workflow
       if (terminal && !selection) throw new Error('This terminal has no pinned workflow; open a new terminal')
       const workflow = input.graph !== undefined ? draftRevision(input.graph) : input.workflowId ? await deps.store.get(input.workflowId, input.revision) : selection ? await deps.store.get(selection.id, selection.revision) : await deps.store.selected()
