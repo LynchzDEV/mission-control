@@ -8,6 +8,8 @@ const RIPPLE_BAND = 36
 const RIPPLE_LIFE = 1100
 const PAUSED_KEY = 'mc.motion.paused'
 const INTERACTIVE = 'button, a, input, textarea, select, pre, .session-card, dialog, nav, header, .term-host, .composer, .mc-panes, .md'
+const isDark = (): boolean => document.documentElement.dataset.theme === 'dark'
+const dotColor = (mix: number): string => isDark() ? `rgb(${59 + mix * 106}, ${64 + mix * 75}, ${76 + mix * 150})` : `rgb(${250 - mix * 122}, ${251 - mix * 153}, ${255 - mix * 66})`
 
 type Dot = { x: number; y: number; phase: number; speed: number; near: number }
 type Ripple = { x: number; y: number; start: number }
@@ -18,7 +20,7 @@ function readPaused(): boolean {
 }
 
 const canvas = document.getElementById('backdrop') as HTMLCanvasElement | null
-const motion = document.getElementById('motion') as HTMLButtonElement | null
+const motion = document.getElementById('motion') as HTMLInputElement | null
 const context = canvas?.getContext('2d')
 if (canvas && motion && context) {
   let paused = readPaused()
@@ -26,14 +28,10 @@ if (canvas && motion && context) {
   const ripples: Ripple[] = []
   const mouse = { x: -1e4, y: -1e4 }
   const lens = { x: -1e4, y: -1e4 }
-  const syncMotion = (): void => {
-    motion.setAttribute('aria-pressed', String(paused))
-    motion.setAttribute('aria-label', paused ? 'Play motion' : 'Pause motion')
-    motion.title = paused ? 'Play motion' : 'Pause motion'
-    document.getElementById('motion-icon')?.setAttribute('href', paused ? '#play-icon' : '#pause-icon')
-  }
-  motion.onclick = () => { paused = !paused; try { localStorage.setItem(PAUSED_KEY, String(paused)) } catch {} syncMotion(); settledFrames = 0; if (!drawing) requestAnimationFrame(draw) }
-  syncMotion()
+  motion.checked = !paused
+  const wake = (): void => { settledFrames = 0; if (!drawing) requestAnimationFrame(draw) }
+  motion.onchange = () => { paused = !motion.checked; try { localStorage.setItem(PAUSED_KEY, String(paused)) } catch {} wake() }
+  document.addEventListener('mc:theme', wake)
   const size = (): void => {
     canvas.width = innerWidth
     canvas.height = innerHeight
@@ -67,7 +65,7 @@ if (canvas && motion && context) {
       const push = dot.near * 4 + wave * 5
       const angle = Math.atan2(dot.y - lens.y, dot.x - lens.x)
       const mix = Math.min(1, twinkle * 0.35 + dot.near * 0.35 + wave * 0.8)
-      context.fillStyle = `rgb(${250 - mix * 122}, ${251 - mix * 153}, ${255 - mix * 66})`
+      context.fillStyle = dotColor(mix)
       context.beginPath()
       context.arc(dot.x + Math.cos(angle) * push, dot.y + Math.sin(angle) * push, 1.4 + twinkle * 0.8 + dot.near * 0.9 + wave * 1.6, 0, Math.PI * 2)
       context.fill()
@@ -77,6 +75,6 @@ if (canvas && motion && context) {
     requestAnimationFrame(draw)
   }
   size()
-  addEventListener('resize', () => { size(); settledFrames = 0; if (!drawing) requestAnimationFrame(draw) })
+  addEventListener('resize', () => { size(); wake() })
   requestAnimationFrame(draw)
 }

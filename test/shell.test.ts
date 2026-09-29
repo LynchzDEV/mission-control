@@ -57,12 +57,51 @@ describe('quiet shell', () => {
     expect(quiet.startsWith("@import url('/vendor/neumo-ui.css') layer(neumo);")).toBe(true)
   })
 
-  test('the access dialog states only true facts', async () => {
+  test('the settings dialog states only true facts', async () => {
     const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    expect(markup).toContain('<dialog id="settings" class="access-dialog" aria-labelledby="settings-title">')
+    expect(markup).toContain('aria-label="Close settings"')
+    expect(markup).not.toContain('<dialog id="access"')
     expect(markup).toContain('id="access-host"')
     for (const id of ['access-token', 'access-reveal', 'access-rotate', 'access-home', 'access-flow-approval']) expect(markup).toContain(`id="${id}"`)
     expect(markup).not.toContain('href="/settings"')
     for (const placeholder of ['127.0.0.1:3000', 'Not loaded in this preview', 'Rotate token']) expect(markup).not.toContain(placeholder)
+  })
+
+  test('the toolbar reads Studio, Flow, Agents and no longer holds motion or access', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    const toolbar = markup.slice(markup.indexOf('<header class="toolbar">'), markup.indexOf('</header>', markup.indexOf('<header class="toolbar">')))
+    const order = ['id="open-studio"', 'id="toggle-flow"', 'id="open-agents"'].map(marker => toolbar.indexOf(marker))
+    expect(order.every(index => index > 0)).toBe(true)
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    for (const gone of ['id="motion"', 'data-dialog=', 'lock-icon']) expect(toolbar).not.toContain(gone)
+  })
+
+  test('History sits above Settings at the bottom of the open and collapsed sidebar', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    const foot = markup.slice(markup.indexOf('class="sb-foot"'), markup.indexOf('</div>', markup.indexOf('class="sb-foot"')))
+    expect(foot.indexOf('id="all-history"')).toBeGreaterThan(0)
+    expect(foot.indexOf('id="open-settings"')).toBeGreaterThan(foot.indexOf('id="all-history"'))
+    const strip = markup.slice(markup.indexOf('class="sb-strip"'), markup.indexOf('</aside>'))
+    expect(strip.indexOf('data-dialog="settings"')).toBeGreaterThan(strip.indexOf('data-click="all-history"'))
+    expect(strip.indexOf('data-click="all-history"')).toBeGreaterThan(0)
+    expect(markup.match(/data-dialog="settings"/g)).toHaveLength(2)
+  })
+
+  test('Settings holds the dark theme and background motion switches, and the theme applies before first paint', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    const settings = markup.slice(markup.indexOf('<dialog id="settings"'), markup.indexOf('</dialog>', markup.indexOf('<dialog id="settings"')))
+    expect(settings).toContain('<input id="theme-dark" type="checkbox" role="switch">Dark theme')
+    expect(settings).toContain('<input id="motion" type="checkbox" role="switch">Background motion')
+    const head = markup.slice(0, markup.indexOf('</head>'))
+    expect(head.indexOf("localStorage.getItem('mc.theme')")).toBeGreaterThan(0)
+    expect(head.indexOf("localStorage.getItem('mc.theme')")).toBeLessThan(head.indexOf('href="/quiet.css"'))
+  })
+
+  test('dark theme overrides the palette tokens on the root', async () => {
+    const quiet = await Bun.file(join(import.meta.dir, '../public/quiet.css')).text()
+    const dark = quiet.slice(quiet.indexOf(':root[data-theme="dark"] {'), quiet.indexOf('}', quiet.indexOf(':root[data-theme="dark"] {')))
+    for (const token of ['color-scheme: dark', '--paper:', '--line:', '--muted:', '--text:', '--field:', '--hi:', '--nui-lights:', '--nui-shadows:', '--studio-dots:']) expect(dark).toContain(token)
   })
 
   test('the shell islands transpile', async () => {

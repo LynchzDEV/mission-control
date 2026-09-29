@@ -26,8 +26,7 @@ const BODY = `
     <symbol id="file-icon" viewBox="0 0 20 20"><path d="M5 2.5h6.5L15 6v11.5H5Z"/><path d="M11.5 2.5V6H15"/></symbol>
     <symbol id="up-icon" viewBox="0 0 20 20"><path d="m5 12 5-5 5 5"/></symbol>
     <symbol id="down-icon" viewBox="0 0 20 20"><path d="m5 8 5 5 5-5"/></symbol>
-    <symbol id="pause-icon" viewBox="0 0 20 20"><path d="M7 5v10M13 5v10"/></symbol>
-    <symbol id="play-icon" viewBox="0 0 20 20"><path d="M7 4.5v11l9-5.5Z"/></symbol>
+    <symbol id="settings-icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><circle cx="10" cy="10" r="5.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
     <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
     <symbol id="open-icon" viewBox="0 0 20 20"><path d="M11 4h5v5M16 4l-7 7M14 12v3.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5H8"/></symbol>
   </svg>
@@ -39,7 +38,7 @@ const BODY = `
       <button type="button" id="new-chat" class="sb-new"><svg><use href="#plus-icon"/></svg>New chat</button>
       <button type="button" class="sb-new" data-live><svg><use href="#terminal-icon"/></svg>New terminal</button>
       <nav id="sidebar-list" class="sb-list" aria-label="Recent chats and terminals"></nav>
-      <div class="sb-foot"><button type="button" id="all-history" class="sb-link"><svg><use href="#history-icon"/></svg>All history</button></div>
+      <div class="sb-foot"><button type="button" id="all-history" class="sb-link"><svg><use href="#history-icon"/></svg>All history</button><button type="button" id="open-settings" class="sb-link" data-dialog="settings"><svg><use href="#settings-icon"/></svg>Settings</button></div>
     </div>
     <div class="sb-strip">
       <button type="button" class="sb-icon" data-sidebar-toggle aria-expanded="false" aria-controls="sidebar" aria-label="Show sidebar" title="Show sidebar"><svg><use href="#sidebar-icon"/></svg></button>
@@ -49,6 +48,7 @@ const BODY = `
       <nav id="sidebar-mini" class="sb-mini-list" aria-label="Live chats and terminals"></nav>
       <span class="sp"></span>
       <button type="button" class="sb-icon" data-click="all-history" aria-label="All history" title="All history"><svg><use href="#history-icon"/></svg></button>
+      <button type="button" class="sb-icon" data-dialog="settings" aria-label="Settings" title="Settings"><svg><use href="#settings-icon"/></svg></button>
     </div>
   </aside>
   <main class="canvas">
@@ -58,10 +58,8 @@ const BODY = `
           <div class="usage-track" id="usage-track"></div>
         </section>
         <button id="open-studio" class="pill" type="button" aria-pressed="false">Studio</button>
-        <button id="open-agents" class="round quiet-control" aria-expanded="false" aria-controls="agents" aria-label="Agents" title="Agents"><svg><use href="#agents-icon"/></svg><span id="agents-count" class="count" hidden></span></button>
         <button id="toggle-flow" class="round quiet-control" aria-label="Flow" title="Flow" aria-expanded="false" aria-controls="flow"><svg><use href="#flow-icon"/></svg></button>
-        <button id="motion" class="round quiet-control" type="button" aria-pressed="false" aria-label="Pause motion" title="Pause motion"><svg><use id="motion-icon" href="#pause-icon"/></svg></button>
-        <button class="round quiet-control" data-dialog="access" aria-label="Access" title="Access"><svg><use href="#lock-icon"/></svg></button>
+        <button id="open-agents" class="round quiet-control" aria-expanded="false" aria-controls="agents" aria-label="Agents" title="Agents"><svg><use href="#agents-icon"/></svg><span id="agents-count" class="count" hidden></span></button>
       </nav>
     </header>
 
@@ -141,7 +139,7 @@ const BODY = `
   </main>
   </div>
 
-  <dialog id="access" class="access-dialog" aria-labelledby="access-title"><header class="dialog-heading"><h2 id="access-title">Access</h2><form method="dialog"><button class="round" aria-label="Close access" autofocus><svg><use href="#close-icon"/></svg></button></form></header><p class="muted">This app answers only on this machine.</p><div class="field-stack"><label>Address<input id="access-host" value="" readonly></label>
+  <dialog id="settings" class="access-dialog" aria-labelledby="settings-title"><header class="dialog-heading"><h2 id="settings-title">Settings</h2><form method="dialog"><button class="round" aria-label="Close settings" autofocus><svg><use href="#close-icon"/></svg></button></form></header><div class="field-stack"><label class="switch-label"><input id="theme-dark" type="checkbox" role="switch">Dark theme</label><label class="switch-label"><input id="motion" type="checkbox" role="switch">Background motion</label></div><p class="muted">This app answers only on this machine.</p><div class="field-stack"><label>Address<input id="access-host" value="" readonly></label>
     <label>API token<span class="token-row"><input id="access-token" value="" readonly aria-describedby="access-token-note"><button type="button" class="text-button" id="access-reveal">Reveal</button><button type="button" class="confirm-morph" id="access-rotate" aria-label="Rotate API token" title="Scripts and the dispatch skill using the current token stop working until they read the new one."><span>Rotate</span><span>Make new token</span></button></span></label><p class="muted" id="access-token-note" role="status">For scripts and the dispatch skill. It grants nothing extra on this machine.</p></div>
     <form id="access-home-form" class="field-stack"><label>Chat home<span class="token-row"><input id="access-home" autocomplete="off" spellcheck="false" placeholder="/Users/you/projects" aria-describedby="access-home-note"><button type="submit" class="text-button">Save</button></span></label><p class="muted" id="access-home-note" role="status"></p></form>
     <div class="field-stack"><label class="switch-label"><input id="access-flow-approval" type="checkbox" role="switch">Ask me before a flow runs</label><p id="access-flow-note" class="muted">When off, flows start as soon as an AI picks them, and big changes apply on their own.</p></div></dialog>
@@ -179,6 +177,7 @@ export function ShellPage(props: ShellProps): string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mission Control</title>
   <link rel="icon" href="data:,">
+  <script>try{if(localStorage.getItem('mc.theme')==='dark')document.documentElement.dataset.theme='dark'}catch{}</script>
   <link rel="stylesheet" href="/vendor/xterm.css">
   <link rel="stylesheet" href="/quiet.css">
   <link rel="stylesheet" href="/js/studio.css">

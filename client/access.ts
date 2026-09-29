@@ -5,7 +5,7 @@ import { errorText, getJson, postJson } from './shared'
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const MASK = '••••••••••••'
 const COPIED_MS = 1600
-const dialog = $('access') as HTMLDialogElement
+const dialog = $('settings') as HTMLDialogElement
 const token = $('access-token') as HTMLInputElement
 const tokenButton = $('access-reveal') as HTMLButtonElement
 const rotate = $('access-rotate') as HTMLButtonElement
@@ -15,6 +15,8 @@ const homeNote = $('access-home-note')
 const tokenNote = $('access-token-note')
 const flowApproval = $('access-flow-approval') as HTMLInputElement
 const flowNote = $('access-flow-note')
+const themeDark = $('theme-dark') as HTMLInputElement
+const THEME_KEY = 'mc.theme'
 let copiedTimer = 0
 
 function label(text: string, copied = false): void {
@@ -88,6 +90,15 @@ flowApproval.onchange = async () => {
   const payload = (await response.json().catch(() => ({}))) as { flowApproval?: boolean; error?: string }
   if (!response.ok || typeof payload.flowApproval !== 'boolean') { flowApproval.checked = !checked; rollText(flowNote, payload.error ?? 'That could not be saved.'); return }
   rollText(flowNote, checked ? 'Flows wait for you.' : 'Flows start on their own.')
+}
+
+themeDark.checked = document.documentElement.dataset.theme === 'dark'
+themeDark.onchange = () => {
+  const theme = themeDark.checked ? 'dark' : 'light'
+  if (theme === 'dark') document.documentElement.dataset.theme = 'dark'
+  else delete document.documentElement.dataset.theme
+  try { localStorage.setItem(THEME_KEY, theme) } catch {}
+  document.dispatchEvent(new CustomEvent('mc:theme'))
 }
 
 dialog.addEventListener('close', () => { hideToken(); tokenNote.textContent = '' })

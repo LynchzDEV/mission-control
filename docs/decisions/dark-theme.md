@@ -1,0 +1,7 @@
+# Dark theme: one stylesheet, token overrides
+
+**Decision:** the theme is a `data-theme="dark"` attribute on `<html>`. `public/quiet.css` holds the light values as custom properties on `:root`, and `:root[data-theme="dark"]` overrides them. The choice is stored in `localStorage` under `mc.theme` (`dark` or `light`; light is the default). An inline script in `<head>` sets the attribute before the stylesheets load, so a dark page never flashes light. The Settings switch (`client/access.ts`) dispatches `mc:theme` on `document`; the canvas backdrop and xterm listen for it and repaint.
+
+**Why tokens over a second stylesheet:** the hard-coded colours were almost all a few repeated values. Turning them into tokens keeps one set of rules, so a layout change cannot drift between themes. Light values are unchanged: a screenshot comparison of welcome, history, Studio, the Studio editor, the drawers and the terminal launcher, using the old and new stylesheet, matched outside the intended sidebar change. One-off pale colours use `var(--token, <old literal>)`, so light keeps the exact old value and only dark defines the token.
+
+**Left as is:** Dockview's theme class has no stylesheet loaded here, because `.mc-panes` makes every Dockview surface transparent, so there is no Dockview theme swap. React Flow edge marker colours stay literal mid-greys, because marker ids are built from the colour string and `var()` breaks them. The GLM logo paints with `currentColor` and shows black through `<img>`, so dark inverts it.
