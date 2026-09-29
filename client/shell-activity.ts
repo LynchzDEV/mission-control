@@ -295,8 +295,8 @@ async function refreshSession(session: Session, request: number): Promise<void> 
   }
   if (extra) rebuildExtra(extra.job.id, readArray(jobsResult.data.jobs) as unknown as ChatAgent[])
   const jobs = (readArray(jobsResult.data.jobs) as WorkJob[]).map(job => ({ ...job, threadRoot: job.threadRoot || job.id }))
-  const linked = scopedWork(buildWork(jobs), session.id, session.cwd).flatMap(item => item.members ?? [])
-  paintAgents(activeAgents(linked, session.id, session.cwd))
+  const linked = scopedWork(buildWork(jobs), session.id).flatMap(item => item.members ?? [])
+  paintAgents(activeAgents(linked, session.id))
 }
 
 function extraSignature(): unknown[] | null {
