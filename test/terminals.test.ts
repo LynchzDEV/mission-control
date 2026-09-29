@@ -336,3 +336,14 @@ test('configured agents can open interactive terminals without changing the buil
   await waitFor(() => registry.replay(started.terminal.id).includes('custom-terminal-ready'))
   expect(await registry.transcriptPath(started.terminal.id)).toBeNull()
 })
+
+test('a terminal opened with the In Session instructions is marked aware of them', async () => {
+  const { createConnectionStore } = await import('../server/agent-connections')
+  await createConnectionStore(configDir).save({ id: 'aware-shell', name: 'Aware shell', adapter: 'acp', command: '/bin/sh', args: [], terminalArgs: [] })
+  const started = await registry.createTerminal({ engine: 'aware-shell', cwd: plain })
+  expect(started.ok).toBe(true)
+  if (!started.ok) return
+  expect(started.terminal.inSessionAware).toBe(true)
+  expect(registry.get(started.terminal.id)?.inSessionAware).toBe(true)
+  registry.kill(started.terminal.id)
+})

@@ -39,6 +39,7 @@ export type TerminalRecord = {
   createdAt: number
   title: string
   sessionId: string | null
+  inSessionAware?: true
   workflow?: { id: string; revision: string; name: string; selectedDefault: boolean }
 }
 
@@ -246,6 +247,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       createdAt: Date.now(),
       title: normalizeTitle(params.title) ?? `${engine.toUpperCase()} · ${basename(cwdCheck.path)}`,
       sessionId,
+      inSessionAware: true,
       workflow,
     }
     const session: Session = { record, pty, buffer: createRingBuffer(), listeners: new Set(), transcript: sessionId === null ? null : claudeTranscriptPath(env.CLAUDE_CONFIG_DIR, cwdCheck.path, sessionId) }

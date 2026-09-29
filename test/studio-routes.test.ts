@@ -283,7 +283,7 @@ test('the owning terminal reports an In Session step with its token; the browser
   const store = createWorkflowStore(dir)
   const cwd = await scratchRepo()
   const graph = await store.get('default')
-  const terminal = { id: 'terminal-a', engine: 'claude', cwd, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, workflow: { id: graph.id, name: graph.name, revision: graph.revision, selectedDefault: true } }
+  const terminal = { id: 'terminal-a', engine: 'claude', cwd, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, inSessionAware: true as const, workflow: { id: graph.id, name: graph.name, revision: graph.revision, selectedDefault: true } }
   runner = createWorkflowRunner({ manager, resolver: fakeEchoResolver, store, requireApproval: async () => true, terminals: { get: id => id === terminal.id ? terminal : undefined } })
   app = new Elysia().use(studioRoutes(store, runner))
   const token = { authorization: 'Bearer fixture-token' }

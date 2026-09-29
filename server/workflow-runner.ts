@@ -186,6 +186,16 @@ function migrateRun(record: WorkflowRun): WorkflowRun {
   return record
 }
 
+const inSession = (node: WorkflowNode) => node.agent.engine === SESSION_ENGINE
+
+function detached(node: WorkflowNode): WorkflowNode {
+  if (!inSession(node)) return node
+  const { engine: _engine, model: _model, ...agent } = node.agent
+  return { ...node, agent }
+}
+
+const sessionClosed = (title: string) => `The session that owned ${title} closed; Retry runs it as an agent`
+
 async function snapshotSkills(node: WorkflowNode, cwd: string): Promise<Array<{ path: string; content: string }>> {
   return Promise.all(node.skills.map(async path => {
     const full = await realpath(isAbsolute(path) ? path : resolve(cwd, path))
@@ -283,15 +293,15 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   function sessionOf(run: Pick<WorkflowRun, 'terminalId' | 'chatId'>): ChatDefault | undefined {
     if (run.terminalId) {
       const terminal = deps.terminals?.get(run.terminalId)
-      return terminal ? { engine: terminal.engine, model: null } : undefined
+      return terminal?.inSessionAware ? { engine: terminal.engine, model: null } : undefined
     }
     const root = run.chatId ? deps.manager.getJob(run.chatId) : undefined
     return root ? { engine: root.engine, model: root.model ?? null } : undefined
   }
-  async function agentsFor(workflow: WorkflowRevision, chatDefault?: ChatDefault, session?: ChatDefault): Promise<Record<string, ResolvedAgent>> {
+  async function agentResolver(): Promise<(node: WorkflowNode, fallback: ChatDefault | undefined) => Promise<ResolvedAgent>> {
     const roles = (await readConfig()).roles
     const connections = createConnectionStore(deps.base)
-    async function resolveAgent(node: WorkflowNode, fallback: ChatDefault | undefined): Promise<ResolvedAgent> {
+    return async (node, fallback) => {
       const role = fallback ?? roles[node.agent.role]
       const engine = node.agent.engine ?? role.engine
       const model = node.agent.model ?? (node.agent.engine ? null : role.model)
@@ -302,12 +312,9 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       const family = (modelFamily(model) ?? ownFamily)?.toLowerCase() ?? null
       return { engine, model, family, ...(connection ? { connection } : {}) }
     }
-    const inSession = (node: WorkflowNode) => node.agent.engine === SESSION_ENGINE
-    const detached = (node: WorkflowNode): WorkflowNode => {
-      if (!inSession(node)) return node
-      const { engine: _engine, model: _model, ...agent } = node.agent
-      return { ...node, agent }
-    }
+  }
+  async function agentsFor(workflow: WorkflowRevision, chatDefault?: ChatDefault, session?: ChatDefault): Promise<Record<string, ResolvedAgent>> {
+    const resolveAgent = await agentResolver()
     async function resolveNode(node: WorkflowNode): Promise<ResolvedAgent> {
       if (!inSession(node) || !session) return resolveAgent(detached(node), chatDefault)
       const { connection: _connection, ...agent } = await resolveAgent({ ...node, agent: { ...detached(node).agent, engine: session.engine, ...(session.model ? { model: session.model } : {}) } }, undefined)
@@ -315,6 +322,10 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     }
     const working = workflow.nodes.filter(node => node.kind !== 'join')
     const agents: Record<string, ResolvedAgent> = Object.fromEntries(await Promise.all(working.map(async node => [node.id, await resolveNode(node)] as const)))
+    const sessionPlanFamilies = new Set(workflow.nodes.filter(node => node.kind === 'plan' && agents[node.id]!.inSession).map(node => agents[node.id]!.family))
+    for (const check of workflow.nodes.filter(node => node.kind === 'verify-plan' && sessionPlanFamilies.has(agents[node.id]!.family))) {
+      agents[check.id] = await resolveAgent(detached(check), undefined)
+    }
     const implementationFamilies = new Set(workflow.nodes.filter(node => node.kind === 'implement').map(node => agents[node.id]!.family))
     const chatDecides = (node: WorkflowNode) => !node.agent.engine || (inSession(node) && !session)
     for (const review of workflow.nodes.filter(node => chatDefault && node.kind === 'review' && chatDecides(node) && implementationFamilies.has(agents[node.id]!.family))) {
@@ -363,6 +374,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const latest = new Map(related.filter(attempt => attempt.result).map(attempt => [attempt.nodeId, attempt]))
     const inputs = [...latest.values()].map(attempt => ({ node: attempt.nodeId, outcome: attempt.result, output: attempt.output, checks: attempt.checks, workspace: attempt.workspace }))
     const agent = run.agents[node.id]!
+    if (agent.inSession && !sessionOf(run)) return block(run, sessionClosed(node.title))
     const policy = agent.inSession ? { ...run.policy, coreRules: sessionRules(mcUrl(), run.id, node.id) } : run.policy
     const prompt = composeWorkflowPrompt(policy, run.workflow, node, run.request, inputs, run.skills[node.id])
     const session = agent.inSession ? { inSession: true as const, sessionNotifiedAt: null, workspaceSnapshot: await workspaceSnapshot(token.workspace) } : {}
@@ -732,6 +744,10 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       return structuredClone(run)
     })
   }
+  async function asAgents(run: WorkflowRun): Promise<void> {
+    const resolveAgent = await agentResolver()
+    for (const node of run.workflow.nodes) if (run.agents[node.id]?.inSession) run.agents[node.id] = await resolveAgent(detached(node), undefined)
+  }
   async function retry(id: string): Promise<WorkflowRun> {
     return exclusive(id, async () => {
       const run = runs.get(id)
@@ -740,6 +756,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       if (run.versions[0]?.state !== 'approved') throw new RunActionError('Approve the flow before retrying', 409)
       if (workspaceBusy(run.cwd, id) || deps.manager.listJobs().some(job => job.workflowRunId === id && job.status === 'running')) throw new Error('Workspace still has running work')
       if (run.attempts.some(attempt => processAlive(attempt.checkPid))) throw new Error('The interrupted acceptance process may still be running; inspect it before retrying')
+      if (!sessionOf(run)) await asAgents(run)
       interrupt(run)
       if (!deps.manager.claimWorkspace(run.cwd, run.id)) throw new Error('Workspace already has running work')
       const taken = claimPaths(run)
@@ -764,6 +781,8 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       if (taken) { await block(run, `Another run owns ${taken}`); continue }
       if (unsettled.some(attempt => kindOf(run, attempt) === 'join')) { await block(run, 'Join interrupted; Retry resumes it'); continue }
       const waiting = unsettled.filter(attempt => attempt.inSession && attempt.status === 'running')
+      const orphaned = sessionOf(run) ? undefined : waiting[0]
+      if (orphaned) { await block(run, sessionClosed(run.workflow.nodes.find(node => node.id === orphaned.nodeId)?.title ?? orphaned.nodeId)); continue }
       const adopted = unsettled.filter(attempt => !waiting.includes(attempt)).map(attempt => ({ attempt, job: deps.manager.listJobs().find(job => job.workflowRunId === run.id && job.workflowAttempt === attempt.number) }))
       const broken = adopted.find(({ attempt, job }) => !job || attempt.status === 'checking')
       if ((!adopted.length && !waiting.length) || broken) { await block(run, `Interrupted transition or acceptance check; inspect evidence${broken?.attempt.checkPid ? ` and process ${broken.attempt.checkPid}` : ''} before retrying`); continue }

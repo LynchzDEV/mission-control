@@ -1117,9 +1117,10 @@ test('with two open paths, a change that drops the second path’s review is big
 async function sessionRunner(agent: EngineResolver = resolver, engine = 'claude', workflow?: Workflow) {
   const store = build(agent, true)
   const graph = workflow ? await store.save(workflow) : await store.get('default')
-  const terminal: TerminalRecord = { id: 'terminal-a', engine, cwd: repo, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, workflow: { id: graph.id, name: graph.name, revision: graph.revision, selectedDefault: true } }
+  const terminal: TerminalRecord = { id: 'terminal-a', engine, cwd: repo, pid: 1, createdAt: 0, title: 'Terminal', sessionId: null, inSessionAware: true, workflow: { id: graph.id, name: graph.name, revision: graph.revision, selectedDefault: true } }
   const sessionSteps: WorkflowRun[] = []
-  const terminals = { get: (id: string) => id === terminal.id ? terminal : undefined }
+  let open = true
+  const terminals = { get: (id: string) => open && id === terminal.id ? terminal : undefined }
   const make = () => createWorkflowRunner({ manager, resolver: agent, store, base: dir, terminals, requireApproval: async () => true, onSessionStep: run => { sessionSteps.push(run) } })
   runner = make()
   const owner = { via: 'conversation' as const, terminalId: terminal.id }
@@ -1127,7 +1128,7 @@ async function sessionRunner(agent: EngineResolver = resolver, engine = 'claude'
     const started = await runner.start({ terminalId: terminal.id, cwd: repo, request: 'Implement the fixture', label: 'fixture' })
     return runner.approve(started.id, owner)
   }
-  return { terminal, sessionSteps, owner, begin, make }
+  return { terminal, sessionSteps, owner, begin, make, close: () => { open = false } }
 }
 const planReport = { outcome: 'pass', summary: 'Planned', evidence: ['plan written'], output: 'THE PLAN' }
 
@@ -1306,4 +1307,53 @@ test('a plan step that changed code cannot pass', async () => {
   expect(runner.get(approved.id)!.attempts[0]!.status).toBe('running')
   await rm(join(repo, 'changed-by-plan.txt'))
   expect((await runner.report(approved.id, 'plan', planReport, owner)).attempts[0]!.status).toBe('settled')
+})
+
+test('a terminal opened before In Session existed gets the plan as an agent job', async () => {
+  const { terminal, begin } = await sessionRunner()
+  delete terminal.inSessionAware
+  const approved = await begin()
+  expect(approved.agents.plan).toEqual({ engine: 'claude', model: null, family: 'claude' })
+  expect(approved.attempts[0]!.inSession).toBeUndefined()
+  expect((await finished(approved.id)).status).toBe('done')
+})
+
+test('a step whose session closed before it started blocks, and Retry runs it as an agent', async () => {
+  const { sessionSteps, close } = await sessionRunner()
+  const started = await runner.start({ terminalId: 'terminal-a', cwd: repo, request: 'Implement the fixture', label: 'fixture' })
+  expect(started.agents.plan!.inSession).toBe(true)
+  close()
+  const approved = await runner.approve(started.id, { via: 'drawer' })
+  expect(approved.status).toBe('blocked')
+  expect(approved.error).toBe('The session that owned Plan closed; Retry runs it as an agent')
+  expect(approved.attempts).toHaveLength(0)
+  expect(sessionSteps).toHaveLength(0)
+  const retried = await runner.retry(started.id)
+  expect(retried.agents.plan).toMatchObject({ engine: 'claude', family: 'claude' })
+  expect(retried.agents.plan!.inSession).toBeUndefined()
+  expect(retried.attempts[0]!.jobId).not.toBeNull()
+  expect((await finished(started.id)).status).toBe('done')
+})
+
+test('a restart after the owning session closed blocks the waiting step', async () => {
+  const { begin, make, close } = await sessionRunner()
+  const approved = await begin()
+  close()
+  runner = make()
+  await runner.recover()
+  const recovered = runner.get(approved.id)!
+  expect(recovered.status).toBe('blocked')
+  expect(recovered.error).toBe('The session that owned Plan closed; Retry runs it as an agent')
+})
+
+test('a chat run plans In Session on the chat root AI, never the engine it names, and checks the plan on another family', async () => {
+  build(resolver, true)
+  const root = await chatRoot('claude')
+  const named = await runner.start({ cwd: repo, request: 'Ship it', label: 'ship', chat: root.id, engine: 'glm' })
+  expect(named.agents.plan).toEqual({ engine: 'claude', model: null, family: 'claude', inSession: true })
+  expect(named.agents['verify-plan']).toMatchObject({ engine: 'glm', family: 'glm' })
+  await runner.stop(named.id)
+  const plain = await runner.start({ cwd: repo, request: 'Ship it', label: 'ship', chat: root.id })
+  expect(plain.agents.plan).toMatchObject({ engine: 'claude', inSession: true })
+  expect(plain.agents['verify-plan']).toMatchObject({ engine: 'codex', family: 'gpt' })
 })
