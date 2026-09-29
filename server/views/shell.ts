@@ -151,7 +151,7 @@ const BODY = `
     <form id="live-create" class="field-stack" hidden>
       <label>Workflow<select id="live-workflow" disabled></select></label>
       <div id="live-engine-fields" class="launcher-fields"><label>Engine<select id="live-engine"></select></label><label>Model<input id="live-model" list="live-models" placeholder="Engine default" maxlength="100" autocomplete="off"><datalist id="live-models"></datalist></label></div>
-      <label>Working directory<input id="live-cwd" placeholder="/path/to/your/project" required autocomplete="off"></label>
+      <label>Working directory<input id="live-cwd" list="live-cwd-recents" placeholder="/path/to/your/project" required autocomplete="off"><datalist id="live-cwd-recents"></datalist></label>
       <button id="live-submit" class="pill">Open terminal</button>
     </form>
 

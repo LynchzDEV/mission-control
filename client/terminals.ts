@@ -437,6 +437,7 @@ async function load(restore = false): Promise<void> {
 export async function openTerminal(restore = false, cwd?: string): Promise<void> {
   if (opening) return
   opening = true
+  ;($('live-cwd-recents') as HTMLDataListElement).replaceChildren(...readRecentDirectories(stored(recentKey)).map(cwd => new Option(cwd, cwd)))
   if (!launch.open) launch.showModal()
   try { await load(restore); if (cwd) cwdInput.value = cwd } finally { opening = false }
 }
