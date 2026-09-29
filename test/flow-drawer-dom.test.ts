@@ -468,7 +468,7 @@ test('a step waiting In Session shows its own state on the card and in the banne
   stream.send({ runs: [waitingInSession('S1')], jobs: [] })
   const card = document.querySelector<HTMLElement>('.flow-step[data-step="plan"]')!
   expect(card.dataset.state).toBe('session')
-  expect(card.querySelector('small')!.textContent).toMatch(/^In Session · Claude · \d+s$/)
+  expect(card.querySelector('small')!.textContent).toMatch(/^In Session · \d+s$/)
   expect(document.querySelector<HTMLElement>('#flow-banner .flow-mark')!.dataset.state).toBe('session')
   expect(bannerText()).toBe('Plan is being done In Session by Claude. Talk to it here; the flow continues when it reports the step.')
   expect(buttonNamed('Remind Claude')).toBeDefined()

@@ -969,3 +969,5 @@ a.pill:hover { color: var(--accent); }
 .sb-shell:not(.collapsed) .sb-open > *, .sb-shell.collapsed .sb-strip > * { animation: sb-in 220ms cubic-bezier(.22, 1, .36, 1) 60ms both; }
 @keyframes sb-in { from { opacity: 0; transform: translateX(-6px); } }
 @media (prefers-reduced-motion: reduce) { .sb-shell { transition: none; } .sb-shell .sb-open > *, .sb-shell .sb-strip > * { animation: none; } }
+
+#flow-studio { gap: 0.3em; }

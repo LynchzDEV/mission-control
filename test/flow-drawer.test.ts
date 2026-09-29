@@ -103,9 +103,9 @@ const inSession: RunView = {
 
 test('a step waiting In Session names the AI doing it, ticks like a working step and keeps its engine', () => {
   const plan = stepsFor(inSession, 90_000).find(step => step.id === 'plan')!
-  expect([plan.state, plan.detail, plan.engine, plan.since]).toEqual(['session', 'In Session · Claude · 1m 30s', 'claude', 0])
+  expect([plan.state, plan.detail, plan.engine, plan.since]).toEqual(['session', 'In Session · 1m 30s', 'claude', 0])
   expect(plan.jobId).toBeUndefined()
-  expect(stepsFor({ ...inSession, attempts: [{ ...inSession.attempts[0]!, startedAt: 30_000 }] }, 42_000).find(step => step.id === 'plan')!.detail).toBe('In Session · Claude · 12s')
+  expect(stepsFor({ ...inSession, attempts: [{ ...inSession.attempts[0]!, startedAt: 30_000 }] }, 42_000).find(step => step.id === 'plan')!.detail).toBe('In Session · 12s')
 })
 
 test('a step waiting In Session counts as running', () => {

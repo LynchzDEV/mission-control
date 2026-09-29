@@ -114,7 +114,7 @@ function attemptStatus(run: RunView, engine: string, tries: RunAttemptView[], no
   const retry = tries.length > 1 ? `Try ${tries.length} · ` : ''
   if (latest.status !== 'settled') {
     if (!isLive(run)) return { state: 'failed', detail: run.status === 'stopped' ? 'Stopped' : 'Did not finish' }
-    if (latest.inSession) return { state: 'session', detail: `In Session · ${providerName(engine)} · ${elapsed(now - latest.startedAt)}`, since: latest.startedAt }
+    if (latest.inSession) return { state: 'session', detail: `In Session · ${elapsed(now - latest.startedAt)}`, since: latest.startedAt }
     const subAgents = latest.subAgents ?? 0
     const doing = [tries.length > 1 ? `Try ${tries.length}` : '', subAgents > 0 ? `${subAgents} sub-agent${subAgents === 1 ? '' : 's'}` : ''].filter(Boolean)
     return { state: 'active', detail: `${(doing.length ? doing : ['Working']).join(' · ')} · ${elapsed(now - latest.startedAt)}`, since: latest.startedAt }
