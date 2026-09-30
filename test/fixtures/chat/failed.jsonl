@@ -1,0 +1,5 @@
+{"type":"system","subtype":"init","session_id":"fixture-failed","model":"fake-model"}
+{"type":"assistant","message":{"id":"msg_1","content":[{"type":"tool_use","id":"tu_1","name":"Read","input":{"file_path":"/tmp/demo/package.json"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu_1","content":"{\n  \"name\": \"demo\",\n  \"scripts\": {\n    \"test\": \"bun test\"\n  }\n}\n"}]}}
+{"type":"assistant","message":{"id":"msg_2","content":[{"type":"text","text":"I ran out of capacity before finishing."}]}}
+{"type":"result","subtype":"error_during_execution","is_error":true,"result":"API Error: 529 overloaded\nretry later"}

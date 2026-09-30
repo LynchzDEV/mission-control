@@ -1,0 +1,7 @@
+{"type":"system","subtype":"init","session_id":"fixture-slow","model":"fake-model"}
+{"type":"assistant","message":{"id":"msg_1","content":[{"type":"tool_use","id":"tu_1","name":"Read","input":{"file_path":"/tmp/demo/client/chat.ts"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu_1","content":"line one of the slow fixture\nline two\nline three\n"}]}}
+{"type":"assistant","message":{"id":"msg_2","content":[{"type":"tool_use","id":"tu_2","name":"Bash","input":{"command":"bun test","description":"Run the whole suite"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu_2","content":"bun test v1.2.19 (9c68abdb)\n\u001b[32m(pass) everything passed [1.20s]\u001b[0m\n 1 pass\n 0 fail\n"}]}}
+{"type":"assistant","message":{"id":"msg_3","content":[{"type":"text","text":"The slow fixture finished after its wait."}]}}
+{"type":"result","subtype":"success","is_error":false,"result":"MC_RESULT {\"outcome\":\"pass\",\"summary\":\"Fixture slow turn finished\",\"evidence\":[\"fixture:slow\"]}"}

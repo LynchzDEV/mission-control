@@ -55,6 +55,18 @@ describe('turn steps and running label', () => {
   })
 })
 
+describe('turn tool cards', () => {
+  test('a tool with a result is done while an empty one inside the same running turn is running', () => {
+    const running = [
+      { role: 'user', kind: 'prompt', jobId: 't2', ts: 5000, text: 'Hi' },
+      { role: 'assistant', kind: 'tool', jobId: 't2', title: 'Read', detail: 'a.ts', input: '', result: 'x', resultIsError: false },
+      { role: 'assistant', kind: 'tool', jobId: 't2', title: 'Bash', detail: 'bun test', input: '', result: '', resultIsError: false },
+    ]
+    const cards = turnsFrom(running as never, jobs as never)[0]?.cards
+    expect(cards?.map(card => [card.verb, card.status])).toEqual([['Read', 'done'], ['Bash', 'running']])
+  })
+})
+
 describe('workedLine', () => {
   test('working while running, worked with tool count after', () => {
     const [first, second] = turnsFrom(thread as never, jobs as never)

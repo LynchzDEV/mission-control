@@ -1,3 +1,5 @@
+import { toolCard, type ToolCard } from './tool-cards'
+
 export type ThreadMessage =
   | { role: 'user'; kind: 'prompt'; jobId: string; ts: number; text: string }
   | { role: 'assistant'; kind: 'thinking' | 'text'; jobId: string; text: string; partial?: true }
@@ -6,7 +8,7 @@ export type ThreadMessage =
 
 export type TurnJob = { id: string; status: string; startedAt: number; endedAt: number | null; source?: 'user' | 'agent' }
 export type AgentJob = { id: string; engine: string; model: string | null; label: string; reason?: string; status: string; startedAt: number; endedAt: number | null; chatTurn?: string; chatId?: string; reviewOf: string | null; reviewedAt: number | null; landedAt?: number | null; stoppedAt?: number | null; currentActivity?: string | null; diffStat: string | null }
-export type Turn = { id: string; source: 'user' | 'agent'; prompt: string; text: string; tools: number; edits: string[]; steps: string[]; thinking: boolean; started: number; ended: number | null; running: boolean }
+export type Turn = { id: string; source: 'user' | 'agent'; prompt: string; text: string; tools: number; edits: string[]; steps: string[]; cards: ToolCard[]; thinking: boolean; started: number; ended: number | null; running: boolean }
 export type TeamState = 'running' | 'reviewing' | 'done' | 'landed' | 'needs-you' | 'retried' | 'stopped'
 export type TeamRow = { id: string; engine: string; model: string | null; label: string; reason: string; state: TeamState; activity: string; started: number; ended: number | null }
 
@@ -23,14 +25,14 @@ export function turnsFrom(thread: readonly ThreadMessage[], jobs: readonly TurnJ
   for (const message of thread) {
     if (message.kind === 'prompt') {
       const job = jobs.find(item => item.id === message.jobId)
-      turns.push({ id: message.jobId, source: job?.source === 'agent' ? 'agent' : 'user', prompt: message.text, text: '', tools: 0, edits: [], steps: [], thinking: false, started: job?.startedAt ?? message.ts, ended: job?.endedAt ?? null, running: job?.status === 'running' })
+      turns.push({ id: message.jobId, source: job?.source === 'agent' ? 'agent' : 'user', prompt: message.text, text: '', tools: 0, edits: [], steps: [], cards: [], thinking: false, started: job?.startedAt ?? message.ts, ended: job?.endedAt ?? null, running: job?.status === 'running' })
       continue
     }
     const turn = turns[turns.length - 1]
     if (!turn || turn.id !== message.jobId) continue
     turn.thinking = turn.running && message.kind === 'thinking' && message.partial === true
     if (message.kind === 'text') turn.text = turn.text ? `${turn.text}\n\n${message.text}` : message.text
-    else if (message.kind === 'tool') { turn.tools += 1; turn.steps.push(stepText(message.title, message.detail)); if (EDIT_TOOLS.includes(message.title) && message.detail) turn.edits.push(message.detail) }
+    else if (message.kind === 'tool') { turn.tools += 1; turn.steps.push(stepText(message.title, message.detail)); turn.cards.push(toolCard(message, turn.running, turn.cards.length)); if (EDIT_TOOLS.includes(message.title) && message.detail) turn.edits.push(message.detail) }
   }
   return turns
 }

@@ -4,6 +4,7 @@ import { errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
 import { createOutcomeStrip } from './outcome-strip'
 import { chatSignal, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { ansiHtml, capOutput, type ToolCard, type ToolCardKind } from './tool-cards'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const RUNNING_POLL_MS = 700
@@ -21,6 +22,7 @@ composer.before(outcomes.element)
 const stored = (key: string): string | null => { try { return localStorage.getItem(key) } catch { return null } }
 
 let root: string | null = null
+let rootCwd: string | null = null
 let running = false
 let pollTimer = 0
 let tickTimer = 0
@@ -183,6 +185,164 @@ function rawAgentRow(turn: Turn): HTMLElement {
   return row
 }
 
+const KIND_ICONS: Record<ToolCardKind, string> = { read: 'file-icon', search: 'search-icon', edit: 'pencil-icon', bash: 'terminal-icon', agent: 'agents-icon', other: 'code-icon' }
+const COPY_FLASH_MS = 1500
+const baseName = (path: string): string => path.replace(/\/+$/, '').split('/').pop() || path
+
+function copyButton(text: string): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'text-button copy-button'
+  button.insertAdjacentHTML('afterbegin', '<svg><use href="#file-icon"/></svg>')
+  const label = document.createTextNode('Copy')
+  button.append(label)
+  let timer = 0
+  const flash = (note: string): void => {
+    label.data = note
+    button.classList.add('copied')
+    clearTimeout(timer)
+    timer = window.setTimeout(() => { label.data = 'Copy'; button.classList.remove('copied') }, COPY_FLASH_MS)
+  }
+  button.onclick = () => {
+    try {
+      void navigator.clipboard.writeText(text).then(() => flash('Copied'), () => flash('Copy failed'))
+    } catch {
+      flash('Copy failed')
+    }
+  }
+  return button
+}
+
+function termOut(text: string): HTMLElement {
+  const out = document.createElement('pre')
+  out.className = 'term-out'
+  out.innerHTML = ansiHtml(capOutput(text))
+  return out
+}
+
+function toolSummary(card: ToolCard): HTMLElement {
+  const summary = document.createElement('summary')
+  summary.insertAdjacentHTML('afterbegin', '<svg class="tool-caret"><use href="#chevron-icon"/></svg>')
+  summary.insertAdjacentHTML('beforeend', `<svg><use href="#${KIND_ICONS[card.kind]}"/></svg>`)
+  const verb = document.createElement('span'); verb.className = 'tool-verb'; verb.textContent = card.verb
+  const target = document.createElement('span'); target.className = 'tool-target'; target.textContent = card.target
+  const status = document.createElement('span'); status.className = 'tool-status'
+  if (card.status === 'done') {
+    status.append(card.summary)
+    status.insertAdjacentHTML('beforeend', '<svg><use href="#check-icon"/></svg>')
+  } else {
+    status.insertAdjacentHTML('afterbegin', '<i class="tool-dot"></i>')
+    status.append(card.summary)
+  }
+  summary.append(verb, target, status)
+  if (card.errorLine !== null) {
+    const error = document.createElement('span'); error.className = 'tool-err'; error.textContent = card.errorLine
+    summary.append(error)
+  }
+  return summary
+}
+
+function bashHead(card: ToolCard): HTMLElement {
+  const head = document.createElement('div')
+  head.className = 'cmd-head'
+  const line = document.createElement('span'); line.className = 'cmd-line'
+  const dollar = document.createElement('b'); dollar.textContent = '$'
+  line.append(dollar, ` ${card.command ?? ''}`)
+  head.append(line)
+  if (rootCwd !== null) {
+    const tag = document.createElement('span'); tag.className = 'cmd-tag'
+    tag.insertAdjacentHTML('afterbegin', '<svg><use href="#folder-icon"/></svg>')
+    tag.append(baseName(rootCwd))
+    head.append(tag)
+  }
+  if (card.exitCode !== null) {
+    const badge = document.createElement('span'); badge.className = 'exit-badge'
+    badge.dataset.tone = card.exitCode === 0 ? 'ok' : 'fail'
+    badge.textContent = `exit ${card.exitCode}`
+    head.append(badge)
+  }
+  head.append(copyButton(card.command ?? ''))
+  return head
+}
+
+function toolDetail(card: ToolCard): HTMLElement | null {
+  const detail = document.createElement('div')
+  detail.className = 'tool-detail'
+  if (card.kind === 'bash') detail.append(bashHead(card), termOut(card.output))
+  else if (card.output !== '') detail.append(termOut(card.output))
+  return detail.childElementCount === 0 ? null : detail
+}
+
+const rowSignature = (card: ToolCard): string => JSON.stringify([card.status, card.summary, card.errorLine, card.exitCode, card.command, card.output])
+
+function toolRow(card: ToolCard): HTMLDetailsElement {
+  const row = document.createElement('details')
+  row.className = 'tool-row'
+  row.dataset.key = card.key
+  row.dataset.status = card.status
+  row.dataset.sig = rowSignature(card)
+  row.append(toolSummary(card))
+  const detail = toolDetail(card)
+  if (detail !== null) row.append(detail)
+  return row
+}
+
+type RowState = { open: boolean; scrollTop: number }
+
+function rowScrollOf(row: HTMLDetailsElement): number {
+  const steps = row.closest<HTMLDetailsElement>('details.turn-steps')
+  const out = row.querySelector<HTMLElement>('.term-out')
+  return row.open && (steps === null || steps.open) && out !== null ? out.scrollTop : Number(row.dataset.scroll ?? 0)
+}
+
+function setRowScroll(row: HTMLDetailsElement, scrollTop: number): void {
+  const out = row.querySelector<HTMLElement>('.term-out')
+  if (out === null || scrollTop === 0) return
+  const steps = row.closest<HTMLDetailsElement>('details.turn-steps')
+  if (row.open && (steps === null || steps.open)) {
+    out.scrollTop = scrollTop
+    return
+  }
+  row.dataset.scroll = String(scrollTop)
+  const host = row.open && steps !== null ? steps : row
+  host.addEventListener('toggle', () => {
+    if (host.open) {
+      out.scrollTop = Number(row.dataset.scroll ?? 0)
+      delete row.dataset.scroll
+    }
+  }, { once: true })
+}
+
+function collectRowStates(reply: HTMLElement): Map<string, RowState> {
+  const states = new Map<string, RowState>()
+  for (const row of reply.querySelectorAll<HTMLDetailsElement>('.tool-row')) {
+    states.set(row.dataset.key ?? '', { open: row.open, scrollTop: rowScrollOf(row) })
+  }
+  return states
+}
+
+function paintToolList(list: HTMLElement, cards: ToolCard[]): void {
+  const rows = new Map([...list.children].map(row => [(row as HTMLElement).dataset.key ?? '', row as HTMLDetailsElement]))
+  for (const card of cards) {
+    const row = rows.get(card.key)
+    if (row === undefined) {
+      list.append(toolRow(card))
+      continue
+    }
+    rows.delete(card.key)
+    const sig = rowSignature(card)
+    if (row.dataset.sig === sig) continue
+    const saved = rowScrollOf(row)
+    row.dataset.status = card.status
+    row.dataset.sig = sig
+    row.replaceChildren(toolSummary(card))
+    const detail = toolDetail(card)
+    if (detail !== null) row.append(detail)
+    setRowScroll(row, saved)
+  }
+  for (const row of rows.values()) row.remove()
+}
+
 function activityNode(turn: Turn): HTMLElement {
   const finishedWithSteps = !turn.running && turn.steps.length > 0
   const line = document.createElement(finishedWithSteps ? 'summary' : 'p')
@@ -190,9 +350,10 @@ function activityNode(turn: Turn): HTMLElement {
   line.dataset.running = String(turn.running)
   line.textContent = workedLine(turn, Date.now())
   if (!finishedWithSteps) return line
-  const details = document.createElement('details'); details.className = 'turn-steps'
-  const list = document.createElement('ol'); list.append(...turn.steps.map(step => Object.assign(document.createElement('li'), { textContent: step })))
-  details.append(line, list)
+  const details = document.createElement('details'); details.className = 'turn-steps tool-steps'
+  const card = document.createElement('div'); card.className = 'tool-card'
+  paintToolList(card, turn.cards)
+  details.append(line, card)
   return details
 }
 
@@ -215,6 +376,8 @@ function patchReply(reply: HTMLElement, turn: Turn): boolean {
   const tick = reply.querySelector<HTMLElement>('.step-tick')
   const step = turn.steps.at(-1)
   if (tick && step) fadeStep(tick, step)
+  const card = reply.querySelector<HTMLElement>('.tool-card')
+  if (card !== null) paintToolList(card, turn.cards)
   if (reply.dataset.text === String(turn.text.length)) return false
   reply.dataset.text = String(turn.text.length)
   growText(reply.querySelector('.md')!, turn.text)
@@ -239,9 +402,13 @@ function assistantRow(turn: Turn, rows: TeamRow[], project: string | null): HTML
   row.querySelector('time')!.textContent = new Date(turn.started).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const body = row.querySelector('.msg-body')!
   body.append(activityNode(turn))
-  if (turn.running) { const tick = document.createElement('p'); tick.className = 'step-tick'; tick.textContent = tick.dataset.step = turn.steps.at(-1) ?? ''; body.append(tick) }
+  if (turn.running) {
+    const tick = document.createElement('p'); tick.className = 'step-tick'; tick.textContent = tick.dataset.step = turn.steps.at(-1) ?? ''
+    const card = document.createElement('div'); card.className = 'tool-card'
+    paintToolList(card, turn.cards)
+    body.append(tick, card)
+  }
   const md = document.createElement('div'); md.className = 'md'; md.append(renderMarkdown(turn.text)); body.append(md)
-  for (const path of turn.edits) { const card = document.createElement('article'); card.className = 'edit-card'; card.append('Edited directly · '); const code = document.createElement('code'); code.textContent = path; card.append(code); body.append(card) }
   if (rows.length) body.append(teamCard(rows, project))
   return row
 }
@@ -255,6 +422,7 @@ function paint(turns: Turn[], project: string | null): void {
   const atBottom = stage.scrollHeight - stage.scrollTop - stage.clientHeight < 80
   const firstPaint = messages.childElementCount === 0
   const ordered: HTMLElement[] = []
+  const rebuilt: { reply: HTMLElement; rowStates: Map<string, RowState> }[] = []
   let grew = false
   shownTurns = turns
   for (const turn of turns) {
@@ -267,15 +435,31 @@ function paint(turns: Turn[], project: string | null): void {
     let reply = existing.get(`${turn.id}:reply`)
     if (!reply || reply.dataset.sig !== sig) {
       const wasOpen = reply?.querySelector<HTMLDetailsElement>('.turn-steps')?.open === true
+      const rowStates = reply ? collectRowStates(reply) : new Map<string, RowState>()
       reply = assistantRow(turn, rows, project)
       Object.assign(reply.dataset, { turn: turn.id, part: 'reply', sig, text: String(turn.text.length) })
       const steps = reply.querySelector<HTMLDetailsElement>('.turn-steps')
       if (steps) steps.open = wasOpen
+      for (const row of reply.querySelectorAll<HTMLDetailsElement>('.tool-row')) {
+        const state = rowStates.get(row.dataset.key ?? '')
+        if (state) row.open = state.open
+      }
+      rebuilt.push({ reply, rowStates })
     } else if (patchReply(reply, turn)) grew = true
     ordered.push(reply)
   }
   const reordered = ordered.some((node, index) => messages.children[index] !== node) || messages.children.length !== ordered.length
   if (reordered) messages.replaceChildren(...ordered)
+  if (rebuilt.length > 0) {
+    requestAnimationFrame(() => {
+      for (const { reply, rowStates } of rebuilt) {
+        for (const row of reply.querySelectorAll<HTMLDetailsElement>('.tool-row')) {
+          const state = rowStates.get(row.dataset.key ?? '')
+          if (state) setRowScroll(row, state.scrollTop)
+        }
+      }
+    })
+  }
   if (atBottom && (reordered || grew)) toBottom(firstPaint ? 'auto' : 'smooth')
 }
 
@@ -286,10 +470,12 @@ async function refresh(): Promise<void> {
   if (mine !== generation || !root) return
   if (!thread.ok) { chatError(`Could not reach the chat: ${errorText(thread)}. Retrying…`); schedule(); return }
   clearChatError()
-  const all = readArray(jobs.ok ? jobs.data.jobs : []) as unknown as Array<AgentJob & TurnJob & { threadRoot?: string; purpose?: string; project?: string | null }>
+  const all = readArray(jobs.ok ? jobs.data.jobs : []) as unknown as Array<AgentJob & TurnJob & { threadRoot?: string; purpose?: string; project?: string | null; cwd?: string | null }>
   const turnsJobs = all.filter(job => job.threadRoot === root)
   agents = all.filter(job => job.purpose !== 'chat')
-  const project = all.find(job => job.id === root)?.project ?? null
+  const rootJob = all.find(job => job.id === root)
+  rootCwd = rootJob?.cwd ?? null
+  const project = rootJob?.project ?? null
   paint(turnsFrom(readArray(thread.data.messages) as unknown as ThreadMessage[], turnsJobs), project)
   setRunning(thread.data.running === true)
   paintQueue(queue.ok ? readArray(queue.data.items) as unknown as QueuedItem[] : [])
@@ -359,7 +545,7 @@ async function startChat(prompt: string): Promise<void> {
 
 async function sendMessage(prompt: string): Promise<void> {
   show('conversation')
-  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], thinking: false, started: Date.now(), ended: null, running: true })); setRunning(true); toBottom(); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
+  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], cards: [], thinking: false, started: Date.now(), ended: null, running: true })); setRunning(true); toBottom(); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
   const result = await postJson(`/api/jobs/${encodeURIComponent(root)}/reply`, { message: prompt })
   if (!result.ok) { chatError(errorText(result)); return }
   if (result.status !== 202) setRunning(true)
