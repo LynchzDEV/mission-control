@@ -1,0 +1,7 @@
+{"type":"system","subtype":"init","session_id":"00000000-0000-4000-8000-000000000001","slash_commands":[],"tools":["Bash","Read","Edit"],"resumeSupported":true}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Checking the tree."}}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_fake_tools_1","name":"Bash","input":{"command":"ls -la","description":"List the working tree"}}]},"uuid":"aaaaaaaa-0000-4000-8000-000000000001","parent_tool_use_id":null}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_fake_tools_1","content":"total 0\ndemo","is_error":false}]},"parent_tool_use_id":null}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The tree is clean."}]},"uuid":"aaaaaaaa-0000-4000-8000-000000000002","parent_tool_use_id":null}
+{"type":"result","subtype":"success","is_error":false,"result":"The tree is clean.","num_turns":1,"duration_ms":10,"session_id":"00000000-0000-4000-8000-000000000001"}

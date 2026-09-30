@@ -1,0 +1,9 @@
+{"type":"system","subtype":"init","session_id":"00000000-0000-4000-8000-000000000004","slash_commands":[],"tools":[],"resumeSupported":true}
+{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Think"}}}
+{"fake":"sleep","ms":700}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ing about it."}}}
+{"fake":"sleep","ms":700}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Thinking about it."}]},"uuid":"dddddddd-0000-4000-8000-000000000001","parent_tool_use_id":null}
+{"fake":"sleep","ms":700}
+{"type":"result","subtype":"success","is_error":false,"result":"Thinking about it.","num_turns":1,"duration_ms":10,"session_id":"00000000-0000-4000-8000-000000000004"}

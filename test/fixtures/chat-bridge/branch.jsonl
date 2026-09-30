@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"00000000-0000-4000-8000-000000000006","slash_commands":[],"tools":[],"resumeSupported":true}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"First reply, ready to branch from here."}]},"uuid":"ffffffff-0000-4000-8000-000000000001","parent_tool_use_id":null}
+{"type":"result","subtype":"success","is_error":false,"result":"First reply, ready to branch from here.","num_turns":1,"duration_ms":10,"session_id":"00000000-0000-4000-8000-000000000006"}
