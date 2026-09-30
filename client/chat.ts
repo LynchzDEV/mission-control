@@ -3,10 +3,10 @@ import { MORPH_EASE, MORPH_MS, blendColor, morph, reveal, rollText } from './mor
 import { copyButton, errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
 import { createOutcomeStrip } from './outcome-strip'
-import { chatModeChoice, chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, mentionMarks, mentionToken, parseAgentReport, runningLabel, slashQuery, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type ChatCommand, type HistoryItem, type PermissionView, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { chatModeChoice, chatModeKey, chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, mentionMarks, mentionToken, parseAgentReport, runningLabel, slashQuery, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type ChatCommand, type HistoryItem, type PermissionView, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 import { ansiHtml, capOutput, type ToolCard, type ToolCardKind } from './tool-cards'
 import { collectRowStates, rowScrollOf, setRowScroll, trackRowScroll, type RowState } from './tool-row-scroll'
-import { createLiveFeed, type LiveFeed } from './live-text'
+import { createLiveFeed, steadyLiveText, type LiveFeed } from './live-text'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const RUNNING_POLL_MS = 700
@@ -154,10 +154,14 @@ let pendingFrom: { turnId: string; mode: 'replace' | 'after' } | null = null
 
 const leafKey = (): string | null => (root === null ? null : `mc.chat.leaf.${root}`)
 
-function setLeaf(leaf: string): void {
+function storeLeaf(leaf: string): void {
   const key = leafKey()
   if (key === null) return
   try { localStorage.setItem(key, leaf) } catch {}
+}
+
+function setLeaf(leaf: string): void {
+  storeLeaf(leaf)
   void refresh()
 }
 
@@ -512,17 +516,28 @@ const permissionIcon = (toolName: string): string => PERMISSION_ICONS[toolName] 
 const PERMISSION_STATE_TEXT: Record<string, string> = { allow_once: 'allowed once', allow_always: 'always allowed', deny: 'denied', cancelled: 'cancelled' }
 const answering = new Set<string>()
 
+function setPermissionButtons(requestId: string, disabled: boolean): void {
+  for (const button of messages.querySelectorAll<HTMLButtonElement>(`button[data-request="${CSS.escape(requestId)}"]`)) button.disabled = disabled
+}
+
+function settleAnswered(turns: Turn[]): void {
+  for (const permission of turns.flatMap(turn => turn.permissions)) {
+    if (permission.state !== 'pending') answering.delete(permission.requestId)
+  }
+}
+
 async function answerPermission(turnId: string, requestId: string, decision: string): Promise<void> {
   if (answering.has(requestId)) return
   answering.add(requestId)
+  setPermissionButtons(requestId, true)
   const result = await postJson(`/api/jobs/${encodeURIComponent(turnId)}/permission`, { requestId, decision })
   if (!result.ok) {
     answering.delete(requestId)
+    setPermissionButtons(requestId, false)
     chatError(`Could not answer the request: ${errorText(result)}`)
     return
   }
   await refresh()
-  answering.delete(requestId)
 }
 
 function permissionButton(turnId: string, permission: PermissionView, label: string, className: string, decision: string): HTMLButtonElement {
@@ -769,6 +784,7 @@ function paint(turns: Turn[], project: string | null): void {
   const rebuilt: { reply: HTMLElement; rowStates: Map<string, RowState> }[] = []
   let grew = false
   shownTurns = turns
+  settleAnswered(turns)
   for (const turn of turns) {
     const rows = teamRows(agents, turn.id)
     if (turn.branchFrom !== null) ordered.push(existing.get(`${turn.id}:branch`) ?? branchDivider(turn))
@@ -786,7 +802,11 @@ function paint(turns: Turn[], project: string | null): void {
       const rowStates = reply ? collectRowStates(reply) : new Map<string, RowState>()
       reply = assistantRow(turn, rows, project)
       Object.assign(reply.dataset, { turn: turn.id, part: 'reply', sig, text: String(turn.text.length) })
-      if (turn.running && liveSource !== null) reply.dataset.live = '1'
+      const shown = liveShown.get(turn.id)
+      if (turn.running && liveSource !== null) {
+        reply.dataset.live = '1'
+        if (shown !== undefined) reply.querySelector('.md')!.replaceChildren(renderMarkdown(steadyLiveText(shown, turn.text)))
+      }
       const steps = reply.querySelector<HTMLDetailsElement>('.turn-steps')
       if (steps) steps.open = wasOpen
       for (const row of reply.querySelectorAll<HTMLDetailsElement>('.tool-row')) {
@@ -827,7 +847,10 @@ async function refresh(): Promise<void> {
   const turnsJobs = all.filter(job => job.threadRoot === root)
   agents = all.filter(job => job.purpose !== 'chat')
   const rootJob = all.find(job => job.id === root)
-  if (typeof rootJob?.engine === 'string' && rootJob.engine !== '') document.body.dataset.chatEngine = rootJob.engine
+  if (typeof rootJob?.engine === 'string' && rootJob.engine !== '' && document.body.dataset.chatEngine !== rootJob.engine) {
+    document.body.dataset.chatEngine = rootJob.engine
+    dispatchEvent(new Event('quiet:chat-engine'))
+  }
   rootCwd = rootJob?.cwd ?? null
   const project = rootJob?.project ?? null
   threadVersions = (thread.data.versions ?? {}) as Record<string, VersionEntry>
@@ -880,6 +903,8 @@ let liveSource: EventSource | null = null
 let liveFeed: LiveFeed | null = null
 let liveFrame = 0
 let liveRefreshTimer = 0
+const liveShown = new Map<string, string>()
+let liveRendered = new WeakMap<Element, string>()
 
 function scheduleLiveRefresh(): void {
   clearTimeout(liveRefreshTimer)
@@ -906,7 +931,12 @@ function paintLiveFrame(): void {
   const md = reply?.querySelector('.md')
   if (md === undefined || md === null) return
   reply!.dataset.live = '1'
-  growText(md, liveFeed.text(turn.text))
+  const text = steadyLiveText(liveShown.get(turn.id), liveFeed.text(turn.text))
+  liveShown.set(turn.id, text)
+  if (liveRendered.get(md) !== text) {
+    growText(md, text)
+    liveRendered.set(md, text)
+  }
   if (md.querySelector('.chat-caret') === null) {
     const caret = document.createElement('span')
     caret.className = 'chat-caret'
@@ -974,10 +1004,12 @@ async function startChat(prompt: string, images: string[]): Promise<void> {
   const choice = launchChoice(providers, stored('mc.shell.engine'), stored('mc.shell.model'))
   if (!choice.engine) { chatError('No AI is connected yet. Add one in Studio → Manage AIs.'); return }
   const project = stored('mc.shell.project')
-  const result = await postJson('/api/jobs', { engine: choice.engine, ...(choice.model ? { model: choice.model } : {}), cwd: home, prompt, label: titleFrom(prompt), purpose: 'chat', edit: stored('mc.shell.edit') === '1', ...(project ? { project } : {}), ...(images.length > 0 ? { images: images.map(path => ({ path })) } : {}) })
+  const mode = choice.engine === 'codex' ? null : chatModeChoice(null, stored)
+  const result = await postJson('/api/jobs', { engine: choice.engine, ...(choice.model ? { model: choice.model } : {}), ...(mode === null ? {} : { permissionMode: mode }), cwd: home, prompt, label: titleFrom(prompt), purpose: 'chat', edit: stored('mc.shell.edit') === '1', ...(project ? { project } : {}), ...(images.length > 0 ? { images: images.map(path => ({ path })) } : {}) })
   if (!result.ok) { chatError(errorText(result)); return }
   root = String(result.data.id)
   if (choice.model) keep(`mc.chat.model.${root}`, choice.model)
+  if (mode !== null) keep(chatModeKey(root), mode)
   document.body.dataset.chat = root
   document.body.dataset.chatEngine = choice.engine
   setUrl(root)
@@ -1003,6 +1035,7 @@ async function sendMessage(prompt: string, images: string[] = []): Promise<void>
   if (!result.ok) { chatError(errorText(result)); restoreComposer(prompt, images); return }
   pendingFrom = null
   paintComposerBanner()
+  if (result.status !== 202 && typeof result.data.id === 'string') storeLeaf(result.data.id)
   if (result.status !== 202) setRunning(true)
   await refresh()
   toBottom()
@@ -1401,7 +1434,7 @@ message.addEventListener('keydown', event => {
 })
 
 addEventListener('quiet:chat-agents', (event) => outcomes.setSource(`chat=${encodeURIComponent((event as CustomEvent<string>).detail)}`))
-addEventListener('quiet:new-chat', () => { outcomes.setSource(null); root = null; agents = []; shownTurns = []; threadVersions = {}; branchPoints = []; pendingFrom = null; paintComposerBanner(); closeLiveText(); messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null); delete document.body.dataset.chat; delete document.body.dataset.chatEngine; dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null })) })
+addEventListener('quiet:new-chat', () => { outcomes.setSource(null); liveShown.clear(); liveRendered = new WeakMap(); root = null; agents = []; shownTurns = []; threadVersions = {}; branchPoints = []; pendingFrom = null; paintComposerBanner(); closeLiveText(); messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null); delete document.body.dataset.chat; delete document.body.dataset.chatEngine; dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null })) })
 addEventListener('quiet:open-chat', (event) => openChat((event as CustomEvent<string>).detail))
 addEventListener('quiet:show', (event) => { if ((event as CustomEvent<string>).detail === 'conversation') schedule(); else stopPolling() })
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') schedule(); else stopPolling() })

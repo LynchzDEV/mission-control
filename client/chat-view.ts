@@ -14,8 +14,12 @@ export const CHAT_MODES: Array<{ id: ChatPermissionChoice; label: string; chip: 
   { id: 'bypass', label: 'Never ask', chip: 'Never ask' },
 ]
 
+export const NEW_CHAT_MODE_KEY = 'mc.shell.mode'
+
+export const chatModeKey = (root: string | null): string => (root === null ? NEW_CHAT_MODE_KEY : `mc.chat.mode.${root}`)
+
 export function chatModeChoice(root: string | null, read: (key: string) => string | null): ChatPermissionChoice {
-  const value = root === null ? null : read(`mc.chat.mode.${root}`)
+  const value = read(chatModeKey(root))
   return CHAT_MODES.find(mode => mode.id === value)?.id ?? 'settings'
 }
 

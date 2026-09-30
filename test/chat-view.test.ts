@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, mentionMarks, mentionToken, parseAgentReport, runningLabel, slashQuery, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
+import { chatModeChoice, chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, mentionMarks, mentionToken, parseAgentReport, runningLabel, slashQuery, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
 
 const thread = [
   { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Fix login' },
@@ -237,5 +237,23 @@ describe('mention token detection', () => {
     expect(mentionMarks('client/chat.ts', 'cha')).toEqual([7, 8, 9])
     expect(mentionMarks('client/charts.ts', 'cht')).toEqual([0, 8, 11])
     expect(mentionMarks('client/chat.ts', '')).toEqual([])
+  })
+})
+
+describe('chat permission mode choice', () => {
+  const read = (values: Record<string, string>) => (key: string): string | null => values[key] ?? null
+
+  test('a new chat reads the global choice and defaults to my settings', () => {
+    expect(chatModeChoice(null, read({ 'mc.shell.mode': 'plan' }))).toBe('plan')
+    expect(chatModeChoice(null, read({}))).toBe('settings')
+  })
+
+  test('an open chat reads its own choice, not the global one', () => {
+    expect(chatModeChoice('abc', read({ 'mc.chat.mode.abc': 'acceptEdits', 'mc.shell.mode': 'plan' }))).toBe('acceptEdits')
+    expect(chatModeChoice('abc', read({ 'mc.shell.mode': 'plan' }))).toBe('settings')
+  })
+
+  test('an unknown stored value falls back to my settings', () => {
+    expect(chatModeChoice('abc', read({ 'mc.chat.mode.abc': 'yolo' }))).toBe('settings')
   })
 })

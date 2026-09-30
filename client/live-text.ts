@@ -56,3 +56,7 @@ export function createLiveFeed(notify: () => void): LiveFeed {
     },
   }
 }
+
+export function steadyLiveText(shown: string | undefined, next: string): string {
+  return shown !== undefined && shown.startsWith(next) ? shown : next
+}

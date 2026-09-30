@@ -147,6 +147,7 @@ async function patchChat(id: string, body: Record<string, unknown>, onDone?: () 
 let menuOpen = false
 
 function closeRowMenu(): void {
+  if (!menuOpen) return
   menuOpen = false
   document.querySelectorAll('.popover.row-menu').forEach(menu => menu.remove())
   document.querySelectorAll('.sb-item.menu-open').forEach(item => item.classList.remove('menu-open'))
@@ -175,12 +176,25 @@ function menuRow(label: string, iconId: string, action: () => void, extra?: stri
   return button
 }
 
-function openChatMenu(item: HistoryItem, anchor: HTMLElement): void {
+function chatRow(item: HistoryItem): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`#sidebar-list .sb-row[data-key="${CSS.escape(keyOf(item))}"]`)
+}
+
+function renameChat(item: HistoryItem, text: HTMLElement): void {
+  startRename(item, text, title => void patchChat(item.id, { label: title, titleLocked: true }))
+}
+
+function exportUrl(item: HistoryItem): string {
+  let leaf: string | null = null
+  try { leaf = localStorage.getItem(`mc.chat.leaf.${item.id}`) } catch {}
+  return `/api/jobs/${encodeURIComponent(item.id)}/export.md${leaf ? `?leaf=${encodeURIComponent(leaf)}` : ''}`
+}
+
+function openChatMenu(item: HistoryItem): void {
   if (renaming || item.kind !== 'chat') return
   closeRowMenu()
-  const wrap = anchor.closest<HTMLElement>('.sb-item') ?? anchor
-  const text = wrap.querySelector<HTMLElement>('.sb-t')
-  if (text === null) return
+  const wrap = chatRow(item)?.closest<HTMLElement>('.sb-item') ?? null
+  if (wrap === null) return
   menuOpen = true
   wrap.classList.add('menu-open')
   const menu = document.createElement('div')
@@ -190,20 +204,22 @@ function openChatMenu(item: HistoryItem, anchor: HTMLElement): void {
   divider.className = 'divider'
   const remove = menuRow('Delete chat', 'trash-icon', () => {})
   remove.classList.add('danger')
-  confirmButton(remove, 'Delete chat', () => {
-    void patchChat(item.id, { deleted: true }, () => {
-      if (selectedKey() === `chat:${item.id}`) dispatchEvent(new Event('quiet:new-chat'))
-    })
-  })
-  remove.onclick = (event) => { event.stopPropagation() }
+  remove.onclick = null
   menu.append(
-    menuRow('Rename', 'pencil-icon', () => startRename(item, text, title => void patchChat(item.id, { label: title, titleLocked: true })), 'F2'),
+    menuRow('Rename', 'pencil-icon', () => { const text = chatRow(item)?.querySelector<HTMLElement>('.sb-t'); if (text) renameChat(item, text) }, 'F2'),
     menuRow(item.pinned === true ? 'Unpin' : 'Pin to top', 'pin-icon', () => void patchChat(item.id, { pinned: item.pinned !== true })),
-    menuRow('Export as Markdown', 'export-icon', () => { window.location.href = `/api/jobs/${encodeURIComponent(item.id)}/export.md` }),
+    menuRow('Export as Markdown', 'export-icon', () => { window.location.href = exportUrl(item) }),
     divider,
     remove,
   )
   wrap.append(menu)
+  confirmButton(remove, 'Delete chat', () => {
+    closeRowMenu()
+    void patchChat(item.id, { deleted: true }, () => {
+      if (selectedKey() === `chat:${item.id}`) dispatchEvent(new Event('quiet:new-chat'))
+    })
+  })
+  menu.querySelector<HTMLButtonElement>('.row')?.focus()
 }
 
 function chatRowFromEvent(event: Event): HistoryItem | null {
@@ -342,13 +358,12 @@ if (typeof document !== 'undefined') {
   const list = document.getElementById('sidebar-list')
   list?.addEventListener('contextmenu', (event) => {
     const item = chatRowFromEvent(event)
-    const anchor = event.target instanceof Element ? event.target.closest<HTMLElement>('.sb-row') : null
-    if (item === null || anchor === null) {
+    if (item === null) {
       closeRowMenu()
       return
     }
     event.preventDefault()
-    openChatMenu(item, anchor)
+    openChatMenu(item)
   })
   list?.addEventListener('keydown', (event) => {
     const item = chatRowFromEvent(event)
@@ -357,12 +372,12 @@ if (typeof document !== 'undefined') {
     if (event.key === 'F2' && anchor !== null) {
       event.preventDefault()
       const text = anchor.querySelector<HTMLElement>('.sb-t')
-      if (text !== null) startRename(item, text, title => void patchChat(item.id, { label: title, titleLocked: true }))
+      if (text !== null) renameChat(item, text)
       return
     }
-    if (event.shiftKey && event.key === 'F10' && anchor !== null) {
+    if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') {
       event.preventDefault()
-      openChatMenu(item, anchor)
+      openChatMenu(item)
     }
   })
   void poll()

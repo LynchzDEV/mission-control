@@ -1056,6 +1056,18 @@ a.pill:hover { color: var(--accent); }
 .sb-item .sb-morph[data-armed="true"] { width: 64px; background: var(--danger); color: #fff; }
 .sb-item .sb-morph[data-armed="true"] svg { opacity: 0; scale: .4; }
 .sb-item .sb-morph[data-armed="true"] span { opacity: 1; translate: 0 0; }
+.sb-item.menu-open { z-index: 4; }
+.sb-item.menu-open .sb-row { background: color-mix(in srgb, var(--hi) 30%, var(--paper)); }
+.sb-pin { flex: none; width: 13px; height: 13px; color: var(--accent); }
+.sb-pin svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.row-menu { top: calc(100% - 2px); left: 34px; width: 206px; z-index: 6; }
+.row-menu .row { gap: 10px; padding: 8px 10px; border: 0; background: transparent; box-shadow: none; color: var(--text); font: inherit; font-size: 13px; }
+.row-menu .row > svg:first-child { width: 16px; height: 16px; flex-basis: 16px; color: var(--muted); fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.row-menu .row kbd { font-family: inherit; font-size: 10.5px; color: var(--muted); }
+.row-menu .row.danger, .row-menu .row.danger > svg:first-child { color: var(--danger); }
+.row-menu .row.danger:hover { background: var(--red-bg); }
+.row-menu .divider { margin: 4px 6px; }
+.row-menu .row.danger[data-armed="true"], .row-menu .row.danger[data-armed="true"] > svg:first-child { background: var(--danger); color: #fff; }
 .sb-item:has(.sb-morph[data-armed="true"]) .sb-key { opacity: 0; }
 .sb-item:has(.sb-morph[data-armed="true"]) .sb-t { mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent calc(100% - 6px)); }
 .sb-item:has(.sb-rename) .sb-morph { display: none; }
@@ -1175,7 +1187,7 @@ a.pill:hover { color: var(--accent); }
 .chat-perm-actions .pill { min-height: 34px; font-size: 13px; padding: 0 14px; }
 .chat-perm-actions .chat-primary { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--paper)); }
 
-.chat-chip-extra { max-width: 420px !important; }
+.chip-group[data-expanded="true"] .chat-chip-extra { max-width: 420px; }
 .chat-mode-chip { color: var(--text-soft); }
 
 .chat-model-menu { overflow: visible; max-height: none; width: 210px; }
@@ -1240,6 +1252,8 @@ a.pill:hover { color: var(--accent); }
 .u-stack > :not(.user-message) { flex: none; }
 .chat .u-stack .user-message { max-width: 100%; }
 .u-actions { display: flex; align-items: center; gap: 4px; padding: 3px; border-radius: var(--r-button); corner-shape: var(--corner); background: var(--paper); box-shadow: var(--raised); }
+.u-stack .u-actions { opacity: 0; transition: opacity 160ms ease; }
+.u-stack:hover .u-actions, .u-stack:focus-within .u-actions { opacity: 1; }
 .u-act { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-sm); corner-shape: var(--corner); background: transparent; box-shadow: none; color: var(--text-soft); }
 .u-act:hover { color: var(--accent); background: var(--field); }
 .u-act svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }

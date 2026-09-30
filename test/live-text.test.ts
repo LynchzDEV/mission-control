@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { applyLiveLine, createLiveFeed } from '../client/live-text'
+import { applyLiveLine, createLiveFeed, steadyLiveText } from '../client/live-text'
 
 describe('live text feed', () => {
   test('a JSON line split across two chunks parses once', () => {
@@ -44,5 +44,22 @@ describe('live text feed', () => {
   test('a broken line is ignored', () => {
     const outcome = applyLiveLine({ delta: 'x', partial: false }, 'not json')
     expect(outcome).toEqual({ state: { delta: 'x', partial: false }, refresh: false })
+  })
+})
+
+describe('steady live text', () => {
+  test('keeps the longer text shown so far when the next text is a prefix of it', () => {
+    expect(steadyLiveText('Thinking about it.', '')).toBe('Thinking about it.')
+    expect(steadyLiveText('Thinking about it.', 'Think')).toBe('Thinking about it.')
+  })
+
+  test('takes the next text when it grows or is the first text', () => {
+    expect(steadyLiveText('Think', 'Thinking')).toBe('Thinking')
+    expect(steadyLiveText(undefined, '')).toBe('')
+    expect(steadyLiveText(undefined, 'Hi')).toBe('Hi')
+  })
+
+  test('takes the next text when it diverges from what was shown', () => {
+    expect(steadyLiveText('Thinking about it.', 'Done')).toBe('Done')
   })
 })

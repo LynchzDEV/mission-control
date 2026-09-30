@@ -1,7 +1,7 @@
 import { getJson, pathsFromUriList, readArray, shellQuote, uploadDrop } from './shared'
 import { morph, reveal } from './morph'
 import { attachmentChip, type AttachmentChip } from './attachments'
-import { CHAT_MODES, chatModeChoice } from './chat-view'
+import { CHAT_MODES, chatModeChoice, chatModeKey } from './chat-view'
 import { customModelChoice, launchChoice, readRecentDirectories, type LaunchProvider } from './shell-launch'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
@@ -44,7 +44,6 @@ function paintProject(): void {
 
 const chatEngine = (): string | null => document.body.dataset.chatEngine ?? null
 const chatModelKey = (): string | null => (openChat === null ? null : `mc.chat.model.${openChat}`)
-const chatModeKey = (): string | null => (openChat === null ? null : `mc.chat.mode.${openChat}`)
 
 function paintModel(): void {
   const chatKey = chatModelKey()
@@ -55,11 +54,13 @@ function paintModel(): void {
     ;($('model-logo') as HTMLImageElement).src = `/providers/${engine || 'claude'}.svg`
     $('model-name').textContent = model || (provider ? provider.name : 'Chat default')
   })
+  paintMode()
 }
 
 function paintMode(): void {
   const mode = chatModeChoice(openChat, stored)
-  modeChip.hidden = openChat === null || chatEngine() === 'codex'
+  const engine = openChat === null ? launchChoice(providers, stored(engineKey), stored(modelKey)).engine : chatEngine()
+  modeChip.hidden = engine === 'codex'
   $('mode-name').textContent = CHAT_MODES.find(entry => entry.id === mode)?.chip ?? 'My settings'
 }
 
@@ -114,8 +115,7 @@ function fillModelMenu(): void {
 }
 
 function fillModeMenu(): void {
-  const key = chatModeKey()
-  if (key === null) return
+  const key = chatModeKey(openChat)
   const current = chatModeChoice(openChat, stored)
   modeMenu.replaceChildren(...CHAT_MODES.map(mode => row(mode.label, '', null, null, mode.id === current, () => { store(key, mode.id); paintMode() })))
 }
@@ -245,14 +245,14 @@ composer.addEventListener('drop', (event) => {
 paintProject()
 paintEdit()
 paintModel()
-paintMode()
 void getJson('/api/providers').then(result => {
   if (!result.ok) return
   providers = (readArray(result.data.providers) as LaunchProvider[]).filter(item => typeof item.id === 'string' && typeof item.name === 'string' && Array.isArray(item.models))
   paintModel()
 })
 
-addEventListener('quiet:chat-open', (event) => { openChat = (event as CustomEvent<string>).detail; paintMode(); paintModel() })
-addEventListener('quiet:new-chat', () => { openChat = null; paintMode(); paintModel() })
+addEventListener('quiet:chat-open', (event) => { openChat = (event as CustomEvent<string>).detail; paintModel() })
+addEventListener('quiet:new-chat', () => { openChat = null; paintModel() })
+addEventListener('quiet:chat-engine', paintModel)
 
 export { chatModelKey }
