@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["client/studio.tsx", "client/styles.d.ts", "server/workflows.ts", "server/workflow-runner.ts", "server/agent-connections.ts", "server/agent-bridge.ts", "server/chat-bridge.ts", "server/chat-bridge-core.ts", "server/chat-undo.ts", "server/chat-files.ts", "server/routes/studio.ts"]
+  "include": ["client/studio.tsx", "client/styles.d.ts", "server/workflows.ts", "server/workflow-runner.ts", "server/agent-connections.ts", "server/agent-bridge.ts", "server/chat-bridge.ts", "server/chat-bridge-core.ts", "server/chat-undo.ts", "server/chat-files.ts", "server/thread-tree.ts", "server/routes/studio.ts"]
 }

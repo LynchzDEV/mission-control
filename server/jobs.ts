@@ -77,6 +77,9 @@ export type JobRecord = {
   pinned?: boolean
   deletedAt?: number
   undone?: string[]
+  prevTurnId?: string | null
+  versionOf?: string
+  branchFrom?: string
 }
 
 export type JobPurpose = 'workflow-design' | 'chat'
@@ -114,6 +117,9 @@ export type CreateJobParams = {
   permissionMode?: import('./chat-bridge-core').ChatPermissionMode
   forkSession?: boolean
   resumeSessionAt?: string
+  prevTurnId?: string | null
+  versionOf?: string
+  branchFrom?: string
 }
 
 export const CHAT_STEP_ATTEMPTS = 3
@@ -812,6 +818,9 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       ...(params.purpose ? { purpose: params.purpose } : {}),
       ...(params.images === undefined ? {} : { images: params.images }),
       ...(params.permissionMode === undefined ? {} : { permissionMode: params.permissionMode }),
+      ...(params.prevTurnId === undefined ? {} : { prevTurnId: params.prevTurnId }),
+      ...(params.versionOf === undefined ? {} : { versionOf: params.versionOf }),
+      ...(params.branchFrom === undefined ? {} : { branchFrom: params.branchFrom }),
       ...chatRecordFields(params, chatContext.edit),
       ...(params.workflowRunId ? { workflowRunId: params.workflowRunId, workflowNodeId: params.workflowNodeId, workflowAttempt: params.workflowAttempt } : {}),
     }

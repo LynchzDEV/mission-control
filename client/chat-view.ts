@@ -62,9 +62,9 @@ export type ThreadMessage =
   | { role: 'assistant'; kind: 'tool'; jobId: string; title: string; detail: string; input: string; result: string; resultIsError: boolean; toolUseId?: string; undone?: boolean }
   | { role: 'result'; kind: 'result'; jobId: string; text: string; isError: boolean }
 
-export type TurnJob = { id: string; status: string; startedAt: number; endedAt: number | null; source?: 'user' | 'agent'; stoppedAt?: number | null }
+export type TurnJob = { id: string; status: string; startedAt: number; endedAt: number | null; source?: 'user' | 'agent'; stoppedAt?: number | null; versionOf?: string | null; branchFrom?: string | null }
 export type AgentJob = { id: string; engine: string; model: string | null; label: string; reason?: string; status: string; startedAt: number; endedAt: number | null; chatTurn?: string; chatId?: string; reviewOf: string | null; reviewedAt: number | null; landedAt?: number | null; stoppedAt?: number | null; currentActivity?: string | null; diffStat: string | null }
-export type Turn = { id: string; source: 'user' | 'agent'; prompt: string; text: string; tools: number; edits: string[]; steps: string[]; cards: ToolCard[]; permissions: PermissionView[]; images: string[]; thinking: boolean; started: number; ended: number | null; running: boolean; failed: boolean; stopped: boolean; error: string; errorDetail: string }
+export type Turn = { id: string; source: 'user' | 'agent'; prompt: string; text: string; tools: number; edits: string[]; steps: string[]; cards: ToolCard[]; permissions: PermissionView[]; images: string[]; thinking: boolean; started: number; ended: number | null; running: boolean; failed: boolean; stopped: boolean; error: string; errorDetail: string; versionOf: string | null; branchFrom: string | null }
 export type TeamState = 'running' | 'reviewing' | 'done' | 'landed' | 'needs-you' | 'retried' | 'stopped'
 export type TeamRow = { id: string; engine: string; model: string | null; label: string; reason: string; state: TeamState; activity: string; started: number; ended: number | null }
 
@@ -84,7 +84,7 @@ export function turnsFrom(thread: readonly ThreadMessage[], jobs: readonly TurnJ
   for (const message of thread) {
     if (message.kind === 'prompt') {
       const job = jobs.find(item => item.id === message.jobId)
-      turns.push({ id: message.jobId, source: job?.source === 'agent' ? 'agent' : 'user', prompt: message.text, text: '', tools: 0, edits: [], steps: [], cards: [], permissions: [], images: [...(message.images ?? [])], thinking: false, started: job?.startedAt ?? message.ts, ended: job?.endedAt ?? null, running: job?.status === 'running', failed: false, stopped: false, error: '', errorDetail: '' })
+      turns.push({ id: message.jobId, source: job?.source === 'agent' ? 'agent' : 'user', prompt: message.text, text: '', tools: 0, edits: [], steps: [], cards: [], permissions: [], images: [...(message.images ?? [])], thinking: false, started: job?.startedAt ?? message.ts, ended: job?.endedAt ?? null, running: job?.status === 'running', failed: false, stopped: false, error: '', errorDetail: '', versionOf: job?.versionOf ?? null, branchFrom: job?.branchFrom ?? null })
       lastResults.push('')
       continue
     }

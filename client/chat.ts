@@ -146,9 +146,138 @@ function teamCard(rows: TeamRow[], project: string | null): HTMLElement {
   return card
 }
 
+type VersionEntry = { index: number; count: number; ids: string[]; leaf: string }
+type BranchPoint = { turnId: string; label: string; mainLeaf: string }
+let threadVersions: Record<string, VersionEntry> = {}
+let branchPoints: BranchPoint[] = []
+let pendingFrom: { turnId: string; mode: 'replace' | 'after' } | null = null
+
+const leafKey = (): string | null => (root === null ? null : `mc.chat.leaf.${root}`)
+
+function setLeaf(leaf: string): void {
+  const key = leafKey()
+  if (key === null) return
+  try { localStorage.setItem(key, leaf) } catch {}
+  void refresh()
+}
+
+function userActionButton(iconId: string, title: string, action: () => void): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'u-act'
+  button.title = title
+  button.setAttribute('aria-label', title)
+  button.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 20 20"><use href="#${iconId}"/></svg>`)
+  button.onclick = action
+  return button
+}
+
+function startEdit(turn: Turn): void {
+  message.value = turn.prompt
+  message.dispatchEvent(new Event('input', { bubbles: true }))
+  pendingFrom = { turnId: turn.id, mode: 'replace' }
+  paintComposerBanner()
+  message.focus()
+}
+
+function startBranch(turn: Turn): void {
+  pendingFrom = { turnId: turn.id, mode: 'after' }
+  paintComposerBanner()
+  message.focus()
+}
+
+function paintComposerBanner(): void {
+  const banner = $('composer-banner')
+  if (pendingFrom === null) {
+    banner.hidden = true
+    return
+  }
+  banner.hidden = false
+  $('composer-banner-text').textContent = pendingFrom.mode === 'replace' ? 'Editing a message — sends as a new version' : 'New branch after this reply'
+}
+
+function userActions(turn: Turn): HTMLElement {
+  const actions = document.createElement('div')
+  actions.className = 'u-actions'
+  const time = document.createElement('span')
+  time.className = 'u-time'
+  time.textContent = new Date(turn.started).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const copy = userActionButton('copy-icon', 'Copy', () => {
+    void navigator.clipboard.writeText(turn.prompt).then(() => {
+      copy.classList.add('copied')
+      setTimeout(() => copy.classList.remove('copied'), 1200)
+    })
+  })
+  copy.dataset.flash = 'Copied'
+  const branch = userActionButton('branch-icon', 'Branch from this message', () => startBranch(turn))
+  if (pendingFrom?.turnId === turn.id && pendingFrom.mode === 'after') branch.classList.add('hot')
+  const edit = userActionButton('pencil-icon', 'Edit message', () => startEdit(turn))
+  if (pendingFrom?.turnId === turn.id && pendingFrom.mode === 'replace') edit.classList.add('hot')
+  actions.append(time, edit, copy, branch)
+  return actions
+}
+
+function versionSwitch(turn: Turn, group: VersionEntry): HTMLElement {
+  const wrap = document.createElement('span')
+  wrap.className = 'u-versions'
+  const edited = document.createElement('span')
+  edited.className = 'u-edited'
+  edited.textContent = 'edited'
+  const switcher = document.createElement('span')
+  switcher.className = 'ver-switch'
+  const step = (direction: -1 | 1, label: string, title: string): HTMLButtonElement => {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = label
+    button.setAttribute('aria-label', title)
+    const target = group.ids[group.index - 1 + direction]
+    button.disabled = target === undefined
+    button.onclick = () => {
+      const entry = threadVersions[target]
+      if (entry !== undefined) setLeaf(entry.leaf)
+    }
+    return button
+  }
+  const position = document.createElement('span')
+  position.textContent = `${group.index} / ${group.count}`
+  switcher.append(step(-1, '‹', 'Previous version'), position, step(1, '›', 'Next version'))
+  wrap.append(edited, switcher)
+  return wrap
+}
+
+function branchDivider(turn: Turn): HTMLElement {
+  const point = branchPoints.find(entry => entry.turnId === turn.id)
+  const divider = document.createElement('div')
+  divider.className = 'branch-divider'
+  divider.dataset.turn = turn.id
+  divider.dataset.part = 'branch'
+  const left = document.createElement('i')
+  left.className = 'branch-rule'
+  const pill = document.createElement('span')
+  pill.className = 'branch-pill'
+  pill.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 20 20"><use href="#branch-icon"/></svg>')
+  const label = document.createElement('span')
+  label.append('Branch · ')
+  const bold = document.createElement('b')
+  bold.textContent = point?.label ?? ''
+  label.append(bold)
+  const back = document.createElement('button')
+  back.type = 'button'
+  back.className = 'text-button'
+  back.textContent = 'Back to main'
+  back.onclick = () => setLeaf(point?.mainLeaf ?? '')
+  pill.append(label, back)
+  const right = document.createElement('i')
+  right.className = 'branch-rule'
+  divider.append(left, pill, right)
+  return divider
+}
+
 function userRow(turn: Turn): HTMLElement {
   const row = document.createElement('div')
   row.className = 'msg user'
+  const stack = document.createElement('div')
+  stack.className = 'u-stack'
   const bubble = document.createElement('div')
   bubble.className = 'user-message'
   if (turn.images.length > 0) {
@@ -178,7 +307,11 @@ function userRow(turn: Turn): HTMLElement {
   } else {
     bubble.textContent = turn.prompt
   }
-  row.append(bubble)
+  stack.append(bubble)
+  const group = threadVersions[turn.id]
+  if (group !== undefined) stack.append(versionSwitch(turn, group))
+  if (turn.source === 'user' && document.body.dataset.chatEngine !== 'codex') stack.append(userActions(turn))
+  row.append(stack)
   return row
 }
 
@@ -638,9 +771,13 @@ function paint(turns: Turn[], project: string | null): void {
   shownTurns = turns
   for (const turn of turns) {
     const rows = teamRows(agents, turn.id)
-    const prompt = existing.get(`${turn.id}:prompt`) ?? (turn.source === 'agent' ? agentRow(turn) : userRow(turn))
+    if (turn.branchFrom !== null) ordered.push(existing.get(`${turn.id}:branch`) ?? branchDivider(turn))
+    const vsig = JSON.stringify(threadVersions[turn.id] ?? null)
+    const kept = existing.get(`${turn.id}:prompt`)
+    const prompt = kept !== undefined && kept.dataset.vsig === vsig ? kept : (turn.source === 'agent' ? agentRow(turn) : userRow(turn))
     prompt.dataset.turn = turn.id
     prompt.dataset.part = 'prompt'
+    prompt.dataset.vsig = vsig
     ordered.push(prompt)
     const sig = signature(turn, rows)
     let reply = existing.get(`${turn.id}:reply`)
@@ -678,7 +815,8 @@ function paint(turns: Turn[], project: string | null): void {
 async function refresh(): Promise<void> {
   if (!root) return
   const mine = ++generation
-  const [thread, jobs, queue] = await Promise.all([getJson(`/api/jobs/${encodeURIComponent(root)}/thread`), getJson(`/api/jobs?chat=${encodeURIComponent(root)}`), getJson(`/api/jobs/${encodeURIComponent(root)}/queue`)])
+  const storedLeaf = stored(`mc.chat.leaf.${root}`)
+  const [thread, jobs, queue] = await Promise.all([getJson(`/api/jobs/${encodeURIComponent(root)}/thread${storedLeaf ? `?leaf=${encodeURIComponent(storedLeaf)}` : ''}`), getJson(`/api/jobs?chat=${encodeURIComponent(root)}`), getJson(`/api/jobs/${encodeURIComponent(root)}/queue`)])
   if (mine !== generation || !root) return
   if (!thread.ok) {
     if (thread.status === 404) { dispatchEvent(new Event('quiet:new-chat')); show('welcome'); return }
@@ -692,6 +830,8 @@ async function refresh(): Promise<void> {
   if (typeof rootJob?.engine === 'string' && rootJob.engine !== '') document.body.dataset.chatEngine = rootJob.engine
   rootCwd = rootJob?.cwd ?? null
   const project = rootJob?.project ?? null
+  threadVersions = (thread.data.versions ?? {}) as Record<string, VersionEntry>
+  branchPoints = readArray(thread.data.branchPoints) as unknown as BranchPoint[]
   paint(turnsFrom(readArray(thread.data.messages) as unknown as ThreadMessage[], turnsJobs), project)
   const nowRunning = thread.data.running === true
   setRunning(nowRunning)
@@ -850,13 +990,17 @@ function restoreComposer(text: string, images: string[]): void {
 
 async function sendMessage(prompt: string, images: string[] = []): Promise<void> {
   show('conversation')
-  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], cards: [], permissions: [], images, thinking: false, started: Date.now(), ended: null, running: true, failed: false, stopped: false, error: '', errorDetail: '' })); setRunning(true); toBottom(); await startChat(prompt, images); if (!root) { setRunning(false); messages.replaceChildren(); restoreComposer(prompt, images); show('welcome') } return }
+  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], cards: [], permissions: [], images, thinking: false, started: Date.now(), ended: null, running: true, failed: false, stopped: false, error: '', errorDetail: '', versionOf: null, branchFrom: null })); setRunning(true); toBottom(); await startChat(prompt, images); if (!root) { setRunning(false); messages.replaceChildren(); restoreComposer(prompt, images); show('welcome') } return }
   const result = await postJson(`/api/jobs/${encodeURIComponent(root)}/reply`, {
     message: prompt,
     ...(images.length > 0 ? { images: images.map(path => ({ path })) } : {}),
     ...replyChoices(),
+    ...(stored(`mc.chat.leaf.${root}`) ? { parentTurnId: stored(`mc.chat.leaf.${root}`) } : {}),
+    ...(pendingFrom === null ? {} : { from: pendingFrom }),
   })
   if (!result.ok) { chatError(errorText(result)); restoreComposer(prompt, images); return }
+  pendingFrom = null
+  paintComposerBanner()
   if (result.status !== 202) setRunning(true)
   await refresh()
   toBottom()
@@ -948,6 +1092,12 @@ export function openChat(id: string): void {
   dispatchEvent(new CustomEvent('quiet:chat-open', { detail: id }))
   void loadCommands()
   void refresh()
+}
+
+$('composer-banner-cancel').onclick = () => {
+  pendingFrom = null
+  paintComposerBanner()
+  message.focus()
 }
 
 composer.onsubmit = (event) => {
@@ -1249,7 +1399,7 @@ message.addEventListener('keydown', event => {
 })
 
 addEventListener('quiet:chat-agents', (event) => outcomes.setSource(`chat=${encodeURIComponent((event as CustomEvent<string>).detail)}`))
-addEventListener('quiet:new-chat', () => { outcomes.setSource(null); root = null; agents = []; shownTurns = []; closeLiveText(); messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null); delete document.body.dataset.chat; delete document.body.dataset.chatEngine; dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null })) })
+addEventListener('quiet:new-chat', () => { outcomes.setSource(null); root = null; agents = []; shownTurns = []; threadVersions = {}; branchPoints = []; pendingFrom = null; paintComposerBanner(); closeLiveText(); messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null); delete document.body.dataset.chat; delete document.body.dataset.chatEngine; dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null })) })
 addEventListener('quiet:open-chat', (event) => openChat((event as CustomEvent<string>).detail))
 addEventListener('quiet:show', (event) => { if ((event as CustomEvent<string>).detail === 'conversation') schedule(); else stopPolling() })
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') schedule(); else stopPolling() })

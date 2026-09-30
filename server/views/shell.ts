@@ -124,6 +124,7 @@ const BODY = `
       <div class="popover chip-menu model-menu" id="model-menu" role="menu" hidden></div>
       <div class="popover chip-menu" id="mode-menu" role="menu" hidden></div>
       <form id="composer" class="composer nui-neuromorphic-inset">
+        <div class="composer-banner" id="composer-banner" hidden><span id="composer-banner-text"></span><button type="button" class="text-button" id="composer-banner-cancel">Cancel</button></div>
         <div id="attach-tray" class="attach-tray" hidden></div>
         <span class="chip-group" id="chip-group" data-expanded="false">
           <button type="button" class="chip" id="project-chip" aria-expanded="false" aria-controls="project-menu" title="Project for this chat"><svg><use href="#folder-icon"/></svg><span id="project-name">Project</span></button>

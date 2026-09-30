@@ -26,6 +26,7 @@ import { lintSpec } from '../spec-lint'
 import { findEditCall, UNDO_CHANGED, UNDO_UNSUPPORTED, undoEditContent } from '../chat-undo'
 import { readRoles } from './roles'
 import { assembleThread, replySessionId, threadChain, threadIsRunning, threadRootOf } from '../threads'
+import { buildTurnTree, forkPointUuid, isLeaf, nearestSessionId, newestLeaf, type TurnTree } from '../thread-tree'
 
 export const SSE_TAIL_BYTES = 4096
 export const HEARTBEAT_MS = 15_000
@@ -100,6 +101,40 @@ export function stripImageTokens(text: string, tokens: readonly string[]): strin
 function chatPromptWithImages(payload: Record<string, unknown>, prompt: string, images: readonly BridgeImage[], tokens: readonly string[]): string {
   if (images.length === 0 || !chatUsesBridge(String(payload.engine ?? ''), payload.purpose === 'chat' ? 'chat' : undefined)) return prompt
   return stripImageTokens(prompt, tokens)
+}
+
+
+type Placement = { prevTurnId: string | null; versionOf?: string; branchFrom?: string; rootless?: boolean } | Failure
+
+function placeReply(tree: TurnTree, body: Record<string, unknown>): Placement {
+  const from = body.from as { turnId?: unknown; mode?: unknown } | undefined
+  if (from !== undefined) {
+    const turnId = typeof from.turnId === 'string' ? from.turnId : ''
+    if ((from.mode !== 'replace' && from.mode !== 'after') || turnId === '' || !tree.byId.has(turnId)) {
+      return { status: 409, error: 'That message is not part of this chat' }
+    }
+    if (from.mode === 'after') return { prevTurnId: turnId, branchFrom: turnId }
+    const kept = tree.prev.get(turnId) ?? null
+    const target = tree.byId.get(turnId)
+    const original = target !== undefined && typeof target.versionOf === 'string' && target.versionOf !== '' ? target.versionOf : turnId
+    return { prevTurnId: kept, versionOf: original, rootless: kept === null }
+  }
+  const parentTurnId = typeof body.parentTurnId === 'string' && body.parentTurnId !== '' ? body.parentTurnId : null
+  if (parentTurnId === null) return { prevTurnId: newestLeaf(tree) }
+  if (!tree.byId.has(parentTurnId)) return { status: 409, error: 'parentTurnId must name a turn of this chat' }
+  if (!isLeaf(tree, parentTurnId)) return { status: 409, error: 'Reply from the newest message of this branch' }
+  return { prevTurnId: parentTurnId }
+}
+
+async function resumeForPlacement(manager: JobManager, tree: TurnTree, placement: Placement): Promise<{ sessionId: string | null; forkSession?: boolean; resumeSessionAt?: string } | Failure> {
+  const prevId = placement.prevTurnId
+  if (prevId === null) return { sessionId: null }
+  const sessionId = nearestSessionId(tree, prevId)
+  if (placement.versionOf === undefined && placement.branchFrom === undefined) return { sessionId }
+  if (sessionId === null) return { sessionId: null }
+  const uuid = forkPointUuid(await readRedactedLog(manager.logPath(prevId)))
+  if (uuid === null) return { status: 409, error: 'This reply is too old to branch from' }
+  return { sessionId, forkSession: true, resumeSessionAt: uuid }
 }
 
 export type LiveTurn = { jobId: string; offset: number; partial: boolean }
@@ -486,24 +521,28 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       }
       return createLogStreamResponse(path, request.signal, await logSecrets())
     })
-    .get('/api/jobs/:id/thread', async ({ params, set }) => {
+    .get('/api/jobs/:id/thread', async ({ params, query, set }) => {
       const job = manager.getJob(params.id)
       if (job === undefined || job.deletedAt !== undefined) {
         set.status = 404
         return { error: 'job not found' }
       }
       const rootId = threadRootOf(job)
-      const chain = threadChain(manager.listJobs(), rootId)
-      const messages = await assembleThread(chain, (jobId) => readRedactedLog(manager.logPath(jobId)))
       const threadHead = manager.getJob(rootId)
       const isChat = job.purpose === 'chat' || threadHead?.purpose === 'chat'
+      const tree = isChat ? buildTurnTree(rootId, manager.listJobs()) : null
+      const leaf = tree !== null && typeof query.leaf === 'string' && query.leaf !== '' && tree.byId.has(query.leaf) ? query.leaf : tree === null ? null : newestLeaf(tree)
+      const chain = tree !== null && leaf !== null ? tree.pathToLeaf(leaf) : threadChain(manager.listJobs(), rootId)
+      const messages = await assembleThread(chain, (jobId) => readRedactedLog(manager.logPath(jobId)))
+      const pathSession = tree !== null && leaf !== null ? nearestSessionId(tree, leaf) : replySessionId(chain)
       return {
         rootId,
         engine: job.engine,
         running: threadIsRunning(chain),
-        sessionId: replySessionId(chain),
-        canReply: !job.workflowRunId && job.purpose !== 'workflow-design' && (job.resumeSupported ?? engineSupportsResume(job.engine)) && replySessionId(chain) !== null,
+        sessionId: pathSession,
+        canReply: !job.workflowRunId && job.purpose !== 'workflow-design' && (job.resumeSupported ?? engineSupportsResume(job.engine)) && pathSession !== null,
         messages,
+        ...(tree !== null ? { versions: tree.versions, branchPoints: tree.branchPoints, leaf: leaf === null ? null : leaf } : {}),
         ...(isChat && chatUsesBridge(job.engine, 'chat') ? { live: await liveTurn(chain, manager) } : {}),
         ...(isChat ? { usage: await chatUsage(chain, manager, threadHead?.engine ?? job.engine) } : {}),
       }
@@ -532,18 +571,34 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
 
       const rootId = threadRootOf(parent)
       const chain = threadChain(manager.listJobs(), rootId)
-      const sessionId = replySessionId(chain)
-      if (sessionId === null) {
-        set.status = 400
-        return { error: 'job has no session id to resume yet' }
-      }
 
       const threadHead = manager.getJob(rootId)
       const isChat = parent.purpose === 'chat' || threadHead?.purpose === 'chat'
       if (isChat && threadIsRunning(chain)) {
+        const branching = (body as { from?: unknown } | null)?.from
+        if (branching !== undefined) {
+          set.status = 409
+          return { error: 'Wait for the reply to finish' }
+        }
         const item = await queue.add(rootId, message)
         set.status = 202
         return { queued: true, item }
+      }
+      const tree = isChat ? buildTurnTree(rootId, manager.listJobs()) : null
+      const placement = tree === null ? { prevTurnId: undefined, versionOf: undefined, branchFrom: undefined, rootless: undefined } as Placement : placeReply(tree, body as Record<string, unknown>)
+      if (isFailure(placement)) {
+        set.status = placement.status
+        return { error: placement.error }
+      }
+      const resume = tree === null ? { sessionId: replySessionId(chain) } : await resumeForPlacement(manager, tree, placement)
+      if (isFailure(resume)) {
+        set.status = resume.status
+        return { error: resume.error }
+      }
+      const sessionId = resume.sessionId
+      if (sessionId === null && placement.rootless !== true) {
+        set.status = 400
+        return { error: 'job has no session id to resume yet' }
       }
       const chatRoot = isChat ? threadHead : undefined
       const earlier = isChat ? await queue.take(rootId) : []
@@ -586,6 +641,11 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
           parentJobId: parent.id,
           threadRoot: rootId,
           resumeSessionId: sessionId,
+          ...(placement.prevTurnId === undefined ? {} : { prevTurnId: placement.prevTurnId }),
+          ...(placement.versionOf === undefined ? {} : { versionOf: placement.versionOf }),
+          ...(placement.branchFrom === undefined ? {} : { branchFrom: placement.branchFrom }),
+          ...(resume.forkSession === true ? { forkSession: true } : {}),
+          ...(resume.resumeSessionAt === undefined ? {} : { resumeSessionAt: resume.resumeSessionAt }),
           ...(parent.terminalId === null ? {} : { terminalId: parent.terminalId }),
           ...(model === null || model === undefined || model === '' ? {} : { model }),
           ...(permissionMode === undefined || permissionMode === null ? {} : { permissionMode }),

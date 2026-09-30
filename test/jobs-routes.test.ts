@@ -1415,3 +1415,108 @@ describe('thread usage meter', () => {
     expect(thread.usage).toEqual({ contextPercent: 62, costUsd: null })
   })
 })
+
+describe('versions and branches', () => {
+  const line = (value: unknown): string => `printf '%s\\n' '${JSON.stringify(value).replace(/'/g, "'\\''")}'`
+  const treeResolver: EngineResolver = ({ prompt }) => ({
+    cmd: '/bin/sh',
+    args: ['-c', [
+      line({ type: 'system', subtype: 'init', session_id: `sess-${prompt}`, resumeSupported: true }),
+      line({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `reply ${prompt}` }] }, uuid: `u-${prompt}`, parent_tool_use_id: null }),
+      line({ type: 'result', subtype: 'success', is_error: false, result: `reply ${prompt}`, total_cost_usd: 0.1 }),
+    ].join('; ')],
+    env: {},
+  })
+  const bareResolver: EngineResolver = ({ prompt }) => ({
+    cmd: '/bin/sh',
+    args: ['-c', [
+      line({ type: 'system', subtype: 'init', session_id: `sess-${prompt}`, resumeSupported: true }),
+      line({ type: 'result', subtype: 'success', is_error: false, result: 'no uuids here', uuid: 'result-only' }),
+    ].join('; ')],
+    env: {},
+  })
+
+  async function settle(app: Elysia, id: string): Promise<void> {
+    await pollUntilDone(app, id)
+  }
+
+  test('a legacy chat threads in order and a replace forks from the kept turn', async () => {
+    const spawns: Array<{ prompt?: string; resumeSessionId?: string; forkSession?: boolean; resumeSessionAt?: string }> = []
+    const recording: EngineResolver = async (params) => {
+      spawns.push({ prompt: params.prompt, resumeSessionId: params.resumeSessionId, forkSession: params.forkSession, resumeSessionAt: params.resumeSessionAt })
+      return await treeResolver(params)
+    }
+    const app = buildApp(createJobManager(), recording)
+    const first = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'one', label: 'tree-chat', purpose: 'chat' }))
+    const root = ((await first.json()) as { id: string }).id
+    await settle(app, root)
+    const second = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'two' }))
+    const turn2 = ((await second.json()) as { id: string }).id
+    await settle(app, turn2)
+    const third = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'three' }))
+    const turn3 = ((await third.json()) as { id: string }).id
+    await settle(app, turn3)
+
+    const replies = (payload: { messages: Array<{ kind: string; text: string }> }): string[] => payload.messages.filter(message => message.kind === 'text').map(message => message.text)
+    const legacy = await (await app.handle(get(`/api/jobs/${root}/thread`))).json() as { messages: Array<{ kind: string; text: string }>; versions: Record<string, unknown>; branchPoints: unknown[]; leaf: string }
+    expect(replies(legacy)).toEqual(['reply one', 'reply two', 'reply three'])
+    expect(legacy.versions).toEqual({})
+    expect(legacy.branchPoints).toEqual([])
+    expect(legacy.leaf).toBe(turn3)
+
+    const edited = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'two revised', from: { turnId: turn2, mode: 'replace' } }))
+    expect(edited.status).toBe(200)
+    const version = (await edited.json()) as { id: string; prevTurnId: string | null; versionOf: string }
+    expect(version.versionOf).toBe(turn2)
+    expect(version.prevTurnId).toBe(root)
+    expect(spawns.at(-1)).toMatchObject({ prompt: 'two revised', resumeSessionId: 'sess-one', forkSession: true, resumeSessionAt: 'u-one' })
+    await settle(app, version.id)
+
+    const thread = await (await app.handle(get(`/api/jobs/${root}/thread`))).json() as { versions: Record<string, { index: number; count: number }>; leaf: string; messages: Array<{ kind: string; text: string }> }
+    expect(thread.versions[turn2]).toMatchObject({ index: 1, count: 2 })
+    expect(thread.versions[version.id]).toMatchObject({ index: 2, count: 2 })
+    expect(thread.leaf).toBe(version.id)
+    expect(replies(thread)).toEqual(['reply one', 'reply two revised'])
+
+    const branched = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'go left instead', from: { turnId: root, mode: 'after' } }))
+    expect(branched.status).toBe(200)
+    const branch = (await branched.json()) as { id: string; prevTurnId: string; branchFrom: string }
+    expect(branch.prevTurnId).toBe(root)
+    expect(branch.branchFrom).toBe(root)
+    await settle(app, branch.id)
+    const withBranch = await (await app.handle(get(`/api/jobs/${root}/thread?leaf=${branch.id}`))).json() as { branchPoints: Array<{ turnId: string; label: string; mainLeaf: string }> }
+    expect(withBranch.branchPoints).toEqual([{ turnId: branch.id, label: 'go left instead', mainLeaf: version.id }])
+  })
+
+  test('a non-leaf parentTurnId, a running chat and a uuid-less fork point are refused', async () => {
+    const manager = createJobManager()
+    const app = new Elysia().use(jobsRoutes(manager, treeResolver)).use(jobsRoutes(manager, treeResolver))
+    const first = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'alpha', label: 'tree-refuse', purpose: 'chat' }))
+    const root = ((await first.json()) as { id: string }).id
+    await settle(app, root)
+    const second = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'beta' }))
+    const turn2 = ((await second.json()) as { id: string }).id
+    await settle(app, turn2)
+    const stale = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'late', parentTurnId: root }))
+    expect(stale.status).toBe(409)
+    expect(await stale.json()).toEqual({ error: 'Reply from the newest message of this branch' })
+    const foreign = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'x', parentTurnId: 'nope' }))
+    expect(foreign.status).toBe(409)
+
+    const bareApp = buildApp(createJobManager(), bareResolver)
+    const bareRoot = await bareApp.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'bare', label: 'bare-chat', purpose: 'chat' }))
+    const bareId = ((await bareRoot.json()) as { id: string }).id
+    await settle(bareApp, bareId)
+    const tooOld = await bareApp.handle(post(`/api/jobs/${bareId}/reply`, { message: 'branch it', from: { turnId: bareId, mode: 'after' } }))
+    expect(tooOld.status).toBe(409)
+    expect(await tooOld.json()).toEqual({ error: 'This reply is too old to branch from' })
+
+    const runningApp = buildApp(createJobManager(), sleepResolver)
+    const live = await runningApp.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'busy', label: 'busy-tree', purpose: 'chat' }))
+    const liveId = ((await live.json()) as { id: string }).id
+    const fromRunning = await runningApp.handle(post(`/api/jobs/${liveId}/reply`, { message: 'edit', from: { turnId: liveId, mode: 'replace' } }))
+    expect(fromRunning.status).toBe(409)
+    expect(await fromRunning.json()).toEqual({ error: 'Wait for the reply to finish' })
+    await manager.killJob(liveId)
+  })
+})

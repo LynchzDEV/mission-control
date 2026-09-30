@@ -3,6 +3,7 @@ import type { ChatQueue, ChatQueueItem } from './chat-queue'
 import type { JobManager, JobRecord } from './jobs'
 import type { EngineResolver } from './jobs-engine-iface'
 import { replySessionId, threadChain, threadIsRunning, threadRootOf } from './threads'
+import { buildTurnTree, nearestSessionId } from './thread-tree'
 import { LIVE_STATUSES, type WorkflowAttempt, type WorkflowRun } from './workflow-runner'
 
 const REPORT_TEXT_MAX = 1200
@@ -252,8 +253,9 @@ export function createChatFlusher(manager: JobManager, resolver: EngineResolver,
     const memory = root.project ? await projectMemory(manager.listJobs(), root.project, chatId, readLog) : ''
     const chain = threadChain(manager.listJobs(), chatId)
     if (threadIsRunning(chain)) return wait(root, agents, hasUserMessages)
-    const sessionId = replySessionId(chain)
-    const last = chain[chain.length - 1]
+    const tree = buildTurnTree(chatId, manager.listJobs())
+    const last = tree.turns[tree.turns.length - 1]
+    const sessionId = last === undefined ? null : nearestSessionId(tree, last.id)
     if (sessionId === null || last === undefined) return noSession(root, reports)
     const users = await opts.queue.take(chatId)
     if (users.length === 0 && agentRoundsSinceUser(chain) >= AGENT_ROUNDS_MAX) return holdForUser(root, agents)
@@ -265,6 +267,7 @@ export function createChatFlusher(manager: JobManager, resolver: EngineResolver,
       parentJobId: last.id,
       threadRoot: chatId,
       resumeSessionId: sessionId,
+      prevTurnId: last.id,
       purpose: 'chat',
       source: users.length > 0 ? 'user' : 'agent',
       edit: root.edit ?? false,
