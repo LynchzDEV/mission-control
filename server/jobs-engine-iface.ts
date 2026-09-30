@@ -3,6 +3,7 @@ export type EngineSpawn = {
   args: string[]
   env: Record<string, string>
   stdin?: string
+  control?: boolean
 }
 
 export type EngineResolverParams = {
@@ -16,6 +17,11 @@ export type EngineResolverParams = {
   mcpServers?: import('./workflows').WorkflowNode['mcpServers']
   purpose?: 'workflow-design' | 'chat'
   edit?: boolean
+  images?: import('./chat-bridge-core').BridgeImage[]
+  permissionMode?: import('./chat-bridge-core').ChatPermissionMode
+  forkSession?: boolean
+  resumeSessionAt?: string
+  allowedTools?: string[]
 }
 
 export type EngineResolver = (params: EngineResolverParams) => EngineSpawn | Promise<EngineSpawn>
@@ -27,10 +33,11 @@ export const fakeEchoResolver: EngineResolver = ({ engine, prompt }) => ({
   env: {},
 })
 
-import { buildEnv, modelArgs, resolveBinary, resolveEngine, type EngineName, ENGINE_NAMES } from './engines'
+import { buildEnv, fakeEnginesEnabled, modelArgs, resolveBinary, resolveEngine, type EngineName, ENGINE_NAMES } from './engines'
 import { createConnectionStore } from './agent-connections'
 import { chatEnv, ensureChatProfile } from './chat-profile'
 import { ensureWorkerProfiles } from './worker-profile'
+import type { BridgeLaunch } from './chat-bridge-core'
 import { join } from 'node:path'
 
 export function engineArgs(engine: EngineName, prompt: string, resumeSessionId?: string, model?: string): string[] {
@@ -53,7 +60,38 @@ async function chatProfileEnv(engine: EngineName): Promise<Record<string, string
   return {}
 }
 
-export const realEngineResolver: EngineResolver = async ({ engine, prompt, resumeSessionId, model, connection, coreRules, mcpServers, readOnly, purpose, edit }) => {
+export const BRIDGE_ENGINES: readonly EngineName[] = ['claude', 'glm']
+
+const BRIDGE_FIXTURES_DIR = join(import.meta.dir, '..', 'test', 'fixtures', 'chat-bridge')
+
+async function chatBridgeSpawn(
+  name: EngineName,
+  params: Pick<EngineResolverParams, 'prompt' | 'resumeSessionId' | 'model' | 'coreRules' | 'edit' | 'images' | 'permissionMode' | 'forkSession' | 'resumeSessionAt' | 'allowedTools'>,
+): Promise<EngineSpawn> {
+  const launch: BridgeLaunch = {
+    prompt: params.prompt ?? '',
+    images: params.images ?? [],
+    resumeSessionId: params.resumeSessionId ?? null,
+    forkSession: params.forkSession === true,
+    resumeSessionAt: params.resumeSessionAt ?? null,
+    model: typeof params.model === 'string' && params.model !== '' ? params.model : null,
+    permissionMode: params.permissionMode ?? 'settings',
+    appendSystemPrompt: params.coreRules ?? '',
+    disallowedTools: params.edit === false ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] : [],
+    allowedTools: params.allowedTools ?? [],
+    claudePath: resolveBinary(resolveEngine(name).cmd),
+  }
+  const env = { ...(await buildEnv(name, { worker: false })), ...(await chatProfileEnv(name)) }
+  return {
+    cmd: process.execPath,
+    args: [join(import.meta.dir, 'chat-bridge.ts')],
+    env: fakeEnginesEnabled() ? { ...env, MC_BRIDGE_FAKE: BRIDGE_FIXTURES_DIR } : env,
+    stdin: JSON.stringify(launch),
+    control: true,
+  }
+}
+
+export const realEngineResolver: EngineResolver = async ({ engine, prompt, resumeSessionId, model, connection, coreRules, mcpServers, readOnly, purpose, edit, images, permissionMode, forkSession, resumeSessionAt, allowedTools }) => {
   if (!ENGINE_NAMES.includes(engine as EngineName)) {
     const selected = connection ?? await createConnectionStore().get(engine)
     if (selected.id !== engine) throw new Error('Connection does not match the selected engine')
@@ -61,6 +99,9 @@ export const realEngineResolver: EngineResolver = async ({ engine, prompt, resum
   }
   if (mcpServers?.length) throw new Error('Attached MCP tools require an ACP connection; configure a native ACP adapter for this agent')
   const name = engine as EngineName
+  if (purpose === 'chat' && BRIDGE_ENGINES.includes(name) && (!fakeEnginesEnabled() || process.env.MC_FAKE_CHAT_BRIDGE === '1')) {
+    return await chatBridgeSpawn(name, { prompt, resumeSessionId, model, coreRules, edit, images, permissionMode, forkSession, resumeSessionAt, allowedTools })
+  }
   const args = readOnly ? name === 'codex'
     ? ['exec', '--sandbox', 'read-only', '--ignore-user-config', '-c', 'approval_policy="never"', '--json', ...modelArgs(name, model), prompt]
     : ['-p', prompt, '--tools', '', '--strict-mcp-config', '--output-format', 'stream-json', '--verbose', ...modelArgs(name, model)]

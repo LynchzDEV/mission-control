@@ -71,11 +71,14 @@ export type JobRecord = {
   stoppedAt?: number
   landedAt?: number
   reportedAt?: number | null
+  images?: import('./chat-bridge-core').BridgeImage[]
+  permissionMode?: import('./chat-bridge-core').ChatPermissionMode
+  allowRules?: string[]
 }
 
 export type JobPurpose = 'workflow-design' | 'chat'
 
-export type ChatJobPatch = Partial<Pick<JobRecord, 'label' | 'project' | 'titleLocked' | 'landedAt' | 'stoppedAt' | 'reportedAt'>>
+export type ChatJobPatch = Partial<Pick<JobRecord, 'label' | 'project' | 'titleLocked' | 'landedAt' | 'stoppedAt' | 'reportedAt' | 'allowRules'>>
 
 export type CreateJobParams = {
   worktree?: boolean
@@ -104,6 +107,10 @@ export type CreateJobParams = {
   source?: 'user' | 'agent'
   edit?: boolean
   memory?: string
+  images?: import('./chat-bridge-core').BridgeImage[]
+  permissionMode?: import('./chat-bridge-core').ChatPermissionMode
+  forkSession?: boolean
+  resumeSessionAt?: string
 }
 
 export const CHAT_STEP_ATTEMPTS = 3
@@ -128,6 +135,7 @@ export type JobManager = {
   landJob(id: string): Promise<LandJobResult>
   createJob(params: CreateJobParams, resolver: EngineResolver): Promise<CreateJobResult>
   killJob(id: string): Promise<KillJobResult>
+  sendControl(id: string, line: object): boolean
   markReviewed(id: string, at?: number): Promise<MarkReviewedResult>
   updateJob(id: string, patch: ChatJobPatch): Promise<JobRecord | undefined>
   listJobs(): JobRecord[]
@@ -300,6 +308,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   const clock = options.now ?? Date.now
   let persistence = Promise.resolve()
   const processes = new Map<string, Bun.Subprocess>()
+  const controls = new Map<string, Bun.FileSink>()
   const workspaceOwners = new Map([...jobs.values()].filter(job => job.status === 'running' && job.workflowRunId).map(job => [job.cwd, job.workflowRunId!]))
   const activities = new Map<string, string>()
   const tails = new Map<string, string>()
@@ -414,6 +423,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
 
   async function settleFailed(id: string, record: JobRecord): Promise<void> {
     processes.delete(id)
+    closeControl(id)
     subAgentCalls.delete(id)
     clearPendingActivityTimer(id)
     await persist({
@@ -423,6 +433,99 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       exitCode: null,
       diffStat: null,
     })
+  }
+
+  function closeControl(id: string): void {
+    const sink = controls.get(id)
+    if (sink === undefined) return
+    controls.delete(id)
+    try {
+      sink.end()
+    } catch {
+      // bridge already closed its stdin
+    }
+  }
+
+  function sendControl(id: string, line: object): boolean {
+    const sink = controls.get(id)
+    const proc = processes.get(id)
+    if (sink === undefined || proc === undefined || proc.exitCode !== null) return false
+    try {
+      sink.write(`${JSON.stringify(line)}\n`)
+      sink.flush()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function logChildPids(id: string): Promise<number[]> {
+    const log = await readLogFile(logPath(id))
+    const pids: number[] = []
+    for (const line of log.split('\n')) {
+      if (!line.includes('"mc_child"')) continue
+      try {
+        const parsed = JSON.parse(line) as { type?: string; pid?: unknown }
+        if (parsed.type === 'mc_child' && typeof parsed.pid === 'number' && parsed.pid > 0) pids.push(parsed.pid)
+      } catch {
+        // a torn line mid-write is skipped
+      }
+    }
+    return pids
+  }
+
+  async function signalChildren(id: string, signal: 'SIGTERM' | 'SIGKILL'): Promise<void> {
+    for (const pid of await logChildPids(id)) {
+      if (!pidAlive(pid)) continue
+      try {
+        process.kill(pid, signal)
+      } catch {
+        // already gone
+      }
+    }
+  }
+
+  // The escalation must not depend on the bridge surviving: the CLI child is killed from the log too.
+  function killOrphanChildren(id: string): void {
+    void (async () => {
+      const pids = await logChildPids(id)
+      const alive = pids.filter((pid) => pidAlive(pid))
+      if (alive.length === 0) return
+      await signalChildren(id, 'SIGTERM')
+      setTimeout(() => {
+        for (const pid of alive) {
+          if (!pidAlive(pid)) continue
+          try {
+            process.kill(pid, 'SIGKILL')
+          } catch {
+            // already gone
+          }
+        }
+      }, KILL_ESCALATION_MS)
+    })().catch(() => {})
+  }
+
+  async function mergeChatAllowRules(record: JobRecord): Promise<void> {
+    if (record.purpose !== 'chat') return
+    const root = jobs.get(record.threadRoot === '' ? record.id : record.threadRoot)
+    if (root === undefined) return
+    const log = await readLogFile(logPath(record.id))
+    const found: string[] = []
+    for (const line of log.split('\n')) {
+      if (!line.includes('"mc_permission_resolved"')) continue
+      try {
+        const parsed = JSON.parse(line) as { type?: string; decision?: unknown; rules?: unknown }
+        if (parsed.type === 'mc_permission_resolved' && parsed.decision === 'allow_always' && Array.isArray(parsed.rules)) {
+          for (const rule of parsed.rules) if (typeof rule === 'string' && rule !== '') found.push(rule)
+        }
+      } catch {
+        // a torn line mid-write is skipped
+      }
+    }
+    if (found.length === 0) return
+    const merged = [...new Set([...(root.allowRules ?? []), ...found])].slice(0, 200)
+    if (merged.length === (root.allowRules ?? []).length) return
+    await persist({ ...root, allowRules: merged })
   }
 
   // Children write straight to the log file (no pipes), so they survive a server restart;
@@ -461,6 +564,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const current = jobs.get(id) ?? record
     if (current.status !== 'running') return
     processes.delete(id)
+    closeControl(id)
     sessionScans.delete(id)
     subAgentCalls.delete(id)
     clearPendingActivityTimer(id)
@@ -468,6 +572,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const diffStat = status === 'done' ? await captureDiffStat(current.cwd) : null
     const settled = { ...(jobs.get(id) ?? current), status, endedAt: Date.now(), exitCode, diffStat }
     await persist(settled)
+    await mergeChatAllowRules(settled).catch(() => {})
+    killOrphanChildren(id)
     options.onJobSettled?.(settled)
   }
 
@@ -540,6 +646,10 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       purpose: 'chat',
       edit,
       coreRules: chatRules({ chatId: params.threadRoot ?? id, home: chatHomePath, project, edit, memory: params.memory ?? '', engine: params.engine, model: typeof params.model === 'string' && params.model !== '' ? params.model : null }),
+      ...(params.permissionMode === undefined ? {} : { permissionMode: params.permissionMode }),
+      ...(params.forkSession === undefined ? {} : { forkSession: params.forkSession }),
+      ...(params.resumeSessionAt === undefined ? {} : { resumeSessionAt: params.resumeSessionAt }),
+      ...(root?.allowRules && root.allowRules.length > 0 ? { allowedTools: root.allowRules } : {}),
     }
   }
 
@@ -588,6 +698,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
         mcpServers: params.mcpServers,
         ...(params.resumeSessionId === undefined ? {} : { resumeSessionId: params.resumeSessionId }),
         ...(typeof params.model === 'string' && params.model !== '' ? { model: params.model } : {}),
+        ...(params.images === undefined ? {} : { images: params.images }),
         ...chatContext,
       })
     } catch {
@@ -615,13 +726,24 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
         proc = Bun.spawn([spawnSpec.cmd, ...spawnSpec.args], {
           cwd,
           env: { ...process.env, ...spawnSpec.env, MC_JOB_ID: id, ...chatEnv },
-          stdin: spawnSpec.stdin === undefined ? 'ignore' : 'pipe',
+          stdin: spawnSpec.control === true || spawnSpec.stdin !== undefined ? 'pipe' : 'ignore',
           stdout: logFd,
           stderr: logFd,
         })
-        if (spawnSpec.stdin !== undefined && proc.stdin && typeof proc.stdin !== 'number') {
-          proc.stdin.write(spawnSpec.stdin)
-          proc.stdin.end()
+        if (proc.stdin && typeof proc.stdin !== 'number') {
+          if (spawnSpec.control === true) {
+            const sink = proc.stdin
+            try {
+              sink.write(`${spawnSpec.stdin ?? ''}\n`)
+              sink.flush()
+              controls.set(id, sink)
+            } catch {
+              // the bridge closed its stdin before the launch line landed
+            }
+          } else if (spawnSpec.stdin !== undefined) {
+            proc.stdin.write(spawnSpec.stdin)
+            proc.stdin.end()
+          }
         }
       } finally {
         closeSync(logFd)
@@ -655,6 +777,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       reviewOf: typeof params.reviewOf === 'string' && params.reviewOf !== '' ? params.reviewOf : null,
       model: typeof params.model === 'string' && params.model !== '' ? params.model : null,
       ...(params.purpose ? { purpose: params.purpose } : {}),
+      ...(params.images === undefined ? {} : { images: params.images }),
+      ...(params.permissionMode === undefined ? {} : { permissionMode: params.permissionMode }),
       ...chatRecordFields(params, chatContext.edit),
       ...(params.workflowRunId ? { workflowRunId: params.workflowRunId, workflowNodeId: params.workflowNodeId, workflowAttempt: params.workflowAttempt } : {}),
     }
@@ -677,8 +801,10 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     if (proc !== undefined) {
       await markStopped(id)
       proc.kill('SIGTERM')
+      await signalChildren(id, 'SIGTERM')
       setTimeout(() => {
         if (proc.exitCode === null) proc.kill('SIGKILL')
+        void signalChildren(id, 'SIGKILL')
       }, KILL_ESCALATION_MS)
       return { ok: true }
     }
@@ -689,6 +815,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     await markStopped(id)
     try {
       process.kill(record.pid, 'SIGTERM')
+      await signalChildren(id, 'SIGTERM')
       setTimeout(() => {
         if (pidAlive(record.pid)) {
           try {
@@ -697,6 +824,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
             // already gone
           }
         }
+        void signalChildren(id, 'SIGKILL')
       }, KILL_ESCALATION_MS)
     } catch {
       return { ok: false, status: 404, error: 'job is not running' }
@@ -790,7 +918,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   function releaseWorkspace(cwd: string, owner: string): void {
     if (workspaceOwners.get(cwd) === owner) workspaceOwners.delete(cwd)
   }
-  return { createJob, killJob, landJob, markReviewed, updateJob, listJobs, getJob, currentActivity: jobActivity, logPath, claimWorkspace, releaseWorkspace }
+  return { createJob, killJob, sendControl, landJob, markReviewed, updateJob, listJobs, getJob, currentActivity: jobActivity, logPath, claimWorkspace, releaseWorkspace }
 }
 
 export async function readLogFile(path: string): Promise<string> {

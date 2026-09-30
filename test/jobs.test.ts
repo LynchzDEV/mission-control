@@ -1020,3 +1020,119 @@ describe('chat turns and workflow workspaces', () => {
     expect(worker.ok).toBe(false)
   })
 })
+
+describe('bridge control channel', () => {
+  const catResolver: EngineResolver = () => ({ cmd: 'cat', args: [], env: {}, control: true, stdin: JSON.stringify({ hello: 'launch' }) })
+
+  test('a control spawn keeps stdin open and later lines reach the child', async () => {
+    const project = join(home, 'project')
+    await mkdir(project)
+    const manager = createJobManager({ home })
+    const result = await manager.createJob({ engine: 'claude', cwd: project, prompt: 'hi', label: 'Chat', purpose: 'chat' }, catResolver)
+    if (!result.ok) throw new Error(result.error)
+    expect(manager.sendControl(result.job.id, { type: 'permission', requestId: 'r1', decision: 'allow_once' })).toBe(true)
+    expect(manager.sendControl(result.job.id, { type: 'permission', requestId: 'r2', decision: 'deny' })).toBe(true)
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const log = await readFile(manager.logPath(result.job.id), 'utf8').catch(() => '')
+      if (log.includes('"requestId":"r2"')) break
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    const log = await readFile(manager.logPath(result.job.id), 'utf8')
+    expect(log).toContain('"hello":"launch"')
+    expect(log).toContain('"requestId":"r1"')
+    expect(log).toContain('"requestId":"r2"')
+    const kill = await manager.killJob(result.job.id)
+    expect(kill.ok).toBe(true)
+    await waitForStatus(manager, result.job.id)
+    expect(manager.sendControl(result.job.id, { type: 'permission', requestId: 'r3', decision: 'deny' })).toBe(false)
+  })
+
+  test('sendControl is false for an unknown job', () => {
+    const manager = createJobManager({ home })
+    expect(manager.sendControl('missing', { type: 'permission', requestId: 'r1', decision: 'deny' })).toBe(false)
+  })
+
+  async function waitPidGone(pid: number, timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs
+    for (;;) {
+      try {
+        process.kill(pid, 0)
+      } catch {
+        return true
+      }
+      if (Date.now() > deadline) return false
+      await new Promise((resolve) => setTimeout(resolve, 150))
+    }
+  }
+
+  test('a bridge child that ignores SIGTERM is killed even after the bridge exited', async () => {
+    const project = join(home, 'project')
+    await mkdir(project)
+    const script = `sh -c 'trap "" TERM; sleep 60' & child=$!; echo "{\\"type\\":\\"mc_child\\",\\"mc\\":true,\\"pid\\":$child}"; sleep 0.3`
+    const resolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', script], env: {} })
+    const manager = createJobManager({ home })
+    const result = await manager.createJob({ engine: 'claude', cwd: project, prompt: 'hi', label: 'Chat', purpose: 'chat' }, resolver)
+    if (!result.ok) throw new Error(result.error)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    const log = await readFile(manager.logPath(result.job.id), 'utf8')
+    const childPid = Number(JSON.parse(log.trim().split('\n')[0]).pid)
+    expect(Number.isInteger(childPid)).toBe(true)
+    await manager.killJob(result.job.id).catch(() => undefined)
+    await waitForStatus(manager, result.job.id, 8000).catch(() => undefined)
+    expect(await waitPidGone(childPid, 7000)).toBe(true)
+  }, 20000)
+
+  test('an adopted dead bridge job kills a live child from its log', async () => {
+    const child = Bun.spawn(['sh', '-c', 'trap "" TERM; sleep 60'], { stdout: 'ignore', stderr: 'ignore' })
+    const childPid = child.pid as number
+    const running = {
+      id: 'adopted-bridge-1',
+      engine: 'claude',
+      cwd: join(home, 'project'),
+      worktree: null,
+      baseRepo: null,
+      baseBranch: null,
+      label: 'Chat',
+      prompt: 'hi',
+      pid: 999_999,
+      status: 'running' as const,
+      startedAt: Date.now() - 1000,
+      turns: 0,
+      slowAt: null,
+      lastTool: null,
+      endedAt: null,
+      exitCode: null,
+      diffStat: null,
+      reviewedAt: null,
+      sessionId: null,
+      parentJobId: null,
+      threadRoot: 'adopted-bridge-1',
+      terminalId: null,
+      reviewOf: null,
+      model: null,
+      purpose: 'chat' as const,
+    }
+    await mkdir(join(home, 'project'), { recursive: true })
+    await mkdir(join(configDir, LOGS_DIR), { recursive: true })
+    await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(running)}\n`)
+    await writeFile(join(configDir, LOGS_DIR, 'adopted-bridge-1.log'), `${JSON.stringify({ type: 'mc_child', mc: true, pid: childPid })}\n{"type":"result","subtype":"success","is_error":false}\n`)
+    createJobManager({ home })
+    expect(await waitPidGone(childPid, 8000)).toBe(true)
+  }, 20000)
+
+  test('a settled chat turn merges allow_always rules into the chat root', async () => {
+    const project = join(home, 'project')
+    await mkdir(project)
+    const script = `echo '{"type":"mc_permission_resolved","mc":true,"requestId":"r1","decision":"allow_always","rules":["Bash(bun test:*)"]}' && echo '{"type":"mc_permission_resolved","mc":true,"requestId":"r2","decision":"allow_always","rules":["Bash(bun test:*)","Read(//tmp/x.md)"]}'`
+    const resolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', script], env: {} })
+    const manager = createJobManager({ home })
+    const root = await manager.createJob({ engine: 'claude', cwd: project, prompt: 'hi', label: 'Chat', purpose: 'chat' }, resolver)
+    if (!root.ok) throw new Error(root.error)
+    await waitForStatus(manager, root.job.id)
+    const turn = await manager.createJob({ engine: 'claude', cwd: project, prompt: 'again', label: 'Chat', purpose: 'chat', threadRoot: root.job.id, parentJobId: root.job.id }, resolver)
+    if (!turn.ok) throw new Error(turn.error)
+    await waitForStatus(manager, turn.job.id)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(manager.getJob(root.job.id)?.allowRules).toEqual(['Bash(bun test:*)', 'Read(//tmp/x.md)'])
+  })
+})

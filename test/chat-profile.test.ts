@@ -9,8 +9,8 @@ import { engineArgs, realEngineResolver } from '../server/jobs-engine-iface'
 import { writeSecrets } from '../server/secrets'
 
 let dir: string
-beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'mc-chat-profile-')); process.env.MISSION_CONTROL_CONFIG_DIR = dir; process.env.MC_FAKE_ENGINES = '1' })
-afterEach(async () => { delete process.env.MISSION_CONTROL_CONFIG_DIR; delete process.env.MC_FAKE_ENGINES; await rm(dir, { recursive: true, force: true }) })
+beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'mc-chat-profile-')); process.env.MISSION_CONTROL_CONFIG_DIR = dir; process.env.MC_FAKE_ENGINES = '1'; process.env.MC_FAKE_CHAT_BRIDGE = '1' })
+afterEach(async () => { delete process.env.MISSION_CONTROL_CONFIG_DIR; delete process.env.MC_FAKE_ENGINES; delete process.env.MC_FAKE_CHAT_BRIDGE; await rm(dir, { recursive: true, force: true }) })
 
 describe('chat rules', () => {
   test('name the API, the retry cap, the review rule and the landing call', () => {
@@ -70,18 +70,42 @@ describe('chat profile', () => {
 })
 
 describe('resolver for a chat', () => {
-  test('appends the rules, blocks edit tools when edit is off, and skips the worker profile', async () => {
+  const launchOf = async (params: Parameters<typeof realEngineResolver>[0]): Promise<Record<string, unknown>> =>
+    JSON.parse((await realEngineResolver(params)).stdin ?? '{}') as Record<string, unknown>
+
+  test('claude and glm chats run through the bridge with the rules and tool gates', async () => {
     const spawn = await realEngineResolver({ engine: 'claude', prompt: 'hi', purpose: 'chat', edit: false, coreRules: 'RULES' })
-    expect(spawn.args).toContain('--append-system-prompt')
-    expect(spawn.args[spawn.args.indexOf('--disallowedTools') + 1]).toBe('Edit,Write,MultiEdit,NotebookEdit')
+    expect(spawn.control).toBe(true)
+    expect(spawn.args[0]).toContain('chat-bridge.ts')
+    expect(spawn.env.MC_BRIDGE_FAKE).toContain('test/fixtures/chat-bridge')
+    const launch = await launchOf({ engine: 'claude', prompt: 'hi', purpose: 'chat', edit: false, coreRules: 'RULES' })
+    expect(launch.appendSystemPrompt).toBe('RULES')
+    expect(launch.disallowedTools).toEqual(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
+    expect(launch.permissionMode).toBe('settings')
+    expect(launch.images).toEqual([])
+    expect(launch.allowedTools).toEqual([])
+    expect(typeof launch.claudePath).toBe('string')
     expect(spawn.env.CLAUDE_CONFIG_DIR).toBeUndefined()
     await writeSecrets({ zaiAuthToken: 'zai-test-token' })
-    const editing = await realEngineResolver({ engine: 'glm', prompt: 'hi', purpose: 'chat', edit: true, coreRules: 'RULES' })
-    expect(editing.args).not.toContain('--disallowedTools')
+    const editing = await realEngineResolver({ engine: 'glm', prompt: 'hi', purpose: 'chat', edit: true, coreRules: 'RULES', resumeSessionId: 'sess-1', model: 'glm-5.3[1m]', permissionMode: 'bypass', allowedTools: ['Bash(x)'] })
+    const editingLaunch = await launchOf({ engine: 'glm', prompt: 'hi', purpose: 'chat', edit: true, coreRules: 'RULES', resumeSessionId: 'sess-1', model: 'glm-5.3[1m]', permissionMode: 'bypass', allowedTools: ['Bash(x)'] })
+    expect(editingLaunch.disallowedTools).toEqual([])
+    expect(editingLaunch.resumeSessionId).toBe('sess-1')
+    expect(editingLaunch.model).toBe('glm-5.3[1m]')
+    expect(editingLaunch.permissionMode).toBe('bypass')
+    expect(editingLaunch.allowedTools).toEqual(['Bash(x)'])
     expect(editing.env.CLAUDE_CONFIG_DIR).toContain('chat-claude')
+  })
+  test('without the bridge flag a fake-engine chat keeps the CLI stub path', async () => {
+    delete process.env.MC_FAKE_CHAT_BRIDGE
+    const spawn = await realEngineResolver({ engine: 'claude', prompt: 'hi', purpose: 'chat', edit: false, coreRules: 'RULES' })
+    expect(spawn.control).toBeUndefined()
+    expect(spawn.args).toContain('--append-system-prompt')
+    process.env.MC_FAKE_CHAT_BRIDGE = '1'
   })
   test('a codex chat takes the worker Codex profile and no Claude tool flags', async () => {
     const spawn = await realEngineResolver({ engine: 'codex', prompt: 'hi', purpose: 'chat', edit: false, coreRules: 'RULES' })
+    expect(spawn.control).toBeUndefined()
     expect(spawn.args).not.toContain('--disallowedTools')
     expect(spawn.env.CODEX_HOME?.endsWith('worker-codex')).toBe(true)
     expect(existsSync(join(dir, 'chat-claude'))).toBe(false)
@@ -91,14 +115,13 @@ describe('resolver for a chat', () => {
     expect(existsSync(join(dir, 'chat-claude'))).toBe(false)
     expect(existsSync(join(dir, 'worker-codex'))).toBe(false)
   })
-  test('a claude chat streams partial messages and a worker job does not', async () => {
-    expect((await realEngineResolver({ engine: 'claude', prompt: 'hi', purpose: 'chat', edit: true })).args).toContain('--include-partial-messages')
-    expect((await realEngineResolver({ engine: 'claude', prompt: 'hi' })).args).not.toContain('--include-partial-messages')
-  })
   test('a worker job is unchanged', async () => {
     expect(engineArgs('claude', 'p')).toEqual(['-p', 'p', '--output-format', 'stream-json', '--verbose'])
+    const worker = await realEngineResolver({ engine: 'claude', prompt: 'hi' })
+    expect(worker.args).toContain('-p')
+    expect(worker.control).toBeUndefined()
     await writeSecrets({ zaiAuthToken: 'zai-test-token' })
-    const worker = await realEngineResolver({ engine: 'glm', prompt: 'hi' })
-    expect(worker.env.CLAUDE_CONFIG_DIR?.endsWith('worker-claude')).toBe(true)
+    const glmWorker = await realEngineResolver({ engine: 'glm', prompt: 'hi' })
+    expect(glmWorker.env.CLAUDE_CONFIG_DIR?.endsWith('worker-claude')).toBe(true)
   })
 })
