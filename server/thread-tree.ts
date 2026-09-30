@@ -11,6 +11,7 @@ export type TurnTree = {
   children: Map<string, string[]>
   leaves: string[]
   pathToLeaf: (leaf: string) => JobRecord[]
+  newestLeafUnder: (turnId: string) => string
   versions: Record<string, VersionEntry>
   branchPoints: BranchPoint[]
 }
@@ -93,7 +94,7 @@ export function buildTurnTree(rootId: string, allTurns: readonly JobRecord[]): T
     branchPoints.push({ turnId: turn.id, label, mainLeaf: newest === undefined ? turn.branchFrom : newest.id })
   }
 
-  return { turns, byId, prev, children, leaves, pathToLeaf, versions, branchPoints }
+  return { turns, byId, prev, children, leaves, pathToLeaf, newestLeafUnder, versions, branchPoints }
 }
 
 export function newestLeaf(tree: TurnTree): string | null {

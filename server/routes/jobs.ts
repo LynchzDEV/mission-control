@@ -8,9 +8,9 @@ import { Elysia } from 'elysia'
 import { requireLocal } from '../auth'
 import { oneLine, parseActivity, parseThread } from '../activity'
 import type { ChatJobPatch, CreateJobParams, JobManager, JobRecord } from '../jobs'
-import { readLogSince, readLogTail } from '../jobs'
+import { completeLinesPrefix, readCompleteLinesSince, readLogSince, readLogTail } from '../jobs'
 import { configDir, readConfig } from '../secrets'
-import { activityRedactor, createSecretsRedactor, logSecrets, readRedactedLog, redactedTailReader } from '../log-redaction'
+import { activityRedactor, createSecretsRedactor, logSecrets, readRedactedLog, redactAll, redactedTailReader } from '../log-redaction'
 import { projectMemory } from '../chat-reports'
 import type { ChatQueue } from '../chat-queue'
 import { chatQueuePath, createChatQueue } from '../chat-queue'
@@ -23,10 +23,10 @@ import type { EngineResolver } from '../jobs-engine-iface'
 import { chatUsesBridge, engineSupportsResume } from '../jobs-engine-iface'
 import { MAX_MODEL_LENGTH } from '../engines'
 import { lintSpec } from '../spec-lint'
-import { findEditCall, UNDO_CHANGED, UNDO_UNSUPPORTED, undoEditContent } from '../chat-undo'
+import { findEditCall, serializeTurnUndo, UNDO_ALREADY, UNDO_CHANGED, UNDO_UNSUPPORTED, undoEditContent } from '../chat-undo'
 import { readRoles } from './roles'
 import { assembleThread, replySessionId, threadChain, threadIsRunning, threadRootOf } from '../threads'
-import { buildTurnTree, forkPointUuid, isLeaf, nearestSessionId, newestLeaf, type TurnTree } from '../thread-tree'
+import { buildTurnTree, forkPointUuid, nearestSessionId, newestLeaf, type TurnTree } from '../thread-tree'
 
 export const SSE_TAIL_BYTES = 4096
 export const HEARTBEAT_MS = 15_000
@@ -122,8 +122,12 @@ function placeReply(tree: TurnTree, body: Record<string, unknown>): Placement {
   const parentTurnId = typeof body.parentTurnId === 'string' && body.parentTurnId !== '' ? body.parentTurnId : null
   if (parentTurnId === null) return { prevTurnId: newestLeaf(tree) }
   if (!tree.byId.has(parentTurnId)) return { status: 409, error: 'parentTurnId must name a turn of this chat' }
-  if (!isLeaf(tree, parentTurnId)) return { status: 409, error: 'Reply from the newest message of this branch' }
-  return { prevTurnId: parentTurnId }
+  return { prevTurnId: tree.newestLeafUnder(parentTurnId) }
+}
+
+function activeLeaf(tree: TurnTree, requested: unknown): string | null {
+  if (typeof requested !== 'string' || !tree.byId.has(requested)) return null
+  return tree.newestLeafUnder(requested)
 }
 
 async function resumeForPlacement(manager: JobManager, tree: TurnTree, placement: Placement): Promise<{ sessionId: string | null; forkSession?: boolean; resumeSessionAt?: string } | Failure> {
@@ -160,16 +164,21 @@ async function chatUsage(chain: readonly JobRecord[], manager: JobManager, engin
   return { contextPercent, costUsd: engine === 'claude' ? costUsd : null }
 }
 
-async function liveTurn(chain: readonly JobRecord[], manager: JobManager): Promise<LiveTurn | null> {  const running = [...chain].reverse().find((turn) => turn.status === 'running')
+type LiveSnapshot = { live: LiveTurn; log: string }
+
+export type LogBytesReader = (path: string) => Promise<Uint8Array>
+
+const readWholeLog: LogBytesReader = async (path) => new Uint8Array(await Bun.file(path).arrayBuffer())
+
+async function liveSnapshot(chain: readonly JobRecord[], manager: JobManager, readLogBytes: LogBytesReader): Promise<LiveSnapshot | null> {
+  const running = [...chain].reverse().find((turn) => turn.status === 'running')
   if (running === undefined) return null
-  const path = manager.logPath(running.id)
-  const info = await stat(path).catch(() => null)
-  if (info === null) return null
-  const text = await Bun.file(path).slice(0, info.size).text()
-  const events = parseThread(text)
-  const lastText = [...events].reverse().find((event) => event.kind === 'text' || event.kind === 'thinking')
-  const end = text.lastIndexOf('\n')
-  return { jobId: running.id, offset: end >= 0 ? end + 1 : 0, partial: lastText?.partial === true }
+  const bytes = await readLogBytes(manager.logPath(running.id)).catch(() => null)
+  if (bytes === null) return null
+  const { content, byteLength } = completeLinesPrefix(bytes)
+  const log = redactAll(content, await logSecrets())
+  const lastText = [...parseThread(log)].reverse().find((event) => event.kind === 'text' || event.kind === 'thinking')
+  return { live: { jobId: running.id, offset: byteLength, partial: lastText?.partial === true }, log }
 }
 
 type Failure = { status: number; error: string }
@@ -316,6 +325,32 @@ export function createLogStreamResponse(path: string, signal: AbortSignal, secre
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      const emit = (content: string): void => {
+        const text = redactor.redact(content)
+        if (text === '') return
+        safeEnqueue(controller, () => closed, encoder.encode(formatSSEData(text)))
+      }
+
+      const pushTail = async (): Promise<void> => {
+        if (closed) return
+        const chunk = await readLogSince(path, offset)
+        if (closed || chunk.content === '') return
+        offset = chunk.offset
+        emit(chunk.content)
+      }
+
+      let pushing = Promise.resolve()
+      const pushLines = (): Promise<void> => {
+        pushing = pushing.then(async () => {
+          if (closed) return
+          const chunk = await readCompleteLinesSince(path, offset)
+          if (closed || chunk.content === '') return
+          offset = chunk.offset
+          emit(chunk.content)
+        }).catch(() => {})
+        return pushing
+      }
+
       if (startOffset === undefined) {
         const initial = await readLogTail(path, SSE_TAIL_BYTES)
         offset = initial.offset
@@ -324,25 +359,14 @@ export function createLogStreamResponse(path: string, signal: AbortSignal, secre
       } else {
         offset = startOffset
       }
-
-      const pushUpdates = async (): Promise<void> => {
-        if (closed) return
-        const chunk = await readLogSince(path, offset)
-        if (closed || chunk.content === '') return
-        const end = chunk.content.lastIndexOf('\n')
-        if (end < 0) return
-        const text = redactor.redact(chunk.content.slice(0, end + 1))
-        offset += end + 1
-        if (text === '') return
-        safeEnqueue(controller, () => closed, encoder.encode(formatSSEData(text)))
-      }
+      const pushUpdates = startOffset === undefined ? pushTail : pushLines
 
       try {
         watcher = watch(path, { persistent: false }, () => void pushUpdates())
       } catch {
         watcher = null
       }
-      await pushUpdates()
+      if (startOffset !== undefined) await pushUpdates()
 
       heartbeat = setInterval(() => {
         if (closed) return
@@ -367,7 +391,7 @@ export function createLogStreamResponse(path: string, signal: AbortSignal, secre
 }
 
 type TerminalSessions = { list(): Array<{ id: string; sessionId: string | null }>; ended(): Array<{ id: string; sessionId: string | null }> }
-export type JobsRoutesOptions = { attention?: AttentionStore; queue?: ChatQueue; terminals?: TerminalSessions }
+export type JobsRoutesOptions = { attention?: AttentionStore; queue?: ChatQueue; terminals?: TerminalSessions; readLogBytes?: LogBytesReader }
 
 function terminalSessionIds(terminals: TerminalSessions | undefined): Map<string, string> {
   if (!terminals) return new Map()
@@ -376,6 +400,7 @@ function terminalSessionIds(terminals: TerminalSessions | undefined): Map<string
 
 export function jobsRoutes(manager: JobManager, resolver: EngineResolver, options: JobsRoutesOptions = {}): Elysia {
   const queue = options.queue ?? createChatQueue(chatQueuePath())
+  const readLogBytes = options.readLogBytes ?? readWholeLog
   return new Elysia()
     .onBeforeHandle(requireLocal)
     .post('/api/jobs', async ({ body, set }) => {
@@ -531,9 +556,10 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       const threadHead = manager.getJob(rootId)
       const isChat = job.purpose === 'chat' || threadHead?.purpose === 'chat'
       const tree = isChat ? buildTurnTree(rootId, manager.listJobs()) : null
-      const leaf = tree !== null && typeof query.leaf === 'string' && query.leaf !== '' && tree.byId.has(query.leaf) ? query.leaf : tree === null ? null : newestLeaf(tree)
+      const leaf = tree === null ? null : activeLeaf(tree, query.leaf) ?? newestLeaf(tree)
       const chain = tree !== null && leaf !== null ? tree.pathToLeaf(leaf) : threadChain(manager.listJobs(), rootId)
-      const messages = await assembleThread(chain, (jobId) => readRedactedLog(manager.logPath(jobId)))
+      const snapshot = isChat && chatUsesBridge(job.engine, 'chat') ? await liveSnapshot(chain, manager, readLogBytes) : null
+      const messages = await assembleThread(chain, (jobId) => (snapshot !== null && jobId === snapshot.live.jobId ? Promise.resolve(snapshot.log) : readRedactedLog(manager.logPath(jobId))))
       const pathSession = tree !== null && leaf !== null ? nearestSessionId(tree, leaf) : replySessionId(chain)
       return {
         rootId,
@@ -543,7 +569,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         canReply: !job.workflowRunId && job.purpose !== 'workflow-design' && (job.resumeSupported ?? engineSupportsResume(job.engine)) && pathSession !== null,
         messages,
         ...(tree !== null ? { versions: tree.versions, branchPoints: tree.branchPoints, leaf: leaf === null ? null : leaf } : {}),
-        ...(isChat && chatUsesBridge(job.engine, 'chat') ? { live: await liveTurn(chain, manager) } : {}),
+        ...(isChat && chatUsesBridge(job.engine, 'chat') ? { live: snapshot?.live ?? null } : {}),
         ...(isChat ? { usage: await chatUsage(chain, manager, threadHead?.engine ?? job.engine) } : {}),
       }
     })
@@ -601,7 +627,6 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         return { error: 'job has no session id to resume yet' }
       }
       const chatRoot = isChat ? threadHead : undefined
-      const earlier = isChat ? await queue.take(rootId) : []
       let replyImages: BridgeImage[] = []
       let replyTokens: string[] = []
       if (isChat && chatUsesBridge(parent.engine, 'chat')) {
@@ -626,13 +651,15 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       }
       const model = payloadModel !== '' ? payloadModel : newest?.model ?? parent.model
       const permissionMode = isChat ? ((payloadMode as ChatPermissionMode | undefined) ?? newest?.permissionMode ?? 'settings') : (payloadMode as ChatPermissionMode | undefined)
-      const result = await manager.createJob(
+      const memory = isChat ? await chatMemory(manager, chatRoot?.project, rootId) : {}
+      const earlier = isChat ? await queue.take(rootId) : []
+      const created = manager.createJob(
         {
           ...(isChat ? {
             purpose: 'chat' as const,
             edit: chatRoot?.edit ?? parent.edit ?? false,
             project: chatRoot?.project ?? null,
-            ...await chatMemory(manager, chatRoot?.project, rootId),
+            ...memory,
           } : {}),
           engine: parent.engine,
           cwd: parent.cwd,
@@ -656,6 +683,10 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         },
         resolver,
       )
+      const result = await created.catch(async (error: unknown) => {
+        await queue.restore(rootId, earlier)
+        throw error
+      })
       if (!result.ok) {
         await queue.restore(rootId, earlier)
         set.status = result.status
@@ -710,15 +741,15 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         set.status = 404
         return { error: 'chat not found' }
       }
-      const chain = threadChain(manager.listJobs(), root.id).filter((turn) => turn.deletedAt === undefined)
-      const leaf = typeof query.leaf === 'string' && query.leaf !== '' ? query.leaf : null
-      const leafIndex = leaf === null ? chain.length - 1 : chain.findIndex((turn) => turn.id === leaf)
-      if (leafIndex < 0) {
+      const tree = buildTurnTree(root.id, manager.listJobs())
+      const requested = typeof query.leaf === 'string' && query.leaf !== '' ? query.leaf : null
+      const leaf = requested === null ? newestLeaf(tree) : activeLeaf(tree, requested)
+      if (requested !== null && leaf === null) {
         set.status = 404
         return { error: 'turn not found' }
       }
       const parts: string[] = [`# ${root.label}`, '']
-      for (const turn of chain.slice(0, leafIndex + 1)) {
+      for (const turn of leaf === null ? [] : tree.pathToLeaf(leaf)) {
         parts.push('## You', '', turn.prompt, '')
         const log = await readRedactedLog(manager.logPath(turn.id))
         const events = parseThread(log)
@@ -758,38 +789,44 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         set.status = 409
         return { error: 'Wait for the reply to finish' }
       }
-      const call = findEditCall(await readRedactedLog(manager.logPath(turn.id)), toolUseId)
-      if (call === null || (call.name !== 'Edit' && call.name !== 'MultiEdit') || call.resultIsError) {
-        set.status = 409
-        return { error: 'Only a successful Edit or MultiEdit call can be undone' }
-      }
-      const filePath = typeof call.input.file_path === 'string' && call.input.file_path !== '' ? call.input.file_path : ''
-      if (filePath === '') {
-        set.status = 409
-        return { error: UNDO_UNSUPPORTED }
-      }
-      const absolute = resolve(turn.cwd, filePath)
-      let realFile: string
-      let realCwd: string
-      try {
-        realFile = await realpath(absolute)
-        realCwd = await realpath(turn.cwd)
-      } catch {
-        set.status = 409
-        return { error: UNDO_CHANGED }
-      }
-      if (realFile !== realCwd && !realFile.startsWith(`${realCwd}/`)) {
-        set.status = 403
-        return { error: 'This edit is outside the chat folder' }
-      }
-      const outcome = undoEditContent(await readFile(realFile, 'utf8'), call.name, call.input)
-      if ('error' in outcome) {
-        set.status = outcome.status
-        return { error: outcome.error }
-      }
-      await writeFile(realFile, outcome.content)
-      await manager.updateJob(turn.id, { undone: [...(turn.undone ?? []), toolUseId] })
-      return { ok: true }
+      return await serializeTurnUndo(turn.id, async () => {
+        if ((manager.getJob(turn.id)?.undone ?? []).includes(toolUseId)) {
+          set.status = 409
+          return { error: UNDO_ALREADY }
+        }
+        const call = findEditCall(await readRedactedLog(manager.logPath(turn.id)), toolUseId)
+        if (call === null || (call.name !== 'Edit' && call.name !== 'MultiEdit') || call.resultIsError) {
+          set.status = 409
+          return { error: 'Only a successful Edit or MultiEdit call can be undone' }
+        }
+        const filePath = typeof call.input.file_path === 'string' && call.input.file_path !== '' ? call.input.file_path : ''
+        if (filePath === '') {
+          set.status = 409
+          return { error: UNDO_UNSUPPORTED }
+        }
+        const absolute = resolve(turn.cwd, filePath)
+        let realFile: string
+        let realCwd: string
+        try {
+          realFile = await realpath(absolute)
+          realCwd = await realpath(turn.cwd)
+        } catch {
+          set.status = 409
+          return { error: UNDO_CHANGED }
+        }
+        if (realFile !== realCwd && !realFile.startsWith(`${realCwd}/`)) {
+          set.status = 403
+          return { error: 'This edit is outside the chat folder' }
+        }
+        const outcome = undoEditContent(await readFile(realFile, 'utf8'), call.name, call.input)
+        if ('error' in outcome) {
+          set.status = outcome.status
+          return { error: outcome.error }
+        }
+        await writeFile(realFile, outcome.content)
+        await manager.updateJob(turn.id, { undone: [...(manager.getJob(turn.id)?.undone ?? []), toolUseId] })
+        return { ok: true }
+      })
     })
     .get('/api/jobs/:id/queue', ({ params, set }) => {
       const job = manager.getJob(params.id)

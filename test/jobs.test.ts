@@ -18,6 +18,7 @@ import {
 import type { JobManager, JobRecord } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
 import { configPath, writeSecrets } from '../server/secrets'
+import { isOwnClaudeChild, parseUtcPsLine, readProcessInfo } from '../server/process-info'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 
 let configDir: string
@@ -1052,6 +1053,8 @@ describe('bridge control channel', () => {
     expect(manager.sendControl('missing', { type: 'permission', requestId: 'r1', decision: 'deny' })).toBe(false)
   })
 
+  const claudeProcess = async (): Promise<{ command: string; startedAt: number }> => ({ command: '/usr/local/bin/claude --output-format stream-json', startedAt: Date.now() })
+
   async function waitPidGone(pid: number, timeoutMs: number): Promise<boolean> {
     const deadline = Date.now() + timeoutMs
     for (;;) {
@@ -1070,7 +1073,7 @@ describe('bridge control channel', () => {
     await mkdir(project)
     const script = `sh -c 'trap "" TERM; sleep 60' & child=$!; echo "{\\"type\\":\\"mc_child\\",\\"mc\\":true,\\"pid\\":$child}"; sleep 0.3`
     const resolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', script], env: {} })
-    const manager = createJobManager({ home })
+    const manager = createJobManager({ home, processInfo: claudeProcess })
     const result = await manager.createJob({ engine: 'claude', cwd: project, prompt: 'hi', label: 'Chat', purpose: 'chat' }, resolver)
     if (!result.ok) throw new Error(result.error)
     await new Promise((resolve) => setTimeout(resolve, 500))
@@ -1080,6 +1083,73 @@ describe('bridge control channel', () => {
     await manager.killJob(result.job.id).catch(() => undefined)
     await waitForStatus(manager, result.job.id, 8000).catch(() => undefined)
     expect(await waitPidGone(childPid, 7000)).toBe(true)
+  }, 20000)
+
+  function adoptedBridgeRecord(id: string) {
+    return {
+      id,
+      engine: 'claude',
+      cwd: join(home, 'project'),
+      worktree: null,
+      baseRepo: null,
+      baseBranch: null,
+      label: 'Chat',
+      prompt: 'hi',
+      pid: 999_999,
+      status: 'running' as const,
+      startedAt: Date.now() - 1000,
+      turns: 0,
+      slowAt: null,
+      lastTool: null,
+      endedAt: null,
+      exitCode: null,
+      diffStat: null,
+      reviewedAt: null,
+      sessionId: null,
+      parentJobId: null,
+      threadRoot: id,
+      terminalId: null,
+      reviewOf: null,
+      model: null,
+      purpose: 'chat' as const,
+    }
+  }
+
+  test('an adopted dead bridge job leaves alone a logged pid that is no longer a claude child', async () => {
+    const child = Bun.spawn(['sleep', '60'], { stdout: 'ignore', stderr: 'ignore' })
+    const childPid = child.pid as number
+    const asked: number[] = []
+    try {
+      await mkdir(join(home, 'project'), { recursive: true })
+      await mkdir(join(configDir, LOGS_DIR), { recursive: true })
+      await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(adoptedBridgeRecord('adopted-bridge-2'))}\n`)
+      await writeFile(join(configDir, LOGS_DIR, 'adopted-bridge-2.log'), `${JSON.stringify({ type: 'mc_child', mc: true, pid: childPid, startedAt: Date.now() })}\n{"type":"result","subtype":"success","is_error":false}\n`)
+      const manager = createJobManager({ home, processInfo: async (pid) => { asked.push(pid); return { command: '/bin/sleep 60', startedAt: Date.now() } } })
+      await waitForStatus(manager, 'adopted-bridge-2', 5000)
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      expect(asked).toContain(childPid)
+      expect(child.exitCode).toBeNull()
+      expect(child.signalCode).toBeNull()
+    } finally {
+      child.kill('SIGKILL')
+    }
+  }, 20000)
+
+  test('a logged claude pid that started before the job is not signalled', async () => {
+    const child = Bun.spawn(['sleep', '60'], { stdout: 'ignore', stderr: 'ignore' })
+    try {
+      await mkdir(join(home, 'project'), { recursive: true })
+      await mkdir(join(configDir, LOGS_DIR), { recursive: true })
+      await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(adoptedBridgeRecord('adopted-bridge-3'))}\n`)
+      await writeFile(join(configDir, LOGS_DIR, 'adopted-bridge-3.log'), `${JSON.stringify({ type: 'mc_child', mc: true, pid: child.pid })}\n`)
+      const manager = createJobManager({ home, processInfo: async () => ({ command: '/usr/local/bin/claude --print', startedAt: Date.now() - 60_000 }) })
+      await waitForStatus(manager, 'adopted-bridge-3', 5000)
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      expect(child.exitCode).toBeNull()
+      expect(child.signalCode).toBeNull()
+    } finally {
+      child.kill('SIGKILL')
+    }
   }, 20000)
 
   test('an adopted dead bridge job kills a live child from its log', async () => {
@@ -1116,7 +1186,7 @@ describe('bridge control channel', () => {
     await mkdir(join(configDir, LOGS_DIR), { recursive: true })
     await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(running)}\n`)
     await writeFile(join(configDir, LOGS_DIR, 'adopted-bridge-1.log'), `${JSON.stringify({ type: 'mc_child', mc: true, pid: childPid })}\n{"type":"result","subtype":"success","is_error":false}\n`)
-    createJobManager({ home })
+    createJobManager({ home, processInfo: claudeProcess })
     expect(await waitPidGone(childPid, 8000)).toBe(true)
   }, 20000)
 
@@ -1134,5 +1204,34 @@ describe('bridge control channel', () => {
     await waitForStatus(manager, turn.job.id)
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(manager.getJob(root.job.id)?.allowRules).toEqual(['Bash(bun test:*)', 'Read(//tmp/x.md)'])
+  })
+})
+
+describe('child process identity', () => {
+  test('ps output parses into a start time and a command, padded days included', () => {
+    expect(parseUtcPsLine('Wed Sep  3 10:12:33 2026     /usr/local/bin/claude --print\n')).toEqual({ command: '/usr/local/bin/claude --print', startedAt: Date.UTC(2026, 8, 3, 10, 12, 33) })
+    expect(parseUtcPsLine('')).toBeNull()
+    expect(parseUtcPsLine('not a date at all, really   sleep 60')).toBeNull()
+  })
+
+  test('only a claude command started no earlier than 5 s before the job counts as ours', () => {
+    const since = Date.parse('2026-09-30T10:00:00Z')
+    expect(isOwnClaudeChild({ command: '/opt/claude/bin/claude -p', startedAt: since - 4_000 }, since)).toBe(true)
+    expect(isOwnClaudeChild({ command: '/opt/claude/bin/claude -p', startedAt: since - 6_000 }, since)).toBe(false)
+    expect(isOwnClaudeChild({ command: '/bin/sleep 60', startedAt: since }, since)).toBe(false)
+    expect(isOwnClaudeChild(null, since)).toBe(false)
+  })
+
+  test('the real ps reader describes a process it is given', async () => {
+    const child = Bun.spawn(['sleep', '5'], { stdout: 'ignore', stderr: 'ignore' })
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      const info = await readProcessInfo(child.pid as number)
+      expect(info?.command).toContain('sleep 5')
+      expect(Math.abs((info?.startedAt ?? 0) - Date.now())).toBeLessThan(3_000)
+      expect(await readProcessInfo(999_999)).toBeNull()
+    } finally {
+      child.kill('SIGKILL')
+    }
   })
 })

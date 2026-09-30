@@ -77,3 +77,19 @@ describe('forkPointUuid', () => {
     expect(forkPointUuid(log)).toBeNull()
   })
 })
+
+describe('newestLeafUnder', () => {
+  test('a turn that gained replies resolves to its newest leaf, a leaf to itself', () => {
+    const turns = [
+      turn('t1', 100),
+      turn('t2', 200, { prevTurnId: 't1' }),
+      turn('t3', 300, { prevTurnId: 't1', versionOf: 't2' }),
+      turn('t4', 400, { prevTurnId: 't2' }),
+      turn('t5', 500, { prevTurnId: 't4' }),
+    ]
+    const tree = buildTurnTree('root', turns)
+    expect(tree.newestLeafUnder('t2')).toBe('t5')
+    expect(tree.newestLeafUnder('t1')).toBe('t5')
+    expect(tree.newestLeafUnder('t3')).toBe('t3')
+  })
+})

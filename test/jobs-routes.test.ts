@@ -1002,6 +1002,24 @@ describe('chat jobs', () => {
     await pollUntilDone(app, turn.id)
   })
 
+  test('a reply rejected for a bad image keeps the queued messages', async () => {
+    const calls: EngineResolverParams[] = []
+    const manager = createJobManager({ home: homedir() })
+    const app = buildApp(manager, capturingResolver(calls))
+    const root = await (await post(app, chatBody())).json()
+    await pollUntilDone(app, root.id)
+    const queue = createChatQueue(join(configDir, 'chat-queue.json'))
+    await queue.add(root.id, 'first')
+    await queue.add(root.id, 'second')
+    const replyApp = buildApp(manager, capturingResolver(calls))
+    const rejected = await replyApp.handle(new Request(`http://127.0.0.1:7777/api/jobs/${root.id}/reply`, { method: 'POST', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body: JSON.stringify({ message: 'third', images: [{ path: join(configDir, 'missing.png') }] }) }))
+    expect(rejected.status).toBe(400)
+    const badMode = await replyApp.handle(new Request(`http://127.0.0.1:7777/api/jobs/${root.id}/reply`, { method: 'POST', headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' }, body: JSON.stringify({ message: 'third', permissionMode: 'yolo' }) }))
+    expect(badMode.status).toBe(400)
+    const items = (await (await queueOf(replyApp, root.id)).json()).items as Array<{ text: string }>
+    expect(items.map(item => item.text)).toEqual(['first', 'second'])
+  })
+
   test('a reply to a running non-chat job is still not queued', async () => {
     const resolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `echo '${SESSION_LINE}'; sleep 30`], env: {} })
     const manager = createJobManager({ home: homedir() })
@@ -1323,6 +1341,113 @@ describe('live thread and stream offsets', () => {
     await manager.killJob(id).catch(() => undefined)
   }, 12000)
 
+  async function finishedJob(app: Elysia): Promise<string> {
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'log-owner', label: 'log-owner' }))
+    const { id } = (await created.json()) as { id: string }
+    await pollUntilDone(app, id)
+    return id
+  }
+
+  async function collectSse(response: Response, done: (text: string) => boolean, timeoutMs = 3000): Promise<{ text: string; reader: ReadableStreamDefaultReader<Uint8Array> }> {
+    const reader = (response.body as ReadableStream<Uint8Array>).getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    const deadline = Date.now() + timeoutMs
+    while (!done(text) && Date.now() < deadline) {
+      const next = await Promise.race([reader.read(), new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 100))])
+      if (next === undefined || next.done) continue
+      text += decoder.decode(next.value, { stream: true })
+    }
+    return { text, reader }
+  }
+
+  const dataLines = (sse: string): string[] => sse.split('\n').filter(line => line.startsWith('data: ') && line !== 'data: ').map(line => line.slice('data: '.length))
+
+  test('an offset stream counts bytes, so Thai text and dashes arrive once and whole', async () => {
+    const manager = createJobManager()
+    const app = buildApp(manager, echoResolver)
+    const id = await finishedJob(app)
+    const line1 = JSON.stringify({ n: 1, text: 'สวัสดี — one' })
+    const line2 = JSON.stringify({ n: 2, text: 'สวัสดี — two' })
+    const line3 = JSON.stringify({ n: 3, text: 'สวัสดี — three' })
+    const line4 = JSON.stringify({ n: 4, text: 'สวัสดี — four' })
+    await writeFile(manager.logPath(id), `${line1}\n${line2}\n`)
+    const controller = new AbortController()
+    const response = await app.handle(new Request(`http://localhost/api/jobs/${id}/stream?offset=${Buffer.byteLength(`${line1}\n`)}`, { signal: controller.signal }))
+    expect(response.status).toBe(200)
+    const first = await collectSse(response, text => text.includes('"n":2'))
+    await appendFile(manager.logPath(id), `${line3}\n`)
+    let text = first.text
+    const decoder = new TextDecoder()
+    const deadline = Date.now() + 3000
+    while (!text.includes('"n":3') && Date.now() < deadline) {
+      const next = await Promise.race([first.reader.read(), new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 100))])
+      if (next !== undefined && !next.done) text += decoder.decode(next.value, { stream: true })
+    }
+    const tail = Buffer.from(`${line4}\n`)
+    const insideThaiChar = Buffer.byteLength('{"n":4,"text":"') + 1
+    await appendFile(manager.logPath(id), tail.subarray(0, insideThaiChar))
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    await appendFile(manager.logPath(id), tail.subarray(insideThaiChar))
+    const end = Date.now() + 3000
+    while (!text.includes('"n":4') && Date.now() < end) {
+      const next = await Promise.race([first.reader.read(), new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 100))])
+      if (next !== undefined && !next.done) text += decoder.decode(next.value, { stream: true })
+    }
+    controller.abort()
+    await first.reader.cancel().catch(() => undefined)
+    expect(dataLines(text)).toEqual([line2, line3, line4])
+  })
+
+  test('the stream without an offset keeps its original tail-then-append behaviour', async () => {
+    const manager = createJobManager()
+    const app = buildApp(manager, echoResolver)
+    const id = await finishedJob(app)
+    await writeFile(manager.logPath(id), 'alpha\nสวัสดี — beta\nno newline yet')
+    const controller = new AbortController()
+    const response = await app.handle(new Request(`http://localhost/api/jobs/${id}/stream`, { signal: controller.signal }))
+    const initial = await collectSse(response, text => text.endsWith('\n\n'))
+    expect(initial.text).toBe('data: alpha\ndata: สวัสดี — beta\ndata: no newline yet\n\n')
+    await appendFile(manager.logPath(id), '\nlast line without newline')
+    let text = ''
+    const decoder = new TextDecoder()
+    const deadline = Date.now() + 3000
+    while (!text.includes('last line') && Date.now() < deadline) {
+      const next = await Promise.race([initial.reader.read(), new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 100))])
+      if (next !== undefined && !next.done) text += decoder.decode(next.value, { stream: true })
+    }
+    controller.abort()
+    await initial.reader.cancel().catch(() => undefined)
+    expect(text).toBe('data: \ndata: last line without newline\n\n')
+  })
+
+  test('the live turn and its messages come from one read, so text written in between is not lost', async () => {
+    const hello = JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'สวัสดี — hello' }] } })
+    const late = JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'late words' }] } })
+    const resolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `printf '%s\\n' '${initLine}'; printf '%s\\n' '${hello}'; sleep 30`], env: {} })
+    const manager = createJobManager()
+    let reads = 0
+    const readLogBytes = async (path: string): Promise<Uint8Array> => {
+      reads += 1
+      const bytes = new Uint8Array(await Bun.file(path).arrayBuffer())
+      await appendFile(path, `${late}\n`)
+      return bytes
+    }
+    const app = new Elysia().use(jobsRoutes(manager, resolver, { readLogBytes }))
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'live-gap', purpose: 'chat' }))
+    const { id } = (await created.json()) as { id: string }
+    const deadline = Date.now() + 3000
+    while (!(await readFile(manager.logPath(id), 'utf8').catch(() => '')).includes('hello') && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 30))
+    const before = Buffer.byteLength(await readFile(manager.logPath(id), 'utf8'))
+    const thread = await (await app.handle(get(`/api/jobs/${id}/thread`))).json() as { live: { offset: number } | null; messages: Array<{ kind: string; text: string }> }
+    expect(reads).toBe(1)
+    expect(thread.live?.offset).toBe(before)
+    const texts = thread.messages.filter(message => message.kind === 'text').map(message => message.text)
+    expect(texts).toEqual(['สวัสดี — hello'])
+    const rest = (await readFile(manager.logPath(id))).subarray(Number(thread.live?.offset)).toString('utf8')
+    expect(rest).toBe(`${late}\n`)
+    await manager.killJob(id).catch(() => undefined)
+  }, 10000)
 })
 
 describe('chat menu actions', () => {
@@ -1488,7 +1613,55 @@ describe('versions and branches', () => {
     expect(withBranch.branchPoints).toEqual([{ turnId: branch.id, label: 'go left instead', mainLeaf: version.id }])
   })
 
-  test('a non-leaf parentTurnId, a running chat and a uuid-less fork point are refused', async () => {
+  test('a stale leaf resolves to the newest leaf under it for the thread and the next reply', async () => {
+    const app = buildApp(createJobManager(), treeResolver)
+    const first = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'one', label: 'stale-leaf', purpose: 'chat' }))
+    const root = ((await first.json()) as { id: string }).id
+    await settle(app, root)
+    const second = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'two' }))
+    const turn2 = ((await second.json()) as { id: string }).id
+    await settle(app, turn2)
+    const edited = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'two revised', from: { turnId: turn2, mode: 'replace' } }))
+    await settle(app, ((await edited.json()) as { id: string }).id)
+
+    const fromOld = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'three', parentTurnId: turn2 }))
+    expect(fromOld.status).toBe(200)
+    const turn3 = ((await fromOld.json()) as { id: string }).id
+    await settle(app, turn3)
+
+    const texts = (payload: { messages: Array<{ kind: string; text: string }> }): string[] => payload.messages.filter(message => message.kind === 'text').map(message => message.text)
+    const stale = await (await app.handle(get(`/api/jobs/${root}/thread?leaf=${turn2}`))).json() as { leaf: string; messages: Array<{ kind: string; text: string }> }
+    expect(stale.leaf).toBe(turn3)
+    expect(texts(stale)).toEqual(['reply one', 'reply two', 'reply three'])
+
+    const next = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'four', parentTurnId: turn2 }))
+    expect(next.status).toBe(200)
+    const turn4 = (await next.json()) as { id: string; prevTurnId: string }
+    expect(turn4.prevTurnId).toBe(turn3)
+    await settle(app, turn4.id)
+  })
+
+  test('export follows the active path, not every turn by start time', async () => {
+    const app = buildApp(createJobManager(), treeResolver)
+    const first = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'one', label: 'export-path', purpose: 'chat' }))
+    const root = ((await first.json()) as { id: string }).id
+    await settle(app, root)
+    const second = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'two', parentTurnId: root }))
+    const turn2 = ((await second.json()) as { id: string }).id
+    await settle(app, turn2)
+    const edited = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'two revised', from: { turnId: turn2, mode: 'replace' } }))
+    const version = ((await edited.json()) as { id: string }).id
+    await settle(app, version)
+
+    const active = await (await app.handle(get(`/api/jobs/${root}/export.md`))).text()
+    expect(active).toContain('reply two revised')
+    expect(active).not.toContain('reply two\n')
+    const older = await (await app.handle(get(`/api/jobs/${root}/export.md?leaf=${turn2}`))).text()
+    expect(older).toContain('reply two\n')
+    expect(older).not.toContain('two revised')
+  })
+
+  test('an unknown parentTurnId, a running chat and a uuid-less fork point are refused', async () => {
     const manager = createJobManager()
     const app = new Elysia().use(jobsRoutes(manager, treeResolver)).use(jobsRoutes(manager, treeResolver))
     const first = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'alpha', label: 'tree-refuse', purpose: 'chat' }))
@@ -1498,8 +1671,10 @@ describe('versions and branches', () => {
     const turn2 = ((await second.json()) as { id: string }).id
     await settle(app, turn2)
     const stale = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'late', parentTurnId: root }))
-    expect(stale.status).toBe(409)
-    expect(await stale.json()).toEqual({ error: 'Reply from the newest message of this branch' })
+    expect(stale.status).toBe(200)
+    const staleTurn = (await stale.json()) as { id: string; prevTurnId: string }
+    expect(staleTurn.prevTurnId).toBe(turn2)
+    await settle(app, staleTurn.id)
     const foreign = await app.handle(post(`/api/jobs/${root}/reply`, { message: 'x', parentTurnId: 'nope' }))
     expect(foreign.status).toBe(409)
 

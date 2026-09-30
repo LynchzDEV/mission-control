@@ -80,19 +80,54 @@ describe('POST /api/jobs/:id/undo', () => {
     expect(manager.getJob(id)?.undone).toEqual(['toolu_01'])
   })
 
-  test('a second undo of a changed file reports the change', async () => {
+  test('an edit that no longer matches reports the change', async () => {
     const id = await settledChat(logResolver([
       init,
       toolUse('toolu_02', 'Edit', { file_path: 'demo/notes.txt', old_string: 'second line', new_string: 'second line gone' }),
       toolResult('toolu_02', false),
       done,
+    ]), 'edit-changed')
+    const response = await app(logResolver([])).handle(post(`/api/jobs/${id}/undo`, { toolUseId: 'toolu_02' }))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ error: 'The file changed since this edit; undo it by hand' })
+  })
+
+  test('undoing the same edit twice is refused and leaves the file alone', async () => {
+    await writeFile(join(repo, 'demo', 'code.ts'), 'call foo here\n')
+    const id = await settledChat(logResolver([
+      init,
+      toolUse('toolu_07', 'Edit', { file_path: 'demo/code.ts', old_string: 'foo()', new_string: 'foo' }),
+      toolResult('toolu_07', false),
+      done,
     ]), 'edit-twice')
-    await writeFile(join(repo, 'demo', 'notes.txt'), 'first line\nsecond line gone\n')
-    const undo = await app(logResolver([])).handle(post(`/api/jobs/${id}/undo`, { toolUseId: 'toolu_02' }))
+    const undo = await app(logResolver([])).handle(post(`/api/jobs/${id}/undo`, { toolUseId: 'toolu_07' }))
     expect(undo.status).toBe(200)
-    const repeated = await app(logResolver([])).handle(post(`/api/jobs/${id}/undo`, { toolUseId: 'toolu_02' }))
+    expect(await readFile(join(repo, 'demo', 'code.ts'), 'utf8')).toBe('call foo() here\n')
+    const repeated = await app(logResolver([])).handle(post(`/api/jobs/${id}/undo`, { toolUseId: 'toolu_07' }))
     expect(repeated.status).toBe(409)
-    expect(await repeated.json()).toEqual({ error: 'The file changed since this edit; undo it by hand' })
+    expect(await repeated.json()).toEqual({ error: 'This edit was already undone' })
+    expect(await readFile(join(repo, 'demo', 'code.ts'), 'utf8')).toBe('call foo() here\n')
+    expect(manager.getJob(id)?.undone).toEqual(['toolu_07'])
+  })
+
+  test('two undos of different edits in one turn at once both land', async () => {
+    const id = await settledChat(logResolver([
+      init,
+      toolUse('toolu_08', 'Edit', { file_path: 'demo/notes.txt', old_string: 'first line', new_string: 'FIRST' }),
+      toolResult('toolu_08', false),
+      toolUse('toolu_09', 'Edit', { file_path: 'demo/notes.txt', old_string: 'second line', new_string: 'SECOND' }),
+      toolResult('toolu_09', false),
+      done,
+    ]), 'edit-concurrent')
+    await writeFile(join(repo, 'demo', 'notes.txt'), 'FIRST\nSECOND\n')
+    const routes = app(logResolver([]))
+    const [left, right] = await Promise.all([
+      routes.handle(post(`/api/jobs/${id}/undo`, { toolUseId: 'toolu_08' })),
+      routes.handle(post(`/api/jobs/${id}/undo`, { toolUseId: 'toolu_09' })),
+    ])
+    expect([left.status, right.status]).toEqual([200, 200])
+    expect(await readFile(join(repo, 'demo', 'notes.txt'), 'utf8')).toBe('first line\nsecond line\n')
+    expect([...(manager.getJob(id)?.undone ?? [])].sort()).toEqual(['toolu_08', 'toolu_09'])
   })
 
   test('a MultiEdit undo applies the inverse edits in reverse order', async () => {

@@ -20,6 +20,20 @@ export function findEditCall(log: string, toolUseId: string): EditCall | null {
 
 export const UNDO_CHANGED = 'The file changed since this edit; undo it by hand'
 export const UNDO_UNSUPPORTED = 'This edit cannot be undone automatically'
+export const UNDO_ALREADY = 'This edit was already undone'
+
+const turnUndoQueues = new Map<string, Promise<unknown>>()
+
+export function serializeTurnUndo<T>(turnId: string, work: () => Promise<T>): Promise<T> {
+  const previous = turnUndoQueues.get(turnId) ?? Promise.resolve()
+  const next = previous.then(work, work)
+  const settled = next.then(() => undefined, () => undefined)
+  turnUndoQueues.set(turnId, settled)
+  void settled.then(() => {
+    if (turnUndoQueues.get(turnId) === settled) turnUndoQueues.delete(turnId)
+  })
+  return next
+}
 
 function replaceOnce(content: string, needle: string, replacement: string): string | null {
   const first = content.indexOf(needle)

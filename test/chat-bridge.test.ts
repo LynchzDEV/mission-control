@@ -181,6 +181,15 @@ describe('always-allow rules', () => {
     expect(byType(h, 'mc_permission_resolved')[0]).toMatchObject({ rules: ['Bash(ls -la)'] })
   })
 
+  test('a Bash command with a glob character is allowed once instead of becoming a wildcard rule', async () => {
+    for (const command of ['rm -rf *', 'ls file?.txt', 'cat [ab].md']) {
+      const h = harness()
+      h.controls.push(allow('allow_always'))
+      await bridgeRun(baseLaunch(), h, permissionQuery('Bash', { command }, {}, []))
+      expect(byType(h, 'mc_permission_resolved')[0]).toMatchObject({ decision: 'allow_always', rules: [], reason: 'no-rule' })
+    }
+  })
+
   test('file-writing and read tools persist absolute-path rules', async () => {
     const write = harness()
     write.controls.push(allow('allow_always'))
@@ -383,6 +392,7 @@ describe('makeSpawner', () => {
     await new Promise((resolve) => setTimeout(resolve, 250))
     expect(lines[0]).toMatchObject({ type: 'mc_child', mc: true })
     expect(typeof lines[0].pid).toBe('number')
+    expect(Math.abs(Number(lines[0].startedAt) - Date.now())).toBeLessThan(5000)
     expect(stderr.join('')).toContain('e1')
     expect(child.exitCode).toBe(0)
   })

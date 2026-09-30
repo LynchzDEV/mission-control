@@ -98,10 +98,12 @@ export function makeSpawner(write: (line: object) => void, onStderr: (text: stri
   return (options) => {
     const child = spawn(options.command, options.args, { cwd: options.cwd, env: options.env, signal: options.signal, stdio: ['pipe', 'pipe', 'pipe'] })
     child.stderr?.on('data', (chunk: Buffer) => onStderr(chunk.toString()))
-    write({ type: 'mc_child', mc: true, pid: child.pid })
+    write({ type: 'mc_child', mc: true, pid: child.pid, startedAt: Date.now() })
     return child as unknown as SpawnedProcess
   }
 }
+
+const RULE_GLOB_CHARACTERS = /[*?[]/
 
 const FILE_WRITING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
@@ -112,7 +114,7 @@ function ruleString(toolName: string, ruleContent: string | undefined): string {
 export function alwaysAllowRules(toolName: string, input: Record<string, unknown>, suggestions: PermissionUpdate[] | undefined): string[] {
   const addRules = (suggestions ?? []).filter((update): update is Extract<PermissionUpdate, { type: 'addRules' }> => update.type === 'addRules').flatMap((update) => update.rules)
   if (addRules.length > 0) return addRules.map((rule) => ruleString(rule.toolName, rule.ruleContent))
-  if (toolName === 'Bash' && typeof input.command === 'string') return [`Bash(${input.command})`]
+  if (toolName === 'Bash' && typeof input.command === 'string') return RULE_GLOB_CHARACTERS.test(input.command) ? [] : [`Bash(${input.command})`]
   if (FILE_WRITING_TOOLS.has(toolName)) {
     for (const key of ['file_path', 'notebook_path'] as const) {
       const path = input[key]

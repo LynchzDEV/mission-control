@@ -13,6 +13,7 @@ import {
 } from './activity'
 import { DIR_MODE, FILE_MODE, configDir, listenTarget, readApiToken } from './secrets'
 import { chatRules } from './chat-profile'
+import { isOwnClaudeChild, readProcessInfo, type ProcessInfoReader } from './process-info'
 import { validateWorkspaceCwd } from './workspace'
 import { git, prepareWorktree, worktreeBranch } from './job-worktrees'
 import type { EngineResolver, EngineResolverParams, EngineSpawn } from './jobs-engine-iface'
@@ -304,6 +305,7 @@ export type JobManagerOptions = {
   onJobStarted?: (record: JobRecord) => void
   onJobProgress?: (record: JobRecord) => void
   onPermissionRequest?: (record: JobRecord, request: { requestId: string; title: string; body: string }) => void
+  processInfo?: ProcessInfoReader
 }
 
 export function createJobManager(options: JobManagerOptions = {}): JobManager {
@@ -316,6 +318,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   const home = options.home
   const activityIntervalMs = options.activityIntervalMs ?? ACTIVITY_THROTTLE_MS
   const clock = options.now ?? Date.now
+  const processInfo = options.processInfo ?? readProcessInfo
   let persistence = Promise.resolve()
   const processes = new Map<string, Bun.Subprocess>()
   const controls = new Map<string, Bun.FileSink>()
@@ -498,23 +501,37 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     }
   }
 
-  async function logChildPids(id: string): Promise<number[]> {
+  async function logChildren(id: string): Promise<Array<{ pid: number; startedAt: number | null }>> {
     const log = await readLogFile(logPath(id))
-    const pids: number[] = []
+    const children: Array<{ pid: number; startedAt: number | null }> = []
     for (const line of log.split('\n')) {
       if (!line.includes('"mc_child"')) continue
       try {
-        const parsed = JSON.parse(line) as { type?: string; pid?: unknown }
-        if (parsed.type === 'mc_child' && typeof parsed.pid === 'number' && parsed.pid > 0) pids.push(parsed.pid)
+        const parsed = JSON.parse(line) as { type?: string; pid?: unknown; startedAt?: unknown }
+        if (parsed.type === 'mc_child' && typeof parsed.pid === 'number' && parsed.pid > 0) {
+          children.push({ pid: parsed.pid, startedAt: typeof parsed.startedAt === 'number' && Number.isFinite(parsed.startedAt) ? parsed.startedAt : null })
+        }
       } catch {
         // a torn line mid-write is skipped
       }
     }
+    return children
+  }
+
+  // A logged pid may have been reused by an unrelated process since (e.g. after a reboot).
+  async function ownLiveChildPids(id: string): Promise<number[]> {
+    const jobStartedAt = jobs.get(id)?.startedAt ?? 0
+    const pids: number[] = []
+    for (const child of await logChildren(id)) {
+      if (!pidAlive(child.pid)) continue
+      if (!isOwnClaudeChild(await processInfo(child.pid), child.startedAt ?? jobStartedAt)) continue
+      pids.push(child.pid)
+    }
     return pids
   }
 
-  async function signalChildren(id: string, signal: 'SIGTERM' | 'SIGKILL'): Promise<void> {
-    for (const pid of await logChildPids(id)) {
+  function signalPids(pids: readonly number[], signal: 'SIGTERM' | 'SIGKILL'): void {
+    for (const pid of pids) {
       if (!pidAlive(pid)) continue
       try {
         process.kill(pid, signal)
@@ -524,23 +541,17 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     }
   }
 
+  async function signalChildren(id: string, signal: 'SIGTERM' | 'SIGKILL'): Promise<void> {
+    signalPids(await ownLiveChildPids(id), signal)
+  }
+
   // The escalation must not depend on the bridge surviving: the CLI child is killed from the log too.
   function killOrphanChildren(id: string): void {
     void (async () => {
-      const pids = await logChildPids(id)
-      const alive = pids.filter((pid) => pidAlive(pid))
+      const alive = await ownLiveChildPids(id)
       if (alive.length === 0) return
-      await signalChildren(id, 'SIGTERM')
-      setTimeout(() => {
-        for (const pid of alive) {
-          if (!pidAlive(pid)) continue
-          try {
-            process.kill(pid, 'SIGKILL')
-          } catch {
-            // already gone
-          }
-        }
-      }, KILL_ESCALATION_MS)
+      signalPids(alive, 'SIGTERM')
+      setTimeout(() => signalPids(alive, 'SIGKILL'), KILL_ESCALATION_MS)
     })().catch(() => {})
   }
 
@@ -996,6 +1007,25 @@ export async function readLogSince(path: string, offset: number): Promise<LogChu
   if (info.size <= offset) return { content: '', offset }
   const content = await readLogRange(path, offset, info.size)
   return { content, offset: info.size }
+}
+
+const NEWLINE_BYTE = 0x0a
+
+export function completeLinesPrefix(bytes: Uint8Array): { content: string; byteLength: number } {
+  const byteLength = bytes.lastIndexOf(NEWLINE_BYTE) + 1
+  return { content: new TextDecoder().decode(bytes.subarray(0, byteLength)), byteLength }
+}
+
+export async function readCompleteLinesSince(path: string, offset: number): Promise<LogChunk> {
+  let info
+  try {
+    info = await stat(path)
+  } catch {
+    return { content: '', offset }
+  }
+  if (info.size <= offset) return { content: '', offset }
+  const { content, byteLength } = completeLinesPrefix(new Uint8Array(await Bun.file(path).slice(offset, info.size).arrayBuffer()))
+  return { content, offset: offset + byteLength }
 }
 
 async function readLogRange(path: string, start: number, end: number): Promise<string> {
