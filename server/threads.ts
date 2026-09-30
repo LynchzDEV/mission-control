@@ -26,6 +26,8 @@ export type ThreadMessage =
       input: string
       result: string
       resultIsError: boolean
+      toolUseId: string
+      undone: boolean
     }
   | { role: 'assistant'; kind: 'permission'; jobId: string } & ThreadMessagePermission
   | { role: 'result'; kind: 'result'; jobId: string; text: string; isError: boolean }
@@ -53,6 +55,8 @@ export function eventToMessage(event: ActivityEvent, jobId: string): ThreadMessa
       input: event.input ?? '',
       result: event.result ?? '',
       resultIsError: event.resultIsError === true,
+      toolUseId: event.toolUseId ?? '',
+      undone: false,
     }
   }
   if (event.kind === 'permission') {
@@ -93,7 +97,11 @@ export function jobMessages(job: JobRecord, log: string): ThreadMessage[] {
     if (message !== null) turn.push(message)
   }
   if (job.status === 'running') return turn
-  return turn.map((message) => message.kind === 'permission' && message.state === 'pending' ? { ...message, state: 'cancelled' as const } : message)
+  return turn.map((message) => {
+    if (message.kind === 'permission' && message.state === 'pending') return { ...message, state: 'cancelled' as const }
+    if (message.kind === 'tool' && message.toolUseId !== '' && (job.undone ?? []).includes(message.toolUseId)) return { ...message, undone: true }
+    return message
+  })
 }
 
 export async function assembleThread(

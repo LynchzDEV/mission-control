@@ -1,7 +1,7 @@
 import { watch } from 'node:fs'
-import { readFile, realpath, stat } from 'node:fs/promises'
+import { readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 
 import { Elysia } from 'elysia'
 
@@ -23,6 +23,7 @@ import type { EngineResolver } from '../jobs-engine-iface'
 import { chatUsesBridge, engineSupportsResume } from '../jobs-engine-iface'
 import { MAX_MODEL_LENGTH } from '../engines'
 import { lintSpec } from '../spec-lint'
+import { findEditCall, UNDO_CHANGED, UNDO_UNSUPPORTED, undoEditContent } from '../chat-undo'
 import { readRoles } from './roles'
 import { assembleThread, replySessionId, threadChain, threadIsRunning, threadRootOf } from '../threads'
 
@@ -654,6 +655,60 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
           'content-disposition': `attachment; filename="${slug === '' ? 'chat' : slug}.md"`,
         },
       })
+    })
+    .post('/api/jobs/:id/undo', async ({ params, body, set }) => {
+      const toolUseId = typeof (body as { toolUseId?: unknown } | null)?.toolUseId === 'string' ? String((body as { toolUseId: string }).toolUseId) : ''
+      if (toolUseId === '') {
+        set.status = 400
+        return { error: 'toolUseId is required' }
+      }
+      const turn = manager.getJob(params.id)
+      if (turn === undefined) {
+        set.status = 404
+        return { error: 'job not found' }
+      }
+      const rootId = threadRootOf(turn)
+      const root = manager.getJob(rootId)
+      if (turn.purpose !== 'chat' && root?.purpose !== 'chat') {
+        set.status = 409
+        return { error: 'Only a chat edit can be undone' }
+      }
+      if (threadIsRunning(threadChain(manager.listJobs(), rootId))) {
+        set.status = 409
+        return { error: 'Wait for the reply to finish' }
+      }
+      const call = findEditCall(await readRedactedLog(manager.logPath(turn.id)), toolUseId)
+      if (call === null || (call.name !== 'Edit' && call.name !== 'MultiEdit') || call.resultIsError) {
+        set.status = 409
+        return { error: 'Only a successful Edit or MultiEdit call can be undone' }
+      }
+      const filePath = typeof call.input.file_path === 'string' && call.input.file_path !== '' ? call.input.file_path : ''
+      if (filePath === '') {
+        set.status = 409
+        return { error: UNDO_UNSUPPORTED }
+      }
+      const absolute = resolve(turn.cwd, filePath)
+      let realFile: string
+      let realCwd: string
+      try {
+        realFile = await realpath(absolute)
+        realCwd = await realpath(turn.cwd)
+      } catch {
+        set.status = 409
+        return { error: UNDO_CHANGED }
+      }
+      if (realFile !== realCwd && !realFile.startsWith(`${realCwd}/`)) {
+        set.status = 403
+        return { error: 'This edit is outside the chat folder' }
+      }
+      const outcome = undoEditContent(await readFile(realFile, 'utf8'), call.name, call.input)
+      if ('error' in outcome) {
+        set.status = outcome.status
+        return { error: outcome.error }
+      }
+      await writeFile(realFile, outcome.content)
+      await manager.updateJob(turn.id, { undone: [...(turn.undone ?? []), toolUseId] })
+      return { ok: true }
     })
     .get('/api/jobs/:id/queue', ({ params, set }) => {
       const job = manager.getJob(params.id)

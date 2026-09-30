@@ -1,7 +1,12 @@
 import Anser from 'anser'
+import { diffLines } from 'diff'
 
 export type ToolCardKind = 'read' | 'search' | 'edit' | 'bash' | 'agent' | 'other'
 export type ToolCardStatus = 'done' | 'failed' | 'running'
+
+export type DiffLine = { old: number | null; new: number | null; sign: ' ' | '+' | '-'; text: string }
+
+export type EditDiff = { tool: 'Edit' | 'MultiEdit' | 'Write'; path: string; additions: number; deletions: number; lines: DiffLine[] }
 
 export type ToolCard = {
   kind: ToolCardKind
@@ -14,9 +19,12 @@ export type ToolCard = {
   output: string
   errorLine: string | null
   key: string
+  toolUseId: string
+  undone: boolean
+  diff: EditDiff | null
 }
 
-export type ToolCardMessage = { title: string; detail: string; input: string; result: string; resultIsError: boolean }
+export type ToolCardMessage = { title: string; detail: string; input: string; result: string; resultIsError: boolean; toolUseId?: string; undone?: boolean }
 
 const KIND_BY_TITLE: Record<string, ToolCardKind> = {
   Read: 'read',
@@ -67,6 +75,58 @@ function editSummary(title: string, input: Record<string, unknown>): string {
   return `+${added} −${removed}`
 }
 
+function diffOf(oldText: string, newText: string, path: string, tool: EditDiff['tool']): EditDiff {
+  const lines: DiffLine[] = []
+  let oldNumber = 0
+  let newNumber = 0
+  let additions = 0
+  let deletions = 0
+  for (const part of diffLines(oldText, newText)) {
+    const rows = part.value.replace(/\n$/, '').split('\n')
+    for (const text of rows) {
+      if (part.added === true) {
+        newNumber += 1
+        additions += 1
+        lines.push({ old: null, new: newNumber, sign: '+', text })
+      } else if (part.removed === true) {
+        oldNumber += 1
+        deletions += 1
+        lines.push({ old: oldNumber, new: null, sign: '-', text })
+      } else {
+        oldNumber += 1
+        newNumber += 1
+        lines.push({ old: oldNumber, new: newNumber, sign: ' ', text })
+      }
+    }
+  }
+  return { tool, path, additions, deletions, lines }
+}
+
+export function editDiff(title: string, input: Record<string, unknown>): EditDiff | null {
+  const path = textOf(input.file_path)
+  if (path === '') return null
+  if (title === 'Write') {
+    const content = textOf(input.content)
+    const lines = (content === '' ? [] : content.replace(/\n$/, '').split('\n')).map((text, index) => ({ old: null, new: index + 1, sign: '+' as const, text }))
+    return { tool: 'Write', path, additions: lines.length, deletions: 0, lines }
+  }
+  if (title === 'Edit') return diffOf(textOf(input.old_string), textOf(input.new_string), path, 'Edit')
+  if (title !== 'MultiEdit' || !Array.isArray(input.edits)) return null
+  const lines: DiffLine[] = []
+  let additions = 0
+  let deletions = 0
+  for (const edit of input.edits) {
+    if (edit === null || typeof edit !== 'object') continue
+    const record = edit as Record<string, unknown>
+    if (lines.length > 0) lines.push({ old: null, new: null, sign: ' ', text: '' })
+    const part = diffOf(textOf(record.old_string), textOf(record.new_string), path, 'MultiEdit')
+    additions += part.additions
+    deletions += part.deletions
+    lines.push(...part.lines)
+  }
+  return lines.length > 0 ? { tool: 'MultiEdit', path, additions, deletions, lines } : null
+}
+
 function summaryFor(card: Omit<ToolCard, 'summary'>, title: string, input: Record<string, unknown>, isImage: boolean): string {
   switch (card.kind) {
     case 'read':
@@ -77,7 +137,7 @@ function summaryFor(card: Omit<ToolCard, 'summary'>, title: string, input: Recor
       return card.output === 'No matches found' ? '0 matches' : `${matches} matches`
     }
     case 'edit':
-      return editSummary(title, input)
+      return card.diff !== null ? `+${card.diff.additions} −${card.diff.deletions}` : editSummary(title, input)
     case 'bash':
       return card.exitCode !== null ? `exit ${card.exitCode}` : card.status === 'failed' ? 'failed' : ''
     default:
@@ -115,6 +175,9 @@ export function toolCard(message: ToolCardMessage, turnRunning: boolean, index: 
     output,
     errorLine: status === 'failed' ? (output.split('\n').find(line => line !== '') ?? null) : null,
     key: String(index),
+    toolUseId: message.toolUseId ?? '',
+    undone: message.undone === true,
+    diff: kind === 'edit' ? editDiff(message.title, input) : null,
   }
   return { ...partial, summary: summaryFor(partial, message.title, input, isImage) }
 }

@@ -283,15 +283,96 @@ function bashHead(card: ToolCard): HTMLElement {
   return head
 }
 
-function toolDetail(card: ToolCard): HTMLElement | null {
+function relativeDiffPath(path: string): string {
+  if (rootCwd === null || !path.startsWith('/')) return path
+  const root = `${rootCwd}/`
+  if (!path.startsWith(root)) return path
+  return path.slice(root.length)
+}
+
+async function undoEdit(turnId: string, toolUseId: string): Promise<void> {
+  const result = await postJson(`/api/jobs/${encodeURIComponent(turnId)}/undo`, { toolUseId })
+  if (!result.ok) { chatError(errorText(result)); return }
+  await refresh()
+}
+
+function diffCard(card: ToolCard, turn: Turn): HTMLElement {
+  const diff = card.diff!
+  const article = document.createElement('article')
+  article.className = 'diff-card'
+  const head = document.createElement('header')
+  head.className = 'diff-head'
+  head.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 20 20"><use href="#file-icon"/></svg>')
+  const path = document.createElement('code')
+  path.className = 'diff-path'
+  path.textContent = relativeDiffPath(diff.path)
+  const tool = document.createElement('span')
+  tool.className = 'diff-tool'
+  tool.textContent = diff.tool
+  const stat = document.createElement('span')
+  stat.className = 'diff-stat'
+  const additions = document.createElement('span')
+  additions.className = 'add'
+  additions.textContent = `+${diff.additions}`
+  const deletions = document.createElement('span')
+  deletions.className = 'del'
+  deletions.textContent = `−${diff.deletions}`
+  stat.append(additions, deletions)
+  head.append(path, tool, stat)
+  const spacer = document.createElement('span')
+  spacer.className = 'sp'
+  head.append(spacer)
+  if (diff.tool !== 'Write') {
+    const undo = document.createElement('button')
+    undo.type = 'button'
+    undo.className = 'text-button diff-undo'
+    undo.textContent = card.undone ? 'Undone' : 'Undo this edit'
+    undo.disabled = card.undone || turn.running
+    undo.onclick = () => { void undoEdit(turn.id, card.toolUseId) }
+    head.append(undo)
+  }
+  const open = document.createElement('button')
+  open.type = 'button'
+  open.className = 'text-button diff-open'
+  open.textContent = 'Open full diff'
+  open.onclick = () => {
+    article.classList.toggle('open')
+    open.textContent = article.classList.contains('open') ? 'Close full diff' : 'Open full diff'
+  }
+  head.append(open)
+  const body = document.createElement('div')
+  body.className = 'diff-body'
+  for (const line of diff.lines) {
+    const row = document.createElement('div')
+    row.className = line.sign === '+' ? 'diff-line add' : line.sign === '-' ? 'diff-line del' : 'diff-line'
+    const oldNumber = document.createElement('span')
+    oldNumber.className = 'n'
+    oldNumber.textContent = line.old === null ? '' : String(line.old)
+    const newNumber = document.createElement('span')
+    newNumber.className = 'n'
+    newNumber.textContent = line.new === null ? '' : String(line.new)
+    const sign = document.createElement('span')
+    sign.className = 's'
+    sign.textContent = line.sign === ' ' ? ' ' : line.sign
+    const code = document.createElement('code')
+    code.textContent = line.text
+    row.append(oldNumber, newNumber, sign, code)
+    body.append(row)
+  }
+  article.append(head, body)
+  return article
+}
+
+function toolDetail(card: ToolCard, turn: Turn): HTMLElement | null {
   const detail = document.createElement('div')
   detail.className = 'tool-detail'
+  if (card.kind === 'edit' && card.diff !== null) detail.append(diffCard(card, turn))
   if (card.kind === 'bash') detail.append(bashHead(card), termOut(card.output))
   else if (card.output !== '') detail.append(termOut(card.output))
   return detail.childElementCount === 0 ? null : detail
 }
 
-const rowSignature = (card: ToolCard): string => JSON.stringify([card.status, card.summary, card.errorLine, card.exitCode, card.command, card.output])
+const rowSignature = (card: ToolCard): string => JSON.stringify([card.status, card.summary, card.errorLine, card.exitCode, card.command, card.output, card.undone])
 
 const PERMISSION_ICONS: Record<string, string> = { Bash: 'terminal-icon', Edit: 'pencil-icon', Write: 'pencil-icon', MultiEdit: 'pencil-icon', NotebookEdit: 'pencil-icon' }
 const permissionIcon = (toolName: string): string => PERMISSION_ICONS[toolName] ?? 'code-icon'
@@ -400,25 +481,25 @@ function resolvedPermissionSteps(turn: Turn): HTMLElement | null {
   return steps
 }
 
-function toolRow(card: ToolCard): HTMLDetailsElement {
+function toolRow(card: ToolCard, turn: Turn): HTMLDetailsElement {
   const row = document.createElement('details')
   row.className = 'tool-row'
   row.dataset.key = card.key
   row.dataset.status = card.status
   row.dataset.sig = rowSignature(card)
   row.append(toolSummary(card))
-  const detail = toolDetail(card)
+  const detail = toolDetail(card, turn)
   if (detail !== null) row.append(detail)
   trackRowScroll(row)
   return row
 }
 
-function paintToolList(list: HTMLElement, cards: ToolCard[]): void {
+function paintToolList(list: HTMLElement, cards: ToolCard[], turn: Turn): void {
   const rows = new Map([...list.children].map(row => [(row as HTMLElement).dataset.key ?? '', row as HTMLDetailsElement]))
   for (const card of cards) {
     const row = rows.get(card.key)
     if (row === undefined) {
-      list.append(toolRow(card))
+      list.append(toolRow(card, turn))
       continue
     }
     rows.delete(card.key)
@@ -428,7 +509,7 @@ function paintToolList(list: HTMLElement, cards: ToolCard[]): void {
     row.dataset.status = card.status
     row.dataset.sig = sig
     row.replaceChildren(toolSummary(card))
-    const detail = toolDetail(card)
+    const detail = toolDetail(card, turn)
     if (detail !== null) row.append(detail)
     trackRowScroll(row)
     setRowScroll(row, saved)
@@ -475,7 +556,7 @@ function activityNode(turn: Turn): HTMLElement {
   if (!finishedWithSteps) return line
   const details = document.createElement('details'); details.className = 'turn-steps tool-steps'
   const card = document.createElement('div'); card.className = 'tool-card'
-  paintToolList(card, turn.cards)
+  paintToolList(card, turn.cards, turn)
   details.append(line, card)
   return details
 }
@@ -500,7 +581,7 @@ function patchReply(reply: HTMLElement, turn: Turn): boolean {
   const step = turn.steps.at(-1)
   if (tick && step) fadeStep(tick, step)
   const card = reply.querySelector<HTMLElement>('.tool-card')
-  if (card !== null) paintToolList(card, turn.cards)
+  if (card !== null) paintToolList(card, turn.cards, turn)
   if (reply.dataset.live === '1') return false
   if (reply.dataset.text === String(turn.text.length)) return false
   reply.dataset.text = String(turn.text.length)
@@ -532,7 +613,7 @@ function assistantRow(turn: Turn, rows: TeamRow[], project: string | null): HTML
   if (turn.running) {
     const tick = document.createElement('p'); tick.className = 'step-tick'; tick.textContent = tick.dataset.step = turn.steps.at(-1) ?? ''
     const card = document.createElement('div'); card.className = 'tool-card'
-    paintToolList(card, turn.cards)
+    paintToolList(card, turn.cards, turn)
     body.append(tick, card)
   }
   const md = document.createElement('div'); md.className = 'md'; md.append(renderMarkdown(turn.text)); body.append(md)

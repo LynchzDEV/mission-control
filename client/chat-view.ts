@@ -34,7 +34,7 @@ export type ThreadMessage =
   | { role: 'user'; kind: 'prompt'; jobId: string; ts: number; text: string; images?: string[] }
   | { role: 'assistant'; kind: 'thinking' | 'text'; jobId: string; text: string; partial?: true }
   | { role: 'assistant'; kind: 'permission'; jobId: string } & PermissionView
-  | { role: 'assistant'; kind: 'tool'; jobId: string; title: string; detail: string; input: string; result: string; resultIsError: boolean }
+  | { role: 'assistant'; kind: 'tool'; jobId: string; title: string; detail: string; input: string; result: string; resultIsError: boolean; toolUseId?: string; undone?: boolean }
   | { role: 'result'; kind: 'result'; jobId: string; text: string; isError: boolean }
 
 export type TurnJob = { id: string; status: string; startedAt: number; endedAt: number | null; source?: 'user' | 'agent'; stoppedAt?: number | null }
@@ -68,7 +68,7 @@ export function turnsFrom(thread: readonly ThreadMessage[], jobs: readonly TurnJ
     turn.thinking = turn.running && message.kind === 'thinking' && message.partial === true
     if (message.kind === 'permission') turn.permissions.push({ requestId: message.requestId, toolName: message.toolName, title: message.title, description: message.description, command: message.command, target: message.target, plan: message.plan, suppressAlways: message.suppressAlways, state: message.state })
     else if (message.kind === 'text') turn.text = turn.text ? `${turn.text}\n\n${message.text}` : message.text
-    else if (message.kind === 'tool') { turn.tools += 1; turn.steps.push(stepText(message.title, message.detail)); turn.cards.push(toolCard(message, turn.running, turn.cards.length)); if (EDIT_TOOLS.includes(message.title) && message.detail) turn.edits.push(message.detail) }
+    else if (message.kind === 'tool') { turn.tools += 1; turn.steps.push(stepText(message.title, message.detail)); turn.cards.push(toolCard({ title: message.title, detail: message.detail, input: message.input, result: message.result, resultIsError: message.resultIsError, ...(message.toolUseId === undefined ? {} : { toolUseId: message.toolUseId }), undone: message.undone === true }, turn.running, turn.cards.length)); if (EDIT_TOOLS.includes(message.title) && message.detail) turn.edits.push(message.detail) }
     else if (message.kind === 'result') {
       lastResults[turns.length - 1] = message.text
       if (message.isError) { turn.failed = true; turn.errorDetail = message.text; turn.error = firstLine(message.text) }
