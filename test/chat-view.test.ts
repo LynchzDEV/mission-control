@@ -67,6 +67,40 @@ describe('turn tool cards', () => {
   })
 })
 
+describe('turn failure and stop states', () => {
+  test('an error result fails the turn with its first line as the reason', () => {
+    const turn = turnsFrom([
+      { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Go' },
+      { role: 'result', kind: 'result', jobId: 't1', text: 'API Error: overloaded\nmore', isError: true },
+    ] as never, [{ id: 't1', status: 'done', startedAt: 1000, endedAt: 9000 }] as never)[0]!
+    expect(turn).toMatchObject({ failed: true, stopped: false, error: 'API Error: overloaded', errorDetail: 'API Error: overloaded\nmore' })
+    expect(workedLine(turn, 10_000).startsWith('Failed after')).toBe(true)
+  })
+
+  test('a stopped job reads stopped, never failed, even when its status says failed', () => {
+    const turn = turnsFrom([
+      { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Go' },
+    ] as never, [{ id: 't1', status: 'failed', startedAt: 1000, endedAt: 6000, stoppedAt: 5000 }] as never)[0]!
+    expect(turn).toMatchObject({ failed: false, stopped: true })
+    expect(workedLine(turn, 10_000).startsWith('Stopped after')).toBe(true)
+  })
+
+  test('a failed job status without an error result keeps the last result text as the reason', () => {
+    const turn = turnsFrom([
+      { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Go' },
+      { role: 'result', kind: 'result', jobId: 't1', text: 'done', isError: false },
+    ] as never, [{ id: 't1', status: 'failed', startedAt: 1000, endedAt: 9000 }] as never)[0]!
+    expect(turn).toMatchObject({ failed: true, error: 'done', errorDetail: 'done' })
+  })
+
+  test('a failed job status with no result at all gets a fallback reason', () => {
+    const turn = turnsFrom([
+      { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Go' },
+    ] as never, [{ id: 't1', status: 'failed', startedAt: 1000, endedAt: 9000 }] as never)[0]!
+    expect(turn).toMatchObject({ failed: true, error: 'The reply ended unexpectedly', errorDetail: '' })
+  })
+})
+
 describe('workedLine', () => {
   test('working while running, worked with tool count after', () => {
     const [first, second] = turnsFrom(thread as never, jobs as never)

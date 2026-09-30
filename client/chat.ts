@@ -318,12 +318,42 @@ function paintToolList(list: HTMLElement, cards: ToolCard[]): void {
   for (const row of rows.values()) row.remove()
 }
 
+function turnErrorNode(turn: Turn): HTMLElement {
+  const card = document.createElement('div')
+  card.className = 'turn-error'
+  card.setAttribute('role', 'alert')
+  card.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 22 22"><circle cx="11" cy="11" r="9"/><path d="M11 6.5v5.5"/><circle cx="11" cy="15.3" r=".6" fill="currentColor"/></svg>')
+  const body = document.createElement('div')
+  const title = document.createElement('strong'); title.textContent = 'This reply stopped with an error'
+  const reason = document.createElement('p'); reason.textContent = turn.error
+  const actions = document.createElement('div'); actions.className = 'error-actions'
+  const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'retry-button'
+  retry.insertAdjacentHTML('afterbegin', '<svg><use href="#history-icon"/></svg>'); retry.append('Retry')
+  retry.onclick = () => { retry.disabled = true; void sendMessage(turn.prompt).finally(() => { retry.disabled = false }) }
+  actions.append(retry)
+  if (turn.errorDetail !== '') {
+    const detail = document.createElement('pre'); detail.className = 'term-out'; detail.textContent = turn.errorDetail; detail.hidden = true
+    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'text-button'; toggle.textContent = 'Show details'
+    toggle.onclick = () => { detail.hidden = !detail.hidden; toggle.textContent = detail.hidden ? 'Show details' : 'Hide details' }
+    actions.append(toggle)
+    body.append(title, reason, actions, detail)
+  } else {
+    body.append(title, reason, actions)
+  }
+  card.append(body)
+  return card
+}
+
 function activityNode(turn: Turn): HTMLElement {
   const finishedWithSteps = !turn.running && turn.steps.length > 0
   const line = document.createElement(finishedWithSteps ? 'summary' : 'p')
   line.className = 'activity-line'
   line.dataset.running = String(turn.running)
   line.textContent = workedLine(turn, Date.now())
+  if (turn.failed) {
+    const pill = document.createElement('span'); pill.className = 'outcome-pill'; pill.dataset.tone = 'failed'; pill.textContent = 'Failed'
+    line.append(pill)
+  }
   if (!finishedWithSteps) return line
   const details = document.createElement('details'); details.className = 'turn-steps tool-steps'
   const card = document.createElement('div'); card.className = 'tool-card'
@@ -377,6 +407,7 @@ function assistantRow(turn: Turn, rows: TeamRow[], project: string | null): HTML
   row.querySelector('time')!.textContent = new Date(turn.started).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const body = row.querySelector('.msg-body')!
   body.append(activityNode(turn))
+  if (turn.failed) body.append(turnErrorNode(turn))
   if (turn.running) {
     const tick = document.createElement('p'); tick.className = 'step-tick'; tick.textContent = tick.dataset.step = turn.steps.at(-1) ?? ''
     const card = document.createElement('div'); card.className = 'tool-card'
@@ -389,7 +420,7 @@ function assistantRow(turn: Turn, rows: TeamRow[], project: string | null): HTML
 }
 
 function signature(turn: Turn, rows: TeamRow[]): string {
-  return JSON.stringify([turn.running ? 0 : turn.tools, turn.running, turn.edits.length, rows.map(row => [row.id, row.state, row.activity])])
+  return JSON.stringify([turn.running ? 0 : turn.tools, turn.running, turn.edits.length, turn.failed, turn.stopped, turn.error, rows.map(row => [row.id, row.state, row.activity])])
 }
 
 function paint(turns: Turn[], project: string | null): void {
@@ -520,7 +551,7 @@ async function startChat(prompt: string): Promise<void> {
 
 async function sendMessage(prompt: string): Promise<void> {
   show('conversation')
-  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], cards: [], thinking: false, started: Date.now(), ended: null, running: true })); setRunning(true); toBottom(); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
+  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], cards: [], thinking: false, started: Date.now(), ended: null, running: true, failed: false, stopped: false, error: '', errorDetail: '' })); setRunning(true); toBottom(); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
   const result = await postJson(`/api/jobs/${encodeURIComponent(root)}/reply`, { message: prompt })
   if (!result.ok) { chatError(errorText(result)); return }
   if (result.status !== 202) setRunning(true)
