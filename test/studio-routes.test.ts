@@ -342,3 +342,12 @@ test('only the drawer reminds the owning terminal of a waiting step', async () =
   expect(writes[0]).toContain(`/api/studio/runs/${run.id}/steps/plan`)
   expect((await post(`/api/studio/runs/${run.id}/steps/verify-plan/remind`, {}, { 'sec-fetch-site': 'same-origin' })).status).toBe(409)
 })
+
+test('the default flow choice is AI design until a saved workflow is chosen, and can be switched back', async () => {
+  const first = await (await get('/api/studio/workflows')).json()
+  expect(first).toMatchObject({ design: true, selected: { id: 'default' } })
+  expect((await request('/default', { id: 'default', revision: first.selected.revision })).status).toBe(200)
+  expect((await (await get('/api/studio/workflows')).json()).design).toBe(false)
+  expect((await request('/default', { design: true })).status).toBe(200)
+  expect((await (await get('/api/studio/workflows')).json()).design).toBe(true)
+})

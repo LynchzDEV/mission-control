@@ -180,3 +180,17 @@ test('In Session steps cannot run on a parallel path', () => {
   const splitting = forkSteps().map(node => node.id === 'split' ? { ...node, agent: { role: 'execute', engine: 'session' } } : node)
   expect(validateWorkflow(flow(splitting, forkLinks()))).toEqual([])
 })
+
+test('with no saved choice the AI designs each flow on top of the built-in steps, and a saved default turns that off', async () => {
+  const store = createWorkflowStore(dir)
+  expect(await store.design()).toBe(true)
+  expect((await store.selected()).id).toBe('default')
+  const custom = await store.save({ ...defaultWorkflow(), id: 'custom', name: 'Mine' })
+  await store.setDefault('custom', custom.revision)
+  expect(await store.design()).toBe(false)
+  expect((await store.selected()).id).toBe('custom')
+  await store.setDesignDefault()
+  const restarted = createWorkflowStore(dir)
+  expect(await restarted.design()).toBe(true)
+  expect((await restarted.selected()).id).toBe('default')
+})

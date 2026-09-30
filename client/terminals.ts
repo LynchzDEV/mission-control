@@ -4,6 +4,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { errorText, getJson, pathsFromUriList, postJson, providerName, readArray, readRecord, shellQuote, uploadDrop } from './shared'
 import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
+import { launchWorkflowOptions, launchWorkflowRequest } from './workflow-options'
 import { dragKind, dropCopy, findCount, findKeys, restoreTarget, nextActive, sessionSlot, sessionState, splitPlan, statusPill, terminalKeys, type Session, type TerminalKey, type SessionState } from './terminal-state'
 import { createPanes, type PaneHeader } from './terminal-panes'
 import { createOutcomeStrip } from './outcome-strip'
@@ -422,8 +423,9 @@ async function load(restore = false): Promise<void> {
   const choice = launchChoice(providers, stored(engineKey), stored(modelKey))
   engineSelect.value = choice.engine
   modelInput.value = choice.model
-  const workflows = readArray(workflowResult.data.workflows) as Array<{ id: string; revision: string; name: string }>
-  workflowSelect.replaceChildren(new Option(`Default · ${String(selected.name)}`, ''), ...workflows.filter(item => item.id && item.revision && item.name && !(item.id === selected.id && item.revision === selected.revision)).map(item => new Option(item.name, `${item.id}@${item.revision}`)))
+  const workflows = (readArray(workflowResult.data.workflows) as Array<{ id: string; revision: string; name: string }>).filter(item => item.id && item.revision && item.name)
+  const base = { id: String(selected.id), revision: String(selected.revision), name: String(selected.name) }
+  workflowSelect.replaceChildren(...launchWorkflowOptions(workflows, base, workflowResult.data.design === true).map(([label, value]) => new Option(label, value)))
   workflowSelect.disabled = false
   workflowsReady = true
   updateModelChoices()
@@ -447,10 +449,9 @@ async function createTerminal(): Promise<void> {
   submit.disabled = true
   const engine = engineSelect.value
   const model = modelInput.value.trim()
-  const [workflowId, revision] = workflowSelect.value.split('@')
   rollText($('live-error'), `Opening ${engineName(engine)}…`)
   try {
-    const result = await postJson('/api/terminals', { engine, cwd, cols: 100, rows: 30, ...(model ? { model } : {}), ...(workflowId ? { workflowId, revision } : {}) })
+    const result = await postJson('/api/terminals', { engine, cwd, cols: 100, rows: 30, ...(model ? { model } : {}), ...launchWorkflowRequest(workflowSelect.value) })
     if (!result.ok) { rollText($('live-error'), `Could not open ${engineName(engine)}: ${errorText(result)}`); return }
     store(recentKey, JSON.stringify([cwd, ...readRecentDirectories(stored(recentKey)).filter(item => item !== cwd)].slice(0, 12)))
     store(engineKey, engine)

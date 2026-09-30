@@ -46,15 +46,16 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
     .post('/api/studio/drafts', ({ body }) => { if (!builder) throw new Error('Workflow designer unavailable'); return builder.start(body) })
     .get('/api/studio/drafts/:id', ({ params }) => { if (!builder) throw new Error('Workflow designer unavailable'); return builder.get(params.id) })
     .post('/api/studio/drafts/:id/stop', ({ params }) => { if (!builder) throw new Error('Workflow designer unavailable'); return builder.stop(params.id) })
-    .get('/api/studio/workflows', async () => ({ workflows: await store.list(), selected: await store.selected() }))
+    .get('/api/studio/workflows', async () => ({ workflows: await store.list(), selected: await store.selected(), design: await store.design() }))
     .post('/api/studio/workflows', async ({ body }) => {
       const input = z.object({ workflow: z.unknown(), expectedRevision: z.string().optional() }).parse(body)
       return store.save(input.workflow, input.expectedRevision)
     })
     .get('/api/studio/workflows/:id/revisions', async ({ params }) => ({ revisions: await store.revisions(params.id) }))
     .post('/api/studio/default', async ({ body }) => {
-      const input = z.object({ id: identifier, revision: identifier }).parse(body)
-      await store.setDefault(input.id, input.revision)
+      const input = z.union([z.object({ design: z.literal(true) }), z.object({ id: identifier, revision: identifier })]).parse(body)
+      if ('design' in input) await store.setDesignDefault()
+      else await store.setDefault(input.id, input.revision)
       return { ok: true }
     })
     .get('/api/studio/policy', () => store.policy())

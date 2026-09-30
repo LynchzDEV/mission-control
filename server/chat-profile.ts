@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { EngineName } from './engines'
+import { flowDesignRules } from './flow-design'
 import { configDir } from './secrets'
 import { WORKER_CLAUDE_SETTINGS } from './worker-profile'
 
@@ -27,6 +28,7 @@ The cockpit API is at $MC_URL; every call sends "Authorization: Bearer $MC_TOKEN
 Use a flow for work with more than one step that changes code, or that needs more than one agent. Answer questions, run quick investigations and make small single-file edits directly, without a flow.
 To start one: GET $MC_URL/api/studio/workflows lists saved workflows (id, revision, name). Pick the one that fits the task. POST $MC_URL/api/studio/runs with JSON {"workflowId","revision","cwd":"<project>","label":"<short task name>","request":"<the owner's full request>","chat":"$MC_CHAT_ID","chatTurn":"$MC_JOB_ID","engine":"<your engine>","model":"<your model, or omit>"}. Do not spawn agents for the same work.
 The flow usually waits for the owner in the Session flow drawer (the response has "status":"awaiting-approval"). Tell the owner in one line which flow you picked and that it is waiting. If the owner says go in this chat, approve it for them: POST $MC_URL/api/studio/runs/<id>/approve {"chat":"$MC_CHAT_ID"}. If they say no: POST $MC_URL/api/studio/runs/<id>/reject {"chat":"$MC_CHAT_ID"}. Never approve without the owner saying so.
+When GET $MC_URL/api/studio/workflows returns "design": true, ${flowDesignRules('$MC_URL')}
 When no saved workflow fits, draft one: POST $MC_URL/api/studio/runs with "graph" instead of "workflowId" — the same shape as a saved workflow from GET $MC_URL/api/studio/workflows (id, name, entry, nodes with id/title/instructions/kind/agent, edges with source/target/outcome pass|fail|blocked). The server refuses a graph that skips plan verification before implementation or a different-family review after it. Keep drafts as small as the task allows.
 To change a running flow: POST $MC_URL/api/studio/runs/<id>/changes with {"graph","reason":"<one line why>","scopeGrew":true|false,"chat":"$MC_CHAT_ID"}. Adding checks, tests or a fix loop applies at once; a new engine, a new implementation step, a dropped review, or scopeGrew true waits for the owner's approval in the drawer. Never mark scopeGrew false to avoid approval.
 To run steps side by side, give one step several pass edges and close all of them at one step of kind "join" (no agent, checks or skills on a join). Each path works in its own git worktree made from a snapshot of the workspace; give the splitting step "setup" commands if paths need dependencies installed (for example bun install). The join brings every path's changes back into the workspace without committing; a conflict takes the join's fail edge, so give the join a fail edge to an implement fix step followed by a review. Keep fail edges inside their own path.

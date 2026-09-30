@@ -13,8 +13,10 @@ import {
   pushToRingBuffer,
   replayRingBuffer,
   terminalArgs,
+  terminalInstructions,
   type TerminalRegistry,
 } from '../server/terminals'
+import { flowDesignRules } from '../server/flow-design'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 import { createWorkflowStore, defaultWorkflow } from '../server/workflows'
 
@@ -347,4 +349,26 @@ test('a terminal opened with the In Session instructions is marked aware of them
   expect(started.terminal.inSessionAware).toBe(true)
   expect(registry.get(started.terminal.id)?.inSessionAware).toBe(true)
   registry.kill(started.terminal.id)
+})
+
+test('a terminal pins AI flow design by default or when chosen, and its instructions say how to design', async () => {
+  const store = createWorkflowStore()
+  const designed = await registry.createTerminal({ engine: 'claude', cwd: repo })
+  if (!designed.ok) throw new Error('Could not open fixture terminal')
+  expect(designed.terminal.workflow).toMatchObject({ id: 'default', design: true, selectedDefault: true })
+  const custom = await store.save({ ...defaultWorkflow(), id: 'research', name: 'Research workflow' })
+  await store.setDefault(custom.id, custom.revision)
+  const saved = await registry.createTerminal({ engine: 'claude', cwd: repo })
+  const chosen = await registry.createTerminal({ engine: 'claude', cwd: repo, design: true })
+  if (!saved.ok || !chosen.ok) throw new Error('Could not open fixture terminals')
+  expect(saved.terminal.workflow).toMatchObject({ id: custom.id, design: false, selectedDefault: true })
+  expect(chosen.terminal.workflow).toMatchObject({ id: 'default', design: true, selectedDefault: false })
+  expect((await registry.createTerminal({ engine: 'claude', cwd: repo, design: true, workflowId: custom.id })).ok).toBe(false)
+  const url = 'http://127.0.0.1:7777'
+  const designing = terminalInstructions({ id: 't1', workflow: chosen.terminal.workflow!, mcUrl: url, cwd: repo })
+  expect(designing).toContain(flowDesignRules(url))
+  expect(designing).not.toContain('the default above when unsure')
+  const picking = terminalInstructions({ id: 't2', workflow: saved.terminal.workflow!, mcUrl: url, cwd: repo })
+  expect(picking).not.toContain(flowDesignRules(url))
+  expect(picking).toContain('the default above when unsure')
 })

@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CHAT_RULES, chatEnv, chatRules, ensureChatProfile } from '../server/chat-profile'
+import { flowDesignRules } from '../server/flow-design'
 import { engineArgs, realEngineResolver } from '../server/jobs-engine-iface'
 import { writeSecrets } from '../server/secrets'
 
@@ -28,6 +29,9 @@ describe('chat rules', () => {
   test('chat rules explain when to use a flow and how to relay approval', () => {
     for (const phrase of ['more than one step that changes code', 'GET $MC_URL/api/studio/workflows', '"status":"awaiting-approval"', '/approve {"chat":"$MC_CHAT_ID"}', 'Never approve without the owner saying so']) expect(CHAT_RULES).toContain(phrase)
     expect(CHAT_RULES).not.toContain('Naming a Studio workflow is optional')
+  })
+  test('chat rules say to design the flow when Studio reports design mode', () => {
+    expect(CHAT_RULES).toContain(`When GET $MC_URL/api/studio/workflows returns "design": true, ${flowDesignRules('$MC_URL')}`)
   })
   test('chat rules explain how to draft a flow and change a running one', () => {
     for (const phrase of ['"graph" instead of "workflowId"', '/changes', 'Never mark scopeGrew false to avoid approval']) expect(CHAT_RULES).toContain(phrase)

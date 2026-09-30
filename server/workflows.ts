@@ -305,11 +305,20 @@ export function createWorkflowStore(base = configDir()) {
     await mkdir(root, { recursive: true, mode: 0o700 })
     await atomicJson(join(root, 'default.json'), { id: graph.id, revision: graph.revision })
   }
+  async function choice(): Promise<{ design: true } | { id: string; revision: string }> {
+    try { return JSON.parse(await readFile(join(root, 'default.json'), 'utf8')) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { design: true }; throw error }
+  }
+  async function design(): Promise<boolean> {
+    return 'design' in await choice()
+  }
+  async function setDesignDefault(): Promise<void> {
+    await mkdir(root, { recursive: true, mode: 0o700 })
+    await atomicJson(join(root, 'default.json'), { design: true })
+  }
   async function selected(): Promise<WorkflowRevision> {
-    let selected: { id: string; revision: string }
-    try { selected = JSON.parse(await readFile(join(root, 'default.json'), 'utf8')) }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return get('default'); throw error }
-    return get(selected.id, selected.revision)
+    const chosen = await choice()
+    return 'design' in chosen ? get('default') : get(chosen.id, chosen.revision)
   }
   async function savePolicy(template: string): Promise<PolicyRevision> {
     if (typeof template !== 'string' || template.length > 32000) throw new Error('Policy template must be text up to 32000 characters')
@@ -338,7 +347,7 @@ export function createWorkflowStore(base = configDir()) {
     const files = await readdir(policies)
     return (await Promise.all(files.filter(file => /^[a-f0-9]{24}\.json$/.test(file)).map(file => policy(file.slice(0, -5))))).sort((a, b) => b.createdAt - a.createdAt)
   }
-  return { get, save, list, revisions, selected, setDefault, policy, savePolicy, policyRevisions }
+  return { get, save, list, revisions, selected, design, setDefault, setDesignDefault, policy, savePolicy, policyRevisions }
 }
 export type WorkflowStore = ReturnType<typeof createWorkflowStore>
 

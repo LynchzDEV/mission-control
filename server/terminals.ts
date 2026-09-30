@@ -19,6 +19,7 @@ import { validateWorkspaceCwd } from './workspace'
 import { connectionEnvironment, createConnectionStore, type AgentConnection } from './agent-connections'
 import { configDir, listenTarget } from './secrets'
 import { createWorkflowStore } from './workflows'
+import { flowDesignRules } from './flow-design'
 import type { PastTerminal, TerminalLog } from './terminal-log'
 
 export const RING_BUFFER_BYTES = 64 * 1024
@@ -40,7 +41,7 @@ export type TerminalRecord = {
   title: string
   sessionId: string | null
   inSessionAware?: true
-  workflow?: { id: string; revision: string; name: string; selectedDefault: boolean }
+  workflow?: { id: string; revision: string; name: string; selectedDefault: boolean; design?: boolean }
 }
 
 export type CreateTerminalParams = {
@@ -53,6 +54,7 @@ export type CreateTerminalParams = {
   title?: string
   workflowId?: string
   revision?: string
+  design?: boolean
 }
 
 export type CreateTerminalResult =
@@ -89,6 +91,10 @@ type Session = {
 
 function isEngineName(value: string): value is EngineName {
   return (ENGINE_NAMES as readonly string[]).includes(value)
+}
+
+export function terminalInstructions({ id, workflow, mcUrl, cwd }: { id: string; workflow: NonNullable<TerminalRecord['workflow']>; mcUrl: string; cwd: string }): string {
+  return `This is a Mission Control terminal (id ${JSON.stringify(id)}). Its default workflow is ${JSON.stringify(workflow)}. Use a flow for work with more than one step that changes code, or that needs more than one agent; answer questions, run quick investigations and make small single-file edits yourself. ${workflow.design ? `Its ${flowDesignRules(mcUrl)} To run a saved workflow instead, POST` : `To start a flow: GET ${mcUrl}/api/studio/workflows, pick the saved workflow that fits (the default above when unsure), then POST`} ${mcUrl}/api/studio/runs with terminalId ${JSON.stringify(id)}, workflowId, revision, cwd ${JSON.stringify(cwd)}, a short label and the complete user request. Mission Control runs the other steps. The flow usually waits for approval in the Session flow drawer; tell the user which flow you picked. If the user says go here, POST ${mcUrl}/api/studio/runs/<id>/approve with {"terminalId":${JSON.stringify(id)}} (or /reject). Never approve without the user saying so. When no saved workflow fits, draft one: POST ${mcUrl}/api/studio/runs with "graph" instead of "workflowId" — the same shape as a saved workflow from GET ${mcUrl}/api/studio/workflows (id, name, entry, nodes with id/title/instructions/kind/agent, edges with source/target/outcome pass|fail|blocked). The server refuses a graph that skips plan verification before implementation or a different-family review after it. Keep drafts as small as the task allows. To change a running flow: POST ${mcUrl}/api/studio/runs/<id>/changes with {"graph","reason":"<one line why>","scopeGrew":true|false,"terminalId":${JSON.stringify(id)}}. Adding checks, tests or a fix loop applies at once; a new engine, a new implementation step, a dropped review, or scopeGrew true waits for the owner's approval in the drawer. Never mark scopeGrew false to avoid approval. To run steps side by side, give one step several pass edges and close all of them at one step of kind "join" (no agent, checks or skills on a join). Each path works in its own git worktree made from a snapshot of the workspace; give the splitting step "setup" commands if paths need dependencies installed (for example bun install). The join brings every path's changes back into the workspace without committing; a conflict takes the join's fail edge, so give the join a fail edge to an implement fix step followed by a review. Keep fail edges inside their own path. Steps whose agent is "In Session" are yours: the flow waits for you. When one is waiting, GET ${mcUrl}/api/studio/runs/<id>/steps/<nodeId> returns its assignment in "prompt" (404 when that step is not waiting for you); do the step here in the conversation where the user can see it (for a plan: write the plan in your reply and invite changes), then report it: POST ${mcUrl}/api/studio/runs/<id>/steps/<nodeId> with {"outcome":"pass|fail|blocked","summary","evidence":[...],"output":"<the full result, e.g. the whole plan>"} plus your terminalId or chat. A failed plan check sends the plan back to you with its findings; revise and report again. While a flow of yours runs, keep a background command that exits when a step waits for you, e.g. an until-loop on GET ${mcUrl}/api/studio/runs/<id>/steps/<nodeId> returning 200. Read the Bearer apiToken from secrets.json in MISSION_CONTROL_CONFIG_DIR without printing it. Use MC_URL for all cockpit calls, never a hardcoded port. Follow the mc-dispatch skill when available. Opening this terminal does not authorize starting any work; wait for the user. MC_WORKFLOW_ID and MC_WORKFLOW_REVISION identify the default workflow.`
 }
 
 export function clampDimension(value: unknown, fallback: number): number {
@@ -204,9 +210,11 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     let workflow: NonNullable<TerminalRecord['workflow']>
     try {
       if (params.revision && !params.workflowId) throw new Error('Choose a workflow for this version')
+      if (params.design && params.workflowId) throw new Error('Choose either AI flow design or a saved workflow')
       const store = createWorkflowStore()
-      const selected = params.workflowId ? await store.get(params.workflowId, params.revision) : await store.selected()
-      workflow = { id: selected.id, revision: selected.revision, name: selected.name, selectedDefault: !params.workflowId }
+      const design = params.design === true || (!params.workflowId && await store.design())
+      const selected = params.workflowId ? await store.get(params.workflowId, params.revision) : design ? await store.get('default') : await store.selected()
+      workflow = { id: selected.id, revision: selected.revision, name: selected.name, selectedDefault: !params.workflowId && !params.design, design }
     } catch (error) { return { ok: false, status: 400, error: (error as Error).message } }
 
     let env: Record<string, string>
@@ -223,7 +231,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     const id = crypto.randomUUID()
     const target = listenTarget()
     const mcUrl = `http://${target.hostname}:${target.port}`
-    const instructions = `This is a Mission Control terminal (id ${JSON.stringify(id)}). Its default workflow is ${JSON.stringify(workflow)}. Use a flow for work with more than one step that changes code, or that needs more than one agent; answer questions, run quick investigations and make small single-file edits yourself. To start a flow: GET ${mcUrl}/api/studio/workflows, pick the saved workflow that fits (the default above when unsure), then POST ${mcUrl}/api/studio/runs with terminalId ${JSON.stringify(id)}, workflowId, revision, cwd ${JSON.stringify(cwdCheck.path)}, a short label and the complete user request. Mission Control runs the other steps. The flow usually waits for approval in the Session flow drawer; tell the user which flow you picked. If the user says go here, POST ${mcUrl}/api/studio/runs/<id>/approve with {"terminalId":${JSON.stringify(id)}} (or /reject). Never approve without the user saying so. When no saved workflow fits, draft one: POST ${mcUrl}/api/studio/runs with "graph" instead of "workflowId" — the same shape as a saved workflow from GET ${mcUrl}/api/studio/workflows (id, name, entry, nodes with id/title/instructions/kind/agent, edges with source/target/outcome pass|fail|blocked). The server refuses a graph that skips plan verification before implementation or a different-family review after it. Keep drafts as small as the task allows. To change a running flow: POST ${mcUrl}/api/studio/runs/<id>/changes with {"graph","reason":"<one line why>","scopeGrew":true|false,"terminalId":${JSON.stringify(id)}}. Adding checks, tests or a fix loop applies at once; a new engine, a new implementation step, a dropped review, or scopeGrew true waits for the owner's approval in the drawer. Never mark scopeGrew false to avoid approval. To run steps side by side, give one step several pass edges and close all of them at one step of kind "join" (no agent, checks or skills on a join). Each path works in its own git worktree made from a snapshot of the workspace; give the splitting step "setup" commands if paths need dependencies installed (for example bun install). The join brings every path's changes back into the workspace without committing; a conflict takes the join's fail edge, so give the join a fail edge to an implement fix step followed by a review. Keep fail edges inside their own path. Steps whose agent is "In Session" are yours: the flow waits for you. When one is waiting, GET ${mcUrl}/api/studio/runs/<id>/steps/<nodeId> returns its assignment in "prompt" (404 when that step is not waiting for you); do the step here in the conversation where the user can see it (for a plan: write the plan in your reply and invite changes), then report it: POST ${mcUrl}/api/studio/runs/<id>/steps/<nodeId> with {"outcome":"pass|fail|blocked","summary","evidence":[...],"output":"<the full result, e.g. the whole plan>"} plus your terminalId or chat. A failed plan check sends the plan back to you with its findings; revise and report again. While a flow of yours runs, keep a background command that exits when a step waits for you, e.g. an until-loop on GET ${mcUrl}/api/studio/runs/<id>/steps/<nodeId> returning 200. Read the Bearer apiToken from secrets.json in MISSION_CONTROL_CONFIG_DIR without printing it. Use MC_URL for all cockpit calls, never a hardcoded port. Follow the mc-dispatch skill when available. Opening this terminal does not authorize starting any work; wait for the user. MC_WORKFLOW_ID and MC_WORKFLOW_REVISION identify the default workflow.`
+    const instructions = terminalInstructions({ id, workflow, mcUrl, cwd: cwdCheck.path })
     const sessionId = connection || engine === 'codex' ? null : (params.resumeSessionId ?? crypto.randomUUID())
     let pty: IPty
     try {

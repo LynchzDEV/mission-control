@@ -75,6 +75,7 @@ function Studio() {
   const [panel, setPanel] = useState<Panel>(null)
   const [workflows, setWorkflows] = useState<WorkflowRevision[]>([])
   const [defaultFlow, setDefaultFlow] = useState<WorkflowRevision | null>(null)
+  const [design, setDesign] = useState(false)
   const [graph, setGraph] = useState<WorkflowRevision | null>(null)
   const [nodes, setNodes, onNodesChange] = useNodesState<TaskNode>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -129,7 +130,7 @@ function Studio() {
   function wire(source: string, outcome: Outcome, target: string, replacing?: string) { if (disabled) return; const value = draft(); const replaced = (edge: Workflow['edges'][number]) => edge.source === source && edge.outcome === outcome && (outcome !== 'pass' || edge.target === target || edge.target === replacing); value.edges = [...value.edges.filter(edge => !replaced(edge)), ...(target ? [{ source, outcome, target }] : [])]; adopt(value) }
   async function action(task: () => Promise<void>) { setBusy(true); setError(''); try { await task() } catch (error) { setError((error as Error).message) } finally { setBusy(false) } }
   const refreshConnections = useCallback(async () => { setList(await api<ConnectionList>('/connections')); const result = await fetch('/api/providers').then(response => response.json()) as { providers: Provider[] }; setProviders(result.providers ?? []) }, [])
-  const refreshWorkflows = useCallback(async () => { const result = await api<{ workflows: WorkflowRevision[]; selected: WorkflowRevision }>('/workflows'); setWorkflows(result.workflows); setDefaultFlow(result.selected); return result }, [])
+  const refreshWorkflows = useCallback(async () => { const result = await api<{ workflows: WorkflowRevision[]; selected: WorkflowRevision; design: boolean }>('/workflows'); setWorkflows(result.workflows); setDefaultFlow(result.selected); setDesign(result.design); return result }, [])
   const refreshRuns = useCallback(async () => setRuns((await api<{ runs: RunSummary[] }>('/runs')).runs), [])
   useEffect(() => { let active = true; Promise.all([refreshWorkflows(), refreshConnections(), api<PolicyRevision>('/policy'), api<{ draft: DraftJob | null }>('/drafts')]).then(([, , policy, drafting]) => { if (active) { setPolicy(policy); setPolicyText(policy.template); if (drafting.draft) setDraftJob(drafting.draft) } }).catch(error => setError(error.message)); return () => { active = false } }, [])
   useEffect(() => { const guard = (event: BeforeUnloadEvent) => { if (dirty || building) event.preventDefault() }; addEventListener('beforeunload', guard); return () => removeEventListener('beforeunload', guard) }, [dirty, building])
@@ -213,6 +214,7 @@ function Studio() {
     {screen === 'home' && <section className="studio-view describe-home">
       <h2>How should your team work?</h2><p className="muted">Describe the steps you have in mind. Shape them on the canvas.</p>
       {promptBox()}
+      {defaultFlow && <p className="muted default-mode">New flows: <strong>{design ? 'the AI designs each one for its task' : defaultFlow.name}</strong> <button type="button" className="text-button" disabled={building} onClick={() => void action(async () => { await api('/default', design ? { id: defaultFlow.id, revision: defaultFlow.revision } : { design: true }); await refreshWorkflows(); toast(design ? `New flows use ${defaultFlow.name}.` : 'New flows are designed by the AI.') })}>{design ? `Use ${defaultFlow.name} instead` : 'Let the AI design'}</button></p>}
       <div className="prompt-examples"><span className="muted">Try an example</span>{EXAMPLES.map(([title, text]) => <button key={title} type="button" className="example" disabled={disabled} onClick={() => setDescription(text)}>{title}</button>)}</div>
       <div className="starting-options">
         <button type="button" className="studio-option" disabled={!defaultFlow || building} onClick={() => defaultFlow && open(defaultFlow)}><Icon id="flow-icon" /><strong>Use the default</strong><small>{defaultFlow?.name ?? 'Loading your default…'}</small></button>
@@ -272,7 +274,7 @@ function Studio() {
             {dirty && <div className="saved-revision"><strong>Current draft</strong><small>Unsaved changes</small></div>}
             {revisions.map(item => <div className="saved-revision" key={item.revision}><strong>{item.revision === graph.revision ? 'Current saved version' : dateLabel(item.createdAt)}</strong><small>{item.nodes.length} steps · {dateLabel(item.createdAt)}</small><button type="button" className="text-button" disabled={building} onClick={() => { open(item); setPanel('history') }}>Open version</button></div>)}
             {!graph.revision && <p className="muted">Save this workflow to create its first version.</p>}
-            <div className="inspector-actions"><button type="button" className="text-button" disabled={dirty || disabled || !graph.revision || (defaultFlow?.id === graph.id && defaultFlow.revision === graph.revision)} onClick={() => void action(async () => { await api('/default', { id: graph.id, revision: graph.revision }); await refreshWorkflows(); toast('Default updated for future runs.') })}>Use as default workflow</button><button type="button" className="text-button" disabled={building} onClick={() => { load(fresh({ ...draft(), name: `${graph.name} copy` }), true); setPanel(null) }}>Make a copy</button></div></>}
+            <div className="inspector-actions"><button type="button" className="text-button" disabled={dirty || disabled || !graph.revision || (!design && defaultFlow?.id === graph.id && defaultFlow.revision === graph.revision)} onClick={() => void action(async () => { await api('/default', { id: graph.id, revision: graph.revision }); await refreshWorkflows(); toast('Default updated for future runs.') })}>Use as default workflow</button><button type="button" className="text-button" disabled={building} onClick={() => { load(fresh({ ...draft(), name: `${graph.name} copy` }), true); setPanel(null) }}>Make a copy</button></div></>}
         </aside>
       </div>
     </section>}
