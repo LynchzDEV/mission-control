@@ -44,7 +44,20 @@ function setUrl(chat: string | null): void {
 
 function setRunning(on: boolean): void {
   running = on
-  send.title = on ? 'Send · it waits until the reply finishes' : 'Send message'
+  send.classList.toggle('stop', on)
+  send.setAttribute('aria-label', on ? 'Stop reply' : 'Send message')
+  send.title = on ? 'Stop reply' : 'Send message'
+  if (on) send.dataset.mode = 'stop'
+  else delete send.dataset.mode
+  send.querySelector('use')?.setAttribute('href', on ? '#stop-icon' : '#arrow-icon')
+}
+
+async function stopReply(): Promise<void> {
+  const runningTurn = [...shownTurns].reverse().find(turn => turn.running)
+  if (runningTurn === undefined) return
+  const result = await postJson(`/api/jobs/${encodeURIComponent(runningTurn.id)}/kill`, {})
+  if (!result.ok) { chatError(`Could not stop the reply: ${errorText(result)}`); return }
+  await refresh()
 }
 
 type QueuedItem = { id: string; text: string; queuedAt: number }
@@ -644,6 +657,17 @@ composer.onsubmit = (event) => {
   void sendMessage(prompt)
   message.focus()
 }
+
+send.addEventListener('click', event => {
+  if (send.dataset.mode !== 'stop') return
+  event.preventDefault()
+  void stopReply()
+})
+message.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || !running || document.querySelector('.popover:not([hidden])') !== null) return
+  event.preventDefault()
+  void stopReply()
+})
 
 addEventListener('quiet:chat-agents', (event) => outcomes.setSource(`chat=${encodeURIComponent((event as CustomEvent<string>).detail)}`))
 addEventListener('quiet:new-chat', () => { outcomes.setSource(null); root = null; agents = []; shownTurns = []; messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null); delete document.body.dataset.chat; dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null })) })

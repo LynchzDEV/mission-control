@@ -802,6 +802,9 @@ a.pill:hover { color: var(--accent); }
 .turn-error .text-button { color: var(--red-ink); font-weight: 500; }
 .turn-error .term-out { margin: 12px 0 0; max-height: 200px; }
 .activity-line .outcome-pill { margin-left: 8px; }
+.round.stop { color: var(--text-strong); }
+.round.stop:hover { color: var(--danger); box-shadow: var(--raised), 0 0 0 2px color-mix(in srgb, var(--danger) 35%, transparent); }
+.round.stop svg { width: 14px; height: 14px; }
 .md-in { animation: md-in 220ms ease-out both; }
 @keyframes md-in { from { opacity: 0; transform: translateY(4px); } }
 .agent-report { font-size: 13px; color: var(--muted); max-width: 690px; }
