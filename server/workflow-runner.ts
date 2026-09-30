@@ -15,6 +15,7 @@ import type { TerminalRegistry } from './terminals'
 import { threadRootOf } from './threads'
 import { configDir, mcUrl, readConfig, readSecrets } from './secrets'
 import { validateWorkspaceCwd } from './workspace'
+import { checkShape, readShape, shapeGraph, shapeNotes, shapeTarget, type FlowShape } from './flow-shape'
 import { atomicJson, composeWorkflowPrompt, draftRevision, forkSections, identifier, passTargets, sessionRules, type Outcome, type PolicyRevision, type WorkflowNode, type WorkflowRevision, type WorkflowStore } from './workflows'
 
 const jobId = z.string().min(1).max(200)
@@ -34,6 +35,7 @@ export type WorkflowAttempt = {
   tokenId: string; pathId: string; from: number[];
   inSession?: true; sessionNotifiedAt?: number | null; workspaceSnapshot?: WorkspaceState;
   reportedBy?: { via: ApprovalContext['via']; id: string; at: number }; interrupted?: true;
+  shape?: FlowShape;
 }
 export type TokenState = 'ready' | 'working' | 'settled' | 'waiting'
 export type WorkflowToken = { id: string; nodeId: string; pathId: string; workspace: string; state: TokenState; attempt: number | null; from: number[] }
@@ -391,7 +393,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const agent = run.agents[node.id]!
     if (agent.inSession && !sessionOf(run)) return block(run, sessionClosed(node.title))
     const policy = agent.inSession ? { ...run.policy, coreRules: sessionRules(mcUrl(), run.id, node.id) } : run.policy
-    const prompt = composeWorkflowPrompt(policy, run.workflow, node, run.request, inputs, run.skills[node.id])
+    const prompt = composeWorkflowPrompt(policy, run.workflow, node, run.request, inputs, run.skills[node.id], shapeNotes(run.workflow, node, inputs.map(input => input.output)))
     const session = agent.inSession ? { inSession: true as const, sessionNotifiedAt: null, workspaceSnapshot: await workspaceSnapshot(token.workspace) } : {}
     const attempt: WorkflowAttempt = { nodeId: node.id, number: run.attempts.length, jobId: null, status: agent.inSession ? 'running' : 'starting', prompt, startedAt: Date.now(), endedAt: null, result: null, checks: [], output: '', workspace: null, tokenId: token.id, pathId: token.pathId, from: token.from, ...session }
     if (prompt.length > 500000) return block(run, 'Combined task inputs exceed 500 KB; use artifact paths for large outputs')
@@ -497,6 +499,10 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     let result = readNodeResult(log)
     if (record.status !== 'done' && result?.outcome !== 'fail' && result?.outcome !== 'blocked') result = { outcome: 'blocked', summary: `Agent process failed (${record.exitCode ?? 'unknown exit'})`, evidence: [] }
     if (!result || (result.outcome === 'pass' && !result.evidence.length)) result = { outcome: 'blocked', summary: 'Agent did not provide a valid MC_RESULT with evidence', evidence: [] }
+    if (result.outcome === 'pass' && kindOf(run, attempt) === 'plan') {
+      const errors = keepShape(run, attempt)
+      if (errors.length) result = { ...result, evidence: [...result.evidence, `Flow shape ignored: ${errors.join('; ')}`] }
+    }
     return accept(run, attempt, token, result)
   }
   async function accept(run: WorkflowRun, attempt: WorkflowAttempt, token: WorkflowToken, result: NodeResult): Promise<Checking | null> {
@@ -527,6 +533,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     attempt.workspace = await workspaceSnapshot(token.workspace)
     Object.assign(attempt, { result, status: 'settled', endedAt: Date.now() })
     token.state = 'settled'
+    await proposeShape(run, attempt)
     await advance(run)
   }
   async function route(run: WorkflowRun, token: WorkflowToken): Promise<boolean> {
@@ -657,6 +664,35 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     if (cleanup.length) attempt.result = { ...result, evidence: [...result.evidence, ...cleanup.map(error => `Cleanup failed: ${error}`)] }
     await route(run, parent)
   }
+  function shapeOf(run: WorkflowRun, output: string): { shape: FlowShape } | { errors: string[] } | null {
+    const read = readShape(output)
+    if (!read || 'errors' in read) return read
+    const errors = checkShape(read.shape, run.workflow)
+    return errors.length ? { errors } : read
+  }
+  function keepShape(run: WorkflowRun, attempt: WorkflowAttempt): string[] {
+    const planned = shapeOf(run, attempt.output)
+    if (!planned) return []
+    if ('errors' in planned) return planned.errors
+    attempt.shape = planned.shape
+    return []
+  }
+  async function proposeShape(run: WorkflowRun, check: WorkflowAttempt): Promise<void> {
+    if (kindOf(run, check) !== 'verify-plan' || check.result?.outcome !== 'pass' || changePending(run) || !shapeTarget(run.workflow)) return
+    const plan = run.attempts.filter(attempt => attempt.number < check.number && lineage(attempt.pathId, check.pathId) && kindOf(run, attempt) === 'plan').at(-1)
+    if (!plan?.shape) return
+    const target = shapeTarget(run.workflow)!
+    const reason = `Plan splits the work into ${plan.shape.paths.length} parallel paths: ${plan.shape.paths.map(path => path.title).join(', ')}`
+    const graph = shapeGraph(run.workflow, plan.shape)
+    const inherited = Object.fromEntries(graph.nodes.filter(node => node.kind !== 'join').map(node => [node.id, run.agents[node.id] ?? run.agents[target.execute]!]))
+    try {
+      const version = await versionFor(run, { graph, reason }, null, inherited)
+      run.versions.push(version)
+      if (version.state === 'approved') applyVersion(run, version)
+    } catch (error) {
+      check.result = { ...check.result, evidence: [...check.result.evidence, `Flow shape not applied: ${error instanceof Error ? error.message : String(error)}`] }
+    }
+  }
   async function advance(run: WorkflowRun): Promise<void> {
     try {
       if (stopping.has(run.id) || run.status !== 'running' || changePending(run) || incoming.has(run.id)) return await persist(run)
@@ -738,9 +774,13 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       const attempt = run.attempts[token.attempt!]!
       if (reported.outcome === 'pass' && kindOf(run, attempt) === 'plan' && await changedCode(attempt, token.workspace)) throw new RunActionError('A plan step must not change code', 409)
       const redact = (text: string) => redactRunOutput(run, text)
+      const redactedOutput = await redact(output ?? reported.summary)
+      const planned = reported.outcome === 'pass' && kindOf(run, attempt) === 'plan' ? shapeOf(run, redactedOutput) : null
+      if (planned && 'errors' in planned) throw new Error(planned.errors.join('\n'))
       const result: NodeResult = { outcome: reported.outcome, summary: await redact(reported.summary), evidence: await Promise.all(reported.evidence.map(redact)) }
-      attempt.output = await redact(output ?? reported.summary)
+      attempt.output = redactedOutput
       attempt.reportedBy = { via: context.via, id: context.terminalId && context.terminalId === run.terminalId ? context.terminalId : context.chat!, at: Date.now() }
+      if (planned) attempt.shape = planned.shape
       return { run, checking: await guarded(run, () => accept(run, attempt, token, result)) }
     })
     const { run, checking } = await tracked(id, accepting)
@@ -901,15 +941,15 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       return structuredClone(run)
     })
   }
-  async function versionFor(run: WorkflowRun, change: RunChange, context: ApprovalContext): Promise<RunVersion> {
-    owned(run, context)
+  async function versionFor(run: WorkflowRun, change: RunChange, context: ApprovalContext | null, inherited: Record<string, ResolvedAgent> = {}): Promise<RunVersion> {
+    if (context) owned(run, context)
     if (!LIVE_STATUSES.has(run.status)) throw new RunActionError('Only a live flow can change', 409)
     if (run.versions.some(version => version.state === 'pending')) throw new RunActionError('A change is already waiting', 409)
     const next = draftRevision(change.graph)
     guardChange(run, next)
     const ran = new Set(run.attempts.map(attempt => attempt.nodeId))
     const kept = Object.fromEntries(Object.entries(run.agents).filter(([nodeId]) => ran.has(nodeId)))
-    const agents = { ...await agentsFor(next, undefined, sessionOf(run)), ...kept }
+    const agents = { ...await agentsFor(next, undefined, sessionOf(run)), ...inherited, ...kept }
     const skills = Object.fromEntries(await Promise.all(next.nodes.filter(node => !ran.has(node.id)).map(async node => [node.id, await snapshotSkills(node, run.cwd)] as const)))
     const size = changeSize(run, next, agents, !!change.scopeGrew, positionsOf(run))
     const waits = size === 'big' && await requireApproval()

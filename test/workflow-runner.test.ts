@@ -1483,3 +1483,110 @@ test('reminding a chat sends its nudge again', async () => {
   expect(reminded.attempts[0]!.sessionNotifiedAt).toBeNull()
   expect(nudged).toEqual([0, 0])
 })
+
+const csvShape = {
+  contract: 'GET /api/export returns text/csv with columns id,name',
+  paths: [
+    { id: 'api', title: 'API', files: ['server/export.ts'], steps: [{ title: 'Build API', instructions: 'Add the endpoint' }, { title: 'API tests', instructions: 'Run the export tests' }] },
+    { id: 'ui', title: 'UI', files: ['client/export.ts'], steps: [{ title: 'Build UI', instructions: 'Add the button' }] },
+  ],
+}
+const shaped = (shape: unknown) => `THE PLAN\nMC_SHAPE ${JSON.stringify(shape)}`
+const overlappingShape = { ...csvShape, paths: [csvShape.paths[0]!, { ...csvShape.paths[1]!, files: ['server/'] }] }
+const nodeIds = (run: WorkflowRun) => run.attempts.map(attempt => attempt.nodeId)
+const shapingPlanner = (shape: unknown, failReviewOnce = false): EngineResolver => {
+  let reviews = 0
+  return ({ prompt }) => {
+    const failing = failReviewOnce && prompt.includes('Independently review') && reviews++ === 0
+    const text = `${prompt.includes('flowShapeRules') ? `MC_SHAPE ${JSON.stringify(shape)}\n` : ''}MC_RESULT ${JSON.stringify({ outcome: failing ? 'fail' : 'pass', summary: 'Completed fixture', evidence: ['fixture assertion'] })}`
+    return { cmd: '/bin/echo', args: [JSON.stringify({ type: 'result', result: text })], env: {} }
+  }
+}
+
+test('an In Session plan that splits files between two paths is refused and keeps waiting', async () => {
+  const { owner, begin } = await sessionRunner()
+  const approved = await begin()
+  expect(approved.attempts[0]!.prompt).toContain('flowShapeRules')
+  await expect(runner.report(approved.id, 'plan', { ...planReport, output: shaped(overlappingShape) }, owner)).rejects.toThrow('API and UI both own server/export.ts')
+  await expect(runner.report(approved.id, 'plan', { ...planReport, output: 'THE PLAN\nMC_SHAPE {oops' }, owner)).rejects.toThrow('MC_SHAPE is not valid JSON')
+  expect(runner.get(approved.id)!.attempts).toEqual([expect.objectContaining({ nodeId: 'plan', status: 'running' })])
+})
+
+test('a verified split waits for approval as the next version, then runs both paths and joins before review', async () => {
+  await homeConfig()
+  const { owner, begin } = await sessionRunner()
+  const approved = await begin()
+  await runner.report(approved.id, 'plan', { ...planReport, output: shaped(csvShape) }, owner)
+  const waiting = await until(approved.id, run => run.versions.length === 2)
+  expect(waiting.versions[1]).toMatchObject({ size: 'big', state: 'pending', reason: 'Plan splits the work into 2 parallel paths: API, UI' })
+  expect(nodeIds(waiting)).toEqual(['plan', 'verify-plan'])
+  expect(manager.getJob(waiting.attempts[1]!.jobId!)!.prompt).toContain('flowShapeCheck')
+  await runner.approve(approved.id, { via: 'drawer' })
+  const done = await finished(approved.id)
+  expect(done.status).toBe('done')
+  expect(new Set(nodeIds(done))).toEqual(new Set(['plan', 'verify-plan', 'path-api-1', 'path-api-2', 'path-ui-1', 'join-paths', 'review']))
+  expect(nodeIds(done).at(-1)).toBe('review')
+})
+
+test('rejecting a proposed split keeps the straight flow', async () => {
+  const { owner, begin } = await sessionRunner()
+  const approved = await begin()
+  await runner.report(approved.id, 'plan', { ...planReport, output: shaped(csvShape) }, owner)
+  await until(approved.id, run => run.versions.length === 2)
+  await runner.reject(approved.id, { via: 'drawer' })
+  const done = await finished(approved.id)
+  expect(done.status).toBe('done')
+  expect(nodeIds(done)).toEqual(['plan', 'verify-plan', 'execute', 'review'])
+})
+
+test('an agent plan with a bad split stays straight and says why', async () => {
+  build(shapingPlanner(overlappingShape))
+  const started = await runner.start({ cwd: repo, request: 'Add CSV export', label: 'csv', graph: withoutSession() })
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(done.versions).toHaveLength(1)
+  expect(nodeIds(done)).toEqual(['plan', 'verify-plan', 'execute', 'review'])
+  expect(done.attempts[0]!.result!.evidence).toContain('Flow shape ignored: API and UI both own server/export.ts')
+})
+
+test('with approval off an agent plan split runs at once, and a failed review goes to the fix step', async () => {
+  await homeConfig()
+  build(shapingPlanner(csvShape, true))
+  const started = await runner.start({ cwd: repo, request: 'Add CSV export', label: 'csv', graph: withoutSession() })
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(done.versions[1]).toMatchObject({ size: 'big', state: 'approved', approvedVia: 'auto' })
+  expect(nodeIds(done).slice(-3)).toEqual(['review', 'execute', 'review'])
+  expect(done.workflow.nodes.find(node => node.id === 'execute')!.title).toBe('Fix review notes')
+  expect(done.attempts.find(attempt => attempt.nodeId === 'execute')!.pathId).toBe('main')
+})
+
+test('a failed plan check proposes no split and goes back to the plan', async () => {
+  let checks = 0
+  const planner = shapingPlanner(csvShape)
+  const failFirstCheck: EngineResolver = input => {
+    if (!input.prompt.includes('Verify the upstream plan') || checks++ > 0) return planner(input)
+    return { cmd: '/bin/echo', args: [report('fail')], env: {} }
+  }
+  build(failFirstCheck, true)
+  const started = await runner.start({ cwd: repo, request: 'Add CSV export', label: 'csv', graph: withoutSession() })
+  await runner.approve(started.id, { via: 'drawer' })
+  const waiting = await until(started.id, run => run.versions.length === 2)
+  expect(nodeIds(waiting)).toEqual(['plan', 'verify-plan', 'plan', 'verify-plan'])
+  expect(waiting.versions[1]).toMatchObject({ state: 'pending' })
+  await runner.stop(started.id)
+})
+
+test('a split keeps the AI each step already had, and its paths use the AI of the step they replace', async () => {
+  await homeConfig()
+  build(shapingPlanner(csvShape))
+  const root = await chatRoot()
+  const started = await runner.start({ cwd: repo, request: 'Add CSV export', label: 'csv', graph: withoutSession(), chat: root.id, engine: 'claude', model: 'claude-opus-4' })
+  const chosen = started.agents.execute
+  expect(chosen).toMatchObject({ engine: 'claude', model: 'claude-opus-4' })
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(done.versions).toHaveLength(2)
+  for (const id of ['execute', 'path-api-1', 'path-api-2', 'path-ui-1']) expect(done.agents[id]).toEqual(chosen)
+  expect(done.agents.review).toEqual(started.agents.review)
+})
