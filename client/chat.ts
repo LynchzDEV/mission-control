@@ -5,6 +5,7 @@ import { launchChoice, type LaunchProvider } from './shell-launch'
 import { createOutcomeStrip } from './outcome-strip'
 import { chatSignal, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 import { ansiHtml, capOutput, type ToolCard, type ToolCardKind } from './tool-cards'
+import { collectRowStates, rowScrollOf, setRowScroll, trackRowScroll, type RowState } from './tool-row-scroll'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const RUNNING_POLL_MS = 700
@@ -272,41 +273,8 @@ function toolRow(card: ToolCard): HTMLDetailsElement {
   row.append(toolSummary(card))
   const detail = toolDetail(card)
   if (detail !== null) row.append(detail)
+  trackRowScroll(row)
   return row
-}
-
-type RowState = { open: boolean; scrollTop: number }
-
-function rowScrollOf(row: HTMLDetailsElement): number {
-  const steps = row.closest<HTMLDetailsElement>('details.turn-steps')
-  const out = row.querySelector<HTMLElement>('.term-out')
-  return row.open && (steps === null || steps.open) && out !== null ? out.scrollTop : Number(row.dataset.scroll ?? 0)
-}
-
-function setRowScroll(row: HTMLDetailsElement, scrollTop: number): void {
-  const out = row.querySelector<HTMLElement>('.term-out')
-  if (out === null || scrollTop === 0) return
-  const steps = row.closest<HTMLDetailsElement>('details.turn-steps')
-  if (row.open && (steps === null || steps.open)) {
-    out.scrollTop = scrollTop
-    return
-  }
-  row.dataset.scroll = String(scrollTop)
-  const host = row.open && steps !== null ? steps : row
-  host.addEventListener('toggle', () => {
-    if (host.open) {
-      out.scrollTop = Number(row.dataset.scroll ?? 0)
-      delete row.dataset.scroll
-    }
-  }, { once: true })
-}
-
-function collectRowStates(reply: HTMLElement): Map<string, RowState> {
-  const states = new Map<string, RowState>()
-  for (const row of reply.querySelectorAll<HTMLDetailsElement>('.tool-row')) {
-    states.set(row.dataset.key ?? '', { open: row.open, scrollTop: rowScrollOf(row) })
-  }
-  return states
 }
 
 function paintToolList(list: HTMLElement, cards: ToolCard[]): void {
@@ -326,6 +294,7 @@ function paintToolList(list: HTMLElement, cards: ToolCard[]): void {
     row.replaceChildren(toolSummary(card))
     const detail = toolDetail(card)
     if (detail !== null) row.append(detail)
+    trackRowScroll(row)
     setRowScroll(row, saved)
   }
   for (const row of rows.values()) row.remove()
