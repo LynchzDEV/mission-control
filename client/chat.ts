@@ -148,7 +148,33 @@ function userRow(turn: Turn): HTMLElement {
   row.className = 'msg user'
   const bubble = document.createElement('div')
   bubble.className = 'user-message'
-  bubble.textContent = turn.prompt
+  if (turn.images.length > 0) {
+    bubble.classList.add('chat-user-with-image')
+    const text = document.createElement('span')
+    text.textContent = turn.prompt
+    bubble.append(text)
+    turn.images.forEach((name, index) => {
+      const figure = document.createElement('figure')
+      figure.className = 'chat-attach'
+      const shot = document.createElement('img')
+      shot.className = 'chat-shot'
+      shot.alt = name
+      shot.src = `/api/jobs/${encodeURIComponent(turn.id)}/images/${index}`
+      shot.onerror = () => {
+        const icon = document.createElement('span')
+        icon.className = 'attach-icon'
+        icon.insertAdjacentHTML('afterbegin', '<svg><use href="#file-icon"/></svg>')
+        shot.replaceWith(icon)
+      }
+      const caption = document.createElement('figcaption')
+      caption.insertAdjacentHTML('afterbegin', '<svg><use href="#file-icon"/></svg>')
+      caption.append(`${name} · sent as image`)
+      figure.append(shot, caption)
+      bubble.append(figure)
+    })
+  } else {
+    bubble.textContent = turn.prompt
+  }
   row.append(bubble)
   return row
 }
@@ -627,14 +653,14 @@ async function ensureHome(): Promise<string | null> {
   return askHome(status.data.reason === 'home' ? 'Your projects share only your home folder. Pick the folder that holds them.' : 'No projects yet. Type the folder where your projects live.', candidates)
 }
 
-async function startChat(prompt: string): Promise<void> {
+async function startChat(prompt: string, images: string[]): Promise<void> {
   const home = await ensureHome()
   if (!home) return
   await providersReady
   const choice = launchChoice(providers, stored('mc.shell.engine'), stored('mc.shell.model'))
   if (!choice.engine) { chatError('No AI is connected yet. Add one in Studio → Manage AIs.'); return }
   const project = stored('mc.shell.project')
-  const result = await postJson('/api/jobs', { engine: choice.engine, ...(choice.model ? { model: choice.model } : {}), cwd: home, prompt, label: titleFrom(prompt), purpose: 'chat', edit: stored('mc.shell.edit') === '1', ...(project ? { project } : {}) })
+  const result = await postJson('/api/jobs', { engine: choice.engine, ...(choice.model ? { model: choice.model } : {}), cwd: home, prompt, label: titleFrom(prompt), purpose: 'chat', edit: stored('mc.shell.edit') === '1', ...(project ? { project } : {}), ...(images.length > 0 ? { images: images.map(path => ({ path })) } : {}) })
   if (!result.ok) { chatError(errorText(result)); return }
   root = String(result.data.id)
   document.body.dataset.chat = root
@@ -643,11 +669,15 @@ async function startChat(prompt: string): Promise<void> {
   await refresh()
 }
 
-async function sendMessage(prompt: string): Promise<void> {
+function restoreComposer(text: string, images: string[]): void {
+  dispatchEvent(new CustomEvent('quiet:message-restore', { detail: { text, images } }))
+}
+
+async function sendMessage(prompt: string, images: string[] = []): Promise<void> {
   show('conversation')
-  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], cards: [], permissions: [], thinking: false, started: Date.now(), ended: null, running: true, failed: false, stopped: false, error: '', errorDetail: '' })); setRunning(true); toBottom(); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
-  const result = await postJson(`/api/jobs/${encodeURIComponent(root)}/reply`, { message: prompt })
-  if (!result.ok) { chatError(errorText(result)); return }
+  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], cards: [], permissions: [], images, thinking: false, started: Date.now(), ended: null, running: true, failed: false, stopped: false, error: '', errorDetail: '' })); setRunning(true); toBottom(); await startChat(prompt, images); if (!root) { setRunning(false); messages.replaceChildren(); restoreComposer(prompt, images); show('welcome') } return }
+  const result = await postJson(`/api/jobs/${encodeURIComponent(root)}/reply`, { message: prompt, ...(images.length > 0 ? { images: images.map(path => ({ path })) } : {}) })
+  if (!result.ok) { chatError(errorText(result)); restoreComposer(prompt, images); return }
   if (result.status !== 202) setRunning(true)
   await refresh()
   toBottom()
@@ -734,9 +764,11 @@ composer.onsubmit = (event) => {
   event.preventDefault()
   const prompt = message.value.trim()
   if (!prompt || (running && !root)) return
+  const snapshot = { images: [] as string[] }
+  dispatchEvent(new CustomEvent('quiet:collect-images', { detail: snapshot }))
   morph(composer, () => { message.value = ''; message.style.height = '' })
   dispatchEvent(new Event('quiet:message-sent'))
-  void sendMessage(prompt)
+  void sendMessage(prompt, snapshot.images)
   message.focus()
 }
 

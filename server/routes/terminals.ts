@@ -5,7 +5,7 @@ const transcriptCache = new Map<string, { key: string; messages: TranscriptMessa
 
 import { requireLocal } from '../auth'
 import { localRequestAllowed, sameOrigin } from '../local-access'
-import { checkDropSize, findOriginalFile, saveDroppedCopy } from '../drops'
+import { checkDropSize, findOriginalFile, returnedOriginals, saveDroppedCopy } from '../drops'
 import { MAX_MODEL_LENGTH } from '../engines'
 import { MAX_TITLE_LENGTH, normalizeTitle, type TerminalRegistry } from '../terminals'
 import { listSessions } from '../transcripts'
@@ -110,7 +110,10 @@ function terminalApi(registry: TerminalRegistry, helpers: TerminalHelpers): Elys
       const rawModified = typeof payload?.lastModified === 'string' ? Number(payload.lastModified) : Number.NaN
       const lastModified = Number.isFinite(rawModified) ? rawModified : Date.now()
       const found = await find({ name: file.name, size: file.size, lastModified })
-      if (found !== null) return { path: found, original: true }
+      if (found !== null) {
+        returnedOriginals.add(found)
+        return { path: found, original: true }
+      }
       return { path: await save(file.name, await file.arrayBuffer()), original: false }
     })
     .get('/api/terminals/sessions', async ({ query, set }) => {

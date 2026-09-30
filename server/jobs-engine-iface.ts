@@ -62,6 +62,10 @@ async function chatProfileEnv(engine: EngineName): Promise<Record<string, string
 
 export const BRIDGE_ENGINES: readonly EngineName[] = ['claude', 'glm']
 
+export function chatUsesBridge(engine: string, purpose?: string): boolean {
+  return purpose === 'chat' && BRIDGE_ENGINES.includes(engine as EngineName) && (!fakeEnginesEnabled() || process.env.MC_FAKE_CHAT_BRIDGE === '1')
+}
+
 const BRIDGE_FIXTURES_DIR = join(import.meta.dir, '..', 'test', 'fixtures', 'chat-bridge')
 
 async function chatBridgeSpawn(
@@ -99,7 +103,7 @@ export const realEngineResolver: EngineResolver = async ({ engine, prompt, resum
   }
   if (mcpServers?.length) throw new Error('Attached MCP tools require an ACP connection; configure a native ACP adapter for this agent')
   const name = engine as EngineName
-  if (purpose === 'chat' && BRIDGE_ENGINES.includes(name) && (!fakeEnginesEnabled() || process.env.MC_FAKE_CHAT_BRIDGE === '1')) {
+  if (chatUsesBridge(engine, purpose)) {
     return await chatBridgeSpawn(name, { prompt, resumeSessionId, model, coreRules, edit, images, permissionMode, forkSession, resumeSessionAt, allowedTools })
   }
   const args = readOnly ? name === 'codex'

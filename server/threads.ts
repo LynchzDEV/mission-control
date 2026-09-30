@@ -82,9 +82,11 @@ export function eventToMessage(event: ActivityEvent, jobId: string): ThreadMessa
   return null
 }
 
+const baseName = (path: string): string => path.replace(/\/+$/, '').split('/').pop() || path
+
 export function jobMessages(job: JobRecord, log: string): ThreadMessage[] {
   const turn: ThreadMessage[] = [
-    { role: 'user', kind: 'prompt', jobId: job.id, ts: job.startedAt, text: job.prompt },
+    { role: 'user', kind: 'prompt', jobId: job.id, ts: job.startedAt, text: job.prompt, ...(job.images && job.images.length > 0 ? { images: job.images.map((image) => baseName(image.path)) } : {}) },
   ]
   for (const event of parseThread(log)) {
     const message = eventToMessage(event, job.id)

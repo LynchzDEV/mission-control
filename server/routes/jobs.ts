@@ -1,6 +1,7 @@
 import { watch } from 'node:fs'
-import { realpath } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
+import { basename, join } from 'node:path'
 
 import { Elysia } from 'elysia'
 
@@ -8,16 +9,18 @@ import { requireLocal } from '../auth'
 import { parseActivity } from '../activity'
 import type { ChatJobPatch, CreateJobParams, JobManager, JobRecord } from '../jobs'
 import { readLogSince, readLogTail } from '../jobs'
-import { readConfig } from '../secrets'
+import { configDir, readConfig } from '../secrets'
 import { activityRedactor, createSecretsRedactor, logSecrets, readRedactedLog, redactedTailReader } from '../log-redaction'
 import { projectMemory } from '../chat-reports'
 import type { ChatQueue } from '../chat-queue'
 import { chatQueuePath, createChatQueue } from '../chat-queue'
 import { attentionKey, type AttentionStore } from '../attention'
 import { chatHome } from '../chat-home'
+import { returnedOriginals } from '../drops'
 import { validateWorkspaceCwd } from '../workspace'
+import type { BridgeImage, BridgeImageMedia } from '../chat-bridge-core'
 import type { EngineResolver } from '../jobs-engine-iface'
-import { engineSupportsResume } from '../jobs-engine-iface'
+import { chatUsesBridge, engineSupportsResume } from '../jobs-engine-iface'
 import { MAX_MODEL_LENGTH } from '../engines'
 import { lintSpec } from '../spec-lint'
 import { readRoles } from './roles'
@@ -28,6 +31,74 @@ export const HEARTBEAT_MS = 15_000
 export const ACTIVITY_FEED_MAX = 50
 export const CHAT_TITLE_MAX = 60
 export const SPAWN_REASON_MAX = 200
+export const IMAGE_MAX_BYTES = 3_932_160
+export const IMAGE_MAX_COUNT = 8
+
+function imageMediaType(bytes: Uint8Array): BridgeImageMedia | null {
+  const at = (index: number): number => bytes[index] ?? 0
+  if (at(0) === 0x89 && at(1) === 0x50 && at(2) === 0x4e && at(3) === 0x47) return 'image/png'
+  if (at(0) === 0xff && at(1) === 0xd8 && at(2) === 0xff) return 'image/jpeg'
+  if (at(0) === 0x47 && at(1) === 0x49 && at(2) === 0x46 && at(3) === 0x38) return 'image/gif'
+  if (at(0) === 0x52 && at(1) === 0x49 && at(2) === 0x46 && at(3) === 0x46 && at(8) === 0x57 && at(9) === 0x45 && at(10) === 0x42 && at(11) === 0x50) return 'image/webp'
+  return null
+}
+
+async function dropsRoot(): Promise<string | null> {
+  try {
+    return await realpath(join(configDir(), 'drops'))
+  } catch {
+    return null
+  }
+}
+
+export type ChatImages = { images: BridgeImage[]; tokens: string[] } | Failure
+
+export async function resolveChatImages(payload: Record<string, unknown>): Promise<ChatImages> {
+  const raw = payload.images
+  if (raw === undefined) return { images: [], tokens: [] }
+  if (!Array.isArray(raw)) return { status: 400, error: 'images must be a list of paths' }
+  if (raw.length > IMAGE_MAX_COUNT) return { status: 400, error: `An image list may hold at most ${IMAGE_MAX_COUNT} files` }
+  const root = await dropsRoot()
+  const images: BridgeImage[] = []
+  const tokens: string[] = []
+  for (const entry of raw) {
+    const path = typeof entry === 'object' && entry !== null && typeof (entry as { path?: unknown }).path === 'string' ? (entry as { path: string }).path : ''
+    const bad = (reason: string): Failure => ({ status: 400, error: `Image ${path === '' ? 'file' : basename(path)} cannot be sent: ${reason}` })
+    if (path === '') return bad('a path is required')
+    let real: string
+    try {
+      real = await realpath(path)
+    } catch {
+      return bad('attach it again')
+    }
+    if (root === null || (real !== root && !real.startsWith(`${root}/`))) {
+      if (!returnedOriginals.has(real)) return bad('attach it again')
+    }
+    const info = await stat(real).catch(() => null)
+    if (info === null || !info.isFile()) return bad('attach it again')
+    if (info.size > IMAGE_MAX_BYTES) return bad('it is larger than 3.75 MB')
+    const mediaType = imageMediaType(new Uint8Array(await readFile(real).catch(() => new ArrayBuffer(0))))
+    if (mediaType === null) return bad('it is not a PNG, JPEG, GIF or WebP image')
+    images.push({ path: real, mediaType })
+    for (const token of new Set([path, real])) tokens.push(token)
+  }
+  return { images, tokens }
+}
+
+export function stripImageTokens(text: string, tokens: readonly string[]): string {
+  let next = text
+  for (const token of tokens) {
+    for (const form of [token, `'${token}'`, `"${token}"`]) {
+      next = next.split(form).join('')
+    }
+  }
+  return next.replace(/[ \t]{2,}/g, ' ').trim()
+}
+
+function chatPromptWithImages(payload: Record<string, unknown>, prompt: string, images: readonly BridgeImage[], tokens: readonly string[]): string {
+  if (images.length === 0 || !chatUsesBridge(String(payload.engine ?? ''), payload.purpose === 'chat' ? 'chat' : undefined)) return prompt
+  return stripImageTokens(prompt, tokens)
+}
 
 type Failure = { status: number; error: string }
 
@@ -245,6 +316,18 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         return { error: chatSpawn.error }
       }
 
+      let images: BridgeImage[] = []
+      let imageTokens: string[] = []
+      if (isChat && chatUsesBridge(payload.engine, 'chat')) {
+        const resolved = await resolveChatImages(payload)
+        if (isFailure(resolved)) {
+          set.status = resolved.status
+          return { error: resolved.error }
+        }
+        images = resolved.images
+        imageTokens = resolved.tokens
+      }
+
       const model = typeof payload?.model === 'string' && payload.model !== '' ? payload.model : undefined
       if (model !== undefined && model.length > MAX_MODEL_LENGTH) {
         set.status = 400
@@ -263,11 +346,12 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         {
           engine: payload.engine,
           cwd: payload.cwd,
-          prompt: payload.prompt,
+          prompt: chatPromptWithImages(payload, payload.prompt, images, imageTokens),
           label,
           worktree: payload.worktree === true,
           ...(typeof payload.terminalId === 'string' ? { terminalId: payload.terminalId } : {}),
           ...(model === undefined ? {} : { model }),
+          ...(images.length > 0 ? { images } : {}),
           ...chatRoot,
           ...chatSpawn,
           ...(chatRoot.purpose === 'chat' ? await chatMemory(manager, chatRoot.project, '') : {}),
@@ -393,6 +477,17 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       }
       const chatRoot = isChat ? threadHead : undefined
       const earlier = isChat ? await queue.take(rootId) : []
+      let replyImages: BridgeImage[] = []
+      let replyTokens: string[] = []
+      if (isChat && chatUsesBridge(parent.engine, 'chat')) {
+        const resolved = await resolveChatImages(body as Record<string, unknown>)
+        if (isFailure(resolved)) {
+          set.status = resolved.status
+          return { error: resolved.error }
+        }
+        replyImages = resolved.images
+        replyTokens = resolved.tokens
+      }
       const result = await manager.createJob(
         {
           ...(isChat ? {
@@ -403,13 +498,14 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
           } : {}),
           engine: parent.engine,
           cwd: parent.cwd,
-          prompt: [...earlier.map((item) => item.text), message].join('\n\n'),
+          prompt: replyImages.length > 0 ? stripImageTokens([...earlier.map((item) => item.text), message].join('\n\n'), replyTokens) : [...earlier.map((item) => item.text), message].join('\n\n'),
           label: parent.label,
           parentJobId: parent.id,
           threadRoot: rootId,
           resumeSessionId: sessionId,
           ...(parent.terminalId === null ? {} : { terminalId: parent.terminalId }),
           ...(parent.model === null ? {} : { model: parent.model }),
+          ...(replyImages.length > 0 ? { images: replyImages } : {}),
           ...(parent.chatId ? { chatId: parent.chatId } : {}),
           ...(parent.chatTurn ? { chatTurn: parent.chatTurn } : {}),
           ...(parent.reason ? { reason: parent.reason } : {}),
@@ -422,6 +518,21 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         return { error: result.error }
       }
       return result.job
+    })
+    .get('/api/jobs/:id/images/:n', async ({ params, set }) => {
+      const job = manager.getJob(params.id)
+      const index = Number(params.n)
+      const image = job?.images?.[index]
+      if (job === undefined || !Number.isInteger(index) || index < 0 || image === undefined) {
+        set.status = 404
+        return { error: 'image not found' }
+      }
+      const file = Bun.file(image.path)
+      if (!(await file.exists())) {
+        set.status = 404
+        return { error: 'image not found' }
+      }
+      return new Response(file, { headers: { 'content-type': image.mediaType, 'cache-control': 'no-store' } })
     })
     .get('/api/jobs/:id/queue', ({ params, set }) => {
       const job = manager.getJob(params.id)

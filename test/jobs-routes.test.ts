@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
-import { appendFile, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -1138,5 +1138,69 @@ describe('POST /api/jobs/:id/permission', () => {
     expect((await app.handle(post(`/api/jobs/${id}/permission`, { requestId: 'r1', decision: 'allow_once' }))).status).toBe(200)
     expect(attention.list()).toEqual([])
     await manager.killJob(id)
+  })
+})
+
+describe('chat images', () => {
+  const pngBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+
+  async function makeDrops(): Promise<string> {
+    const drops = join(configDir, 'drops')
+    await mkdir(drops, { recursive: true })
+    return drops
+  }
+
+  test('accepts a PNG from drops, stores its media type and strips the path token from the prompt', async () => {
+    const drops = await makeDrops()
+    const path = join(drops, 'shot.png')
+    await writeFile(path, pngBytes)
+    const app = buildApp(createJobManager(), echoResolver)
+    const response = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: `look at ${path} and tell me`, purpose: 'chat', images: [{ path }] }))
+    expect(response.status).toBe(200)
+    const job = (await response.json()) as { id: string; prompt: string; images: Array<{ path: string; mediaType: string }> }
+    expect(job.images[0]?.mediaType).toBe('image/png')
+    expect(job.images[0]?.path).toBe(await realpath(path))
+    expect(job.prompt).toBe('look at and tell me')
+    const image = await app.handle(get(`/api/jobs/${job.id}/images/0`))
+    expect(image.status).toBe(200)
+    expect(image.headers.get('content-type')).toBe('image/png')
+    expect((await app.handle(get(`/api/jobs/${job.id}/images/5`))).status).toBe(404)
+    expect((await app.handle(get(`/api/jobs/${job.id}/images/x`))).status).toBe(404)
+  })
+
+  test('rejects a text file named .png, an oversized image, nine images and a path outside drops', async () => {
+    const drops = await makeDrops()
+    const textPath = join(drops, 'fake.png')
+    await writeFile(textPath, 'definitely not an image')
+    const bigPath = join(drops, 'big.png')
+    await writeFile(bigPath, Buffer.concat([pngBytes, Buffer.alloc(3_932_161 - pngBytes.length)]))
+    const goodPath = join(drops, 'good.png')
+    await writeFile(goodPath, pngBytes)
+    const outsidePath = join(repo, 'outside.png')
+    await writeFile(outsidePath, pngBytes)
+    const app = buildApp(createJobManager(), echoResolver)
+    const body = (path: string): Record<string, unknown> => ({ engine: 'claude', cwd: repo, prompt: 'look', purpose: 'chat', images: [{ path }] })
+    expect(await (await app.handle(post('/api/jobs', body(textPath)))).json()).toEqual({ error: 'Image fake.png cannot be sent: it is not a PNG, JPEG, GIF or WebP image' })
+    expect(await (await app.handle(post('/api/jobs', body(bigPath)))).json()).toEqual({ error: 'Image big.png cannot be sent: it is larger than 3.75 MB' })
+    const nine = await app.handle(post('/api/jobs', { ...body(goodPath), images: Array.from({ length: 9 }, () => ({ path: goodPath })) }))
+    expect(await nine.json()).toEqual({ error: 'An image list may hold at most 8 files' })
+    expect(await (await app.handle(post('/api/jobs', body(outsidePath)))).json()).toEqual({ error: 'Image outside.png cannot be sent: attach it again' })
+    expect((await app.handle(post('/api/jobs', body(join(drops, 'missing.png'))))).status).toBe(400)
+  })
+
+  test('a reply carries its images onto the new turn', async () => {
+    const drops = await makeDrops()
+    const path = join(drops, 'reply.png')
+    await writeFile(path, pngBytes)
+    const sessionResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `echo '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-img', resumeSupported: true })}'`], env: {} })
+    const app = buildApp(createJobManager(), sessionResolver)
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'img-chat', purpose: 'chat' }))
+    const { id } = (await created.json()) as { id: string }
+    await pollUntilDone(app, id)
+    const reply = await app.handle(post(`/api/jobs/${id}/reply`, { message: `check ${path}`, images: [{ path }] }))
+    expect(reply.status).toBe(200)
+    const turn = (await reply.json()) as { id: string; images: Array<{ mediaType: string }>; prompt: string }
+    expect(turn.images[0]?.mediaType).toBe('image/png')
+    expect(turn.prompt).toBe('check')
   })
 })

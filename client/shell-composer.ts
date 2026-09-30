@@ -1,6 +1,6 @@
 import { getJson, pathsFromUriList, readArray, shellQuote, uploadDrop } from './shared'
 import { morph, reveal } from './morph'
-import { attachmentChip } from './attachments'
+import { attachmentChip, type AttachmentChip } from './attachments'
 import { customModelChoice, launchChoice, readRecentDirectories, type LaunchProvider } from './shell-launch'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
@@ -119,7 +119,7 @@ const toast = (text: string): void => { dispatchEvent(new CustomEvent('quiet:toa
 const hasFiles = (transfer: DataTransfer | null): boolean => !!transfer && (transfer.types.includes('Files') || transfer.types.includes('text/uri-list'))
 const fileCount = (count: number): string => `${count} file${count === 1 ? '' : 's'}`
 
-type Attachment = { chip: HTMLElement; token: string; url: string | null }
+type Attachment = AttachmentChip
 const attachments: Attachment[] = []
 
 function paintTray(): void {
@@ -171,6 +171,18 @@ message.addEventListener('input', () => {
 
 addEventListener('quiet:message-sent', () => {
   for (const entry of [...attachments]) detach(entry, false)
+})
+
+addEventListener('quiet:collect-images', (event) => {
+  const detail = (event as CustomEvent<{ images: string[] }>).detail
+  for (const entry of attachments) if (entry.kind === 'image') detail.images.push(entry.path)
+})
+
+addEventListener('quiet:message-restore', (event) => {
+  const { text, images } = (event as CustomEvent<{ text: string; images: string[] }>).detail
+  message.value = text
+  attachChips(images, [])
+  message.dispatchEvent(new Event('input', { bubbles: true }))
 })
 
 message.addEventListener('paste', (event) => {

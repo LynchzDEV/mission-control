@@ -6,6 +6,10 @@ import { configDir } from './secrets'
 
 export type DroppedFileMeta = { name: string; size: number; lastModified: number }
 
+// Finder originals the drops endpoint handed out this server lifetime; they may be attached to a
+// chat image list without a copy in drops/. The set empties on restart by design.
+export const returnedOriginals = new Set<string>()
+
 export type DropDeps = {
   platform?: string
   runMdfind?: (meta: DroppedFileMeta) => Promise<string[]>

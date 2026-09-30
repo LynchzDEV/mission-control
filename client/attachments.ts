@@ -1,4 +1,15 @@
-export type AttachmentChip = { chip: HTMLElement; token: string; url: string | null }
+export type AttachmentKind = 'image' | 'file'
+
+export type AttachmentChip = { chip: HTMLElement; token: string; url: string | null; path: string; kind: AttachmentKind }
+
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp'])
+
+export function attachmentKind(path: string, file: File | null): AttachmentKind {
+  if (file !== null) return file.type.startsWith('image/') ? 'image' : 'file'
+  const dot = path.lastIndexOf('.')
+  const extension = dot > 0 ? path.slice(dot + 1).toLowerCase() : ''
+  return IMAGE_EXTENSIONS.has(extension) ? 'image' : 'file'
+}
 
 export function formatSize(bytes: number): string {
   const kilobytes = bytes / 1024
@@ -43,5 +54,5 @@ export function attachmentChip(path: string, file: File | null, quote: (path: st
   remove.setAttribute('aria-label', `Remove ${name}`)
   remove.insertAdjacentHTML('afterbegin', '<svg><use href="#close-icon"/></svg>')
   chip.append(remove)
-  return { chip, token: quote(path), url }
+  return { chip, token: quote(path), url, path, kind: attachmentKind(path, file) }
 }
