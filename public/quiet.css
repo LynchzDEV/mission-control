@@ -1094,3 +1094,47 @@ a.pill:hover { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .sb-shell { transition: none; } .sb-shell .sb-open > *, .sb-shell .sb-strip > * { animation: none; } }
 
 #flow-studio { gap: 0.3em; }
+
+.nt-bell .count { background: var(--danger); }
+.round.nt-bell[aria-expanded="true"] { box-shadow: var(--inset); color: var(--text-strong); }
+.nt-panel { position: fixed; z-index: 30; top: 72px; right: 20px; width: min(392px, calc(100vw - 32px)); max-height: calc(100vh - 120px); overflow: auto; border: 1px solid var(--float-edge); border-radius: var(--r-lg); corner-shape: var(--corner); background: var(--paper); box-shadow: var(--dialog-shadow); display: grid; align-content: start; }
+.nt-panel[hidden], .nt-panel [hidden] { display: none; }
+.nt-head { display: flex; align-items: center; gap: 10px; padding: 16px 18px 10px; }
+.nt-head h2 { margin: 0; flex: 1; font-size: 15px; font-weight: 600; color: var(--text-strong); }
+.nt-n { font-size: 12px; color: var(--muted); }
+.nt-off { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 10px; margin: 0 12px 8px; padding: 10px 12px; border-radius: var(--r-md); corner-shape: var(--corner); background: var(--purple-bg); color: var(--purple-ink); font-size: 12.5px; line-height: 1.4; }
+.nt-off strong { display: block; font-size: 13px; }
+.nt-off .pill { min-height: 32px; padding: 0 12px; font-size: 12.5px; color: var(--accent); background: var(--paper); }
+.nt-off .nt-ico { background: var(--paper); }
+.nt-list { display: grid; gap: 8px; padding: 2px 12px 12px; }
+.nt-item { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 4px 10px; padding: 12px 14px; border-radius: var(--r-md); corner-shape: var(--corner); background: var(--paper); box-shadow: var(--raised); }
+.nt-ico { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-xs); corner-shape: var(--corner); grid-row: span 2; }
+.nt-ico svg { width: 15px; height: 15px; }
+.nt-item[data-k="perm"] .nt-ico { background: var(--purple-bg); color: var(--purple-ink); }
+.nt-item[data-k="needs"] .nt-ico { background: var(--red-bg); color: var(--red-ink); }
+.nt-item[data-k="loop"] .nt-ico { background: var(--field); color: var(--text-strong); }
+.nt-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.nt-top strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; color: var(--text-strong); }
+.nt-top time { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.nt-dismiss { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--muted); align-self: center; }
+.nt-dismiss svg { width: 12px; height: 12px; }
+.nt-dismiss:hover { color: var(--text-strong); background: var(--field); }
+.nt-what { font-size: 12.5px; color: var(--text-soft); line-height: 1.45; }
+.nt-body { grid-column: 2; display: grid; gap: 8px; margin-top: 4px; }
+.nt-cmd { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--r-sm); corner-shape: var(--corner); background: var(--field); font: 12px/1.4 ui-monospace, 'SF Mono', Menlo, monospace; color: var(--text-strong); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.nt-cmd span { color: var(--muted); }
+.nt-acts { display: flex; align-items: center; gap: 8px; }
+.nt-acts .sp { flex: 1; }
+.nt-acts .pill { min-height: 32px; padding: 0 12px; font-size: 12.5px; }
+.nt-acts .nt-primary { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--paper)); }
+.nt-acts .text-button { padding: 6px 4px; font-size: 12.5px; color: var(--text-soft); }
+.nt-acts .text-button.nt-danger { color: var(--danger); }
+.nt-acts button:disabled { opacity: .55; }
+.nt-fail { margin: 0; font-size: 12px; color: var(--danger); }
+.nt-foot { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.nt-foot .text-button { font-size: 12px; color: var(--text-soft); padding: 0; }
+.nt-empty { display: grid; justify-items: center; gap: 6px; padding: 28px 24px 34px; text-align: center; }
+.nt-empty .nt-ico { grid-row: auto; width: 40px; height: 40px; background: var(--green-bg); color: var(--green-ink); border-radius: var(--r-md); }
+.nt-empty .nt-ico svg { width: 20px; height: 20px; }
+.nt-empty strong { font-size: 14px; color: var(--text-strong); margin-top: 6px; }
+.nt-empty span { font-size: 12.5px; color: var(--muted); max-width: 260px; line-height: 1.45; }

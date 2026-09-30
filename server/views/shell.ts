@@ -8,6 +8,7 @@ const BODY = `
     <symbol id="history-icon" viewBox="0 0 20 20"><path d="M3 7a7 7 0 1 1-1 5M3 3v4h4M10 6v4l3 2"/></symbol>
     <symbol id="arrow-icon" viewBox="0 0 20 20"><path d="M10 16V4M5 9l5-5 5 5"/></symbol>
     <symbol id="stop-icon" viewBox="0 0 20 20"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="bell-icon" viewBox="0 0 20 20"><path d="M5.5 13.5V9a4.5 4.5 0 0 1 9 0v4.5l1.5 1.5h-12z"/><path d="M8.5 17a1.6 1.6 0 0 0 3 0"/></symbol>
     <symbol id="agents-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M11 4v12M6 8h2M6 11h2"/></symbol>
     <symbol id="flow-icon" viewBox="0 0 20 20"><rect x="2" y="7" width="5" height="6" rx="1.5"/><rect x="13" y="2" width="5" height="6" rx="1.5"/><rect x="13" y="12" width="5" height="6" rx="1.5"/><path d="M7 10h3V5h3M10 10v5h3"/></symbol>
     <symbol id="close-icon" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
@@ -61,6 +62,7 @@ const BODY = `
         <button id="open-studio" class="pill" type="button" aria-pressed="false">Studio</button>
         <button id="toggle-flow" class="round quiet-control" aria-label="Flow" title="Flow" aria-expanded="false" aria-controls="flow"><svg><use href="#flow-icon"/></svg></button>
         <button id="open-agents" class="round quiet-control" aria-expanded="false" aria-controls="agents" aria-label="Agents" title="Agents"><svg><use href="#agents-icon"/></svg><span id="agents-count" class="count" hidden></span></button>
+        <button id="open-attention" class="round quiet-control nt-bell" type="button" aria-expanded="false" aria-controls="attention" aria-label="Waiting on you" title="Waiting on you"><svg><use href="#bell-icon"/></svg><span id="attention-count" class="count" hidden></span></button>
       </nav>
     </header>
 
@@ -138,6 +140,13 @@ const BODY = `
   </dialog>
 
     </div>
+    <section id="attention" class="nt-panel" aria-label="Waiting on you" hidden>
+      <header class="nt-head"><h2>Waiting on you</h2><span class="nt-n" id="attention-n" hidden></span></header>
+      <div class="nt-off" id="attention-off" hidden><span class="nt-ico"><svg><use href="#bell-icon"/></svg></span><div><strong id="attention-off-title">Mac alerts are off</strong><span id="attention-off-text">Get an alert with buttons when something needs you, even with this tab hidden.</span></div><button class="pill" type="button" id="attention-on">Turn on</button></div>
+      <div class="nt-list" id="attention-list" hidden></div>
+      <div class="nt-empty" id="attention-empty"><span class="nt-ico"><svg><use href="#check-icon"/></svg></span><strong>Nothing is waiting on you</strong><span>When a chat needs an answer, it shows up here and as a Mac alert.</span></div>
+      <footer class="nt-foot" id="attention-foot" hidden><span>Mac alerts on · quiet while you're here</span><button class="text-button" type="button" id="attention-mute">Turn off</button></footer>
+    </section>
   </main>
   </div>
 

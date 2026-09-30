@@ -127,6 +127,13 @@ describe('attention delivery', () => {
     expect(markup).toContain('<script src="/js/attention.js" type="module" defer></script>')
   })
 
+  test('/ puts the bell after Agents and the Waiting-on-you panel in the canvas', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    for (const marker of ['id="bell-icon"', 'id="open-attention"', 'aria-controls="attention"', 'id="attention-count"', '<section id="attention" class="nt-panel"', 'id="attention-list"', 'id="attention-empty"', 'id="attention-off"', 'id="attention-on"', 'id="attention-foot"', 'id="attention-mute"']) expect(markup).toContain(marker)
+    expect(markup.indexOf('id="open-attention"')).toBeGreaterThan(markup.indexOf('id="open-agents"'))
+    expect(markup.indexOf('id="open-attention"')).toBeLessThan(markup.indexOf('</header>'))
+  })
+
   test('/sw.js serves the service worker with its click handler, and /favicon.svg serves the icon', async () => {
     const worker = await app.handle(new Request('http://localhost/sw.js'))
     expect(worker.status).toBe(200)
