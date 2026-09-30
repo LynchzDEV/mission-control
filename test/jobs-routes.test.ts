@@ -1256,3 +1256,70 @@ describe('GET /api/jobs/:id/commands', () => {
     expect(await (await plainApp.handle(get(`/api/jobs/${bareId}/commands`))).json()).toEqual({ commands: [] })
   })
 })
+
+describe('live thread and stream offsets', () => {
+  const initLine = JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-live' })
+  const streamLine = JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Half' } } })
+
+  const resultLine = JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'done' })
+  const linesResolver: EngineResolver = () => ({
+    cmd: '/bin/sh',
+    args: ['-c', "printf '%s\\n' '" + initLine + "'; printf '%s\\n' '" + streamLine + "'; sleep 1.6; printf '%s\\n' '" + resultLine + "'"],
+    env: {},
+  })
+
+  async function logSize(manager: JobManager, id: string): Promise<number> {
+    return (await stat(manager.logPath(id))).size
+  }
+
+  test('a running chat reports a live turn whose offset ends on a line boundary', async () => {
+    const manager = createJobManager()
+    const app = buildApp(manager, linesResolver)
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'live-chat', purpose: 'chat' }))
+    const { id } = (await created.json()) as { id: string }
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const thread = await (await app.handle(get(`/api/jobs/${id}/thread`))).json() as { live: { jobId: string; offset: number; partial: boolean } | null }
+    expect(thread.live).not.toBeNull()
+    expect(thread.live?.jobId).toBe(id)
+    expect(thread.live?.partial).toBe(true)
+    const raw = await readFile(manager.logPath(id), 'utf8')
+    expect(raw[Number(thread.live?.offset) - 1]).toBe('\n')
+    await manager.killJob(id).catch(() => undefined)
+  }, 10000)
+
+  test('an offset stream never emits a partial line and rejects bad offsets', async () => {
+    const manager = createJobManager()
+    const app = buildApp(manager, linesResolver)
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'live-chat-2', purpose: 'chat' }))
+    const { id } = (await created.json()) as { id: string }
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    const size = (await stat(manager.logPath(id))).size
+    expect((await app.handle(get(`/api/jobs/${id}/stream?offset=${size + 1}`))).status).toBe(400)
+    expect((await app.handle(get(`/api/jobs/${id}/stream?offset=-2`))).status).toBe(400)
+    expect((await app.handle(get(`/api/jobs/${id}/stream?offset=abc`))).status).toBe(400)
+    const server = app.listen({ hostname: '127.0.0.1', port: 0 })
+    const base = `http://127.0.0.1:${server.server?.port}`
+    try {
+      const response = await fetch(`${base}/api/jobs/${id}/stream?offset=0`)
+      expect(response.status).toBe(200)
+      const reader = (response.body as ReadableStream<Uint8Array>).getReader()
+      const decoder = new TextDecoder()
+      let collected = ''
+      const deadline = Date.now() + 3000
+      while (!collected.includes('stream_event') && Date.now() < deadline) {
+        const next = await Promise.race([reader.read(), new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 250))])
+        if (next === undefined || next.done) continue
+        collected += decoder.decode(next.value)
+        for (const line of collected.replace(/^data: /gm, '').split('\n')) {
+          if (line.startsWith('{') && line.endsWith('}')) expect(() => JSON.parse(line)).not.toThrow()
+        }
+      }
+      await reader.cancel().catch(() => undefined)
+      expect(collected).toContain('stream_event')
+    } finally {
+      server.stop(true)
+    }
+    await manager.killJob(id).catch(() => undefined)
+  }, 12000)
+
+})

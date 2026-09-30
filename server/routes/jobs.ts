@@ -6,7 +6,7 @@ import { basename, join } from 'node:path'
 import { Elysia } from 'elysia'
 
 import { requireLocal } from '../auth'
-import { parseActivity } from '../activity'
+import { parseActivity, parseThread } from '../activity'
 import type { ChatJobPatch, CreateJobParams, JobManager, JobRecord } from '../jobs'
 import { readLogSince, readLogTail } from '../jobs'
 import { configDir, readConfig } from '../secrets'
@@ -99,6 +99,21 @@ export function stripImageTokens(text: string, tokens: readonly string[]): strin
 function chatPromptWithImages(payload: Record<string, unknown>, prompt: string, images: readonly BridgeImage[], tokens: readonly string[]): string {
   if (images.length === 0 || !chatUsesBridge(String(payload.engine ?? ''), payload.purpose === 'chat' ? 'chat' : undefined)) return prompt
   return stripImageTokens(prompt, tokens)
+}
+
+export type LiveTurn = { jobId: string; offset: number; partial: boolean }
+
+async function liveTurn(chain: readonly JobRecord[], manager: JobManager): Promise<LiveTurn | null> {
+  const running = [...chain].reverse().find((turn) => turn.status === 'running')
+  if (running === undefined) return null
+  const path = manager.logPath(running.id)
+  const info = await stat(path).catch(() => null)
+  if (info === null) return null
+  const text = await Bun.file(path).slice(0, info.size).text()
+  const events = parseThread(text)
+  const lastText = [...events].reverse().find((event) => event.kind === 'text' || event.kind === 'thinking')
+  const end = text.lastIndexOf('\n')
+  return { jobId: running.id, offset: end >= 0 ? end + 1 : 0, partial: lastText?.partial === true }
 }
 
 type Failure = { status: number; error: string }
@@ -220,7 +235,7 @@ function sseHeaders(): HeadersInit {
   }
 }
 
-export function createLogStreamResponse(path: string, signal: AbortSignal, secrets: ReadonlyArray<string | null> = []): Response {
+export function createLogStreamResponse(path: string, signal: AbortSignal, secrets: ReadonlyArray<string | null> = [], startOffset?: number): Response {
   const encoder = new TextEncoder()
   const redactor = createSecretsRedactor(secrets)
   let watcher: ReturnType<typeof watch> | null = null
@@ -237,17 +252,23 @@ export function createLogStreamResponse(path: string, signal: AbortSignal, secre
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const initial = await readLogTail(path, SSE_TAIL_BYTES)
-      offset = initial.offset
-      const initialText = redactor.redact(initial.content)
-      if (initialText !== '') controller.enqueue(encoder.encode(formatSSEData(initialText)))
+      if (startOffset === undefined) {
+        const initial = await readLogTail(path, SSE_TAIL_BYTES)
+        offset = initial.offset
+        const initialText = redactor.redact(initial.content)
+        if (initialText !== '') controller.enqueue(encoder.encode(formatSSEData(initialText)))
+      } else {
+        offset = startOffset
+      }
 
       const pushUpdates = async (): Promise<void> => {
         if (closed) return
         const chunk = await readLogSince(path, offset)
         if (closed || chunk.content === '') return
-        offset = chunk.offset
-        const text = redactor.redact(chunk.content)
+        const end = chunk.content.lastIndexOf('\n')
+        if (end < 0) return
+        const text = redactor.redact(chunk.content.slice(0, end + 1))
+        offset += end + 1
         if (text === '') return
         safeEnqueue(controller, () => closed, encoder.encode(formatSSEData(text)))
       }
@@ -257,6 +278,7 @@ export function createLogStreamResponse(path: string, signal: AbortSignal, secre
       } catch {
         watcher = null
       }
+      await pushUpdates()
 
       heartbeat = setInterval(() => {
         if (closed) return
@@ -413,13 +435,23 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       const content = await readRedactedLog(manager.logPath(params.id))
       return new Response(content, { headers: { 'content-type': 'text/plain; charset=utf-8' } })
     })
-    .get('/api/jobs/:id/stream', async ({ params, set, request }) => {
+    .get('/api/jobs/:id/stream', async ({ params, query, set, request }) => {
       const job = manager.getJob(params.id)
       if (job === undefined) {
         set.status = 404
         return { error: 'job not found' }
       }
-      return createLogStreamResponse(manager.logPath(params.id), request.signal, await logSecrets())
+      const path = manager.logPath(params.id)
+      if (query.offset !== undefined) {
+        const offset = Number(query.offset)
+        const info = await stat(path).catch(() => null)
+        if (!Number.isInteger(offset) || offset < 0 || info === null || offset > info.size) {
+          set.status = 400
+          return { error: 'offset must be an integer within the log' }
+        }
+        return createLogStreamResponse(path, request.signal, await logSecrets(), offset)
+      }
+      return createLogStreamResponse(path, request.signal, await logSecrets())
     })
     .get('/api/jobs/:id/thread', async ({ params, set }) => {
       const job = manager.getJob(params.id)
@@ -430,6 +462,8 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       const rootId = threadRootOf(job)
       const chain = threadChain(manager.listJobs(), rootId)
       const messages = await assembleThread(chain, (jobId) => readRedactedLog(manager.logPath(jobId)))
+      const threadHead = manager.getJob(rootId)
+      const isChat = job.purpose === 'chat' || threadHead?.purpose === 'chat'
       return {
         rootId,
         engine: job.engine,
@@ -437,6 +471,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         sessionId: replySessionId(chain),
         canReply: !job.workflowRunId && job.purpose !== 'workflow-design' && (job.resumeSupported ?? engineSupportsResume(job.engine)) && replySessionId(chain) !== null,
         messages,
+        ...(isChat && chatUsesBridge(job.engine, 'chat') ? { live: await liveTurn(chain, manager) } : {}),
       }
     })
     .post('/api/jobs/:id/reply', async ({ params, body, set }) => {

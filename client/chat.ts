@@ -6,6 +6,7 @@ import { createOutcomeStrip } from './outcome-strip'
 import { chatModeChoice, chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, runningLabel, slashQuery, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type ChatCommand, type HistoryItem, type PermissionView, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 import { ansiHtml, capOutput, type ToolCard, type ToolCardKind } from './tool-cards'
 import { collectRowStates, rowScrollOf, setRowScroll, trackRowScroll, type RowState } from './tool-row-scroll'
+import { createLiveFeed, type LiveFeed } from './live-text'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const RUNNING_POLL_MS = 700
@@ -500,6 +501,7 @@ function patchReply(reply: HTMLElement, turn: Turn): boolean {
   if (tick && step) fadeStep(tick, step)
   const card = reply.querySelector<HTMLElement>('.tool-card')
   if (card !== null) paintToolList(card, turn.cards)
+  if (reply.dataset.live === '1') return false
   if (reply.dataset.text === String(turn.text.length)) return false
   reply.dataset.text = String(turn.text.length)
   growText(reply.querySelector('.md')!, turn.text)
@@ -566,6 +568,7 @@ function paint(turns: Turn[], project: string | null): void {
       const rowStates = reply ? collectRowStates(reply) : new Map<string, RowState>()
       reply = assistantRow(turn, rows, project)
       Object.assign(reply.dataset, { turn: turn.id, part: 'reply', sig, text: String(turn.text.length) })
+      if (turn.running && liveSource !== null) reply.dataset.live = '1'
       const steps = reply.querySelector<HTMLDetailsElement>('.turn-steps')
       if (steps) steps.open = wasOpen
       for (const row of reply.querySelectorAll<HTMLDetailsElement>('.tool-row')) {
@@ -610,6 +613,9 @@ async function refresh(): Promise<void> {
   setRunning(nowRunning)
   if (wasRunning && !nowRunning) void loadCommands()
   wasRunning = nowRunning
+  const live = thread.data.live as { jobId: string; offset: number; partial: boolean } | null | undefined
+  if (live !== null && live !== undefined) openLiveText(live)
+  else if (liveSource !== null) closeLiveText()
   paintQueue(queue.ok ? readArray(queue.data.items) as unknown as QueuedItem[] : [])
   schedule()
 }
@@ -617,8 +623,61 @@ async function refresh(): Promise<void> {
 function schedule(): void {
   clearTimeout(pollTimer)
   if (!root || $('conversation').hidden || document.visibilityState !== 'visible') { stopPolling(); return }
-  pollTimer = window.setTimeout(() => void refresh(), running ? RUNNING_POLL_MS : IDLE_POLL_MS)
+  pollTimer = window.setTimeout(() => void refresh(), running && liveSource === null ? RUNNING_POLL_MS : IDLE_POLL_MS)
   tickTimer ||= window.setInterval(tickRunning, TICK_MS)
+}
+
+let liveSource: EventSource | null = null
+let liveFeed: LiveFeed | null = null
+let liveFrame = 0
+let liveRefreshTimer = 0
+
+function scheduleLiveRefresh(): void {
+  clearTimeout(liveRefreshTimer)
+  liveRefreshTimer = window.setTimeout(() => void refresh(), 150)
+}
+
+function closeLiveText(): void {
+  if (liveSource !== null) {
+    liveSource.close()
+    liveSource = null
+  }
+  cancelAnimationFrame(liveFrame)
+  liveFeed = null
+  for (const node of messages.querySelectorAll<HTMLElement>('[data-live]')) delete node.dataset.live
+  for (const caret of messages.querySelectorAll('.chat-caret')) caret.remove()
+}
+
+function paintLiveFrame(): void {
+  if (liveSource === null || liveFeed === null) return
+  liveFrame = requestAnimationFrame(paintLiveFrame)
+  const turn = [...shownTurns].reverse().find(item => item.running)
+  if (turn === undefined) return
+  const reply = messages.querySelector<HTMLElement>(`[data-turn="${CSS.escape(turn.id)}"][data-part="reply"]`)
+  const md = reply?.querySelector('.md')
+  if (md === undefined || md === null) return
+  reply!.dataset.live = '1'
+  growText(md, liveFeed.text(turn.text))
+  if (md.querySelector('.chat-caret') === null) {
+    const caret = document.createElement('span')
+    caret.className = 'chat-caret'
+    caret.setAttribute('aria-hidden', 'true')
+    md.append(caret)
+  }
+}
+
+function openLiveText(live: { jobId: string; offset: number; partial: boolean }): void {
+  closeLiveText()
+  liveFeed = createLiveFeed(scheduleLiveRefresh)
+  liveFeed.setPartial(live.partial)
+  liveSource = new EventSource(`/api/jobs/${encodeURIComponent(live.jobId)}/stream?offset=${live.offset}`)
+  liveSource.onmessage = (event) => liveFeed?.push(`${event.data}\n`)
+  liveSource.onerror = () => closeLiveText()
+  const turn = [...shownTurns].reverse().find(item => item.running)
+  const reply = turn === undefined ? null : messages.querySelector<HTMLElement>(`[data-turn="${CSS.escape(turn.id)}"][data-part="reply"]`)
+  if (reply !== null) reply.dataset.live = '1'
+  cancelAnimationFrame(liveFrame)
+  liveFrame = requestAnimationFrame(paintLiveFrame)
 }
 
 function stopPolling(): void {
@@ -771,6 +830,7 @@ export function openChat(id: string): void {
   root = id
   agents = []
   shownTurns = []
+  closeLiveText()
   messages.replaceChildren()
   setUrl(id)
   document.body.dataset.chat = id
@@ -941,7 +1001,7 @@ message.addEventListener('keydown', event => {
 })
 
 addEventListener('quiet:chat-agents', (event) => outcomes.setSource(`chat=${encodeURIComponent((event as CustomEvent<string>).detail)}`))
-addEventListener('quiet:new-chat', () => { outcomes.setSource(null); root = null; agents = []; shownTurns = []; messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null); delete document.body.dataset.chat; delete document.body.dataset.chatEngine; dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null })) })
+addEventListener('quiet:new-chat', () => { outcomes.setSource(null); root = null; agents = []; shownTurns = []; closeLiveText(); messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null); delete document.body.dataset.chat; delete document.body.dataset.chatEngine; dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null })) })
 addEventListener('quiet:open-chat', (event) => openChat((event as CustomEvent<string>).detail))
 addEventListener('quiet:show', (event) => { if ((event as CustomEvent<string>).detail === 'conversation') schedule(); else stopPolling() })
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') schedule(); else stopPolling() })
