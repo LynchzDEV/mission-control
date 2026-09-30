@@ -10,7 +10,7 @@ for arg in "$@"; do
 done
 name=$(printf '%s\n' "$prompt" | sed -n 's/.*fixture:\([a-z][a-z]*\).*/\1/p' | head -n 1)
 case "$name" in
-  tools | failed | slow) ;;
+  tools | failed | slow | long) ;;
   *) name=tools ;;
 esac
 fixture="$(dirname "$0")/../test/fixtures/chat/$name.jsonl"

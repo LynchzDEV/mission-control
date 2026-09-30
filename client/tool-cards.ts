@@ -131,7 +131,7 @@ export function capOutput(text: string): string {
     hidden = cut.endsWith('\n') ? cutBreaks : cutBreaks + 1
     if (!cut.endsWith('\n')) {
       const firstBreak = body.indexOf('\n')
-      if (firstBreak !== -1) body = body.slice(firstBreak + 1)
+      if (firstBreak !== -1 && firstBreak + 1 < body.length) body = body.slice(firstBreak + 1)
     }
   }
   const lines = body.split('\n')

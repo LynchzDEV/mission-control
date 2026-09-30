@@ -74,6 +74,18 @@ describe('capOutput', () => {
     expect(lines[1]).toBe('x'.repeat(20_000))
   })
 
+  test('a single line longer than the cap keeps its tail when it ends with a newline', () => {
+    const lines = capOutput('x'.repeat(21_000) + '\n').split('\n')
+    expect(lines).toHaveLength(3)
+    expect(lines[0]).toBe('… 1 earlier lines hidden')
+    expect(lines[1]).toBe('x'.repeat(19_999))
+    expect(lines[2]).toBe('')
+  })
+
+  test('output cut mid-line still starts from a whole line when one follows', () => {
+    expect(capOutput('y'.repeat(20_010) + '\ncomplete')).toBe('… 1 earlier lines hidden\ncomplete')
+  })
+
   test('short output passes through unchanged', () => {
     expect(capOutput('one\ntwo')).toBe('one\ntwo')
   })
