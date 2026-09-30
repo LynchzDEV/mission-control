@@ -979,8 +979,10 @@ async function startChat(prompt: string, images: string[]): Promise<void> {
   root = String(result.data.id)
   if (choice.model) keep(`mc.chat.model.${root}`, choice.model)
   document.body.dataset.chat = root
+  document.body.dataset.chatEngine = choice.engine
   setUrl(root)
   dispatchEvent(new CustomEvent('quiet:chat-agents', { detail: root }))
+  dispatchEvent(new CustomEvent('quiet:chat-open', { detail: root }))
   await refresh()
 }
 

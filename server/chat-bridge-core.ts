@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { isAbsolute, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 
 import type {
   CanUseTool,
@@ -352,7 +352,9 @@ export function fakeQuery(dir: string): BridgeQuery {
             continue
           }
           if (parsed.fake === 'write') {
-            await writeFile(String(parsed.path), String(parsed.content))
+            const target = String(parsed.path)
+            await mkdir(dirname(target), { recursive: true }).catch(() => undefined)
+            await writeFile(target, String(parsed.content))
             continue
           }
           yield freshFakeLine(parsed)
