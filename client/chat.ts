@@ -654,6 +654,7 @@ composer.onsubmit = (event) => {
   const prompt = message.value.trim()
   if (!prompt || (running && !root)) return
   morph(composer, () => { message.value = ''; message.style.height = '' })
+  dispatchEvent(new Event('quiet:message-sent'))
   void sendMessage(prompt)
   message.focus()
 }

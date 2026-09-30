@@ -1,5 +1,6 @@
 import { getJson, pathsFromUriList, readArray, shellQuote, uploadDrop } from './shared'
 import { morph, reveal } from './morph'
+import { attachmentChip } from './attachments'
 import { customModelChoice, launchChoice, readRecentDirectories, type LaunchProvider } from './shell-launch'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
@@ -113,23 +114,64 @@ document.addEventListener('keydown', (event) => { if (event.key === 'Escape') cl
 
 const composer = $('composer')
 const message = $('message') as HTMLTextAreaElement
+const tray = $('attach-tray')
 const toast = (text: string): void => { dispatchEvent(new CustomEvent('quiet:toast', { detail: text })) }
 const hasFiles = (transfer: DataTransfer | null): boolean => !!transfer && (transfer.types.includes('Files') || transfer.types.includes('text/uri-list'))
 const fileCount = (count: number): string => `${count} file${count === 1 ? '' : 's'}`
 
+type Attachment = { chip: HTMLElement; token: string; url: string | null }
+const attachments: Attachment[] = []
+
+function paintTray(): void {
+  tray.replaceChildren(...attachments.map(entry => entry.chip))
+  tray.hidden = attachments.length === 0
+  composer.classList.toggle('has-tray', attachments.length > 0)
+}
+
+function detach(entry: Attachment, removeFromMessage: boolean): void {
+  if (removeFromMessage) message.value = message.value.replace(entry.token, '')
+  if (entry.url !== null) URL.revokeObjectURL(entry.url)
+  attachments.splice(attachments.indexOf(entry), 1)
+  paintTray()
+}
+
+function attachChips(paths: string[], files: File[]): void {
+  paths.forEach((path, index) => {
+    const entry = attachmentChip(path, files[index] ?? null, shellQuote)
+    entry.chip.querySelector('.attach-remove')?.addEventListener('click', () => {
+      detach(entry, true)
+      message.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    attachments.push(entry)
+  })
+  paintTray()
+}
+
 async function attach(files: File[], dropped: string[]): Promise<void> {
   if (files.length === 0 && dropped.length === 0) { toast('Nothing to add'); return }
   let paths = dropped
+  let uploaded = false
   if (paths.length === 0) {
     toast(`Adding ${fileCount(files.length)}…`)
-    try { paths = await Promise.all(files.map(uploadDrop)) }
+    try { paths = await Promise.all(files.map(uploadDrop)); uploaded = true }
     catch (error) { toast(error instanceof Error ? error.message : 'Upload failed'); return }
   }
   message.focus()
   message.setRangeText(`${paths.map(shellQuote).join(' ')} `, message.selectionStart, message.selectionEnd, 'end')
+  attachChips(paths, uploaded ? files : [])
   message.dispatchEvent(new Event('input', { bubbles: true }))
   toast(`Added ${fileCount(paths.length)}`)
 }
+
+message.addEventListener('input', () => {
+  const stale = attachments.filter(entry => !message.value.includes(entry.token))
+  if (stale.length === 0) return
+  for (const entry of stale) detach(entry, false)
+})
+
+addEventListener('quiet:message-sent', () => {
+  for (const entry of [...attachments]) detach(entry, false)
+})
 
 message.addEventListener('paste', (event) => {
   const files = Array.from(event.clipboardData?.files ?? [])

@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["client/shell.ts", "client/styles.d.ts", "client/shell-composer.ts", "client/terminals.ts", "client/terminal-panes.ts", "client/terminal-state.ts", "client/shell-activity.ts", "client/flow-drawer.ts", "client/flow-graph.ts", "client/shell-launch.ts", "client/usage-card.ts", "client/backdrop.ts", "client/chat.ts", "client/sidebar.ts", "client/access.ts", "client/chat-view.ts", "client/tool-cards.ts", "client/code-highlight.ts", "server/views/shell.ts"]
+  "include": ["client/shell.ts", "client/styles.d.ts", "client/shell-composer.ts", "client/terminals.ts", "client/terminal-panes.ts", "client/terminal-state.ts", "client/shell-activity.ts", "client/flow-drawer.ts", "client/flow-graph.ts", "client/shell-launch.ts", "client/usage-card.ts", "client/backdrop.ts", "client/chat.ts", "client/sidebar.ts", "client/access.ts", "client/chat-view.ts", "client/tool-cards.ts", "client/code-highlight.ts", "client/attachments.ts", "server/views/shell.ts"]
 }
