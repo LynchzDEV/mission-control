@@ -1216,3 +1216,15 @@ a.pill:hover { color: var(--accent); }
 .diff-line.del { background: var(--red-bg); color: var(--red-ink); }
 .diff-line.add { background: var(--green-bg); color: var(--green-ink); }
 .diff-line.del .n, .diff-line.del .s, .diff-line.add .n, .diff-line.add .s { color: inherit; }
+.mention-menu { bottom: calc(100% + 6px); left: 96px; width: 340px; z-index: 6; }
+.mention-menu .group-label { display: flex; justify-content: space-between; }
+.mention-menu .group-label kbd { font-family: inherit; }
+.mention-menu .row { gap: 10px; padding: 6px 10px; border: 0; background: transparent; box-shadow: none; font: inherit; font-size: 13px; color: var(--text); }
+.mention-menu .row > svg:first-child { width: 16px; height: 16px; flex-basis: 16px; color: var(--muted); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
+.mention-menu .row.current > svg:first-child { color: var(--accent); }
+.mention-menu .row > span { font-family: Menlo, monospace; font-size: 12.5px; }
+.mention-menu .row b { font-weight: 700; color: var(--text-strong); }
+.mention-menu .row small { display: inline; margin: 0 0 0 auto; flex: none; font-family: inherit; }
+.mention-menu .row .rtn { flex: none; font-size: 10.5px; color: var(--muted); padding: 1px 6px; border-radius: var(--r-xs); corner-shape: var(--corner); background: var(--paper); }
+.mention-menu .row.current { background: color-mix(in srgb, var(--accent) 13%, var(--paper)); }
+.mention-token { color: var(--accent); }

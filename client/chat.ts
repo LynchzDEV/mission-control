@@ -3,7 +3,7 @@ import { MORPH_EASE, MORPH_MS, blendColor, morph, reveal, rollText } from './mor
 import { copyButton, errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
 import { createOutcomeStrip } from './outcome-strip'
-import { chatModeChoice, chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, runningLabel, slashQuery, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type ChatCommand, type HistoryItem, type PermissionView, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { chatModeChoice, chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, mentionMarks, mentionToken, parseAgentReport, runningLabel, slashQuery, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type ChatCommand, type HistoryItem, type PermissionView, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 import { ansiHtml, capOutput, type ToolCard, type ToolCardKind } from './tool-cards'
 import { collectRowStates, rowScrollOf, setRowScroll, trackRowScroll, type RowState } from './tool-row-scroll'
 import { createLiveFeed, type LiveFeed } from './live-text'
@@ -930,6 +930,7 @@ composer.onsubmit = (event) => {
   const prompt = message.value.trim()
   if (!prompt || (running && !root)) return
   closeSlashMenu()
+  closeMentionMenu()
   const snapshot = { images: [] as string[] }
   dispatchEvent(new CustomEvent('quiet:collect-images', { detail: snapshot }))
   morph(composer, () => { message.value = ''; message.style.height = '' })
@@ -1043,35 +1044,173 @@ document.addEventListener('click', (event) => {
 })
 
 composer.addEventListener('keydown', (event) => {
-  if (slashMenu.hidden) return
-  const matches = filterSlashCommands(chatCommands, slashQuery(message.value) ?? '')
+  if (slashMenu.hidden && mentionMenu.hidden) return
+  if (!slashMenu.hidden) {
+    const matches = filterSlashCommands(chatCommands, slashQuery(message.value) ?? '')
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      if (matches.length > 0) {
+        slashIndex = event.key === 'ArrowDown' ? (slashIndex + 1) % matches.length : (slashIndex - 1 + matches.length) % matches.length
+        markSlashCurrent(matches)
+      }
+      return
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      if (matches.length === 0 && event.key === 'Tab') {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        return
+      }
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      if (matches[slashIndex] !== undefined) insertSlashCommand(matches[slashIndex])
+      else if (event.key === 'Enter') composer.requestSubmit()
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      closeSlashMenu()
+    }
+    return
+  }
+  const mentionMatches = mentionFiles
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault()
     event.stopImmediatePropagation()
-    if (matches.length > 0) {
-      slashIndex = event.key === 'ArrowDown' ? (slashIndex + 1) % matches.length : (slashIndex - 1 + matches.length) % matches.length
-      markSlashCurrent(matches)
+    if (mentionMatches.length > 0) {
+      mentionIndex = event.key === 'ArrowDown' ? (mentionIndex + 1) % mentionMatches.length : (mentionIndex - 1 + mentionMatches.length) % mentionMatches.length
+      markMentionCurrent()
     }
     return
   }
   if (event.key === 'Enter' || event.key === 'Tab') {
-    if (matches.length === 0 && event.key === 'Tab') {
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      return
-    }
     event.preventDefault()
     event.stopImmediatePropagation()
-    if (matches[slashIndex] !== undefined) insertSlashCommand(matches[slashIndex])
+    const file = mentionMatches[mentionIndex]
+    if (file !== undefined) insertMention(file.path)
     else if (event.key === 'Enter') composer.requestSubmit()
     return
   }
   if (event.key === 'Escape') {
     event.preventDefault()
     event.stopImmediatePropagation()
-    closeSlashMenu()
+    closeMentionMenu()
   }
 }, true)
+
+const mentionMenu = document.createElement('div')
+mentionMenu.className = 'popover mention-menu'
+mentionMenu.setAttribute('role', 'listbox')
+mentionMenu.setAttribute('aria-label', 'Project files')
+mentionMenu.hidden = true
+composer.append(mentionMenu)
+let mentionFiles: Array<{ path: string; folder: string }> = []
+let mentionQuery = ''
+let mentionIndex = 0
+let mentionTimer = 0
+let mentionProject = ''
+
+function closeMentionMenu(): void {
+  mentionMenu.hidden = true
+  mentionIndex = 0
+}
+
+function markMentionCurrent(): void {
+  const rows = [...mentionMenu.querySelectorAll<HTMLButtonElement>('button.row')]
+  rows.forEach((row, index) => {
+    const current = index === mentionIndex
+    row.classList.toggle('current', current)
+    row.setAttribute('aria-selected', String(current))
+  })
+}
+
+function insertMention(path: string): void {
+  const token = mentionToken(message.value, message.selectionStart)
+  if (token === null) {
+    closeMentionMenu()
+    return
+  }
+  const start = message.selectionStart - token.length - 1
+  message.setRangeText(`@${path} `, start, message.selectionStart, 'end')
+  closeMentionMenu()
+  message.dispatchEvent(new Event('input', { bubbles: true }))
+  message.focus()
+}
+
+function mentionRow(file: { path: string; folder: string }): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'row'
+  button.setAttribute('role', 'option')
+  button.insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 20 20"><use href="#file-icon"/></svg>')
+  const name = document.createElement('span')
+  const marks = new Set(mentionMarks(file.path, mentionQuery))
+  const caret = document.createElement('kbd')
+  caret.className = 'rtn'
+  caret.textContent = 'Enter'
+  for (const [index, character] of [...file.path].entries()) {
+    if (marks.has(index)) {
+      const bold = document.createElement('b')
+      bold.textContent = character
+      name.append(bold)
+    } else {
+      name.append(character)
+    }
+  }
+  const folder = document.createElement('small')
+  folder.textContent = file.folder
+  button.append(name, folder, caret)
+  button.onclick = () => insertMention(file.path)
+  return button
+}
+
+function paintMentionMenu(matches: ReadonlyArray<{ path: string; folder: string }>): void {
+  const nodes: HTMLElement[] = []
+  if (matches.length === 0) {
+    const empty = document.createElement('div')
+    empty.className = 'row muted'
+    empty.textContent = mentionQuery === '' ? 'No files in this project yet' : `Nothing matches ${mentionQuery}`
+    nodes.push(empty)
+  } else {
+    const label = document.createElement('div')
+    label.className = 'group-label'
+    const scope = document.createElement('span')
+    scope.textContent = `Files in ${mentionProject === '' ? 'this project' : mentionProject}`
+    const count = document.createElement('span')
+    count.textContent = `${matches.length} match${matches.length === 1 ? '' : 'es'}`
+    label.append(scope, count)
+    nodes.push(label, ...matches.map(mentionRow))
+  }
+  mentionMenu.replaceChildren(...nodes)
+  mentionMenu.hidden = false
+  mentionIndex = 0
+  markMentionCurrent()
+}
+
+async function loadMentionFiles(query: string): Promise<void> {
+  const result = await getJson(`/api/chat/files?root=${encodeURIComponent(root ?? '')}&q=${encodeURIComponent(query)}`)
+  if (!result.ok) return
+  const payload = result.data as { files?: unknown; project?: unknown }
+  mentionFiles = (readArray(payload.files) as unknown as Array<{ path: string; folder: string }>).filter(file => typeof file.path === 'string')
+  mentionProject = typeof payload.project === 'string' ? payload.project : ''
+  paintMentionMenu(mentionFiles)
+}
+
+function updateMentionMenu(): void {
+  const token = mentionToken(message.value, message.selectionStart)
+  if (token === null) {
+    closeMentionMenu()
+    return
+  }
+  mentionQuery = token
+  clearTimeout(mentionTimer)
+  mentionTimer = window.setTimeout(() => { void loadMentionFiles(token) }, 120)
+  paintMentionMenu(mentionFiles)
+}
+
+message.addEventListener('input', () => updateMentionMenu())
 
 send.addEventListener('click', event => {
   if (send.dataset.mode !== 'stop') return

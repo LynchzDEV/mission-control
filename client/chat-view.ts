@@ -30,6 +30,31 @@ export function filterSlashCommands(commands: readonly ChatCommand[], query: str
   return commands.filter(command => command.name.toLowerCase().startsWith(prefix))
 }
 
+export function mentionToken(value: string, caret: number): string | null {
+  const before = value.slice(0, caret)
+  const match = /(?:^|\s)@([\w./-]*)$/.exec(before)
+  return match === null ? null : (match[1] ?? '')
+}
+
+export function mentionMarks(path: string, query: string): number[] {
+  if (query === '') return []
+  const base = path.slice(path.lastIndexOf('/') + 1).toLowerCase()
+  const contiguous = base.indexOf(query.toLowerCase())
+  if (contiguous >= 0) {
+    const start = path.length - base.length + contiguous
+    return Array.from({ length: query.length }, (_, index) => start + index)
+  }
+  const marks: number[] = []
+  let cursor = 0
+  for (const character of query.toLowerCase()) {
+    const found = path.toLowerCase().indexOf(character, cursor)
+    if (found < 0) return []
+    marks.push(found)
+    cursor = found + 1
+  }
+  return marks
+}
+
 export type ThreadMessage =
   | { role: 'user'; kind: 'prompt'; jobId: string; ts: number; text: string; images?: string[] }
   | { role: 'assistant'; kind: 'thinking' | 'text'; jobId: string; text: string; partial?: true }

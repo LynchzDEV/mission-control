@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, runningLabel, slashQuery, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
+import { chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, mentionMarks, mentionToken, parseAgentReport, runningLabel, slashQuery, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
 
 const thread = [
   { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Fix login' },
@@ -220,5 +220,22 @@ describe('slash command menu helpers', () => {
     expect(filterSlashCommands(commands, 'RE').map(command => command.name)).toEqual(['review', 'resume', 'release-notes'])
     expect(filterSlashCommands(commands, '/re').map(command => command.name)).toEqual([])
     expect(filterSlashCommands(commands, '')).toHaveLength(3)
+  })
+})
+
+describe('mention token detection', () => {
+  test('opens at the start or after whitespace only', () => {
+    expect(mentionToken('@cha', 4)).toBe('cha')
+    expect(mentionToken('hi @cha', 7)).toBe('cha')
+    expect(mentionToken('mail@example.com', 15)).toBeNull()
+    expect(mentionToken('hi@cha', 6)).toBeNull()
+    expect(mentionToken('@', 1)).toBe('')
+    expect(mentionToken('plain text', 10)).toBeNull()
+  })
+
+  test('marks the matched characters for bolding', () => {
+    expect(mentionMarks('client/chat.ts', 'cha')).toEqual([7, 8, 9])
+    expect(mentionMarks('client/charts.ts', 'cht')).toEqual([0, 8, 11])
+    expect(mentionMarks('client/chat.ts', '')).toEqual([])
   })
 })
