@@ -118,3 +118,24 @@ describe('quiet shell', () => {
     expect(response.headers.get('location')).toBe('/')
   })
 })
+
+describe('attention delivery', () => {
+  test('/ links the Mission Control favicon and the attention island', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    expect(markup).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">')
+    expect(markup).not.toContain('href="data:,"')
+    expect(markup).toContain('<script src="/js/attention.js" type="module" defer></script>')
+  })
+
+  test('/sw.js serves the service worker with its click handler, and /favicon.svg serves the icon', async () => {
+    const worker = await app.handle(new Request('http://localhost/sw.js'))
+    expect(worker.status).toBe(200)
+    expect(worker.headers.get('content-type')).toContain('javascript')
+    const code = await worker.text()
+    expect(code).toContain('notificationclick')
+    expect(code).toContain('mc:open')
+    const icon = await app.handle(new Request('http://localhost/favicon.svg'))
+    expect(icon.status).toBe(200)
+    expect(await icon.text()).toContain('<svg')
+  })
+})

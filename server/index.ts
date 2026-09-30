@@ -232,6 +232,11 @@ export async function createApp(): Promise<Elysia> {
       }
       return new Response(code, { headers: JS_HEADERS })
     })
+    .get('/sw.js', async ({ set }) => {
+      const code = await transpileClientModule('sw.js')
+      if (code === null) { set.status = 404; return { error: 'not found' } }
+      return new Response(code, { headers: JS_HEADERS })
+    })
     .use(retiredPageRedirects())
     .use(healthApi())
     .use(quotaRoutes({ externalSessions: () => externalSessionsCache.get() }))

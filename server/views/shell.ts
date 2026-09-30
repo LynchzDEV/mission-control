@@ -178,7 +178,7 @@ export function ShellPage(props: ShellProps): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mission Control</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <script>try{if(localStorage.getItem('mc.theme')==='dark')document.documentElement.dataset.theme='dark'}catch{}</script>
   <link rel="stylesheet" href="/vendor/xterm.css">
   <link rel="stylesheet" href="/quiet.css">
@@ -195,6 +195,7 @@ export function ShellPage(props: ShellProps): string {
   <script src="/js/usage-card.js" type="module" defer></script>
   <script src="/js/backdrop.js" type="module" defer></script>
   <script src="/js/access.js" type="module" defer></script>
+  <script src="/js/attention.js" type="module" defer></script>
 </head>
 <body>${BODY}</body>
 </html>`
