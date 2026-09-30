@@ -1204,3 +1204,35 @@ describe('chat images', () => {
     expect(turn.prompt).toBe('check')
   })
 })
+
+describe('reply model and permission mode', () => {
+  const sessionResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `echo '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-mode', resumeSupported: true })}'`], env: {} })
+
+  test('a reply stores the model and permission mode it was given', async () => {
+    const app = buildApp(createJobManager(), sessionResolver)
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'mode-chat', purpose: 'chat', model: 'opus-first' }))
+    const { id } = (await created.json()) as { id: string }
+    await pollUntilDone(app, id)
+    const reply = await app.handle(post(`/api/jobs/${id}/reply`, { message: 'again', model: 'opus-next', permissionMode: 'acceptEdits' }))
+    expect(reply.status).toBe(200)
+    const turn = (await reply.json()) as { model: string | null; permissionMode?: string }
+    expect(turn.model).toBe('opus-next')
+    expect(turn.permissionMode).toBe('acceptEdits')
+    await pollUntilDone(app, turn.id)
+    const inherited = await app.handle(post(`/api/jobs/${turn.id}/reply`, { message: 'once more' }))
+    const nextTurn = (await inherited.json()) as { model: string | null; permissionMode?: string }
+    expect(nextTurn.model).toBe('opus-next')
+    expect(nextTurn.permissionMode).toBe('acceptEdits')
+  })
+
+  test('an unknown permission mode is rejected and the default is settings', async () => {
+    const app = buildApp(createJobManager(), sessionResolver)
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'mode-chat-2', purpose: 'chat' }))
+    const { id } = (await created.json()) as { id: string }
+    await pollUntilDone(app, id)
+    expect((await app.handle(post(`/api/jobs/${id}/reply`, { message: 'x', permissionMode: 'yolo' }))).status).toBe(400)
+    const reply = await app.handle(post(`/api/jobs/${id}/reply`, { message: 'ok' }))
+    const turn = (await reply.json()) as { permissionMode?: string }
+    expect(turn.permissionMode).toBe('settings')
+  })
+})

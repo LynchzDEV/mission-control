@@ -117,12 +117,14 @@ const BODY = `
     <div class="composer-area content-width">
       <div class="popover chip-menu" id="project-menu" role="menu" hidden></div>
       <div class="popover chip-menu model-menu" id="model-menu" role="menu" hidden></div>
+      <div class="popover chip-menu" id="mode-menu" role="menu" hidden></div>
       <form id="composer" class="composer nui-neuromorphic-inset">
         <div id="attach-tray" class="attach-tray" hidden></div>
         <span class="chip-group" id="chip-group" data-expanded="false">
           <button type="button" class="chip" id="project-chip" aria-expanded="false" aria-controls="project-menu" title="Project for this chat"><svg><use href="#folder-icon"/></svg><span id="project-name">Project</span></button>
-          <span class="chip-extra" id="chip-extra" inert>
+          <span class="chip-extra chat-chip-extra" id="chip-extra" inert>
             <button type="button" class="chip" id="model-chip" aria-expanded="false" aria-controls="model-menu" title="AI for this chat"><img id="model-logo" src="/providers/claude.svg" alt=""><span id="model-name">Chat default</span><svg class="caret-sm"><use href="#chevron-icon"/></svg></button>
+            <button type="button" class="chip chat-mode-chip" id="mode-chip" aria-expanded="false" aria-controls="mode-menu" title="Permission mode for the next reply" hidden><svg><use href="#lock-icon"/></svg><span id="mode-name">My settings</span><svg class="caret-sm"><use href="#chevron-icon"/></svg></button>
             <button type="button" class="chip off" id="edit-chip" aria-pressed="false" title="Let the chat edit directly"><svg><use href="#pencil-icon"/></svg></button>
           </span>
         </span>

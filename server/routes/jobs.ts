@@ -18,7 +18,7 @@ import { attentionKey, type AttentionStore } from '../attention'
 import { chatHome } from '../chat-home'
 import { returnedOriginals } from '../drops'
 import { validateWorkspaceCwd } from '../workspace'
-import type { BridgeImage, BridgeImageMedia } from '../chat-bridge-core'
+import type { BridgeImage, BridgeImageMedia, ChatPermissionMode } from '../chat-bridge-core'
 import type { EngineResolver } from '../jobs-engine-iface'
 import { chatUsesBridge, engineSupportsResume } from '../jobs-engine-iface'
 import { MAX_MODEL_LENGTH } from '../engines'
@@ -33,6 +33,7 @@ export const CHAT_TITLE_MAX = 60
 export const SPAWN_REASON_MAX = 200
 export const IMAGE_MAX_BYTES = 3_932_160
 export const IMAGE_MAX_COUNT = 8
+export const CHAT_PERMISSION_MODES = ['settings', 'ask', 'acceptEdits', 'plan', 'bypass'] as const
 
 function imageMediaType(bytes: Uint8Array): BridgeImageMedia | null {
   const at = (index: number): number => bytes[index] ?? 0
@@ -488,6 +489,19 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         replyImages = resolved.images
         replyTokens = resolved.tokens
       }
+      const newest = chain[chain.length - 1]
+      const payloadModel = typeof (body as { model?: unknown } | null)?.model === 'string' ? String((body as { model: string }).model).trim() : ''
+      if (payloadModel.length > MAX_MODEL_LENGTH) {
+        set.status = 400
+        return { error: 'model too long' }
+      }
+      const payloadMode = (body as { permissionMode?: unknown } | null)?.permissionMode
+      if (payloadMode !== undefined && !CHAT_PERMISSION_MODES.includes(payloadMode as ChatPermissionMode)) {
+        set.status = 400
+        return { error: 'permissionMode must be one of settings, ask, acceptEdits, plan or bypass' }
+      }
+      const model = payloadModel !== '' ? payloadModel : newest?.model ?? parent.model
+      const permissionMode = isChat ? ((payloadMode as ChatPermissionMode | undefined) ?? newest?.permissionMode ?? 'settings') : (payloadMode as ChatPermissionMode | undefined)
       const result = await manager.createJob(
         {
           ...(isChat ? {
@@ -504,7 +518,8 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
           threadRoot: rootId,
           resumeSessionId: sessionId,
           ...(parent.terminalId === null ? {} : { terminalId: parent.terminalId }),
-          ...(parent.model === null ? {} : { model: parent.model }),
+          ...(model === null || model === undefined || model === '' ? {} : { model }),
+          ...(permissionMode === undefined || permissionMode === null ? {} : { permissionMode }),
           ...(replyImages.length > 0 ? { images: replyImages } : {}),
           ...(parent.chatId ? { chatId: parent.chatId } : {}),
           ...(parent.chatTurn ? { chatTurn: parent.chatTurn } : {}),

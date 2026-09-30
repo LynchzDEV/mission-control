@@ -3,7 +3,7 @@ import { MORPH_EASE, MORPH_MS, blendColor, morph, reveal, rollText } from './mor
 import { copyButton, errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
 import { createOutcomeStrip } from './outcome-strip'
-import { chatSignal, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type PermissionView, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { chatModeChoice, chatSignal, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type PermissionView, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 import { ansiHtml, capOutput, type ToolCard, type ToolCardKind } from './tool-cards'
 import { collectRowStates, rowScrollOf, setRowScroll, trackRowScroll, type RowState } from './tool-row-scroll'
 
@@ -21,6 +21,7 @@ const stage = document.querySelector('.stage') as HTMLElement
 const outcomes = createOutcomeStrip()
 composer.before(outcomes.element)
 const stored = (key: string): string | null => { try { return localStorage.getItem(key) } catch { return null } }
+const keep = (key: string, value: string): void => { try { localStorage.setItem(key, value) } catch {} }
 
 let root: string | null = null
 let rootCwd: string | null = null
@@ -600,6 +601,7 @@ async function refresh(): Promise<void> {
   const turnsJobs = all.filter(job => job.threadRoot === root)
   agents = all.filter(job => job.purpose !== 'chat')
   const rootJob = all.find(job => job.id === root)
+  if (typeof rootJob?.engine === 'string' && rootJob.engine !== '') document.body.dataset.chatEngine = rootJob.engine
   rootCwd = rootJob?.cwd ?? null
   const project = rootJob?.project ?? null
   paint(turnsFrom(readArray(thread.data.messages) as unknown as ThreadMessage[], turnsJobs), project)
@@ -663,6 +665,7 @@ async function startChat(prompt: string, images: string[]): Promise<void> {
   const result = await postJson('/api/jobs', { engine: choice.engine, ...(choice.model ? { model: choice.model } : {}), cwd: home, prompt, label: titleFrom(prompt), purpose: 'chat', edit: stored('mc.shell.edit') === '1', ...(project ? { project } : {}), ...(images.length > 0 ? { images: images.map(path => ({ path })) } : {}) })
   if (!result.ok) { chatError(errorText(result)); return }
   root = String(result.data.id)
+  if (choice.model) keep(`mc.chat.model.${root}`, choice.model)
   document.body.dataset.chat = root
   setUrl(root)
   dispatchEvent(new CustomEvent('quiet:chat-agents', { detail: root }))
@@ -676,11 +679,24 @@ function restoreComposer(text: string, images: string[]): void {
 async function sendMessage(prompt: string, images: string[] = []): Promise<void> {
   show('conversation')
   if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], cards: [], permissions: [], images, thinking: false, started: Date.now(), ended: null, running: true, failed: false, stopped: false, error: '', errorDetail: '' })); setRunning(true); toBottom(); await startChat(prompt, images); if (!root) { setRunning(false); messages.replaceChildren(); restoreComposer(prompt, images); show('welcome') } return }
-  const result = await postJson(`/api/jobs/${encodeURIComponent(root)}/reply`, { message: prompt, ...(images.length > 0 ? { images: images.map(path => ({ path })) } : {}) })
+  const result = await postJson(`/api/jobs/${encodeURIComponent(root)}/reply`, {
+    message: prompt,
+    ...(images.length > 0 ? { images: images.map(path => ({ path })) } : {}),
+    ...replyChoices(),
+  })
   if (!result.ok) { chatError(errorText(result)); restoreComposer(prompt, images); return }
   if (result.status !== 202) setRunning(true)
   await refresh()
   toBottom()
+}
+
+function replyChoices(): { model?: string; permissionMode?: string } {
+  const model = stored(`mc.chat.model.${root}`)
+  const engine = document.body.dataset.chatEngine
+  return {
+    ...(model ? { model } : {}),
+    ...(engine === 'codex' ? {} : { permissionMode: chatModeChoice(root, stored) }),
+  }
 }
 
 type ListedJob = AgentJob & TurnJob & { threadRoot: string; purpose?: string; project?: string | null; chatId?: string; label: string }
@@ -784,7 +800,7 @@ message.addEventListener('keydown', event => {
 })
 
 addEventListener('quiet:chat-agents', (event) => outcomes.setSource(`chat=${encodeURIComponent((event as CustomEvent<string>).detail)}`))
-addEventListener('quiet:new-chat', () => { outcomes.setSource(null); root = null; agents = []; shownTurns = []; messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null); delete document.body.dataset.chat; dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null })) })
+addEventListener('quiet:new-chat', () => { outcomes.setSource(null); root = null; agents = []; shownTurns = []; messages.replaceChildren(); paintQueue([]); setRunning(false); stopPolling(); setUrl(null); delete document.body.dataset.chat; delete document.body.dataset.chatEngine; dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: null })) })
 addEventListener('quiet:open-chat', (event) => openChat((event as CustomEvent<string>).detail))
 addEventListener('quiet:show', (event) => { if ((event as CustomEvent<string>).detail === 'conversation') schedule(); else stopPolling() })
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') schedule(); else stopPolling() })

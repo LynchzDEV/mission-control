@@ -4,6 +4,21 @@ export type PermissionState = 'pending' | 'allow_once' | 'allow_always' | 'deny'
 
 export type PermissionView = { requestId: string; toolName: string; title: string; description: string; command: string | null; target: string | null; plan: string | null; suppressAlways: boolean; state: PermissionState }
 
+export type ChatPermissionChoice = 'settings' | 'ask' | 'acceptEdits' | 'plan' | 'bypass'
+
+export const CHAT_MODES: Array<{ id: ChatPermissionChoice; label: string; chip: string }> = [
+  { id: 'settings', label: 'Use my settings', chip: 'My settings' },
+  { id: 'ask', label: 'Ask first', chip: 'Ask first' },
+  { id: 'acceptEdits', label: 'Accept edits', chip: 'Accept edits' },
+  { id: 'plan', label: 'Plan only', chip: 'Plan only' },
+  { id: 'bypass', label: 'Never ask', chip: 'Never ask' },
+]
+
+export function chatModeChoice(root: string | null, read: (key: string) => string | null): ChatPermissionChoice {
+  const value = root === null ? null : read(`mc.chat.mode.${root}`)
+  return CHAT_MODES.find(mode => mode.id === value)?.id ?? 'settings'
+}
+
 export type ThreadMessage =
   | { role: 'user'; kind: 'prompt'; jobId: string; ts: number; text: string; images?: string[] }
   | { role: 'assistant'; kind: 'thinking' | 'text'; jobId: string; text: string; partial?: true }

@@ -270,7 +270,8 @@ export function createChatFlusher(manager: JobManager, resolver: EngineResolver,
       edit: root.edit ?? false,
       project: root.project ?? null,
       memory,
-      ...(root.model === null ? {} : { model: root.model }),
+      ...(last.model === null || last.model === undefined ? {} : { model: last.model }),
+      ...(last.permissionMode === null || last.permissionMode === undefined ? {} : { permissionMode: last.permissionMode }),
     }, resolver)
     if (!created.ok) {
       await opts.queue.restore(chatId, users)
