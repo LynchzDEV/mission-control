@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chatSignal, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, runningLabel, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
+import { chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, runningLabel, slashQuery, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
 
 const thread = [
   { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Fix login' },
@@ -197,5 +197,28 @@ describe('parseAgentReport', () => {
 
   test('a finished workflow report keeps its step lines as the body', () => {
     expect(parseAgentReport('[workflow Ship it · blocked]\nPlan · pass · ok\nReason: no owner')).toEqual({ label: 'Ship it', engine: 'workflow', outcome: 'blocked', body: 'Plan · pass · ok\nReason: no owner' })
+  })
+})
+
+describe('slash command menu helpers', () => {
+  const commands = [
+    { name: 'review', description: 'Review the current changes', argumentHint: '' },
+    { name: 'resume', description: 'Pick up an earlier session', argumentHint: '' },
+    { name: 'release-notes', description: 'Draft release notes', argumentHint: '' },
+  ]
+
+  test('the menu opens only while the whole box is one slash token', () => {
+    expect(slashQuery('/')).toBe('')
+    expect(slashQuery('/re')).toBe('re')
+    expect(slashQuery('hello /re')).toBeNull()
+    expect(slashQuery('/two words')).toBeNull()
+    expect(slashQuery('')).toBeNull()
+  })
+
+  test('rows filter by name prefix, case-insensitively', () => {
+    expect(filterSlashCommands(commands, 'rev').map(command => command.name)).toEqual(['review'])
+    expect(filterSlashCommands(commands, 'RE').map(command => command.name)).toEqual(['review', 'resume', 'release-notes'])
+    expect(filterSlashCommands(commands, '/re').map(command => command.name)).toEqual([])
+    expect(filterSlashCommands(commands, '')).toHaveLength(3)
   })
 })

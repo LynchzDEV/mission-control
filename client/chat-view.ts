@@ -19,6 +19,17 @@ export function chatModeChoice(root: string | null, read: (key: string) => strin
   return CHAT_MODES.find(mode => mode.id === value)?.id ?? 'settings'
 }
 
+export type ChatCommand = { name: string; description: string; argumentHint: string }
+
+export function slashQuery(value: string): string | null {
+  return /^\/[\w-]*$/.test(value) ? value.slice(1).toLowerCase() : null
+}
+
+export function filterSlashCommands(commands: readonly ChatCommand[], query: string): ChatCommand[] {
+  const prefix = query.toLowerCase()
+  return commands.filter(command => command.name.toLowerCase().startsWith(prefix))
+}
+
 export type ThreadMessage =
   | { role: 'user'; kind: 'prompt'; jobId: string; ts: number; text: string; images?: string[] }
   | { role: 'assistant'; kind: 'thinking' | 'text'; jobId: string; text: string; partial?: true }

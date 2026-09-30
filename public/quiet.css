@@ -1193,3 +1193,4 @@ a.pill:hover { color: var(--accent); }
 .chat-slash-menu .divider { height: 1px; margin: 4px 8px; background: var(--line); }
 .chat-menu-foot { padding: 6px 10px 4px; line-height: 1.6; font-size: 11px; color: var(--muted); }
 .chat-menu-foot kbd { font-family: inherit; font-size: 10.5px; padding: 1px 5px; border-radius: var(--r-xs); corner-shape: var(--corner); background: var(--field); color: var(--text-soft); }
+#composer { position: relative; }

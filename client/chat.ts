@@ -3,7 +3,7 @@ import { MORPH_EASE, MORPH_MS, blendColor, morph, reveal, rollText } from './mor
 import { copyButton, errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
 import { createOutcomeStrip } from './outcome-strip'
-import { chatModeChoice, chatSignal, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type PermissionView, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { chatModeChoice, chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, runningLabel, slashQuery, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type ChatCommand, type HistoryItem, type PermissionView, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 import { ansiHtml, capOutput, type ToolCard, type ToolCardKind } from './tool-cards'
 import { collectRowStates, rowScrollOf, setRowScroll, trackRowScroll, type RowState } from './tool-row-scroll'
 
@@ -30,6 +30,7 @@ let pollTimer = 0
 let tickTimer = 0
 let generation = 0
 let providers: LaunchProvider[] = []
+let wasRunning = false
 let agents: AgentJob[] = []
 let shownTurns: Turn[] = []
 
@@ -605,7 +606,10 @@ async function refresh(): Promise<void> {
   rootCwd = rootJob?.cwd ?? null
   const project = rootJob?.project ?? null
   paint(turnsFrom(readArray(thread.data.messages) as unknown as ThreadMessage[], turnsJobs), project)
-  setRunning(thread.data.running === true)
+  const nowRunning = thread.data.running === true
+  setRunning(nowRunning)
+  if (wasRunning && !nowRunning) void loadCommands()
+  wasRunning = nowRunning
   paintQueue(queue.ok ? readArray(queue.data.items) as unknown as QueuedItem[] : [])
   schedule()
 }
@@ -773,6 +777,7 @@ export function openChat(id: string): void {
   show('conversation')
   dispatchEvent(new CustomEvent('quiet:chat-agents', { detail: id }))
   dispatchEvent(new CustomEvent('quiet:chat-open', { detail: id }))
+  void loadCommands()
   void refresh()
 }
 
@@ -780,6 +785,7 @@ composer.onsubmit = (event) => {
   event.preventDefault()
   const prompt = message.value.trim()
   if (!prompt || (running && !root)) return
+  closeSlashMenu()
   const snapshot = { images: [] as string[] }
   dispatchEvent(new CustomEvent('quiet:collect-images', { detail: snapshot }))
   morph(composer, () => { message.value = ''; message.style.height = '' })
@@ -787,6 +793,141 @@ composer.onsubmit = (event) => {
   void sendMessage(prompt, snapshot.images)
   message.focus()
 }
+
+const slashMenu = document.createElement('div')
+slashMenu.className = 'popover chat-slash-menu'
+slashMenu.setAttribute('role', 'listbox')
+slashMenu.setAttribute('aria-label', 'Slash commands')
+slashMenu.hidden = true
+composer.append(slashMenu)
+let chatCommands: ChatCommand[] = []
+let commandsForChat: string | null = null
+let slashIndex = 0
+
+async function loadCommands(): Promise<void> {
+  if (root === null) return
+  const current = root
+  const result = await getJson(`/api/jobs/${encodeURIComponent(current)}/commands`)
+  if (!result.ok || root !== current) return
+  chatCommands = (readArray(result.data.commands) as unknown as ChatCommand[]).filter(command => typeof command.name === 'string')
+  commandsForChat = current
+}
+
+function closeSlashMenu(): void {
+  slashMenu.hidden = true
+  slashIndex = 0
+}
+
+function insertSlashCommand(command: ChatCommand): void {
+  message.value = `/${command.name} `
+  message.dispatchEvent(new Event('input', { bubbles: true }))
+  closeSlashMenu()
+  message.focus()
+}
+
+function slashRow(command: ChatCommand): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'row'
+  button.setAttribute('role', 'option')
+  button.insertAdjacentHTML('afterbegin', '<svg><use href="#terminal-icon"/></svg>')
+  const text = document.createElement('span')
+  const name = document.createElement('code')
+  name.textContent = `/${command.name}`
+  const description = document.createElement('small')
+  description.textContent = command.description
+  text.append(name, description)
+  button.append(text)
+  button.onclick = () => insertSlashCommand(command)
+  return button
+}
+
+function paintSlashMenu(matches: readonly ChatCommand[], query: string): void {
+  const nodes: HTMLElement[] = []
+  if (matches.length === 0) {
+    const empty = document.createElement('div')
+    empty.className = 'row muted'
+    empty.textContent = query === '' ? 'Commands appear after the first reply' : `No command starts with ${query}`
+    nodes.push(empty)
+  } else {
+    const label = document.createElement('div')
+    label.className = 'group-label'
+    label.textContent = 'Commands'
+    nodes.push(label, ...matches.map(slashRow))
+  }
+  const divider = document.createElement('div')
+  divider.className = 'divider'
+  const foot = document.createElement('div')
+  foot.className = 'chat-menu-foot'
+  foot.append('Commands come from the agent — ')
+  const key = document.createElement('kbd')
+  key.textContent = 'Enter'
+  foot.append(key, ' to insert')
+  slashMenu.replaceChildren(...nodes, divider, foot)
+  slashMenu.hidden = false
+  slashIndex = 0
+  markSlashCurrent(matches)
+}
+
+function markSlashCurrent(matches: readonly ChatCommand[]): void {
+  const rows = [...slashMenu.querySelectorAll<HTMLButtonElement>('button.row')]
+  rows.forEach((row, index) => {
+    const current = index === slashIndex
+    row.classList.toggle('current', current)
+    row.setAttribute('aria-selected', String(current))
+  })
+}
+
+function updateSlashMenu(): void {
+  const query = slashQuery(message.value)
+  if (query === null || root === null) {
+    closeSlashMenu()
+    return
+  }
+  if (commandsForChat !== root) {
+    chatCommands = []
+    void loadCommands()
+  }
+  paintSlashMenu(filterSlashCommands(chatCommands, query), query)
+}
+
+message.addEventListener('input', () => updateSlashMenu())
+message.addEventListener('blur', () => setTimeout(() => { if (!slashMenu.contains(document.activeElement)) closeSlashMenu() }, 80))
+document.addEventListener('click', (event) => {
+  if (!(event.target instanceof Node) || slashMenu.contains(event.target) || message.contains(event.target)) return
+  closeSlashMenu()
+})
+
+composer.addEventListener('keydown', (event) => {
+  if (slashMenu.hidden) return
+  const matches = filterSlashCommands(chatCommands, slashQuery(message.value) ?? '')
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    if (matches.length > 0) {
+      slashIndex = event.key === 'ArrowDown' ? (slashIndex + 1) % matches.length : (slashIndex - 1 + matches.length) % matches.length
+      markSlashCurrent(matches)
+    }
+    return
+  }
+  if (event.key === 'Enter' || event.key === 'Tab') {
+    if (matches.length === 0 && event.key === 'Tab') {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      return
+    }
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    if (matches[slashIndex] !== undefined) insertSlashCommand(matches[slashIndex])
+    else if (event.key === 'Enter') composer.requestSubmit()
+    return
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    closeSlashMenu()
+  }
+}, true)
 
 send.addEventListener('click', event => {
   if (send.dataset.mode !== 'stop') return

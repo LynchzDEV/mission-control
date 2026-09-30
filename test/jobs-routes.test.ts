@@ -1236,3 +1236,23 @@ describe('reply model and permission mode', () => {
     expect(turn.permissionMode).toBe('settings')
   })
 })
+
+describe('GET /api/jobs/:id/commands', () => {
+  test('returns the newest mc_commands line of the chat, or an empty list', async () => {
+    const manager = createJobManager()
+    const commandsResolver: EngineResolver = ({ prompt }) => ({ cmd: '/bin/sh', args: ['-c', `echo '{"type":"system","subtype":"init","session_id":"sess-cmds"}'; echo '{"type":"mc_commands","mc":true,"commands":[{"name":"review","description":"Review the current changes","argumentHint":""}]}'; echo "${prompt}"`], env: {} })
+    const app = buildApp(manager, commandsResolver)
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'cmd-chat', purpose: 'chat' }))
+    const { id } = (await created.json()) as { id: string }
+    await pollUntilDone(app, id)
+    const response = await app.handle(get(`/api/jobs/${id}/commands`))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ commands: [{ name: 'review', description: 'Review the current changes', argumentHint: '' }] })
+    expect((await app.handle(get('/api/jobs/missing/commands'))).status).toBe(404)
+    const plainApp = buildApp(manager, echoResolver)
+    const bare = await plainApp.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'plain', label: 'plain-chat', purpose: 'chat' }))
+    const { id: bareId } = (await bare.json()) as { id: string }
+    await pollUntilDone(app, bareId)
+    expect(await (await plainApp.handle(get(`/api/jobs/${bareId}/commands`))).json()).toEqual({ commands: [] })
+  })
+})

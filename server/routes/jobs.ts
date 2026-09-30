@@ -549,6 +549,32 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       }
       return new Response(file, { headers: { 'content-type': image.mediaType, 'cache-control': 'no-store' } })
     })
+    .get('/api/jobs/:id/commands', async ({ params, set }) => {
+      const job = manager.getJob(params.id)
+      if (job === undefined) {
+        set.status = 404
+        return { error: 'job not found' }
+      }
+      let commands: Array<{ name: string; description: string; argumentHint: string }> = []
+      for (const turn of threadChain(manager.listJobs(), threadRootOf(job))) {
+        const log = await readRedactedLog(manager.logPath(turn.id))
+        for (const line of log.split('\n')) {
+          if (!line.includes('"mc_commands"')) continue
+          try {
+            const parsed = JSON.parse(line) as { type?: string; commands?: unknown }
+            if (parsed.type === 'mc_commands' && Array.isArray(parsed.commands)) {
+              commands = parsed.commands.filter((command): command is { name: string; description: string; argumentHint: string } => {
+                const candidate = command as { name?: unknown; description?: unknown; argumentHint?: unknown }
+                return typeof candidate.name === 'string' && candidate.name !== '' && typeof candidate.description === 'string' && typeof candidate.argumentHint === 'string'
+              })
+            }
+          } catch {
+            // a torn line mid-write is skipped
+          }
+        }
+      }
+      return { commands }
+    })
     .get('/api/jobs/:id/queue', ({ params, set }) => {
       const job = manager.getJob(params.id)
       if (job === undefined) {
