@@ -96,17 +96,18 @@ function reviewsAhead(graph: WorkflowRevision, from: string[]): Set<string> {
 
 const GATING_KINDS: ReadonlySet<WorkflowNode['kind']> = new Set(['review', 'verify-plan'])
 
-function weakensGates(before: WorkflowRevision, after: WorkflowRevision): boolean {
+function commandsChanged(before: Pick<WorkflowRevision, 'nodes'>, after: Pick<WorkflowRevision, 'nodes'>): boolean {
+  const commands = (node?: WorkflowNode) => JSON.stringify([node?.checks ?? [], node?.setup ?? [], node?.mcpServers ?? []])
   const ids = new Set([...before.nodes, ...after.nodes].map(node => node.id))
-  for (const id of ids) {
-    const old = before.nodes.find(node => node.id === id)
-    const next = after.nodes.find(node => node.id === id)
-    if (JSON.stringify(old?.checks ?? []) !== JSON.stringify(next?.checks ?? [])) return true
-    if (JSON.stringify(old?.setup ?? []) !== JSON.stringify(next?.setup ?? [])) return true
-    if (JSON.stringify(old?.mcpServers ?? []) !== JSON.stringify(next?.mcpServers ?? [])) return true
-    if (old && next && GATING_KINDS.has(old.kind) && old.instructions !== next.instructions) return true
-  }
-  return false
+  return [...ids].some(id => commands(before.nodes.find(node => node.id === id)) !== commands(after.nodes.find(node => node.id === id)))
+}
+
+function weakensGates(before: WorkflowRevision, after: WorkflowRevision): boolean {
+  if (commandsChanged(before, after)) return true
+  return before.nodes.some(old => {
+    const next = after.nodes.find(node => node.id === old.id)
+    return !!next && GATING_KINDS.has(old.kind) && old.instructions !== next.instructions
+  })
 }
 
 export function changeSize(run: Pick<WorkflowRun, 'workflow' | 'agents'>, next: WorkflowRevision, nextAgents: Record<string, ResolvedAgent>, scopeGrew: boolean, from: string[]): 'small' | 'big' {
@@ -441,7 +442,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       const chat = input.chat ? { chatId: input.chat, ...(input.chatTurn ? { chatTurn: input.chatTurn } : {}), reportedAt: null } : {}
       const by = terminal?.engine ?? (input.chat ? deps.manager.getJob(input.chat)?.engine : undefined) ?? 'you'
       const where = terminal ? 'terminal' : input.chat ? 'chat' : 'studio'
-      const waits = !context.startedByUser && await requireApproval()
+      const waits = !context.startedByUser && (await requireApproval() || (input.graph !== undefined && commandsChanged({ nodes: [] }, workflow)))
       const version: RunVersion = { number: 1, revision: workflow.revision, reason: 'Initial flow', size: 'initial', state: waits ? 'pending' : 'approved', approvedVia: waits ? null : context.startedByUser ? 'user' : 'auto', relayedBy: null, at: Date.now() }
       const run: WorkflowRun = { id: crypto.randomUUID(), ...(input.terminalId ? { terminalId: input.terminalId } : {}), ...chat, label: input.label, cwd: cwd.path, request: input.request, workflow, policy, agents, skills, status: waits ? 'awaiting-approval' : 'running', error: null, origin: { source: input.graph !== undefined ? 'drafted' : 'saved', by, where }, versions: [version], currentNodeId: workflow.entry, attempts: [], createdAt: Date.now(), updatedAt: Date.now(), tokens: [{ id: crypto.randomUUID(), nodeId: workflow.entry, pathId: 'main', workspace: cwd.path, state: 'ready', attempt: null, from: [] }], sections: [], keptBranches: [] }
       if (!deps.manager.claimWorkspace(run.cwd, run.id)) throw new Error('Workspace already has running work')
@@ -952,7 +953,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const agents = { ...await agentsFor(next, undefined, sessionOf(run)), ...inherited, ...kept }
     const skills = Object.fromEntries(await Promise.all(next.nodes.filter(node => !ran.has(node.id)).map(async node => [node.id, await snapshotSkills(node, run.cwd)] as const)))
     const size = changeSize(run, next, agents, !!change.scopeGrew, positionsOf(run))
-    const waits = size === 'big' && await requireApproval()
+    const waits = (size === 'big' && await requireApproval()) || (context?.via === 'conversation' && commandsChanged(run.workflow, next))
     return { number: run.versions.length + 1, revision: next.revision, reason: change.reason, size, state: waits ? 'pending' : 'approved', approvedVia: waits ? null : 'auto', relayedBy: null, at: Date.now(), graph: next, agents, skills }
   }
   async function pause(id: string): Promise<WorkflowRun> {
