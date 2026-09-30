@@ -77,3 +77,50 @@ describe('tool row scroll state across rebuilds', () => {
     expect(collectRowStates(toolReply(true).reply).get('0')).toEqual({ open: true, scrollTop: 0 })
   })
 })
+
+describe('pending restorations under repeated updates', () => {
+  test('repeated updates to a collapsed row restore the latest position once', () => {
+    const fresh = toolReply(false)
+    setRowScroll(fresh.row, 150)
+    setRowScroll(fresh.row, 260)
+    fresh.row.open = true
+    fresh.row.dispatchEvent(new window.Event('toggle'))
+    expect(fresh.out.scrollTop).toBe(260)
+  })
+
+  test('a pending restore targets the row current output pane after a re-render', () => {
+    const fresh = toolReply(false)
+    setRowScroll(fresh.row, 120)
+    fresh.out.remove()
+    const next = document.createElement('pre')
+    next.className = 'term-out'
+    fresh.row.querySelector('.tool-detail')!.append(next)
+    trackRowScroll(fresh.row)
+    setRowScroll(fresh.row, 120)
+    fresh.row.open = true
+    fresh.row.dispatchEvent(new window.Event('toggle'))
+    expect(next.scrollTop).toBe(120)
+    expect(fresh.out.scrollTop).toBe(0)
+  })
+
+  test('repeated updates while the steps list stays collapsed restore once', () => {
+    const fresh = toolReply(true, false)
+    setRowScroll(fresh.row, 150)
+    setRowScroll(fresh.row, 150)
+    fresh.steps.open = true
+    fresh.steps.dispatchEvent(new window.Event('toggle'))
+    expect(fresh.out.scrollTop).toBe(150)
+  })
+
+  test('a row collapsed while the steps list is closed restores when it reopens', () => {
+    const fresh = toolReply(true, false)
+    setRowScroll(fresh.row, 70)
+    fresh.row.open = false
+    fresh.steps.open = true
+    fresh.steps.dispatchEvent(new window.Event('toggle'))
+    expect(fresh.out.scrollTop).toBe(0)
+    fresh.row.open = true
+    fresh.row.dispatchEvent(new window.Event('toggle'))
+    expect(fresh.out.scrollTop).toBe(70)
+  })
+})
