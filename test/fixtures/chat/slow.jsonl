@@ -1,6 +1,6 @@
 {"type":"system","subtype":"init","session_id":"fixture-slow","model":"fake-model"}
 {"type":"assistant","message":{"id":"msg_1","content":[{"type":"tool_use","id":"tu_1","name":"Read","input":{"file_path":"/tmp/demo/client/chat.ts"}}]}}
-{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu_1","content":"line one of the slow fixture\nline two\nline three\n"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu_1","content":"the slow fixture keeps this file long enough to scroll\nl 2\nl 3\nl 4\nl 5\nl 6\nl 7\nl 8\nl 9\nl 10\nl 11\nl 12\nl 13\nl 14\nl 15\nl 16\nl 17\nl 18\nl 19\nl 20\nl 21\nl 22\nl 23\nl 24\nl 25\nl 26\nl 27\nl 28\nl 29\nl 30\nl 31\nl 32\nl 33\nl 34\nl 35\nl 36\nl 37\nl 38\nl 39\nl 40\nl 41\nl 42\nl 43\nl 44\nl 45\nl 46\nl 47\nl 48\nl 49\nl 50\nl 51\nl 52\nl 53\nl 54\nl 55\nl 56\nl 57\nl 58\nl 59\nl 60\nl 61\nl 62\nl 63\nl 64\nl 65\nl 66\nl 67\nl 68\nl 69\nl 70\nl 71\nl 72\nl 73\nl 74\nl 75\nend of the long file\n"}]}}
 {"type":"assistant","message":{"id":"msg_2","content":[{"type":"tool_use","id":"tu_2","name":"Bash","input":{"command":"bun test","description":"Run the whole suite"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu_2","content":"bun test v1.2.19 (9c68abdb)\n\u001b[32m(pass) everything passed [1.20s]\u001b[0m\n 1 pass\n 0 fail\n"}]}}
 {"type":"assistant","message":{"id":"msg_3","content":[{"type":"text","text":"The slow fixture finished after its wait."}]}}
