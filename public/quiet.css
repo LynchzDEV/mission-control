@@ -559,6 +559,13 @@ body[data-live="true"] #agents > .activity-empty, body[data-live="true"] #agents
 .md pre { padding: 14px 16px; border-radius: var(--r-md); corner-shape: var(--corner); box-shadow: var(--inset); overflow-x: auto; }
 .md pre code { padding: 0; background: none; font-size: 12.5px; line-height: 1.65; color: inherit; }
 .md blockquote { padding: 2px 0 2px 14px; border-left: 2px solid #c9c0e3; color: var(--muted); }
+.code-card { border-radius: var(--r-md); corner-shape: var(--corner); box-shadow: var(--inset); margin: 0 0 12px; }
+.code-head { display: flex; align-items: center; gap: 10px; padding: 7px 14px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.code-lang { padding: 1px 7px; border-radius: var(--r-xs); corner-shape: var(--corner); background: var(--purple-bg); color: var(--purple-ink); font-family: Menlo, ui-monospace, monospace; font-size: 11px; font-weight: 500; }
+.md .code-card pre { box-shadow: none; border-radius: 0; margin: 0; padding: 12px 16px 14px; }
+.md .code-card pre code { font-size: 12px; }
+.md pre.md-code span { color: var(--shiki-light); }
+:root[data-theme="dark"] .md pre.md-code span { color: var(--shiki-dark); }
 
 [data-engine="claude"] { --engine: #d4a091; }
 [data-engine="glm"] { --engine: #91b0dc; }

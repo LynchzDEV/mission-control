@@ -108,6 +108,32 @@ export function shellQuote(path: string): string {
   return `'${path.replace(/'/g, "'\\''")}'`
 }
 
+const COPY_FLASH_MS = 1500
+
+export function copyButton(text: string): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'text-button copy-button'
+  button.insertAdjacentHTML('afterbegin', '<svg><use href="#file-icon"/></svg>')
+  const label = document.createTextNode('Copy')
+  button.append(label)
+  let timer = 0
+  const flash = (note: string): void => {
+    label.data = note
+    button.classList.add('copied')
+    clearTimeout(timer)
+    timer = window.setTimeout(() => { label.data = 'Copy'; button.classList.remove('copied') }, COPY_FLASH_MS)
+  }
+  button.onclick = () => {
+    try {
+      void navigator.clipboard.writeText(text).then(() => flash('Copied'), () => flash('Copy failed'))
+    } catch {
+      flash('Copy failed')
+    }
+  }
+  return button
+}
+
 export function pathsFromUriList(text: string): string[] {
   const paths: string[] = []
   for (const line of text.split(/\r?\n/)) {

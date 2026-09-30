@@ -16,13 +16,32 @@ describe('renderMarkdown', () => {
   test('fences, headings, lists, quotes and paragraphs keep their classes in order', () => {
     const host = render(['# Plan', 'First line', 'second line', '', '- one', '- two', '', '1. a', '2. b', '', '> note', '', '```ts', 'const x = 1', '```', '', 'tail'].join('\n'))
     expect([...host.children].map((node) => `${node.tagName.toLowerCase()}.${node.className}`)).toEqual([
-      'h1.md-heading md-h1', 'p.md-para', 'ul.md-list', 'ol.md-list', 'blockquote.md-quote', 'pre.md-code', 'p.md-para',
+      'h1.md-heading md-h1', 'p.md-para', 'ul.md-list', 'ol.md-list', 'blockquote.md-quote', 'div.code-card', 'p.md-para',
     ])
     expect([...host.querySelectorAll('ul.md-list li')].map((li) => li.textContent)).toEqual(['one', 'two'])
     expect([...host.querySelectorAll('ol.md-list li')].map((li) => li.textContent)).toEqual(['a', 'b'])
     const pre = host.querySelector<HTMLElement>('pre.md-code')!
     expect(pre.dataset.lang).toBe('ts')
     expect(pre.querySelector('code')!.textContent).toBe('const x = 1\n')
+  })
+
+  test('a fenced code block gets a code card with its language and a copy button', () => {
+    const host = render('```ts\nconst x = 1\n```')
+    const card = host.querySelector<HTMLElement>('.code-card')!
+    expect(card.querySelector<HTMLElement>('.code-head .code-lang')!.textContent).toBe('ts')
+    const button = card.querySelector<HTMLButtonElement>('.code-head .copy-button')!
+    expect(button.type).toBe('button')
+    expect(card.querySelector('pre.md-code')!.querySelector('code')!.textContent).toBe('const x = 1\n')
+  })
+
+  test('a fence without a language labels itself text', () => {
+    expect(render('```\nplain\n```').querySelector<HTMLElement>('.code-lang')!.textContent).toBe('text')
+  })
+
+  test('html inside a fence stays text inside the code card', () => {
+    const code = render('```\n<script>alert(1)</script>\n```').querySelector('.code-card code')!
+    expect(code.textContent).toContain('<script>alert(1)</script>')
+    expect(code.querySelector('script')).toBeNull()
   })
 
   test('deep headings cap at md-h3 and an empty source renders nothing', () => {

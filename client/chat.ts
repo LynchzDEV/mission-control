@@ -1,6 +1,6 @@
 import { renderMarkdown } from './markdown'
 import { MORPH_EASE, MORPH_MS, blendColor, morph, reveal, rollText } from './morph'
-import { errorText, getJson, postJson, readArray } from './shared'
+import { copyButton, errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
 import { createOutcomeStrip } from './outcome-strip'
 import { chatSignal, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
@@ -186,32 +186,7 @@ function rawAgentRow(turn: Turn): HTMLElement {
 }
 
 const KIND_ICONS: Record<ToolCardKind, string> = { read: 'file-icon', search: 'search-icon', edit: 'pencil-icon', bash: 'terminal-icon', agent: 'agents-icon', other: 'code-icon' }
-const COPY_FLASH_MS = 1500
 const baseName = (path: string): string => path.replace(/\/+$/, '').split('/').pop() || path
-
-function copyButton(text: string): HTMLButtonElement {
-  const button = document.createElement('button')
-  button.type = 'button'
-  button.className = 'text-button copy-button'
-  button.insertAdjacentHTML('afterbegin', '<svg><use href="#file-icon"/></svg>')
-  const label = document.createTextNode('Copy')
-  button.append(label)
-  let timer = 0
-  const flash = (note: string): void => {
-    label.data = note
-    button.classList.add('copied')
-    clearTimeout(timer)
-    timer = window.setTimeout(() => { label.data = 'Copy'; button.classList.remove('copied') }, COPY_FLASH_MS)
-  }
-  button.onclick = () => {
-    try {
-      void navigator.clipboard.writeText(text).then(() => flash('Copied'), () => flash('Copy failed'))
-    } catch {
-      flash('Copy failed')
-    }
-  }
-  return button
-}
 
 function termOut(text: string): HTMLElement {
   const out = document.createElement('pre')
