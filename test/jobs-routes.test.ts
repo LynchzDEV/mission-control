@@ -12,6 +12,7 @@ import type { JobManager } from '../server/jobs'
 import type { EngineResolver, EngineResolverParams } from '../server/jobs-engine-iface'
 import { engineArgs } from '../server/jobs-engine-iface'
 import { jobsRoutes, safeEnqueue } from '../server/routes/jobs'
+import { historyRoutes } from '../server/routes/history'
 import { createChatQueue } from '../server/chat-queue'
 import { attentionKey, createAttentionStore } from '../server/attention'
 import { readApiToken } from '../server/secrets'
@@ -1322,4 +1323,63 @@ describe('live thread and stream offsets', () => {
     await manager.killJob(id).catch(() => undefined)
   }, 12000)
 
+})
+
+describe('chat menu actions', () => {
+  const sessionResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `echo '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-menu' })}'; echo '${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Worked.' }] } })}'`], env: {} })
+
+  async function chatWithTurn(): Promise<{ app: Elysia; manager: JobManager; id: string }> {
+    const manager = createJobManager()
+    const app = new Elysia().use(jobsRoutes(manager, sessionResolver)).use(historyRoutes({ manager, registry: { list: () => [], ended: () => [] } }))
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'first question', label: 'Export me now', purpose: 'chat' }))
+    const { id } = (await created.json()) as { id: string }
+    await pollUntilDone(app, id)
+    return { app, manager, id }
+  }
+
+  test('pinning sets the flag the history feed reports', async () => {
+    const { app, id } = await chatWithTurn()
+    expect(await (await app.handle(post(`/api/jobs/${id}/permission`, {}))).status).toBe(400)
+    const patched = await app.handle(new Request(`http://localhost/api/jobs/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pinned: true }) }))
+    expect(patched.status).toBe(200)
+    const history = await (await app.handle(get('/api/history'))).json() as { items: Array<{ kind: string; id: string; pinned?: boolean }> }
+    expect(history.items.find(item => item.id === id)?.pinned).toBe(true)
+    expect((await app.handle(new Request(`http://localhost/api/jobs/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pinned: 'yes' }) }))).status).toBe(400)
+  })
+
+  test('a deleted chat leaves the history feed and its thread reads gone', async () => {
+    const { app, id } = await chatWithTurn()
+    const gone = await app.handle(new Request(`http://localhost/api/jobs/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deleted: true }) }))
+    expect(gone.status).toBe(200)
+    const history = await (await app.handle(get('/api/history'))).json() as { items: Array<{ id: string }> }
+    expect(history.items.some(item => item.id === id)).toBe(false)
+    expect((await app.handle(get(`/api/jobs/${id}/thread`))).status).toBe(404)
+    expect((await app.handle(new Request(`http://localhost/api/jobs/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deleted: false }) }))).status).toBe(400)
+  })
+
+  test('a running chat refuses deletion', async () => {
+    const manager = createJobManager()
+    const app = buildApp(manager, sleepResolver)
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'busy', purpose: 'chat' }))
+    const { id } = (await created.json()) as { id: string }
+    const response = await app.handle(new Request(`http://localhost/api/jobs/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deleted: true }) }))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ error: 'Stop the reply first' })
+    await manager.killJob(id)
+  })
+
+  test('export renders the chat as markdown with a slug filename', async () => {
+    const { app, id } = await chatWithTurn()
+    const response = await app.handle(get(`/api/jobs/${id}/export.md`))
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-disposition')).toBe('attachment; filename="export-me-now.md"')
+    const body = await response.text()
+    expect(body.startsWith('# Export me now')).toBe(true)
+    expect(body).toContain('## You')
+    expect(body).toContain('first question')
+    expect(body).toContain('## Assistant')
+    expect(body).toContain('Worked.')
+    expect((await app.handle(get(`/api/jobs/${id}/export.md?leaf=missing`))).status).toBe(404)
+    expect((await app.handle(get('/api/jobs/nope/export.md'))).status).toBe(404)
+  })
 })

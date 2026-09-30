@@ -94,3 +94,16 @@ describe('visibleItems', () => {
     expect(visibleItems(items, {})).toEqual(items)
   })
 })
+
+describe('pinned chats', () => {
+  test('a pinned chat leads the list whatever its age', () => {
+    const pinned = { ...chat('pinned-old', now - 9 * DAY), pinned: true } as HistoryItem
+    const groups = sidebarGroups([chat('today', now), pinned], now)
+    expect(groups.map(group => [group.day, group.items.map(item => item.id)])).toEqual([['Pinned', ['pinned-old']], ['Today', ['today']]])
+  })
+
+  test('no pinned chats keeps the groups unchanged', () => {
+    const items = [chat('today', now), chat('y', now - DAY)]
+    expect(sidebarGroups(items, now).map(group => group.day)).toEqual(['Today', 'Yesterday'])
+  })
+})

@@ -4,7 +4,7 @@ import { chatSignal, historyDay, historyOpen, type HistoryItem } from './chat-vi
 import { renameValue, sessionSlot, type Session } from './terminal-state'
 import { confirmButton } from './confirm-button'
 
-type Day = 'Today' | 'Yesterday'
+type Day = 'Pinned' | 'Today' | 'Yesterday'
 type Row = { item: HistoryItem; state: 'running' | 'live' | 'landed' | 'needs' | null; note: string }
 
 const POLL_MS = 5000
@@ -24,7 +24,10 @@ export function sidebarGroups(items: HistoryItem[], now: number): { day: Day; it
     if (day === 'Today' || day === 'Yesterday') return day
     return isActive(item) ? 'Today' : null
   }
-  return DAYS.map(day => ({ day, items: items.filter(item => dayOf(item) === day) })).filter(group => group.items.length > 0)
+  const isPinned = (item: HistoryItem): boolean => item.kind === 'chat' && item.pinned === true
+  const pinned = items.filter(isPinned)
+  const days = DAYS.map(day => ({ day, items: items.filter(item => dayOf(item) === day && !isPinned(item)) })).filter(group => group.items.length > 0)
+  return pinned.length > 0 ? [{ day: 'Pinned', items: pinned }, ...days] : days
 }
 
 export function withLiveTerminals(items: HistoryItem[], sessions: Session[] | null, now: number): HistoryItem[] {
@@ -91,11 +94,11 @@ function open(item: HistoryItem): void {
   else dispatchEvent(new CustomEvent('quiet:open-terminal', { detail: target.terminal }))
 }
 
-function startRename(item: HistoryItem, text: HTMLElement): void {
+function startRename(item: HistoryItem, text: HTMLElement, onCommit?: (title: string) => void): void {
   if (renaming) return
   renaming = true
   const input = Object.assign(document.createElement('input'), { className: 'sb-rename', value: item.title, maxLength: 60 })
-  input.setAttribute('aria-label', 'Terminal name')
+  input.setAttribute('aria-label', onCommit === undefined ? 'Terminal name' : 'Chat name')
   text.replaceWith(input)
   settleIn(input)
   let settled = false
@@ -106,7 +109,10 @@ function startRename(item: HistoryItem, text: HTMLElement): void {
     const title = save ? renameValue(item.title, input.value) : null
     input.replaceWith(text)
     settleIn(text)
-    if (title !== null) dispatchEvent(new CustomEvent('quiet:terminal-rename', { detail: { id: item.id, title } }))
+    if (title !== null) {
+      if (onCommit === undefined) dispatchEvent(new CustomEvent('quiet:terminal-rename', { detail: { id: item.id, title } }))
+      else onCommit(title)
+    }
     signature = ''
     paint(historyItems)
   }
@@ -125,6 +131,86 @@ function liveTerminalActions(item: HistoryItem, element: HTMLElement, text: HTML
   element.draggable = true
   element.ondragstart = (event) => { event.dataTransfer?.setData('text/x-mc-terminal', item.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move' }
   if (text) text.ondblclick = (event) => { event.preventDefault(); event.stopPropagation(); startRename(item, text) }
+}
+
+async function patchChat(id: string, body: Record<string, unknown>, onDone?: () => void): Promise<void> {
+  const response = await fetch(`/api/jobs/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: string }
+    dispatchEvent(new CustomEvent('quiet:toast', { detail: payload.error ?? 'That change did not go through' }))
+    return
+  }
+  onDone?.()
+  void poll()
+}
+
+let menuOpen = false
+
+function closeRowMenu(): void {
+  menuOpen = false
+  document.querySelectorAll('.popover.row-menu').forEach(menu => menu.remove())
+  document.querySelectorAll('.sb-item.menu-open').forEach(item => item.classList.remove('menu-open'))
+  signature = ''
+  paint(historyItems)
+}
+
+function menuRow(label: string, iconId: string, action: () => void, extra?: string): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'row'
+  button.setAttribute('role', 'menuitem')
+  button.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 20 20"><use href="#${iconId}"/></svg>`)
+  const text = document.createElement('span')
+  text.textContent = label
+  button.append(text)
+  if (extra !== undefined) {
+    const hint = document.createElement('kbd')
+    hint.textContent = extra
+    button.append(hint)
+  }
+  button.onclick = () => {
+    closeRowMenu()
+    action()
+  }
+  return button
+}
+
+function openChatMenu(item: HistoryItem, anchor: HTMLElement): void {
+  if (renaming || item.kind !== 'chat') return
+  closeRowMenu()
+  const wrap = anchor.closest<HTMLElement>('.sb-item') ?? anchor
+  const text = wrap.querySelector<HTMLElement>('.sb-t')
+  if (text === null) return
+  menuOpen = true
+  wrap.classList.add('menu-open')
+  const menu = document.createElement('div')
+  menu.className = 'popover row-menu'
+  menu.setAttribute('role', 'menu')
+  const divider = document.createElement('div')
+  divider.className = 'divider'
+  const remove = menuRow('Delete chat', 'trash-icon', () => {})
+  remove.classList.add('danger')
+  confirmButton(remove, 'Delete chat', () => {
+    void patchChat(item.id, { deleted: true }, () => {
+      if (selectedKey() === `chat:${item.id}`) dispatchEvent(new Event('quiet:new-chat'))
+    })
+  })
+  remove.onclick = (event) => { event.stopPropagation() }
+  menu.append(
+    menuRow('Rename', 'pencil-icon', () => startRename(item, text, title => void patchChat(item.id, { label: title, titleLocked: true })), 'F2'),
+    menuRow(item.pinned === true ? 'Unpin' : 'Pin to top', 'pin-icon', () => void patchChat(item.id, { pinned: item.pinned !== true })),
+    menuRow('Export as Markdown', 'export-icon', () => { window.location.href = `/api/jobs/${encodeURIComponent(item.id)}/export.md` }),
+    divider,
+    remove,
+  )
+  wrap.append(menu)
+}
+
+function chatRowFromEvent(event: Event): HistoryItem | null {
+  const target = event.target instanceof Element ? event.target : null
+  const row = target?.closest<HTMLElement>('.sb-row[data-kind="chat"]') ?? null
+  if (row === null) return null
+  return historyItems.find(item => keyOf(item) === row.dataset.key) ?? null
 }
 
 function removeButton(item: HistoryItem, wrap: HTMLElement, state: Row['state']): void {
@@ -161,7 +247,9 @@ function rowElement(row: Row, className: 'sb-row' | 'sb-mini'): HTMLElement {
   const text = document.createElement('span'); text.className = 'sb-t'; text.textContent = row.item.title
   if (row.note) text.append(Object.assign(document.createElement('small'), { textContent: row.note }))
   const trail = document.createElement('span'); trail.className = 'sb-trail'
-  trail.append(...[badge, Object.assign(document.createElement('span'), { className: 'sb-slot' })].filter((part): part is HTMLElement => part !== null))
+  const pin = row.item.kind === 'chat' && row.item.pinned === true ? Object.assign(document.createElement('span'), { className: 'sb-pin', title: 'Pinned to top' }) : null
+  if (pin) pin.innerHTML = '<svg viewBox="0 0 20 20"><path d="M8 3h4l-.5 4.5L14 10v1.5H6V10l2.5-2.5z"/><path d="M10 11.5V17"/></svg>'
+  trail.append(...[pin, badge, Object.assign(document.createElement('span'), { className: 'sb-slot' })].filter((part): part is HTMLElement => part !== null))
   element.append(text, trail)
   const wrap = document.createElement('div')
   wrap.className = 'sb-item'
@@ -199,12 +287,12 @@ function markSelected(): void {
 
 function paint(items: HistoryItem[]): void {
   historyItems = items
-  if (renaming) return
+  if (renaming || menuOpen) return
   const groups = sidebarGroups(visibleItems(withLiveTerminals(items, liveTerminals, Date.now()), hidden), Date.now())
   const rows = groups.flatMap(group => group.items.map(rowOf))
   const keys = numberedKeys(rows.map(row => row.item), document.getElementById('sb-shell')?.classList.contains('collapsed'))
-  numbered = keys.map(key => rows.find(row => keyOf(row.item) === key)!.item)
-  const next = JSON.stringify([groups.map(group => [group.day, group.items.length]), rows.map(row => [row.item.kind, row.item.id, row.item.title, row.state, row.note]), keys])
+  numbered = keys.flatMap(key => rows.filter(row => keyOf(row.item) === key).map(row => row.item))
+  const next = JSON.stringify([groups.map(group => [group.day, group.items.length]), rows.map(row => [row.item.kind, row.item.id, row.item.title, row.state, row.note, row.item.kind === 'chat' && row.item.pinned === true]), keys])
   if (next === signature) return
   signature = next
   const list = document.getElementById('sidebar-list')!
@@ -236,12 +324,46 @@ if (typeof document !== 'undefined') {
   addEventListener('quiet:terminal-ended', (event) => hide(`terminal:${(event as CustomEvent<string>).detail}`))
   for (const name of ['quiet:screen', 'quiet:activity-scope']) addEventListener(name, markSelected)
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void poll() })
+  document.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target : null
+    if (target === null || (target.closest('.row-menu') === null && target.closest('.sb-row[data-kind="chat"]') === null)) closeRowMenu()
+  })
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && menuOpen) {
+      closeRowMenu()
+      return
+    }
     if (event.defaultPrevented || document.querySelector('dialog[open]')) return
     const item = numbered[sessionSlot(event) ?? -1]
     if (!item) return
     event.preventDefault()
     open(item)
+  })
+  const list = document.getElementById('sidebar-list')
+  list?.addEventListener('contextmenu', (event) => {
+    const item = chatRowFromEvent(event)
+    const anchor = event.target instanceof Element ? event.target.closest<HTMLElement>('.sb-row') : null
+    if (item === null || anchor === null) {
+      closeRowMenu()
+      return
+    }
+    event.preventDefault()
+    openChatMenu(item, anchor)
+  })
+  list?.addEventListener('keydown', (event) => {
+    const item = chatRowFromEvent(event)
+    if (item === null) return
+    const anchor = event.target instanceof Element ? event.target.closest<HTMLElement>('.sb-row') : null
+    if (event.key === 'F2' && anchor !== null) {
+      event.preventDefault()
+      const text = anchor.querySelector<HTMLElement>('.sb-t')
+      if (text !== null) startRename(item, text, title => void patchChat(item.id, { label: title, titleLocked: true }))
+      return
+    }
+    if (event.shiftKey && event.key === 'F10' && anchor !== null) {
+      event.preventDefault()
+      openChatMenu(item, anchor)
+    }
   })
   void poll()
 }

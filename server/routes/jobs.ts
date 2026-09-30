@@ -6,7 +6,7 @@ import { basename, join } from 'node:path'
 import { Elysia } from 'elysia'
 
 import { requireLocal } from '../auth'
-import { parseActivity, parseThread } from '../activity'
+import { oneLine, parseActivity, parseThread } from '../activity'
 import type { ChatJobPatch, CreateJobParams, JobManager, JobRecord } from '../jobs'
 import { readLogSince, readLogTail } from '../jobs'
 import { configDir, readConfig } from '../secrets'
@@ -187,6 +187,14 @@ function chatPatch(body: Record<string, unknown>, root: JobRecord): ChatJobPatch
     const label = typeof body.label === 'string' ? body.label.trim() : ''
     if (label === '' || label.length > CHAT_TITLE_MAX) return { status: 400, error: `label must be 1-${CHAT_TITLE_MAX} characters` }
     if (body.titleLocked !== undefined || root.titleLocked !== true) patch.label = label
+  }
+  if (body.pinned !== undefined) {
+    if (typeof body.pinned !== 'boolean') return { status: 400, error: 'pinned must be true or false' }
+    patch.pinned = body.pinned
+  }
+  if (body.deleted !== undefined) {
+    if (body.deleted !== true) return { status: 400, error: 'deleted can only be set to true' }
+    patch.deletedAt = Date.now()
   }
   return patch
 }
@@ -406,6 +414,10 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         set.status = patch.status
         return { error: patch.error }
       }
+      if (payload.deleted === true && threadIsRunning(threadChain(manager.listJobs(), root.id))) {
+        set.status = 409
+        return { error: 'Stop the reply first' }
+      }
       if (payload.project === null) patch.project = null
       else if (payload.project !== undefined) {
         const project = typeof payload.project === 'string' ? await projectInChatHome(payload.project, root) : { status: 400, error: 'project must be a path' }
@@ -455,7 +467,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
     })
     .get('/api/jobs/:id/thread', async ({ params, set }) => {
       const job = manager.getJob(params.id)
-      if (job === undefined) {
+      if (job === undefined || job.deletedAt !== undefined) {
         set.status = 404
         return { error: 'job not found' }
       }
@@ -609,6 +621,39 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         }
       }
       return { commands }
+    })
+    .get('/api/jobs/:id/export.md', async ({ params, query, set }) => {
+      const root = manager.getJob(params.id)
+      if (!isChatRoot(root) || root.deletedAt !== undefined) {
+        set.status = 404
+        return { error: 'chat not found' }
+      }
+      const chain = threadChain(manager.listJobs(), root.id).filter((turn) => turn.deletedAt === undefined)
+      const leaf = typeof query.leaf === 'string' && query.leaf !== '' ? query.leaf : null
+      const leafIndex = leaf === null ? chain.length - 1 : chain.findIndex((turn) => turn.id === leaf)
+      if (leafIndex < 0) {
+        set.status = 404
+        return { error: 'turn not found' }
+      }
+      const parts: string[] = [`# ${root.label}`, '']
+      for (const turn of chain.slice(0, leafIndex + 1)) {
+        parts.push('## You', '', turn.prompt, '')
+        const log = await readRedactedLog(manager.logPath(turn.id))
+        const events = parseThread(log)
+        const assistant: string[] = []
+        for (const event of events) {
+          if (event.kind === 'text' && event.detail.trim() !== '') assistant.push(event.detail.trim())
+          else if (event.kind === 'tool') assistant.push(`- ${event.title} ${oneLine(event.detail, 160)}`)
+        }
+        if (assistant.length > 0) parts.push('## Assistant', '', assistant.join('\n\n'), '')
+      }
+      const slug = root.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
+      return new Response(`${parts.join('\n').trimEnd()}\n`, {
+        headers: {
+          'content-type': 'text/markdown; charset=utf-8',
+          'content-disposition': `attachment; filename="${slug === '' ? 'chat' : slug}.md"`,
+        },
+      })
     })
     .get('/api/jobs/:id/queue', ({ params, set }) => {
       const job = manager.getJob(params.id)

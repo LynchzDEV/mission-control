@@ -599,7 +599,10 @@ async function refresh(): Promise<void> {
   const mine = ++generation
   const [thread, jobs, queue] = await Promise.all([getJson(`/api/jobs/${encodeURIComponent(root)}/thread`), getJson(`/api/jobs?chat=${encodeURIComponent(root)}`), getJson(`/api/jobs/${encodeURIComponent(root)}/queue`)])
   if (mine !== generation || !root) return
-  if (!thread.ok) { chatError(`Could not reach the chat: ${errorText(thread)}. Retrying…`); schedule(); return }
+  if (!thread.ok) {
+    if (thread.status === 404) { dispatchEvent(new Event('quiet:new-chat')); show('welcome'); return }
+    chatError(`Could not reach the chat: ${errorText(thread)}. Retrying…`); schedule(); return
+  }
   clearChatError()
   const all = readArray(jobs.ok ? jobs.data.jobs : []) as unknown as Array<AgentJob & TurnJob & { threadRoot?: string; purpose?: string; project?: string | null; cwd?: string | null }>
   const turnsJobs = all.filter(job => job.threadRoot === root)

@@ -74,11 +74,14 @@ export type JobRecord = {
   images?: import('./chat-bridge-core').BridgeImage[]
   permissionMode?: import('./chat-bridge-core').ChatPermissionMode
   allowRules?: string[]
+  pinned?: boolean
+  deletedAt?: number
+  undone?: string[]
 }
 
 export type JobPurpose = 'workflow-design' | 'chat'
 
-export type ChatJobPatch = Partial<Pick<JobRecord, 'label' | 'project' | 'titleLocked' | 'landedAt' | 'stoppedAt' | 'reportedAt' | 'allowRules'>>
+export type ChatJobPatch = Partial<Pick<JobRecord, 'label' | 'project' | 'titleLocked' | 'landedAt' | 'stoppedAt' | 'reportedAt' | 'allowRules' | 'pinned' | 'deletedAt' | 'undone'>>
 
 export type CreateJobParams = {
   worktree?: boolean

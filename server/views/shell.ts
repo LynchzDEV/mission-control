@@ -30,6 +30,11 @@ const BODY = `
     <symbol id="down-icon" viewBox="0 0 20 20"><path d="m5 8 5 5 5-5"/></symbol>
     <symbol id="settings-icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><circle cx="10" cy="10" r="5.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
     <symbol id="chevron-icon" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
+    <symbol id="pin-icon" viewBox="0 0 20 20"><path d="M8 3h4l-.5 4.5L14 10v1.5H6V10l2.5-2.5z"/><path d="M10 11.5V17"/></symbol>
+    <symbol id="export-icon" viewBox="0 0 20 20"><path d="M10 3v10M6 9l4 4 4-4M4 16h12"/></symbol>
+    <symbol id="trash-icon" viewBox="0 0 20 20"><path d="M4 6h12M8 6V4h4v2M6 6l.8 10h6.4L14 6M8.5 9v4.5M11.5 9v4.5"/></symbol>
+    <symbol id="branch-icon" viewBox="0 0 20 20"><circle cx="6" cy="4.5" r="1.8"/><circle cx="6" cy="15.5" r="1.8"/><circle cx="14" cy="7" r="1.8"/><path d="M6 6.3v7.4M14 8.8c0 3-2.5 3.7-8 4.9"/></symbol>
+    <symbol id="copy-icon" viewBox="0 0 20 20"><rect x="7" y="7" width="9.5" height="9.5" rx="2"/><path d="M13 7V5a1.5 1.5 0 0 0-1.5-1.5h-6A1.5 1.5 0 0 0 4 5v6a1.5 1.5 0 0 0 1.5 1.5H7"/></symbol>
     <symbol id="open-icon" viewBox="0 0 20 20"><path d="M11 4h5v5M16 4l-7 7M14 12v3.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5H8"/></symbol>
   </svg>
   <canvas id="backdrop" class="backdrop" aria-hidden="true"></canvas>

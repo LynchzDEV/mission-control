@@ -165,7 +165,7 @@ export function historyDay(at: number, now: number): string {
 }
 
 export type HistoryItem =
-  | { kind: 'chat'; id: string; title: string; updatedAt: number; project: string | null; running: boolean; agents: SignalJob[] }
+  | { kind: 'chat'; id: string; title: string; updatedAt: number; project: string | null; pinned?: boolean; running: boolean; agents: SignalJob[] }
   | { kind: 'terminal'; id: string; title: string; updatedAt: number; cwd: string; engine: string; sessionId: string | null; live: boolean }
   | { kind: 'claude-history'; id: string; title: string; updatedAt: number; cwd: string; bytes: number }
 

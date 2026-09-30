@@ -150,7 +150,7 @@ export function createChatFlusher(manager: JobManager, resolver: EngineResolver,
 
   const chatRootFor = (chatId: string): JobRecord | undefined => {
     const root = manager.getJob(chatId)
-    return root && root.purpose === 'chat' && threadRootOf(root) === root.id ? root : undefined
+    return root && root.purpose === 'chat' && threadRootOf(root) === root.id && root.deletedAt === undefined ? root : undefined
   }
 
   const agentPending = (job: JobRecord): Pending => ({

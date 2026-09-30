@@ -7,7 +7,7 @@ import type { UserSession } from './transcripts'
 export type HistoryAgent = { id: string; label: string; status: string; chatId: string; startedAt: number; landedAt: number | null; stoppedAt: number | null; reviewOf: string | null }
 
 export type HistoryItem =
-  | { kind: 'chat'; id: string; title: string; updatedAt: number; project: string | null; running: boolean; agents: HistoryAgent[] }
+  | { kind: 'chat'; id: string; title: string; updatedAt: number; project: string | null; pinned?: boolean; running: boolean; agents: HistoryAgent[] }
   | { kind: 'terminal'; id: string; title: string; updatedAt: number; cwd: string; engine: string; sessionId: string | null; live: boolean }
   | { kind: 'claude-history'; id: string; title: string; updatedAt: number; cwd: string; bytes: number }
 
@@ -23,7 +23,7 @@ export function ownedPids(jobs: readonly JobRecord[], terminals: readonly Termin
 }
 
 function chatItems(jobs: readonly JobRecord[]): HistoryItem[] {
-  const roots = jobs.filter(job => job.purpose === 'chat' && job.threadRoot === job.id)
+  const roots = jobs.filter(job => job.purpose === 'chat' && job.threadRoot === job.id && job.deletedAt === undefined)
   return roots.map(root => {
     const turns = jobs.filter(job => job.purpose === 'chat' && job.threadRoot === root.id)
     const agents = jobs.filter(job => job.chatId === root.id)
@@ -33,6 +33,7 @@ function chatItems(jobs: readonly JobRecord[]): HistoryItem[] {
       title: root.label,
       updatedAt: Math.max(...turns.map(turn => turn.startedAt)),
       project: root.project ?? null,
+      ...(root.pinned === true ? { pinned: true } : {}),
       running: [...turns, ...agents].some(job => job.status === 'running'),
       agents: agents.map(agent => ({ id: agent.id, label: agent.label, status: agent.status, chatId: root.id, startedAt: agent.startedAt, landedAt: agent.landedAt ?? null, stoppedAt: agent.stoppedAt ?? null, reviewOf: agent.reviewOf ?? null })),
     }
