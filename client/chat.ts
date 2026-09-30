@@ -697,11 +697,36 @@ async function refresh(): Promise<void> {
   setRunning(nowRunning)
   if (wasRunning && !nowRunning) void loadCommands()
   wasRunning = nowRunning
+  paintContextMeter(thread.data.usage as { contextPercent: number | null; costUsd: number | null } | undefined)
   const live = thread.data.live as { jobId: string; offset: number; partial: boolean } | null | undefined
   if (live !== null && live !== undefined) openLiveText(live)
   else if (liveSource !== null) closeLiveText()
   paintQueue(queue.ok ? readArray(queue.data.items) as unknown as QueuedItem[] : [])
   schedule()
+}
+
+function paintContextMeter(usage: { contextPercent: number | null; costUsd: number | null } | undefined | null): void {
+  const meter = $('ctx-meter')
+  const percent = usage === undefined || usage === null ? null : usage.contextPercent
+  const cost = usage === undefined || usage === null ? null : usage.costUsd
+  if (percent === null && cost === null) {
+    meter.hidden = true
+    return
+  }
+  meter.hidden = false
+  const circumference = 2 * Math.PI * 7.5
+  const fill = meter.querySelector('circle.fill') as SVGCircleElement
+  const ratio = percent === null ? 0 : Math.min(100, Math.max(0, percent)) / 100
+  fill.setAttribute('stroke-dasharray', `${(ratio * circumference).toFixed(1)} ${circumference.toFixed(1)}`)
+  fill.style.stroke = percent !== null && percent >= 80 ? 'var(--danger)' : ''
+  const text = $('ctx-text')
+  text.replaceChildren()
+  if (percent !== null) {
+    const value = document.createElement('b')
+    value.textContent = `${Math.round(percent)}%`
+    text.append(value, ' context')
+  }
+  if (cost !== null) text.append(` · $${cost.toFixed(2)} so far`)
 }
 
 function schedule(): void {

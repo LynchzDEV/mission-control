@@ -1383,3 +1383,35 @@ describe('chat menu actions', () => {
     expect((await app.handle(get('/api/jobs/nope/export.md'))).status).toBe(404)
   })
 })
+
+describe('thread usage meter', () => {
+  test('reports the newest context percentage and cumulative cost for a claude chat', async () => {
+    const usageResolver: EngineResolver = () => ({
+      cmd: '/bin/sh',
+      args: ['-c', `printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-usage' })}'; printf '%s\\n' '${JSON.stringify({ type: 'mc_context', mc: true, percentage: 47, totalTokens: 94000, maxTokens: 200000 })}'; printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'first', total_cost_usd: 0.5 })}'`],
+      env: {},
+    })
+    const manager = createJobManager()
+    const app = buildApp(manager, usageResolver)
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'usage-chat', purpose: 'chat' }))
+    const { id } = (await created.json()) as { id: string }
+    await pollUntilDone(app, id)
+    const thread = await (await app.handle(get(`/api/jobs/${id}/thread`))).json() as { usage: { contextPercent: number | null; costUsd: number | null } }
+    expect(thread.usage).toEqual({ contextPercent: 47, costUsd: 0.5 })
+  })
+
+  test('a glm chat reports context but no cost, and the newest result wins', async () => {
+    const usageResolver: EngineResolver = () => ({
+      cmd: '/bin/sh',
+      args: ['-c', `printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-usage-2' })}'; printf '%s\\n' '${JSON.stringify({ type: 'mc_context', mc: true, percentage: 62, totalTokens: 124000, maxTokens: 200000 })}'; printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'a', total_cost_usd: 0.5 })}'; printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'b', total_cost_usd: 0.84 })}'`],
+      env: {},
+    })
+    const manager = createJobManager()
+    const app = buildApp(manager, usageResolver)
+    const created = await app.handle(post('/api/jobs', { engine: 'glm', cwd: repo, prompt: 'hi', label: 'usage-glm', purpose: 'chat' }))
+    const { id } = (await created.json()) as { id: string }
+    await pollUntilDone(app, id)
+    const thread = await (await app.handle(get(`/api/jobs/${id}/thread`))).json() as { usage: { contextPercent: number | null; costUsd: number | null } }
+    expect(thread.usage).toEqual({ contextPercent: 62, costUsd: null })
+  })
+})

@@ -104,8 +104,28 @@ function chatPromptWithImages(payload: Record<string, unknown>, prompt: string, 
 
 export type LiveTurn = { jobId: string; offset: number; partial: boolean }
 
-async function liveTurn(chain: readonly JobRecord[], manager: JobManager): Promise<LiveTurn | null> {
-  const running = [...chain].reverse().find((turn) => turn.status === 'running')
+export type ChatUsage = { contextPercent: number | null; costUsd: number | null }
+
+async function chatUsage(chain: readonly JobRecord[], manager: JobManager, engine: string): Promise<ChatUsage> {
+  let contextPercent: number | null = null
+  let costUsd: number | null = null
+  for (const turn of chain) {
+    const log = await readRedactedLog(manager.logPath(turn.id))
+    for (const line of log.split('\n')) {
+      if (!line.includes('"mc_context"') && !line.includes('"total_cost_usd"')) continue
+      try {
+        const parsed = JSON.parse(line) as { type?: string; percentage?: unknown; total_cost_usd?: unknown }
+        if (parsed.type === 'mc_context' && typeof parsed.percentage === 'number' && Number.isFinite(parsed.percentage)) contextPercent = parsed.percentage
+        if (parsed.type === 'result' && typeof parsed.total_cost_usd === 'number' && Number.isFinite(parsed.total_cost_usd)) costUsd = parsed.total_cost_usd
+      } catch {
+        // a torn line mid-write is skipped
+      }
+    }
+  }
+  return { contextPercent, costUsd: engine === 'claude' ? costUsd : null }
+}
+
+async function liveTurn(chain: readonly JobRecord[], manager: JobManager): Promise<LiveTurn | null> {  const running = [...chain].reverse().find((turn) => turn.status === 'running')
   if (running === undefined) return null
   const path = manager.logPath(running.id)
   const info = await stat(path).catch(() => null)
@@ -485,6 +505,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         canReply: !job.workflowRunId && job.purpose !== 'workflow-design' && (job.resumeSupported ?? engineSupportsResume(job.engine)) && replySessionId(chain) !== null,
         messages,
         ...(isChat && chatUsesBridge(job.engine, 'chat') ? { live: await liveTurn(chain, manager) } : {}),
+        ...(isChat ? { usage: await chatUsage(chain, manager, threadHead?.engine ?? job.engine) } : {}),
       }
     })
     .post('/api/jobs/:id/reply', async ({ params, body, set }) => {
