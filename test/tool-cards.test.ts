@@ -67,6 +67,13 @@ describe('capOutput', () => {
     expect(lines.at(-1)).toBe('l450')
   })
 
+  test('a single line longer than the character cap keeps its last 20000 characters', () => {
+    const lines = capOutput('x'.repeat(21_000)).split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toBe('… 1 earlier lines hidden')
+    expect(lines[1]).toBe('x'.repeat(20_000))
+  })
+
   test('short output passes through unchanged', () => {
     expect(capOutput('one\ntwo')).toBe('one\ntwo')
   })
