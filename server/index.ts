@@ -32,6 +32,8 @@ import { modelsRoutes } from './routes/models'
 import { providersRoutes } from './routes/providers'
 import { terminalsRoutes } from './routes/terminals'
 import { outcomesRoutes } from './routes/outcomes'
+import { attentionRoutes } from './routes/attention'
+import { createAttentionStore } from './attention'
 import { createOutcomeLedger, OUTCOME_RETENTION_MS } from './outcomes'
 import { createSessionResolver } from './outcome-session'
 import { secretsRoutes } from './routes/secrets'
@@ -148,6 +150,7 @@ export async function createApp(): Promise<Elysia> {
   }
   const workflowStore = createWorkflowStore()
   const runEvents = createRunEvents()
+  const attention = createAttentionStore()
   const jobManager = createJobManager({
     onJobSlow: notifySlowJob,
     onJobStarted: (record) => { log(jobLine('started', record)); runEvents.changed() },
@@ -194,6 +197,7 @@ export async function createApp(): Promise<Elysia> {
   const workflowBuilder = createWorkflowBuilder({ manager: jobManager, resolver: realEngineResolver, store: workflowStore })
   await workflowRunner.recover()
   await workflowBuilder.recover()
+  await attention.prune(jobId => jobManager.getJob(jobId)?.status === 'running')
   void chatFlusher.recoverAll().catch(error => console.error('Chat catch-up failed', error))
   const knownDirectories = () => [...jobManager.listJobs().map(job => job.baseRepo ?? job.cwd), ...terminalRegistry.list().map(session => session.cwd)]
   const externalSessionsCache = createExternalSessionsCache(() => ownedPids(jobManager.listJobs(), terminalRegistry.list()))
@@ -235,6 +239,7 @@ export async function createApp(): Promise<Elysia> {
     .use(historyRoutes({ manager: jobManager, registry: terminalRegistry }))
     .use(terminalsRoutes(terminalRegistry))
     .use(outcomesRoutes(outcomeLedger))
+    .use(attentionRoutes(attention))
     .use(studioRoutes(workflowStore, workflowRunner, workflowBuilder, runEvents, () => jobManager.listJobs()))
     .use(secretsRoutes)
     .use(rolesRoutes)
