@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync } from 'node:fs'
 import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,6 +13,7 @@ import type { EngineResolver, EngineResolverParams } from '../server/jobs-engine
 import { engineArgs } from '../server/jobs-engine-iface'
 import { jobsRoutes, safeEnqueue } from '../server/routes/jobs'
 import { createChatQueue } from '../server/chat-queue'
+import { attentionKey, createAttentionStore } from '../server/attention'
 import { readApiToken } from '../server/secrets'
 import { initScratchGitRepo, runGit } from './support/scratch-git-repo'
 import { executionPlan } from './support/execution-plan'
@@ -882,16 +884,17 @@ describe('chat jobs', () => {
     expect(chunk).not.toContain(token)
   })
 
-  test('landing a chat-spawned job notifies the chat', async () => {
-    const notes: string[] = []
+  test("landing a chat-spawned job clears that chat's waiting item", async () => {
+    const attention = createAttentionStore(join(mkdtempSync(join(tmpdir(), 'mc-attention-')), 'attention.json'))
     const manager = createJobManager({ home: homedir() })
-    const app = new Elysia().use(jobsRoutes(manager, echoResolver, { notify: async (title, body) => { notes.push(`${title}|${body}`) } }))
+    const app = new Elysia().use(jobsRoutes(manager, echoResolver, { attention }))
     const root = await (await post(app, chatBody())).json()
+    await attention.raise({ key: attentionKey.needs(root.id), kind: 'needs', title: 'chat', detail: 'Needs you: land-me', command: null, chatId: root.id, jobId: null, requestId: null })
     const job = await (await post(app, JSON.stringify({ engine: 'claude', cwd: repo, prompt: 'hello', label: 'land-me', worktree: true, chat: root.id }))).json()
     await pollUntilDone(app, job.id)
     await writeFile(join(job.cwd, 'result.txt'), 'first\n')
     expect((await app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${job.id}/land`, { method: 'POST', headers: { host: '127.0.0.1:7777' } }))).status).toBe(200)
-    expect(notes).toEqual(['Landed|land-me · 1 commit'])
+    expect(attention.list()).toEqual([])
   })
 
   test('PATCH renames a chat, sets its project, and a locked title stays', async () => {

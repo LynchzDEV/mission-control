@@ -189,7 +189,7 @@ describe('createChatFlusher', () => {
     const worker = await agent(manager, root.id, 'All tests pass.')
     expect(worker.reportedAt).toBeNull()
     const notes: string[] = []
-    const flusher = flusherFor(manager, { notify: async (title, body) => { notes.push(`${title}|${body}`) } })
+    const flusher = flusherFor(manager, { needsYou: (root, detail) => { notes.push(`${root.label}|${detail}`) } })
     await flusher.onAgentSettled(worker)
     const turn = agentTurns(manager)[0]
     expect(turn?.prompt.startsWith('[agent Build it · codex] done')).toBe(true)
@@ -209,8 +209,8 @@ describe('createChatFlusher', () => {
     const root = await settled(manager, (await chatRoot(manager)).id)
     const worker = await agent(manager, root.id, 'Which branch should I use?')
     const notes: string[] = []
-    await flusherFor(manager, { notify: async (title, body) => { notes.push(`${title}|${body}`) } }).onAgentSettled(worker)
-    expect(notes).toEqual(['Needs you|Login fix · Build it'])
+    await flusherFor(manager, { needsYou: (root, detail) => { notes.push(`${root.label}|${detail}`) } }).onAgentSettled(worker)
+    expect(notes).toEqual(['Login fix|Needs you: Build it'])
     await settled(manager, agentTurns(manager)[0]!.id)
   })
 
@@ -297,11 +297,11 @@ describe('createChatFlusher', () => {
     }
     const worker = await agent(manager, root.id, 'Should I land it?')
     const notes: string[] = []
-    const flusher = flusherFor(manager, { notify: async (title, body) => { notes.push(`${title}|${body}`) } })
+    const flusher = flusherFor(manager, { needsYou: (root, detail) => { notes.push(`${root.label}|${detail}`) } })
     await flusher.onAgentSettled(worker)
     await flusher.kick(root.id)
     expect(agentTurns(manager)).toHaveLength(0)
-    expect(notes).toEqual(['Needs you|Login fix · Build it'])
+    expect(notes).toEqual(['Login fix|Needs you: Build it'])
     expect(errors.mock.calls.some((call) => String(call[0]).includes(root.id))).toBe(true)
   })
 
@@ -316,9 +316,9 @@ describe('createChatFlusher', () => {
     }
     const worker = await agent(manager, root.id, 'Done again.')
     const notes: string[] = []
-    await flusherFor(manager, { notify: async (title, body) => { notes.push(`${title}|${body}`) } }).onAgentSettled(worker)
+    await flusherFor(manager, { needsYou: (root, detail) => { notes.push(`${root.label}|${detail}`) } }).onAgentSettled(worker)
     expect(agentTurns(manager)).toHaveLength(12)
-    expect(notes).toEqual(['Needs you|Login fix · waiting for you after 12 agent rounds'])
+    expect(notes).toEqual(['Login fix|Needs you: waiting after 12 agent rounds'])
     expect(errors.mock.calls.some((call) => String(call[0]).includes(root.id))).toBe(true)
   })
 
@@ -457,7 +457,7 @@ describe('createChatFlusher', () => {
     const root = await settled(manager, (await chatRoot(manager)).id)
     const runs = [sessionRun({ chatId: root.id })]
     const notes: string[] = []
-    const flusher = flusherFor(manager, { runs: runSource(runs), notify: async (title, body) => { notes.push(`${title}|${body}`) } })
+    const flusher = flusherFor(manager, { runs: runSource(runs), needsYou: (root, detail) => { notes.push(`${root.label}|${detail}`) } })
     await flusher.onSessionStep(runs[0]!)
     const turns = agentTurns(manager)
     expect(turns).toHaveLength(1)
@@ -569,13 +569,13 @@ describe('createChatFlusher', () => {
       runFixture({ id: 'other', chatId: undefined, workflow: { ...runFixture().workflow, name: 'No chat' } }),
     ]
     const notes: string[] = []
-    const flusher = flusherFor(manager, { runs: runSource(runs), bootAt: Date.now(), notify: async (title, body) => { notes.push(`${title}|${body}`) } })
+    const flusher = flusherFor(manager, { runs: runSource(runs), bootAt: Date.now(), needsYou: (root, detail) => { notes.push(`${root.label}|${detail}`) } })
     await flusher.recoverAll()
     const turns = chatTurnsAfterRoot(manager, root.id)
     expect(turns).toHaveLength(1)
     expect(turns[0]?.prompt.startsWith(`${RESTART_CATCH_UP}\n[workflow Shipping · failed]\nExecute · fail · Tests failed`)).toBe(true)
     for (const name of ['Old flow', 'Still going', 'No chat']) expect(turns[0]?.prompt).not.toContain(name)
-    expect(notes).toEqual(['Needs you|Login fix · workflow Shipping'])
+    expect(notes).toEqual(['Login fix|Needs you: workflow Shipping'])
     expect(typeof runs[0]!.reportedAt).toBe('number')
     expect(runs[1]!.reportedAt).toBeUndefined()
     await settled(manager, turns[0]!.id)

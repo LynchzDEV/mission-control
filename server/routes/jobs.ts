@@ -13,7 +13,7 @@ import { activityRedactor, createSecretsRedactor, logSecrets, readRedactedLog, r
 import { projectMemory } from '../chat-reports'
 import type { ChatQueue } from '../chat-queue'
 import { chatQueuePath, createChatQueue } from '../chat-queue'
-import { notifyChat } from '../notify'
+import { attentionKey, type AttentionStore } from '../attention'
 import { chatHome } from '../chat-home'
 import { validateWorkspaceCwd } from '../workspace'
 import type { EngineResolver } from '../jobs-engine-iface'
@@ -193,7 +193,7 @@ export function createLogStreamResponse(path: string, signal: AbortSignal, secre
 }
 
 type TerminalSessions = { list(): Array<{ id: string; sessionId: string | null }>; ended(): Array<{ id: string; sessionId: string | null }> }
-export type JobsRoutesOptions = { notify?: (title: string, body: string) => Promise<void>; queue?: ChatQueue; terminals?: TerminalSessions }
+export type JobsRoutesOptions = { attention?: AttentionStore; queue?: ChatQueue; terminals?: TerminalSessions }
 
 function terminalSessionIds(terminals: TerminalSessions | undefined): Map<string, string> {
   if (!terminals) return new Map()
@@ -201,7 +201,6 @@ function terminalSessionIds(terminals: TerminalSessions | undefined): Map<string
 }
 
 export function jobsRoutes(manager: JobManager, resolver: EngineResolver, options: JobsRoutesOptions = {}): Elysia {
-  const notify = options.notify ?? notifyChat
   const queue = options.queue ?? createChatQueue(chatQueuePath())
   return new Elysia()
     .onBeforeHandle(requireLocal)
@@ -431,7 +430,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         return { error: result.error, ...(result.files === undefined ? {} : { files: result.files }) }
       }
       const landed = await manager.updateJob(params.id, { landedAt: Date.now() })
-      if (landed?.chatId) void notify('Landed', `${landed.label} · ${result.landed.length} commit${result.landed.length === 1 ? '' : 's'}`).catch(() => {})
+      if (landed?.chatId) await options.attention?.resolve(attentionKey.needs(landed.chatId))
       return { landed: result.landed, base: result.base }
     })
     .post('/api/jobs/:id/reviewed', async ({ params, set }) => {

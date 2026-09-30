@@ -12,7 +12,7 @@ import { historyRoutes } from './routes/history'
 import { createExternalSessionsCache, ownedPids } from './history'
 import { listenTarget } from './secrets'
 import { createJobManager } from './jobs'
-import { notifyChat, notifySlowJob } from './notify'
+import { attentionEvents } from './attention-events'
 import { createChatFlusher } from './chat-reports'
 import { chatQueuePath, createChatQueue } from './chat-queue'
 import { threadRootOf } from './threads'
@@ -151,12 +151,14 @@ export async function createApp(): Promise<Elysia> {
   const workflowStore = createWorkflowStore()
   const runEvents = createRunEvents()
   const attention = createAttentionStore()
+  const attentionOn = attentionEvents(attention)
   const jobManager = createJobManager({
-    onJobSlow: notifySlowJob,
-    onJobStarted: (record) => { log(jobLine('started', record)); runEvents.changed() },
+    onJobSlow: (record) => { void attentionOn.slow(record).catch(error => console.error('Attention raise failed', error)) },
+    onJobStarted: (record) => { log(jobLine('started', record)); runEvents.changed(); void attentionOn.started(record).catch(() => {}) },
     onJobProgress: () => runEvents.changed(),
     onJobSettled: (record) => {
       runEvents.changed()
+      void attentionOn.settled(record).catch(() => {})
       log(jobLine(record.stoppedAt ? 'stopped' : record.status === 'done' ? 'done' : 'failed', record))
       if (record.purpose === 'workflow-design') {
         void workflowBuilder.cleanup(record).catch(error => console.error('Workflow designer cleanup failed', error))
@@ -188,7 +190,7 @@ export async function createApp(): Promise<Elysia> {
   const chatFlusher = createChatFlusher(jobManager, realEngineResolver, {
     queue: chatQueue,
     runs: workflowRunner,
-    notify: notifyChat,
+    needsYou: attentionOn.needsYou,
     logReader: async () => {
       const read = await redactedTailReader()
       return id => read(jobManager.logPath(id))
@@ -234,7 +236,7 @@ export async function createApp(): Promise<Elysia> {
     .use(healthApi())
     .use(quotaRoutes({ externalSessions: () => externalSessionsCache.get() }))
     .use(metaRoutes(jobManager))
-    .use(jobsRoutes(jobManager, realEngineResolver, { queue: chatQueue, terminals: terminalRegistry }))
+    .use(jobsRoutes(jobManager, realEngineResolver, { queue: chatQueue, terminals: terminalRegistry, attention }))
     .use(chatRoutes({ knownDirectories }))
     .use(historyRoutes({ manager: jobManager, registry: terminalRegistry }))
     .use(terminalsRoutes(terminalRegistry))

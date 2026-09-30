@@ -32,7 +32,7 @@ export type ChatFlusherOptions = {
   queue: ChatQueue
   runs?: ChatRunSource
   logReader: () => Promise<LogReader>
-  notify?: (title: string, body: string) => Promise<void>
+  needsYou?: (root: JobRecord, detail: string) => Promise<void> | void
   retryMs?: number
   retryLimit?: number
   schedule?: (retry: () => Promise<void>, ms: number) => void
@@ -197,7 +197,7 @@ export function createChatFlusher(manager: JobManager, resolver: EngineResolver,
 
   const needsYouNotice = async (root: JobRecord, reports: readonly Reported[]): Promise<void> => {
     const needing = reports.filter(({ report }) => report.needsYou).map(({ pending }) => pending.label)
-    if (needing.length > 0) await opts.notify?.('Needs you', `${root.label} · ${needing.join(', ')}`)
+    if (needing.length > 0) await opts.needsYou?.(root, `Needs you: ${needing.join(', ')}`)
   }
 
   const markReported = async (reports: readonly Reported[]): Promise<void> => {
@@ -213,7 +213,7 @@ export function createChatFlusher(manager: JobManager, resolver: EngineResolver,
 
   const holdForUser = async (root: JobRecord, agents: readonly Pending[]): Promise<void> => {
     console.error(`chat report held: chat ${root.id} reached ${AGENT_ROUNDS_MAX} agent rounds without a user turn (${labels(agents)})`)
-    await opts.notify?.('Needs you', `${root.label} · waiting for you after ${AGENT_ROUNDS_MAX} agent rounds`)
+    await opts.needsYou?.(root, `Needs you: waiting after ${AGENT_ROUNDS_MAX} agent rounds`)
   }
 
   const wait = (root: JobRecord, agents: readonly Pending[], hasUserMessages: boolean): void => {
