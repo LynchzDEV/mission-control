@@ -43,7 +43,7 @@ End your final response with one line: MC_RESULT {"outcome":"pass|fail|blocked",
 Use pass only when this node's acceptance criteria hold. Evidence is required for pass. Machine checks are evaluated separately by Mission Control.`
 
 export function sessionRules(mcUrl: string, runId: string, nodeId: string): string {
-  return `You are doing this step In Session, in your own conversation, where the user can see it. Do the step with the user; do not start other steps. When the user accepts the result (or says go), report it: POST ${mcUrl}/api/studio/runs/${runId}/steps/${nodeId} with {"outcome":"pass|fail|blocked","summary","evidence":[...],"output":"<the full result>"} plus your terminalId or chat. If they ask for changes, revise first. A plan step must not change code.`
+  return `You are doing this step In Session, in your own conversation, where the user can see it. Do the step with the user; do not start other steps. When the user accepts the result (or says go), report it: POST ${mcUrl}/api/studio/runs/${runId}/steps/${nodeId} with {"outcome":"pass|fail|blocked","summary","evidence":[...],"output":"<the full result>"} plus your terminalId or chat. If they ask for changes, revise first. A plan step must not change code. If your result has an MC_SHAPE line, keep it in output.`
 }
 
 export function defaultWorkflow(): Workflow {
@@ -342,11 +342,11 @@ export function createWorkflowStore(base = configDir()) {
 }
 export type WorkflowStore = ReturnType<typeof createWorkflowStore>
 
-export function composeWorkflowPrompt(policy: PolicyRevision, workflow: Workflow, node: WorkflowNode, request: string, inputs: unknown[], skills: Array<{ path: string; content: string }> = []): string {
+export function composeWorkflowPrompt(policy: PolicyRevision, workflow: Workflow, node: WorkflowNode, request: string, inputs: unknown[], skills: Array<{ path: string; content: string }> = [], notes: Record<string, string> = {}): string {
   const slots: Record<string, string> = {
     core_rules: policy.coreRules,
     workflow: JSON.stringify({ name: workflow.name, entry: workflow.entry, nodes: workflow.nodes.map(({ id, title, kind }) => ({ id, title, kind })), edges: workflow.edges }, null, 2),
-    assignment: JSON.stringify({ request, node, ...(node.kind === 'implement' ? { implementationRules: policy.implementationRules } : {}), skills, upstreamEvidence: inputs }, null, 2),
+    assignment: JSON.stringify({ request, node, ...(node.kind === 'implement' ? { implementationRules: policy.implementationRules } : {}), ...notes, skills, upstreamEvidence: inputs }, null, 2),
   }
   return policy.template.replace(/\{\{(core_rules|workflow|assignment)\}\}/g, (_, slot: string) => slots[slot]!)
 }
