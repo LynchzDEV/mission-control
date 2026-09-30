@@ -364,3 +364,37 @@ describe('engineArgs', () => {
     expect(engineSupportsResume('mystery')).toBe(false)
   })
 })
+
+describe('permission messages', () => {
+  const request = (requestId: string, input: Record<string, unknown> = { command: 'bun test' }, toolName = 'Bash'): string =>
+    JSON.stringify({ type: 'mc_permission_request', mc: true, requestId, toolUseID: 't1', toolName, title: 'Claude wants to run a command', description: 'To check the bridge', decisionReason: '', suppressAlways: false, input })
+  const resolved = (requestId: string, decision: string): string =>
+    JSON.stringify({ type: 'mc_permission_resolved', mc: true, requestId, decision })
+
+  test('a request plus its resolution is one message carrying the decision', () => {
+    const events = parseThread([request('r1'), resolved('r1', 'allow_once')].join('\n'))
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ kind: 'permission', state: 'allow_once', command: 'bun test', title: 'Claude wants to run a command', suppressAlways: false })
+    expect(eventToMessage(events[0] as ActivityEvent, 'a')).toMatchObject({ role: 'assistant', kind: 'permission', jobId: 'a', requestId: 'r1', state: 'allow_once', command: 'bun test' })
+  })
+
+  test('mc lines never become text', () => {
+    const events = parseThread([request('r1'), resolved('r1', 'deny')].join('\n'))
+    expect(events.filter((event) => event.kind === 'text')).toHaveLength(0)
+  })
+
+  test('a pending request reads cancelled once the turn is not running', () => {
+    const messages = jobMessages(job({ id: 'a', status: 'done' }), request('r1'))
+    expect(messages.filter((message) => message.kind === 'permission')).toHaveLength(1)
+    expect(messages.find((message) => message.kind === 'permission')).toMatchObject({ state: 'cancelled' })
+    const running = jobMessages(job({ id: 'a', status: 'running' }), request('r1'))
+    expect(running.find((message) => message.kind === 'permission')).toMatchObject({ state: 'pending' })
+  })
+
+  test('extracts the file target and the plan text', () => {
+    const edit = request('r2', { file_path: '/Users/a/x.ts' }, 'Edit')
+    expect(parseThread(edit)[0]).toMatchObject({ kind: 'permission', target: '/Users/a/x.ts', command: null })
+    const plan = request('r3', { plan: 'step one' }, 'ExitPlanMode')
+    expect(parseThread(plan)[0]).toMatchObject({ kind: 'permission', plan: 'step one' })
+  })
+})

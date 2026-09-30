@@ -1,8 +1,20 @@
-import { parseThread, type ActivityEvent } from './activity'
+import { parseThread, type ActivityEvent, type PermissionState } from './activity'
 import type { JobRecord } from './jobs'
 
+export type ThreadMessagePermission = {
+  requestId: string
+  toolName: string
+  title: string
+  description: string
+  command: string | null
+  target: string | null
+  plan: string | null
+  suppressAlways: boolean
+  state: PermissionState
+}
+
 export type ThreadMessage =
-  | { role: 'user'; kind: 'prompt'; jobId: string; ts: number; text: string }
+  | { role: 'user'; kind: 'prompt'; jobId: string; ts: number; text: string; images?: string[] }
   | { role: 'assistant'; kind: 'thinking'; jobId: string; text: string; partial?: true }
   | { role: 'assistant'; kind: 'text'; jobId: string; text: string; partial?: true }
   | {
@@ -15,6 +27,7 @@ export type ThreadMessage =
       result: string
       resultIsError: boolean
     }
+  | { role: 'assistant'; kind: 'permission'; jobId: string } & ThreadMessagePermission
   | { role: 'result'; kind: 'result'; jobId: string; text: string; isError: boolean }
 
 export function threadRootOf(job: JobRecord): string {
@@ -42,6 +55,22 @@ export function eventToMessage(event: ActivityEvent, jobId: string): ThreadMessa
       resultIsError: event.resultIsError === true,
     }
   }
+  if (event.kind === 'permission') {
+    return {
+      role: 'assistant',
+      kind: 'permission',
+      jobId,
+      requestId: event.requestId ?? '',
+      toolName: event.toolName ?? '',
+      title: event.title,
+      description: event.detail,
+      command: event.command ?? null,
+      target: event.target ?? null,
+      plan: event.plan ?? null,
+      suppressAlways: event.suppressAlways === true,
+      state: event.state ?? 'pending',
+    }
+  }
   if (event.kind === 'thinking') return { role: 'assistant', kind: 'thinking', jobId, text: event.detail, ...(event.partial ? { partial: true } : {}) }
   if (event.kind === 'text') return { role: 'assistant', kind: 'text', jobId, text: event.detail, ...(event.partial ? { partial: true } : {}) }
   if (event.kind === 'result') {
@@ -61,7 +90,8 @@ export function jobMessages(job: JobRecord, log: string): ThreadMessage[] {
     const message = eventToMessage(event, job.id)
     if (message !== null) turn.push(message)
   }
-  return turn
+  if (job.status === 'running') return turn
+  return turn.map((message) => message.kind === 'permission' && message.state === 'pending' ? { ...message, state: 'cancelled' as const } : message)
 }
 
 export async function assembleThread(

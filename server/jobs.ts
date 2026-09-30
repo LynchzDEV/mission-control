@@ -294,6 +294,7 @@ export type JobManagerOptions = {
   onJobSettled?: (record: JobRecord) => void
   onJobStarted?: (record: JobRecord) => void
   onJobProgress?: (record: JobRecord) => void
+  onPermissionRequest?: (record: JobRecord, request: { requestId: string; title: string; body: string }) => void
 }
 
 export function createJobManager(options: JobManagerOptions = {}): JobManager {
@@ -315,6 +316,34 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   const sessionScans = new Map<string, string>()
   const pendingActivityTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const subAgentCalls = new Map<string, Set<string>>()
+  const notifiedPermissions = new Set<string>()
+
+  function notifyPendingPermissions(id: string, chunk: string): void {
+    const record = jobs.get(id)
+    if (record === undefined || options.onPermissionRequest === undefined) return
+    for (const line of chunk.split('\n')) {
+      if (!line.includes('"mc_permission_request"')) continue
+      let parsed: Record<string, unknown>
+      try {
+        parsed = JSON.parse(line) as Record<string, unknown>
+      } catch {
+        continue
+      }
+      if (parsed.type !== 'mc_permission_request' || typeof parsed.requestId !== 'string' || parsed.requestId === '') continue
+      const key = `${id}:${parsed.requestId}`
+      if (notifiedPermissions.has(key)) continue
+      notifiedPermissions.add(key)
+      const input = typeof parsed.input === 'object' && parsed.input !== null ? (parsed.input as Record<string, unknown>) : {}
+      const body = typeof input.command === 'string' && input.command !== ''
+        ? input.command
+        : typeof input.file_path === 'string' && input.file_path !== ''
+          ? input.file_path
+          : typeof parsed.toolName === 'string'
+            ? parsed.toolName
+            : ''
+      options.onPermissionRequest(record, { requestId: parsed.requestId, title: typeof parsed.title === 'string' && parsed.title !== '' ? parsed.title : 'Permission needed', body })
+    }
+  }
 
   function logPath(id: string): string {
     return join(logsDir, `${id}.log`)
@@ -371,6 +400,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       const end = pending.lastIndexOf('\n')
       if (end >= 0) {
         const progress = parseJobProgress(pending.slice(0, end))
+        notifyPendingPermissions(id, pending.slice(0, end))
         pending = pending.slice(end + 1)
         turns += progress.turns
         const calls = subAgentCalls.get(id) ?? subAgentCalls.set(id, new Set()).get(id)!

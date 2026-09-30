@@ -33,7 +33,7 @@ import { providersRoutes } from './routes/providers'
 import { terminalsRoutes } from './routes/terminals'
 import { outcomesRoutes } from './routes/outcomes'
 import { attentionRoutes } from './routes/attention'
-import { createAttentionStore } from './attention'
+import { attentionKey, chatOfJob, createAttentionStore } from './attention'
 import { createOutcomeLedger, OUTCOME_RETENTION_MS } from './outcomes'
 import { createSessionResolver } from './outcome-session'
 import { secretsRoutes } from './routes/secrets'
@@ -154,6 +154,7 @@ export async function createApp(): Promise<Elysia> {
   const attentionOn = attentionEvents(attention)
   const jobManager = createJobManager({
     onJobSlow: (record) => { void attentionOn.slow(record).catch(error => console.error('Attention raise failed', error)) },
+    onPermissionRequest: (record, request) => { void attention.raise({ key: attentionKey.permission(record.id, request.requestId), kind: 'permission', title: record.label, detail: request.title, command: request.body || null, chatId: chatOfJob(record), jobId: record.id, requestId: request.requestId }).catch(error => console.error('Attention raise failed', error)) },
     onJobStarted: (record) => { log(jobLine('started', record)); runEvents.changed(); void attentionOn.started(record).catch(() => {}) },
     onJobProgress: () => runEvents.changed(),
     onJobSettled: (record) => {

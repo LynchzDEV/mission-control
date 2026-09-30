@@ -1,14 +1,19 @@
 import { toolCard, type ToolCard } from './tool-cards'
 
+export type PermissionState = 'pending' | 'allow_once' | 'allow_always' | 'deny' | 'cancelled'
+
+export type PermissionView = { requestId: string; toolName: string; title: string; description: string; command: string | null; target: string | null; plan: string | null; suppressAlways: boolean; state: PermissionState }
+
 export type ThreadMessage =
-  | { role: 'user'; kind: 'prompt'; jobId: string; ts: number; text: string }
+  | { role: 'user'; kind: 'prompt'; jobId: string; ts: number; text: string; images?: string[] }
   | { role: 'assistant'; kind: 'thinking' | 'text'; jobId: string; text: string; partial?: true }
+  | { role: 'assistant'; kind: 'permission'; jobId: string } & PermissionView
   | { role: 'assistant'; kind: 'tool'; jobId: string; title: string; detail: string; input: string; result: string; resultIsError: boolean }
   | { role: 'result'; kind: 'result'; jobId: string; text: string; isError: boolean }
 
 export type TurnJob = { id: string; status: string; startedAt: number; endedAt: number | null; source?: 'user' | 'agent'; stoppedAt?: number | null }
 export type AgentJob = { id: string; engine: string; model: string | null; label: string; reason?: string; status: string; startedAt: number; endedAt: number | null; chatTurn?: string; chatId?: string; reviewOf: string | null; reviewedAt: number | null; landedAt?: number | null; stoppedAt?: number | null; currentActivity?: string | null; diffStat: string | null }
-export type Turn = { id: string; source: 'user' | 'agent'; prompt: string; text: string; tools: number; edits: string[]; steps: string[]; cards: ToolCard[]; thinking: boolean; started: number; ended: number | null; running: boolean; failed: boolean; stopped: boolean; error: string; errorDetail: string }
+export type Turn = { id: string; source: 'user' | 'agent'; prompt: string; text: string; tools: number; edits: string[]; steps: string[]; cards: ToolCard[]; permissions: PermissionView[]; thinking: boolean; started: number; ended: number | null; running: boolean; failed: boolean; stopped: boolean; error: string; errorDetail: string }
 export type TeamState = 'running' | 'reviewing' | 'done' | 'landed' | 'needs-you' | 'retried' | 'stopped'
 export type TeamRow = { id: string; engine: string; model: string | null; label: string; reason: string; state: TeamState; activity: string; started: number; ended: number | null }
 
@@ -28,14 +33,15 @@ export function turnsFrom(thread: readonly ThreadMessage[], jobs: readonly TurnJ
   for (const message of thread) {
     if (message.kind === 'prompt') {
       const job = jobs.find(item => item.id === message.jobId)
-      turns.push({ id: message.jobId, source: job?.source === 'agent' ? 'agent' : 'user', prompt: message.text, text: '', tools: 0, edits: [], steps: [], cards: [], thinking: false, started: job?.startedAt ?? message.ts, ended: job?.endedAt ?? null, running: job?.status === 'running', failed: false, stopped: false, error: '', errorDetail: '' })
+      turns.push({ id: message.jobId, source: job?.source === 'agent' ? 'agent' : 'user', prompt: message.text, text: '', tools: 0, edits: [], steps: [], cards: [], permissions: [], thinking: false, started: job?.startedAt ?? message.ts, ended: job?.endedAt ?? null, running: job?.status === 'running', failed: false, stopped: false, error: '', errorDetail: '' })
       lastResults.push('')
       continue
     }
     const turn = turns[turns.length - 1]
     if (!turn || turn.id !== message.jobId) continue
     turn.thinking = turn.running && message.kind === 'thinking' && message.partial === true
-    if (message.kind === 'text') turn.text = turn.text ? `${turn.text}\n\n${message.text}` : message.text
+    if (message.kind === 'permission') turn.permissions.push({ requestId: message.requestId, toolName: message.toolName, title: message.title, description: message.description, command: message.command, target: message.target, plan: message.plan, suppressAlways: message.suppressAlways, state: message.state })
+    else if (message.kind === 'text') turn.text = turn.text ? `${turn.text}\n\n${message.text}` : message.text
     else if (message.kind === 'tool') { turn.tools += 1; turn.steps.push(stepText(message.title, message.detail)); turn.cards.push(toolCard(message, turn.running, turn.cards.length)); if (EDIT_TOOLS.includes(message.title) && message.detail) turn.edits.push(message.detail) }
     else if (message.kind === 'result') {
       lastResults[turns.length - 1] = message.text

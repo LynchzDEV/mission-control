@@ -104,6 +104,22 @@ function chatPatch(body: Record<string, unknown>, root: JobRecord): ChatJobPatch
   return patch
 }
 
+function logHasPendingPermission(log: string, requestId: string): boolean {
+  let pending = false
+  for (const line of log.split('\n')) {
+    if (!line.includes('"mc_permission_request"') && !line.includes('"mc_permission_resolved"')) continue
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(line) as Record<string, unknown>
+    } catch {
+      continue
+    }
+    if (parsed.type === 'mc_permission_request' && parsed.requestId === requestId) pending = true
+    if (parsed.type === 'mc_permission_resolved' && parsed.requestId === requestId) pending = false
+  }
+  return pending
+}
+
 function formatSSEData(content: string): string {
   return `${content
     .split('\n')
@@ -440,6 +456,27 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         return { error: result.error }
       }
       return result.job
+    })
+    .post('/api/jobs/:id/permission', async ({ params, body, set }) => {
+      const payload = body as { requestId?: unknown; decision?: unknown } | null
+      const requestId = typeof payload?.requestId === 'string' ? payload.requestId : ''
+      const decision = payload?.decision
+      if (requestId === '' || (decision !== 'allow_once' && decision !== 'allow_always' && decision !== 'deny')) {
+        set.status = 400
+        return { error: 'requestId and a decision of allow_once, allow_always or deny are required' }
+      }
+      const job = manager.getJob(params.id)
+      if (job === undefined) {
+        set.status = 404
+        return { error: 'job not found' }
+      }
+      const log = await readRedactedLog(manager.logPath(params.id))
+      if (job.status !== 'running' || !logHasPendingPermission(log, requestId) || !manager.sendControl(params.id, { type: 'permission', requestId, decision })) {
+        set.status = 409
+        return { error: 'This reply is no longer waiting' }
+      }
+      await options.attention?.resolve(attentionKey.permission(params.id, requestId))
+      return { ok: true }
     })
     .post('/api/jobs/:id/kill', async ({ params, set }) => {
       const result = await manager.killJob(params.id)

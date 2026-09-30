@@ -1,4 +1,6 @@
-export type ActivityKind = 'tool' | 'text' | 'thinking' | 'result' | 'error'
+export type ActivityKind = 'tool' | 'text' | 'thinking' | 'result' | 'error' | 'permission'
+
+export type PermissionState = 'pending' | 'allow_once' | 'allow_always' | 'deny' | 'cancelled'
 
 export type ActivityEvent = {
   ts?: number
@@ -10,6 +12,14 @@ export type ActivityEvent = {
   result?: string
   resultIsError?: boolean
   partial?: true
+  requestId?: string
+  toolName?: string
+  description?: string
+  command?: string | null
+  target?: string | null
+  plan?: string | null
+  suppressAlways?: boolean
+  state?: PermissionState
 }
 
 export const DEFAULT_ACTIVITY_MAX = 50
@@ -202,6 +212,49 @@ function eventsFrom(raw: Record<string, unknown>, limits: Limits): ActivityEvent
   return []
 }
 
+const PERMISSION_STATES: readonly PermissionState[] = ['pending', 'allow_once', 'allow_always', 'deny', 'cancelled']
+
+function permissionTarget(input: Record<string, unknown>): string | null {
+  for (const key of ['file_path', 'notebook_path', 'path'] as const) {
+    const value = input[key]
+    if (typeof value === 'string' && value !== '') return value
+  }
+  return null
+}
+
+export function permissionRequestEvent(raw: Record<string, unknown>): ActivityEvent | null {
+  const requestId = asString(raw.requestId)
+  if (requestId === '') return null
+  const input = isRecord(raw.input) ? raw.input : {}
+  const toolName = asString(raw.toolName)
+  const command = typeof input.command === 'string' ? input.command : null
+  const plan = toolName === 'ExitPlanMode' && typeof input.plan === 'string' ? input.plan : null
+  return {
+    kind: 'permission',
+    title: asString(raw.title) || `Claude wants to use ${toolName}`,
+    detail: asString(raw.description),
+    requestId,
+    ...(toolName === '' ? {} : { toolName }),
+    command,
+    target: command === null ? permissionTarget(input) : null,
+    plan,
+    suppressAlways: raw.suppressAlways === true,
+    state: 'pending',
+  }
+}
+
+export function resolvePermissionEvent(events: ActivityEvent[], raw: Record<string, unknown>): void {
+  const requestId = asString(raw.requestId)
+  const decision = asString(raw.decision) as PermissionState
+  if (requestId === '' || !PERMISSION_STATES.includes(decision) || decision === 'pending') return
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event.kind !== 'permission' || event.requestId !== requestId) continue
+    events[index] = { ...event, state: decision }
+    return
+  }
+}
+
 function toolResultText(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
@@ -282,6 +335,15 @@ function parseStream(logText: string, max: number, limits: Limits): ActivityEven
     }
     if (limits.full && asString(parsed.type) === 'stream_event') {
       pending = applyStreamEvent(pending, parsed.event)
+      continue
+    }
+    if (asString(parsed.type) === 'mc_permission_request') {
+      const request = permissionRequestEvent(parsed)
+      if (request !== null) events.push(withTs(request, readTimestamp(parsed)))
+      continue
+    }
+    if (asString(parsed.type) === 'mc_permission_resolved') {
+      resolvePermissionEvent(events, parsed)
       continue
     }
     if (limits.full && asString(parsed.type) === 'assistant') pending = NO_PENDING

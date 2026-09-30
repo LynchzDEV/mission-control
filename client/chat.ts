@@ -3,7 +3,7 @@ import { MORPH_EASE, MORPH_MS, blendColor, morph, reveal, rollText } from './mor
 import { copyButton, errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
 import { createOutcomeStrip } from './outcome-strip'
-import { chatSignal, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { chatSignal, historyAction, historyDay, historyLabel, historyOpen, parseAgentReport, teamRows, runningLabel, titleFrom, turnsFrom, workedLine, type AgentJob, type HistoryItem, type PermissionView, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 import { ansiHtml, capOutput, type ToolCard, type ToolCardKind } from './tool-cards'
 import { collectRowStates, rowScrollOf, setRowScroll, trackRowScroll, type RowState } from './tool-row-scroll'
 
@@ -264,6 +264,113 @@ function toolDetail(card: ToolCard): HTMLElement | null {
 
 const rowSignature = (card: ToolCard): string => JSON.stringify([card.status, card.summary, card.errorLine, card.exitCode, card.command, card.output])
 
+const PERMISSION_ICONS: Record<string, string> = { Bash: 'terminal-icon', Edit: 'pencil-icon', Write: 'pencil-icon', MultiEdit: 'pencil-icon', NotebookEdit: 'pencil-icon' }
+const permissionIcon = (toolName: string): string => PERMISSION_ICONS[toolName] ?? 'code-icon'
+const PERMISSION_STATE_TEXT: Record<string, string> = { allow_once: 'allowed once', allow_always: 'always allowed', deny: 'denied', cancelled: 'cancelled' }
+const answering = new Set<string>()
+
+async function answerPermission(turnId: string, requestId: string, decision: string): Promise<void> {
+  if (answering.has(requestId)) return
+  answering.add(requestId)
+  const result = await postJson(`/api/jobs/${encodeURIComponent(turnId)}/permission`, { requestId, decision })
+  if (!result.ok) {
+    answering.delete(requestId)
+    chatError(`Could not answer the request: ${errorText(result)}`)
+    return
+  }
+  await refresh()
+  answering.delete(requestId)
+}
+
+function permissionButton(turnId: string, permission: PermissionView, label: string, className: string, decision: string): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = className
+  button.textContent = label
+  button.dataset.request = permission.requestId
+  button.disabled = answering.has(permission.requestId)
+  button.onclick = () => { void answerPermission(turnId, permission.requestId, decision) }
+  return button
+}
+
+function permissionCard(turnId: string, permission: PermissionView): HTMLElement {
+  const card = document.createElement('article')
+  card.className = 'chat-perm'
+  card.setAttribute('aria-label', 'Permission request')
+  const head = document.createElement('header')
+  head.className = 'chat-perm-head'
+  const icon = document.createElement('span')
+  icon.className = 'chat-perm-icon'
+  icon.insertAdjacentHTML('afterbegin', `<svg><use href="#${permissionIcon(permission.toolName)}"/></svg>`)
+  const title = document.createElement('strong')
+  title.textContent = permission.title
+  const note = document.createElement('span')
+  note.className = 'chat-perm-note'
+  note.insertAdjacentHTML('afterbegin', '<svg><use href="#lock-icon"/></svg>')
+  note.append('Nothing runs until you choose')
+  head.append(icon, title, note)
+  card.append(head)
+  if (permission.plan !== null) {
+    const plan = document.createElement('pre')
+    plan.className = 'term-out'
+    plan.textContent = permission.plan
+    card.append(plan)
+  } else {
+    const line = document.createElement('div')
+    line.className = 'chat-cmd'
+    const code = document.createElement('code')
+    if (permission.command !== null) {
+      const prompt = document.createElement('span')
+      prompt.className = 'chat-prompt'
+      prompt.textContent = '$'
+      code.append(prompt, permission.command)
+    } else {
+      code.append(permission.target ?? permission.toolName)
+    }
+    line.append(code)
+    if (rootCwd !== null) {
+      const cwd = document.createElement('span')
+      cwd.className = 'chat-cwd'
+      cwd.insertAdjacentHTML('afterbegin', '<svg><use href="#folder-icon"/></svg>')
+      cwd.append(baseName(rootCwd))
+      line.append(cwd)
+    }
+    card.append(line)
+  }
+  const footer = document.createElement('footer')
+  footer.className = 'chat-perm-actions'
+  const reason = document.createElement('p')
+  reason.className = 'chat-reason'
+  reason.textContent = permission.description
+  footer.append(reason, permissionButton(turnId, permission, 'Deny', 'text-button', 'deny'), permissionButton(turnId, permission, 'Allow once', 'pill', 'allow_once'))
+  if (!permission.suppressAlways) footer.append(permissionButton(turnId, permission, 'Always allow in this chat', 'pill chat-primary', 'allow_always'))
+  card.append(footer)
+  return card
+}
+
+function permissionChip(permission: PermissionView): HTMLElement {
+  const chip = document.createElement('div')
+  chip.className = 'chat-step chat-resolved'
+  chip.insertAdjacentHTML('afterbegin', `<svg><use href="#${permissionIcon(permission.toolName)}"/></svg>`)
+  const span = document.createElement('span')
+  const code = document.createElement('code')
+  code.textContent = permission.command ?? permission.target ?? permission.toolName
+  span.append(`${permission.toolName === '' ? 'Tool' : permission.toolName} `, code)
+  const state = document.createElement('small')
+  state.textContent = PERMISSION_STATE_TEXT[permission.state] ?? 'cancelled'
+  chip.append(span, state)
+  return chip
+}
+
+function resolvedPermissionSteps(turn: Turn): HTMLElement | null {
+  const resolved = turn.permissions.filter(permission => permission.state !== 'pending')
+  if (resolved.length === 0) return null
+  const steps = document.createElement('div')
+  steps.className = 'chat-steps'
+  steps.append(...resolved.map(permissionChip))
+  return steps
+}
+
 function toolRow(card: ToolCard): HTMLDetailsElement {
   const row = document.createElement('details')
   row.className = 'tool-row'
@@ -390,6 +497,8 @@ function assistantRow(turn: Turn, rows: TeamRow[], project: string | null): HTML
   const body = row.querySelector('.msg-body')!
   body.append(activityNode(turn))
   if (turn.failed) body.append(turnErrorNode(turn))
+  const resolvedSteps = resolvedPermissionSteps(turn)
+  if (resolvedSteps !== null) body.append(resolvedSteps)
   if (turn.running) {
     const tick = document.createElement('p'); tick.className = 'step-tick'; tick.textContent = tick.dataset.step = turn.steps.at(-1) ?? ''
     const card = document.createElement('div'); card.className = 'tool-card'
@@ -397,12 +506,15 @@ function assistantRow(turn: Turn, rows: TeamRow[], project: string | null): HTML
     body.append(tick, card)
   }
   const md = document.createElement('div'); md.className = 'md'; md.append(renderMarkdown(turn.text)); body.append(md)
+  for (const permission of turn.permissions) {
+    if (permission.state === 'pending') body.append(permissionCard(turn.id, permission))
+  }
   if (rows.length) body.append(teamCard(rows, project))
   return row
 }
 
 function signature(turn: Turn, rows: TeamRow[]): string {
-  return JSON.stringify([turn.running ? 0 : turn.tools, turn.running, turn.edits.length, turn.failed, turn.stopped, turn.error, rows.map(row => [row.id, row.state, row.activity])])
+  return JSON.stringify([turn.running ? 0 : turn.tools, turn.running, turn.edits.length, turn.failed, turn.stopped, turn.error, turn.permissions.map(permission => [permission.requestId, permission.state]), rows.map(row => [row.id, row.state, row.activity])])
 }
 
 function paint(turns: Turn[], project: string | null): void {
@@ -533,7 +645,7 @@ async function startChat(prompt: string): Promise<void> {
 
 async function sendMessage(prompt: string): Promise<void> {
   show('conversation')
-  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], cards: [], thinking: false, started: Date.now(), ended: null, running: true, failed: false, stopped: false, error: '', errorDetail: '' })); setRunning(true); toBottom(); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
+  if (!root) { messages.replaceChildren(userRow({ id: 'pending', source: 'user', prompt, text: '', tools: 0, edits: [], steps: [], cards: [], permissions: [], thinking: false, started: Date.now(), ended: null, running: true, failed: false, stopped: false, error: '', errorDetail: '' })); setRunning(true); toBottom(); await startChat(prompt); if (!root) { setRunning(false); messages.replaceChildren(); message.value = prompt; show('welcome') } return }
   const result = await postJson(`/api/jobs/${encodeURIComponent(root)}/reply`, { message: prompt })
   if (!result.ok) { chatError(errorText(result)); return }
   if (result.status !== 202) setRunning(true)

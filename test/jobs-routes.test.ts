@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -1070,5 +1070,73 @@ describe('chat jobs', () => {
     expect(feed.currentActivity).not.toContain(token.slice(0, 12))
     await app.handle(new Request(`http://127.0.0.1:7777/api/jobs/${job.id}/kill`, { method: 'POST', headers: { host: '127.0.0.1:7777' } }))
     await pollUntilDone(app, job.id)
+  })
+})
+
+describe('POST /api/jobs/:id/permission', () => {
+  const requestLine = '{"type":"mc_permission_request","mc":true,"requestId":"r1","toolName":"Bash","title":"Claude wants to run a command","description":"To check","decisionReason":"","suppressAlways":false,"input":{"command":"bun test"}}'
+  const askResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `printf '%s\\n' '${requestLine}'; cat`], env: {}, control: true })
+
+  test('rejects a bad body with 400 and an unknown job with 404', async () => {
+    const app = buildApp(createJobManager(), echoResolver)
+    expect((await app.handle(post('/api/jobs/x/permission', {}))).status).toBe(400)
+    expect((await app.handle(post('/api/jobs/x/permission', { requestId: 'r1', decision: 'maybe' }))).status).toBe(400)
+    expect((await app.handle(post('/api/jobs/missing/permission', { requestId: 'r1', decision: 'deny' }))).status).toBe(404)
+  })
+
+  test('409 for a finished job or a request the log does not show as pending', async () => {
+    const manager = createJobManager()
+    const app = buildApp(manager, echoResolver)
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'done-job' }))
+    const { id } = (await created.json()) as { id: string }
+    await pollUntilDone(app, id)
+    expect((await app.handle(post(`/api/jobs/${id}/permission`, { requestId: 'r1', decision: 'allow_once' }))).status).toBe(409)
+
+    const running = buildApp(manager, sleepResolver)
+    const live = await running.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'quiet-job' }))
+    const { id: liveId } = (await live.json()) as { id: string }
+    expect((await running.handle(post(`/api/jobs/${liveId}/permission`, { requestId: 'r1', decision: 'allow_once' }))).status).toBe(409)
+    await manager.killJob(liveId)
+  })
+
+  test('409 once the request is already resolved, 200 while it waits', async () => {
+    const manager = createJobManager()
+    const app = buildApp(manager, askResolver)
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'ask-job' }))
+    const { id } = (await created.json()) as { id: string }
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const log = await readFile(manager.logPath(id), 'utf8').catch(() => '')
+      if (log.includes('mc_permission_request')) break
+      await new Promise((resolve) => setTimeout(resolve, 40))
+    }
+    const allowed = await app.handle(post(`/api/jobs/${id}/permission`, { requestId: 'r1', decision: 'allow_once' }))
+    expect(allowed.status).toBe(200)
+    expect(await allowed.json()).toEqual({ ok: true })
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const log = await readFile(manager.logPath(id), 'utf8').catch(() => '')
+      if (log.includes('"decision":"allow_once"')) break
+      await new Promise((resolve) => setTimeout(resolve, 40))
+    }
+    await appendFile(manager.logPath(id), '{"type":"mc_permission_resolved","mc":true,"requestId":"r1","decision":"allow_once"}\n')
+    expect((await app.handle(post(`/api/jobs/${id}/permission`, { requestId: 'r1', decision: 'deny' }))).status).toBe(409)
+    await manager.killJob(id)
+  })
+
+  test('answering a request clears its Waiting-on-you item', async () => {
+    const attention = createAttentionStore(join(mkdtempSync(join(tmpdir(), 'mc-attention-')), 'attention.json'))
+    const manager = createJobManager()
+    const app = new Elysia().use(jobsRoutes(manager, askResolver, { attention }))
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'ask-attention' }))
+    const { id } = (await created.json()) as { id: string }
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const log = await readFile(manager.logPath(id), 'utf8').catch(() => '')
+      if (log.includes('mc_permission_request')) break
+      await new Promise((resolve) => setTimeout(resolve, 40))
+    }
+    await attention.raise({ key: attentionKey.permission(id, 'r1'), kind: 'permission', title: 'ask-attention', detail: 'Claude wants to run a command', command: 'bun test', chatId: id, jobId: id, requestId: 'r1' })
+    expect(attention.list().map(item => item.key)).toEqual([attentionKey.permission(id, 'r1')])
+    expect((await app.handle(post(`/api/jobs/${id}/permission`, { requestId: 'r1', decision: 'allow_once' }))).status).toBe(200)
+    expect(attention.list()).toEqual([])
+    await manager.killJob(id)
   })
 })
