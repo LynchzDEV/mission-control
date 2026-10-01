@@ -47,3 +47,14 @@ test('a job that ends clears its loop and permission items but not its chat need
   await events.settled(job({ status: 'failed', chatId: 'root1' }))
   expect(items.list().map(item => item.kind)).toEqual(['needs'])
 })
+
+test('a permission request raises one item with the command, linked to its chat and job', async () => {
+  const items = store()
+  const events = attentionEvents(items)
+  await events.permission(job({ id: 't9', label: 'Login fix', purpose: 'chat', threadRoot: 'root1' }), { requestId: 'r1', title: 'Claude wants to run a command', body: 'bun test' })
+  await events.permission(job({ id: 't9', label: 'Login fix', purpose: 'chat', threadRoot: 'root1' }), { requestId: 'r2', title: 'Claude wants to edit a file', body: '' })
+  expect(items.list()).toMatchObject([
+    { key: attentionKey.permission('t9', 'r1'), kind: 'permission', title: 'Login fix', detail: 'Claude wants to run a command', command: 'bun test', chatId: 'root1', jobId: 't9', requestId: 'r1' },
+    { key: attentionKey.permission('t9', 'r2'), command: null },
+  ])
+})

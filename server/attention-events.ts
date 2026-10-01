@@ -8,6 +8,9 @@ export function attentionEvents(store: AttentionStore) {
       console.error(`job slow: ${record.label} · ${record.turns} turns · ${minutes} min`.replace(/[\r\n]+/g, ' '))
       await store.raise({ key: attentionKey.loop(record.id), kind: 'loop', title: record.label, detail: `May be stuck: ${record.turns} turns in ${minutes} min`, command: null, chatId: chatOfJob(record), jobId: record.id, requestId: null })
     },
+    permission: async (record: JobRecord, request: { requestId: string; title: string; body: string }): Promise<void> => {
+      await store.raise({ key: attentionKey.permission(record.id, request.requestId), kind: 'permission', title: record.label, detail: request.title, command: request.body === '' ? null : request.body, chatId: chatOfJob(record), jobId: record.id, requestId: request.requestId })
+    },
     needsYou: async (root: JobRecord, detail: string): Promise<void> => {
       await store.raise({ key: attentionKey.needs(root.id), kind: 'needs', title: root.label, detail, command: null, chatId: root.id, jobId: null, requestId: null })
     },

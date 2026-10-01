@@ -15,6 +15,7 @@ import { jobsRoutes, safeEnqueue } from '../server/routes/jobs'
 import { historyRoutes } from '../server/routes/history'
 import { createChatQueue } from '../server/chat-queue'
 import { attentionKey, createAttentionStore } from '../server/attention'
+import { attentionEvents } from '../server/attention-events'
 import { readApiToken } from '../server/secrets'
 import { initScratchGitRepo, runGit } from './support/scratch-git-repo'
 import { executionPlan } from './support/execution-plan'
@@ -1138,6 +1139,19 @@ describe('POST /api/jobs/:id/permission', () => {
     }
     await appendFile(manager.logPath(id), '{"type":"mc_permission_resolved","mc":true,"requestId":"r1","decision":"allow_once"}\n')
     expect((await app.handle(post(`/api/jobs/${id}/permission`, { requestId: 'r1', decision: 'deny' }))).status).toBe(409)
+    await manager.killJob(id)
+  })
+
+  test('a job asking permission puts it on the Waiting-on-you list, and answering clears it', async () => {
+    const attention = createAttentionStore(join(mkdtempSync(join(tmpdir(), 'mc-attention-')), 'attention.json'))
+    const events = attentionEvents(attention)
+    const manager = createJobManager({ onPermissionRequest: (record, request) => { void events.permission(record, request) } })
+    const app = new Elysia().use(jobsRoutes(manager, askResolver, { attention }))
+    const { id } = (await (await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'ask-raise' }))).json()) as { id: string }
+    for (let attempt = 0; attempt < 50 && attention.list().length === 0; attempt++) await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(attention.list()).toMatchObject([{ key: attentionKey.permission(id, 'r1'), kind: 'permission', title: 'ask-raise', detail: 'Claude wants to run a command', command: 'bun test', jobId: id, requestId: 'r1' }])
+    expect((await app.handle(post(`/api/jobs/${id}/permission`, { requestId: 'r1', decision: 'allow_once' }))).status).toBe(200)
+    expect(attention.list()).toEqual([])
     await manager.killJob(id)
   })
 
