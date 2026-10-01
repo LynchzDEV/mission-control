@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { $ } from 'bun'
+
 import { rankFiles, listProjectFiles, subsequenceAt } from '../server/chat-files'
 
 describe('rankFiles', () => {
@@ -10,7 +12,12 @@ describe('rankFiles', () => {
 
   test('basename matches come first, shorter paths leading; then subsequence matches', () => {
     expect(rankFiles(files, 'chat').map(file => file.path)).toEqual(['client/chat.ts', 'docs/chat-help.md', 'client/charts.ts'])
-    expect(rankFiles(files, 'chat')[0]).toEqual({ path: 'client/chat.ts', folder: 'client' })
+    expect(rankFiles(files, 'chat')[0]).toEqual({ path: 'client/chat.ts' })
+  })
+
+  test('a folder that contains the query outranks a scattered match', () => {
+    const tree = ['mahamodo/bin/ci', 'moni-prompt/current.txt', 'mahamodo/docs/live-monitoring.md']
+    expect(rankFiles(tree, 'moni').map(file => file.path)).toEqual(['mahamodo/docs/live-monitoring.md', 'moni-prompt/current.txt', 'mahamodo/bin/ci'])
   })
 
   test('an empty query lists the shortest paths', () => {
@@ -44,6 +51,28 @@ describe('listProjectFiles', () => {
       expect(files).toContain('client/chat.ts')
       expect(files).toContain('README.md')
       expect(files.some(file => file.includes('node_modules') || file.startsWith('.'))).toBe(false)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 10000)
+
+  test('a folder that is not a repo lists each nested repo through git, so ignored files never crowd out later folders', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mc-chat-files-'))
+    try {
+      await mkdir(join(root, 'aaa-repo', 'fixtures'), { recursive: true })
+      await $`git -C ${join(root, 'aaa-repo')} init -q`
+      await writeFile(join(root, 'aaa-repo', '.gitignore'), 'fixtures/\n')
+      await writeFile(join(root, 'aaa-repo', 'app.rb'), '')
+      await writeFile(join(root, 'aaa-repo', 'fixtures', 'dump.json'), '')
+      await $`git -C ${join(root, 'aaa-repo')} add .gitignore app.rb`
+      await mkdir(join(root, 'moni-prompt'), { recursive: true })
+      await writeFile(join(root, 'moni-prompt', 'current.txt'), '')
+      await writeFile(join(root, 'moni-prompt', 'ลูกค้า.txt'), '')
+      const files = await listProjectFiles(root)
+      expect(files).toContain('aaa-repo/app.rb')
+      expect(files).toContain('moni-prompt/current.txt')
+      expect(files).toContain('moni-prompt/ลูกค้า.txt')
+      expect(files.some(file => file.includes('fixtures'))).toBe(false)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

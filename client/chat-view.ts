@@ -48,6 +48,8 @@ export function mentionMarks(path: string, query: string): number[] {
     const start = path.length - base.length + contiguous
     return Array.from({ length: query.length }, (_, index) => start + index)
   }
+  const inPath = path.toLowerCase().indexOf(query.toLowerCase())
+  if (inPath >= 0) return Array.from({ length: query.length }, (_, index) => inPath + index)
   const marks: number[] = []
   let cursor = 0
   for (const character of query.toLowerCase()) {

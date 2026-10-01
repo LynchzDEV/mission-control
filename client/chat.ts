@@ -1316,7 +1316,7 @@ mentionMenu.setAttribute('role', 'listbox')
 mentionMenu.setAttribute('aria-label', 'Project files')
 mentionMenu.hidden = true
 composer.append(mentionMenu)
-let mentionFiles: Array<{ path: string; folder: string }> = []
+let mentionFiles: Array<{ path: string }> = []
 let mentionQuery = ''
 let mentionIndex = 0
 let mentionTimer = 0
@@ -1349,7 +1349,7 @@ function insertMention(path: string): void {
   message.focus()
 }
 
-function mentionRow(file: { path: string; folder: string }): HTMLButtonElement {
+function mentionRow(file: { path: string }): HTMLButtonElement {
   const button = document.createElement('button')
   button.type = 'button'
   button.className = 'row'
@@ -1369,14 +1369,12 @@ function mentionRow(file: { path: string; folder: string }): HTMLButtonElement {
       name.append(character)
     }
   }
-  const folder = document.createElement('small')
-  folder.textContent = file.folder
-  button.append(name, folder, caret)
+  button.append(name, caret)
   button.onclick = () => insertMention(file.path)
   return button
 }
 
-function paintMentionMenu(matches: ReadonlyArray<{ path: string; folder: string }>): void {
+function paintMentionMenu(matches: ReadonlyArray<{ path: string }>): void {
   const nodes: HTMLElement[] = []
   if (matches.length === 0) {
     const empty = document.createElement('div')
@@ -1403,7 +1401,7 @@ async function loadMentionFiles(query: string): Promise<void> {
   const result = await getJson(`/api/chat/files?root=${encodeURIComponent(root ?? '')}&q=${encodeURIComponent(query)}`)
   if (!result.ok) return
   const payload = result.data as { files?: unknown; project?: unknown }
-  mentionFiles = (readArray(payload.files) as unknown as Array<{ path: string; folder: string }>).filter(file => typeof file.path === 'string')
+  mentionFiles = (readArray(payload.files) as unknown as Array<{ path: string }>).filter(file => typeof file.path === 'string')
   mentionProject = typeof payload.project === 'string' ? payload.project : ''
   paintMentionMenu(mentionFiles)
 }

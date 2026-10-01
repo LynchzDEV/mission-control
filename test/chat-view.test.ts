@@ -237,6 +237,7 @@ describe('mention token detection', () => {
     expect(mentionMarks('client/chat.ts', 'cha')).toEqual([7, 8, 9])
     expect(mentionMarks('client/charts.ts', 'cht')).toEqual([0, 8, 11])
     expect(mentionMarks('client/chat.ts', '')).toEqual([])
+    expect(mentionMarks('mahamodo/moni-prompt/a.txt', 'moni')).toEqual([9, 10, 11, 12])
   })
 })
 

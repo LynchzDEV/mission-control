@@ -770,6 +770,7 @@ a.pill:hover { color: var(--accent); }
 .tool-steps { margin: 0 0 16px; }
 .tool-steps > summary.activity-line { margin-bottom: 10px; }
 .tool-card { border-radius: var(--r-md); corner-shape: var(--corner); background: var(--paper); box-shadow: var(--raised); padding: 4px 0; }
+.tool-card:empty { display: none; }
 .tool-row + .tool-row { border-top: 1px solid var(--line); }
 .tool-row > summary { display: grid; grid-template-columns: 16px 14px auto minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 9px 14px; font-size: 13px; font-weight: 400; color: var(--text); }
 .tool-row > summary > svg { width: 16px; height: 16px; color: var(--muted); }
@@ -838,7 +839,7 @@ a.pill:hover { color: var(--accent); }
 .chat-error { font-size: 13px; color: var(--danger); margin: 0 0 24px; }
 .count { position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-sm); corner-shape: var(--corner); font-size: 10px; line-height: 16px; text-align: center; color: #fff; background: var(--accent); }
 .count[hidden] { display: none; }
-#open-agents { position: relative; }
+#open-agents, #open-attention { position: relative; }
 .history-item summary .live-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 8px; vertical-align: 2px; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
 .history-item summary .live-dot[data-state="needs-you"] { background: var(--danger); animation: none; }
 .history-empty { color: var(--muted); font-size: 14px; }
@@ -1234,9 +1235,8 @@ a.pill:hover { color: var(--accent); }
 .mention-menu .row { gap: 10px; padding: 6px 10px; border: 0; background: transparent; box-shadow: none; font: inherit; font-size: 13px; color: var(--text); }
 .mention-menu .row > svg:first-child { width: 16px; height: 16px; flex-basis: 16px; color: var(--muted); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
 .mention-menu .row.current > svg:first-child { color: var(--accent); }
-.mention-menu .row > span { font-family: Menlo, monospace; font-size: 12.5px; }
+.mention-menu .row > span { font-family: Menlo, monospace; font-size: 12.5px; overflow-wrap: anywhere; }
 .mention-menu .row b { font-weight: 700; color: var(--text-strong); }
-.mention-menu .row small { display: inline; margin: 0 0 0 auto; flex: none; font-family: inherit; }
 .mention-menu .row .rtn { flex: none; font-size: 10.5px; color: var(--muted); padding: 1px 6px; border-radius: var(--r-xs); corner-shape: var(--corner); background: var(--paper); }
 .mention-menu .row.current { background: color-mix(in srgb, var(--accent) 13%, var(--paper)); }
 .mention-token { color: var(--accent); }
