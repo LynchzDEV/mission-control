@@ -118,6 +118,26 @@ the "native agent, NOT here" rows below and pure Q&A/discussion (no code output)
 "Visible in the cockpit" for analysis work means a PLAN LABEL, not a glm job —
 never downgrade judgment work to glm just to make it show up in the panel.
 
+Exception — live-debug tight loop: if the task is iterating on a running
+process/UI where each edit is judged by immediately checking the result
+(interactive debugging, not a spec'd chunk), do it in the main session per
+CLAUDE.md `orchestrator-agent-background-default` clause 3 — do not probe
+cockpit health or dispatch first. This does not weaken the default for any
+spec'd/dispatchable chunk. [daily-retro 2026-09-24 E01]
+
+Exception — this repo is mission-control itself: for work on mission-control's
+own codebase, the cockpit-first default does not apply — not to
+implementation, and not to plan or branch review either. Build and review in
+the main session or with native Claude Code agents (Agent tool, explicit
+opus/sonnet model, background), not cockpit `execute`/`review` jobs. The
+2026-09-24 exception above only covered live-edit tight loops; on 2026-09-28 a
+plan review and a branch review for this repo were still routed through
+cockpit and had to be redone. See project memory
+`main-session-when-confident.md` for the full statement and why (cockpit
+`execute` maps to GLM; output needed redoing; quality matters more here than
+cockpit visibility). If this recurs again, escalate to a mechanical
+repo-identity check at dispatch time. [daily-retro 2026-09-28 E10]
+
 ## When to dispatch vs native agent
 
 | Work | Route |
@@ -244,12 +264,12 @@ once per landed change, not once per worker iteration; concern 4 added
 ```
 Done means all of these hold, verified by you before you report:
 1. Every spec for a file you touched, plus every spec that references a class or module you changed, passes locally. Run those specs while iterating and once more at the end. Do NOT run the full suite or bin/ci: the orchestrator runs it once at landing.
-2. Those runs have no hard or forced waits (no sleep, no fixed wait_for/timeout padding) and are clean: zero warnings, zero error logs, zero deprecation output.
+2. Those runs have no hard or forced waits (no sleep, no fixed wait_for/timeout padding) and are clean: zero warnings, zero error logs, zero deprecation output. No model spec that proves ActiveRecord plumbing (associations, column defaults, attribute round-trips, enum listings, allow_nil): a model example exists only for a rule the model itself enforces, and plumbing examples in files you touch are deleted. If a model you touch holds business logic, do not spec it there: flag it in your report as "why is this business logic in the model layer?" and name the service / query / PORO it should move to. A spec that sometimes passes and sometimes fails is a FAILING spec: never re-run until green or call it "just flaky" — find the cause (shared state, ordering, timing, a wrong column type) and fix it; evidence is the same specs green on repeated runs. Brakeman cannot be ignored: `config/brakeman.ignore` stays empty, every warning is fixed in code, and `brakeman --no-pager` reports 0 warnings with nothing ignored.
 3. Nothing on the remote is lost and the code stays compatible: fetch and rebase onto the latest remote tip before you finish, never force-push or drop commits, and keep existing callers, data and already-applied migrations working.
 4. The engine HAS TO spin up on its own: `spec/dummy` boots and its specs run with no host, no sibling engine and no host table; you added no dependency that is not necessary, and any that is enters through a settings adapter, never a direct constant.
 5. Migrations track schema changes and nothing else: create every new migration with `bin/rails g migration` so it carries a real wall-clock timestamp, never rename or re-timestamp one that is committed or already applied anywhere, and never add, update or delete data inside one — a data move is its own rake task with a spec.
 6. No needless recurring jobs: add no cron, scheduled, recurring or polling job (sidekiq-cron, whenever, solid_queue recurring, setInterval poll) that fires on a short fixed interval such as every 1 or 5 minutes to check whether something changed. Trigger the work from the event that causes it (enqueue at the moment of change, a callback, a webhook). A new recurring job is allowed only when no event exists to hang it on, and then at the longest interval the business tolerates.
-Report the exact spec command you ran and its summary line as evidence for 1 and 2, the dummy boot command for 4, and the generator command plus resulting filename for any migration you added for 5, and every recurring or scheduled job you added (or "none") with its interval and why no event trigger fits for 6.
+Report the exact spec command you ran and its summary line as evidence for 1 and 2, every model spec you added or changed with the model rule each example covers (plus any business-logic-in-model flag) for 2, the dummy boot command for 4, and the generator command plus resulting filename for any migration you added for 5, and every recurring or scheduled job you added (or "none") with its interval and why no event trigger fits for 6.
 ```
 
 A job that reports done without that evidence is not done: reply to it
@@ -288,6 +308,21 @@ acceptance concerns pass, reply with one line per concern (1-6: PASS/FAIL +
 the evidence command), never a bare "yes" — the user asked twice in a row on
 2026-09-23 because the first answer carried no per-concern status.
 [daily-retro 2026-09-23 E09]
+
+**Do not wait to be asked (2026-09-29).** Three habits the user had to prompt
+for across sessions:
+1. End every landing report with the per-concern table (1-N, PASS/FAIL + the
+   evidence command) unasked; N is whatever the baseline block above holds
+   (6 as of 2026-09-30), and `four-concerns-checklist` is only the legacy
+   memory name. He asked "5 concerns gone?" in three separate sessions before
+   allowing a push.
+2. Before the first dispatch on a repo, run `git fetch` and print one line of
+   ahead/behind against the origin tip, so "did you pull from remote yet?" is
+   never needed (seen 2026-09-21 and 2026-09-29).
+3. After each dispatch, one line: job id, where to watch it in the cockpit, and
+   the next milestone; "but i see nothing running?" means the receipt was
+   missing.
+[daily-retro 2026-09-29 E06, E08, E10]
 
 ## Plan first (makes the cockpit graph real)
 
@@ -462,4 +497,8 @@ turned 10-minute UI tickets into 2-hour sessions. Replace it with:
   shim) — the cockpit's own PATH/fallback-dir order needs the mise-managed
   binary to resolve first. Fix the PATH/symlink once, then re-dispatch.
   [daily-retro 2026-09-21 E03 — 4 identical failures in one session before
-  this was isolated]
+  this was isolated. RECURRED 2026-09-24 on a fresh day/session — the PATH
+  fix wasn't applied permanently, only re-diagnosed. Treat this failure mode
+  as a MANDATORY PRE-FLIGHT CHECK from now on: run `which -a codex` and
+  confirm the mise-managed binary resolves first BEFORE dispatching any
+  codex-engine job, not only after a job already fails with this error.]
