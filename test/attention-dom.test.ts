@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, setSystemTime, test } from 'bun:test'
 import { JSDOM } from 'jsdom'
 
 import type { AttentionItem } from '../server/attention'
@@ -42,6 +42,10 @@ const perm = item({ key: 'perm:j1:r1', kind: 'permission', title: 'check segment
 const loop = item({ key: 'loop:j2', kind: 'loop', title: 'Army export', detail: 'May be stuck: 81 turns in 20 min', chatId: null, jobId: 'j2' })
 const needs = item({})
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
+const ticks: Array<{ id: number; ms: number; run: () => void }> = []
+const cleared: number[] = []
+const realSetInterval = globalThis.setInterval
+const realClearInterval = globalThis.clearInterval
 
 beforeAll(async () => {
   Object.assign(globalThis, { window, document: doc, EventSource: FakeSource, Notification: fakeNotification, localStorage: window.localStorage, HTMLElement: window.HTMLElement, location: window.location })
@@ -50,10 +54,16 @@ beforeAll(async () => {
   addEventListener('quiet:open-chat', (event) => opened.push(['chat', (event as CustomEvent).detail]))
   addEventListener('quiet:agent-open', (event) => opened.push(['job', (event as CustomEvent).detail]))
   doc.hasFocus = () => false
+  Object.assign(globalThis, {
+    setInterval: (run: () => void, ms: number) => { ticks.push({ id: ticks.length + 1, ms, run }); return ticks.length },
+    clearInterval: (id: number) => { cleared.push(id) },
+  })
   await import('../client/attention')
 })
 
 afterAll(() => {
+  Object.assign(globalThis, { setInterval: realSetInterval, clearInterval: realClearInterval })
+  setSystemTime()
   globalThis.fetch = realFetch
   Reflect.deleteProperty(globalThis.navigator, 'serviceWorker')
   for (const key of ['window', 'document', 'EventSource', 'Notification', 'localStorage', 'HTMLElement', 'location']) Reflect.deleteProperty(globalThis, key)
@@ -159,4 +169,18 @@ test('Turn off mutes alerts until turned on again', async () => {
   FakeSource.last.send([needs, loop])
   await flush()
   expect(shown).toHaveLength(0)
+})
+
+test('ages refresh once a minute while the list is open and stop when it closes', () => {
+  ticks.length = 0
+  $('open-attention').click()
+  expect(ticks.map(tick => tick.ms)).toEqual([60_000])
+  const age = () => $('attention-list').querySelector('[data-key="needs:c1"] .nt-top time')?.textContent
+  expect(age()).toBe('2 min')
+  setSystemTime(new Date(Date.now() + 5 * 60_000))
+  ticks[0]!.run()
+  expect(age()).toBe('7 min')
+  $('open-attention').click()
+  expect(cleared).toContain(ticks[0]!.id)
+  setSystemTime()
 })

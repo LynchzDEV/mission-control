@@ -2,6 +2,7 @@ import type { AttentionItem } from '../server/attention'
 import { ageText, alertFor, diffItems, requestFor, shouldAlert, tabTitle } from './attention-core'
 
 const MUTE_KEY = 'mc.alerts'
+const AGE_REFRESH_MS = 60_000
 const ICONS: Record<AttentionItem['kind'], string> = { permission: 'code-icon', loop: 'auto-icon', needs: 'close-icon' }
 const OFF_TEXT = 'Get an alert with buttons when something needs you, even with this tab hidden.'
 const BLOCKED_TEXT = "Allow notifications for this site in your browser's settings."
@@ -13,6 +14,7 @@ const list = $('attention-list')
 
 let items: AttentionItem[] = []
 let primed = false
+let ageTimer: ReturnType<typeof setInterval> | null = null
 const busy = new Set<string>()
 const failures = new Map<string, string>()
 
@@ -106,7 +108,10 @@ function render(): void {
 function setOpen(open: boolean): void {
   panel.hidden = !open
   bell.setAttribute('aria-expanded', String(open))
-  if (open) render()
+  if (ageTimer !== null) { clearInterval(ageTimer); ageTimer = null }
+  if (!open) return
+  render()
+  ageTimer = setInterval(render, AGE_REFRESH_MS)
 }
 
 function openTarget(target: { chatId: string | null; jobId: string | null }): void {
