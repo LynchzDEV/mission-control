@@ -239,7 +239,7 @@ Workers run on the slim profile, so the prompt is their only contract. Every
 spec ends with these lines verbatim, after the ticket-specific acceptance
 bullets (2026-09-08, user-mandated; scoped 2026-09-09 so the full suite runs
 once per landed change, not once per worker iteration; concern 4 added
-2026-09-14; concern 5 added 2026-09-22):
+2026-09-14; concern 5 added 2026-09-22; concern 6 added 2026-09-30):
 
 ```
 Done means all of these hold, verified by you before you report:
@@ -248,7 +248,8 @@ Done means all of these hold, verified by you before you report:
 3. Nothing on the remote is lost and the code stays compatible: fetch and rebase onto the latest remote tip before you finish, never force-push or drop commits, and keep existing callers, data and already-applied migrations working.
 4. The engine HAS TO spin up on its own: `spec/dummy` boots and its specs run with no host, no sibling engine and no host table; you added no dependency that is not necessary, and any that is enters through a settings adapter, never a direct constant.
 5. Migrations track schema changes and nothing else: create every new migration with `bin/rails g migration` so it carries a real wall-clock timestamp, never rename or re-timestamp one that is committed or already applied anywhere, and never add, update or delete data inside one — a data move is its own rake task with a spec.
-Report the exact spec command you ran and its summary line as evidence for 1 and 2, the dummy boot command for 4, and the generator command plus resulting filename for any migration you added for 5.
+6. No needless recurring jobs: add no cron, scheduled, recurring or polling job (sidekiq-cron, whenever, solid_queue recurring, setInterval poll) that fires on a short fixed interval such as every 1 or 5 minutes to check whether something changed. Trigger the work from the event that causes it (enqueue at the moment of change, a callback, a webhook). A new recurring job is allowed only when no event exists to hang it on, and then at the longest interval the business tolerates.
+Report the exact spec command you ran and its summary line as evidence for 1 and 2, the dummy boot command for 4, and the generator command plus resulting filename for any migration you added for 5, and every recurring or scheduled job you added (or "none") with its interval and why no event trigger fits for 6.
 ```
 
 A job that reports done without that evidence is not done: reply to it
@@ -283,7 +284,7 @@ export mapping/variable/journey redesigned from mockups instead of backoffice
 on 2026-09-23). [daily-retro 2026-09-23 E01-E03]
 
 **"All N concerns pass?" answers are a table.** When the user asks whether the
-acceptance concerns pass, reply with one line per concern (1-5: PASS/FAIL +
+acceptance concerns pass, reply with one line per concern (1-6: PASS/FAIL +
 the evidence command), never a bare "yes" — the user asked twice in a row on
 2026-09-23 because the first answer carried no per-concern status.
 [daily-retro 2026-09-23 E09]
