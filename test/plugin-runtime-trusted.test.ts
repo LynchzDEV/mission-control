@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Elysia } from 'elysia'
 
@@ -205,17 +205,31 @@ describe('server context', () => {
 describe('context route', () => {
   test('writes the task context and returns its path', async () => {
     await installTrusted('context')
-    const response = await json('POST', '/api/plugins/fixture-plugin/context', { name: 'Task plan', markdown: '# Do it\n' })
-    expect(response.status).toBe(200)
-    const { path } = await response.json()
-    expect(path).toContain(join(configDir, 'context', 'fixture-plugin'))
-    expect(path).toMatch(/task-plan\.md$/)
-    expect(await readFile(path, 'utf8')).toBe('# Do it\n')
+    const session = await mkdtemp(join(homedir(), '.mc-context-route-'))
+    try {
+      Bun.spawnSync(['git', 'init', '-q', session])
+      const response = await json('POST', '/api/plugins/fixture-plugin/context', { name: 'Task plan', markdown: '# Do it\n', cwd: session })
+      expect(response.status).toBe(200)
+      const { path } = await response.json()
+      expect(path).toContain(join(await realpath(session), '.mission-control', 'context', 'fixture-plugin'))
+      expect(path).toMatch(/task-plan\.md$/)
+      expect(await readFile(path, 'utf8')).toBe('# Do it\n')
+      expect(await readFile(join(session, '.git', 'info', 'exclude'), 'utf8')).toContain('/.mission-control/')
+      expect(Bun.spawnSync(['git', '-C', session, 'status', '--porcelain']).stdout.toString()).toBe('')
+    } finally {
+      await rm(session, { recursive: true, force: true })
+    }
+  })
+
+  test('the context route needs a folder under home', async () => {
+    await installTrusted('context-cwd')
+    expect((await json('POST', '/api/plugins/fixture-plugin/context', { name: 'x', markdown: 'y' })).status).toBe(400)
+    expect((await json('POST', '/api/plugins/fixture-plugin/context', { name: 'x', markdown: 'y', cwd: '/definitely/not/here' })).status).toBe(400)
   })
 
   test('a plugin without the sessions permission is a 403', async () => {
     await installTrusted('no-sessions', trustedManifest({ server: 'src/server.ts', permissions: { settings: true } }))
-    const response = await json('POST', '/api/plugins/fixture-plugin/context', { name: 'Task plan', markdown: '# Do it' })
+    const response = await json('POST', '/api/plugins/fixture-plugin/context', { name: 'Task plan', markdown: '# Do it', cwd: homedir() })
     expect(response.status).toBe(403)
     expect(await response.json()).toEqual({ error: 'This plugin did not ask to start sessions' })
   })

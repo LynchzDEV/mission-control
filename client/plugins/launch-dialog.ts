@@ -106,11 +106,17 @@ form.onsubmit = (event: SubmitEvent): void => {
   void beginLaunch(open, { engine, ...(model === '' ? {} : { model }), cwd, firstMessage: messageInput.value.trim() })
 }
 
-async function beginLaunch(open: OpenState, choice: { engine: string; model?: string; cwd: string; firstMessage: string }): Promise<void> {
+export function expandHome(path: string, home: string): string {
+  if (home === '' || !(path === '~' || path.startsWith('~/'))) return path
+  return home.replace(/\/+$/, '') + path.slice(1)
+}
+
+async function beginLaunch(open: OpenState, given: { engine: string; model?: string; cwd: string; firstMessage: string }): Promise<void> {
+  const choice = { ...given, cwd: expandHome(given.cwd, (window as { MC_WORKSPACE_DIR?: string }).MC_WORKSPACE_DIR ?? '') }
   try {
     let contextPath: string | null = null
     if (open.request.context !== undefined) {
-      const written = await postJson(`/api/plugins/${encodeURIComponent(open.plugin.id)}/context`, { name: open.request.context.name, markdown: open.request.context.markdown })
+      const written = await postJson(`/api/plugins/${encodeURIComponent(open.plugin.id)}/context`, { name: open.request.context.name, markdown: open.request.context.markdown, cwd: choice.cwd })
       if (!written.ok) { errorLine.textContent = `Could not attach the task context: ${errorText(written)}`; start.disabled = false; start.textContent = open.kind === 'chat' ? 'Start chat' : 'Start terminal'; updateStart(); return }
       contextPath = typeof written.data.path === 'string' ? written.data.path : null
     }

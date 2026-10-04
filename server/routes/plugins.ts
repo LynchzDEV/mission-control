@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { Elysia } from 'elysia'
 
 import { requireLocal } from '../auth'
+import { validateWorkspaceCwd } from '../workspace'
 import { ContextTooLarge, writeContextFile } from '../plugins/context-files'
 import { createInstaller, type Installer } from '../plugins/installer'
 import { addMarketplace, catalog, listMarketplaces, removeMarketplace } from '../plugins/marketplaces'
@@ -109,8 +110,11 @@ export function pluginsRoutes(deps: { installer?: Installer; runtimes?: Runtimes
       const parsed = (body ?? {}) as Record<string, unknown>
       if (typeof parsed.name !== 'string' || parsed.name === '') { set.status = 400; return { error: 'name is required' } }
       if (typeof parsed.markdown !== 'string') { set.status = 400; return { error: 'markdown is required' } }
+      if (typeof parsed.cwd !== 'string' || parsed.cwd === '') { set.status = 400; return { error: 'cwd is required' } }
+      const folder = await validateWorkspaceCwd(parsed.cwd)
+      if (!folder.ok) { set.status = 400; return { error: folder.error } }
       try {
-        return { path: await writeContextFile(params.id, { name: parsed.name, markdown: parsed.markdown }) }
+        return { path: await writeContextFile(params.id, { name: parsed.name, markdown: parsed.markdown }, new Date(), folder.path) }
       } catch (error) {
         if (error instanceof ContextTooLarge) { set.status = 400; return { error: error.message } }
         throw error

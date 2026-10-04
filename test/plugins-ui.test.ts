@@ -285,7 +285,7 @@ test('the launch dialog attaches the task context and the first message to the c
   ;(doc.getElementById('plugin-launch-form') as HTMLFormElement).dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
   await done
   await flush()
-  expect(sent.filter(request => request.url.endsWith('/context'))).toEqual([{ url: '/api/plugins/hello-board/context', method: 'POST', body: { name: 'task-86d3j8w1c', markdown: '# HerMEZ kood queue stalls after deploy\n\n…' } }])
+  expect(sent.filter(request => request.url.endsWith('/context'))).toEqual([{ url: '/api/plugins/hello-board/context', method: 'POST', body: { name: 'task-86d3j8w1c', markdown: '# HerMEZ kood queue stalls after deploy\n\n…', cwd: '/work/app' } }])
   expect(started.at(-1)).toMatchObject({ engine: 'claude', cwd: '/work/app', prompt: 'Read the task context in /x/y.md before anything else.\n\nPlan it' })
   removeEventListener('quiet:start-chat', listener)
 })
@@ -323,6 +323,13 @@ test('without a task context the chat launch needs a first message and sends it 
   expect(launchDetail.initialPrompt).toBeUndefined()
   removeEventListener('quiet:start-chat', startListener)
   removeEventListener('quiet:open-terminal', openListener)
+})
+
+test('a ~ folder is expanded with the workspace home before anything is sent', () => {
+  expect(launchDialog.expandHome('~/Desktop/api', '/Users/me')).toBe('/Users/me/Desktop/api')
+  expect(launchDialog.expandHome('~', '/Users/me/')).toBe('/Users/me')
+  expect(launchDialog.expandHome('/work/app', '/Users/me')).toBe('/work/app')
+  expect(launchDialog.expandHome('~/x', '')).toBe('~/x')
 })
 
 test('the launch dialog prefills the first message from the session request', async () => {
