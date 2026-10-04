@@ -98,10 +98,17 @@ export function createModelDiscovery({ base = configDir(), fetchImpl = fetch, no
     return state
   }
 
+  async function endpoint(connection: AgentConnection): Promise<string[]> {
+    if (!connection.baseUrl) throw new Error('This connection has no endpoint')
+    return endpointModels(connection.baseUrl, connection.apiKeyEnv ? env[connection.apiKeyEnv] : undefined, fetchImpl)
+  }
+
+  function record(id: string, models: string[], current: string | null = null): Promise<DiscoveryState> {
+    return write(id, { models, current, checkedAt: now(), error: null })
+  }
+
   async function ask(connection: AgentConnection): Promise<{ models: string[]; current: string | null }> {
-    if (connection.adapter === 'opencode' && connection.baseUrl) {
-      return { models: await endpointModels(connection.baseUrl, connection.apiKeyEnv ? env[connection.apiKeyEnv] : undefined, fetchImpl), current: null }
-    }
+    if (connection.adapter === 'opencode' && connection.baseUrl) return { models: await endpoint(connection), current: null }
     const events = await bridge({ connection, prompt: '', discoverModels: true }, DISCOVERY_TIMEOUT_MS)
     const reported = events.find(event => event.type === 'mc_models')
     if (!reported) throw new Error('The agent did not report its models')
@@ -113,7 +120,7 @@ export function createModelDiscovery({ base = configDir(), fetchImpl = fetch, no
     try {
       const found = await ask(connection)
       if (!found.models.length) throw new Error('The agent reported no models')
-      return await write(connection.id, { models: found.models, current: found.current, checkedAt: now(), error: null })
+      return await record(connection.id, found.models, found.current)
     } catch (error) {
       return await write(connection.id, { models: previous?.models ?? [], current: previous?.current ?? null, checkedAt: now(), error: error instanceof Error ? error.message : 'Model discovery failed' })
     }
@@ -150,7 +157,7 @@ export function createModelDiscovery({ base = configDir(), fetchImpl = fetch, no
     onUpdate?.()
   }
 
-  return { read, refresh, refreshLater, ensureFresh, effective, forget, write }
+  return { read, refresh, refreshLater, ensureFresh, effective, forget, write, record, endpoint }
 }
 export type ModelDiscovery = ReturnType<typeof createModelDiscovery>
 

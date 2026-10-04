@@ -2,7 +2,8 @@ import { Elysia } from 'elysia'
 import { z } from 'zod'
 import { requireLocal } from '../auth'
 import { fromBrowser } from '../local-access'
-import { BUILTIN_AGENTS, CONNECTION_PRESETS, createConnectionStore } from '../agent-connections'
+import { BUILTIN_AGENTS, CONNECTION_PRESETS, connectionSchema, createConnectionStore, type AgentConnection } from '../agent-connections'
+import { modelDiscovery, spawnBridge, type ModelDiscovery } from '../model-discovery'
 import { listModels } from '../models'
 import { modelsCache } from './models'
 import { composeWorkflowPrompt, identifier, type WorkflowStore } from '../workflows'
@@ -12,7 +13,6 @@ import { readConfig } from '../secrets'
 import { eventStreamResponse, type RunEvents } from '../run-events'
 import { scopeSnapshot, versionView } from '../run-view'
 import type { JobRecord } from '../jobs'
-import { join } from 'node:path'
 
 const changeBody = z.object({ graph: z.unknown(), reason: z.string().trim().min(1).max(500), scopeGrew: z.boolean().optional() })
 const sessionBody = z.object({ chat: z.string().min(1).max(200).optional(), terminalId: identifier.optional(), version: z.number().int().min(1).optional() }).default({})
@@ -34,7 +34,24 @@ async function workflowExists(store: WorkflowStore, id: string): Promise<boolean
   catch (error) { if ((error as Error).message === 'Workflow not found') return false; throw error }
 }
 
-export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, builder?: WorkflowBuilder, events?: RunEvents, jobs?: () => JobRecord[]) {
+const PROBE_TIMEOUT_MS = 35_000
+
+async function saveConnection(connections: ReturnType<typeof createConnectionStore>, discovery: ModelDiscovery, body: unknown): Promise<AgentConnection> {
+  const parsed = connectionSchema.safeParse(body)
+  const endpoint = parsed.success && parsed.data.adapter === 'opencode' && parsed.data.baseUrl && parsed.data.models.length === 0 ? parsed.data : null
+  if (!endpoint) {
+    const saved = await connections.save(body)
+    discovery.refreshLater(saved)
+    return saved
+  }
+  const models = await discovery.endpoint(endpoint).catch((error: Error) => { throw new Error(`Couldn't list models from ${endpoint.baseUrl}: ${error.message}. Add at least one model ID.`) })
+  if (!models.length) throw new Error(`Couldn't list models from ${endpoint.baseUrl}: it returned no models. Add at least one model ID.`)
+  const saved = await connections.save(body)
+  await discovery.record(saved.id, models)
+  return saved
+}
+
+export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, builder?: WorkflowBuilder, events?: RunEvents, jobs?: () => JobRecord[], discovery: ModelDiscovery = modelDiscovery()) {
   const connections = createConnectionStore()
   return new Elysia()
     .onBeforeHandle(requireLocal)
@@ -68,22 +85,25 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
       if (!node) throw new Error('Node not found')
       return { prompt: composeWorkflowPrompt(await store.policy(), graph, node, input.request, []) }
     })
-    .get('/api/studio/connections', async () => ({ builtins: BUILTIN_AGENTS, connections: await connections.list(), presets: CONNECTION_PRESETS, models: await listModels(), roles: (await readConfig()).roles }))
-    .post('/api/studio/connections', async ({ body }) => { const saved = await connections.save(body); modelsCache.invalidate(); return saved })
-    .delete('/api/studio/connections/:id', async ({ params }) => { await connections.remove(params.id); modelsCache.invalidate(); return { ok: true } })
+    .get('/api/studio/connections', async () => {
+      const saved = await connections.list()
+      const discovered = await Promise.all(saved.map(async connection => [connection.id, connection.adapter === 'cli' ? null : await discovery.read(connection.id)] as const))
+      return { builtins: BUILTIN_AGENTS, connections: saved, presets: CONNECTION_PRESETS, models: await listModels({ discovery }), roles: (await readConfig()).roles, discovery: Object.fromEntries(discovered) }
+    })
+    .post('/api/studio/connections', async ({ body }) => { const saved = await saveConnection(connections, discovery, body); modelsCache.invalidate(); return saved })
+    .delete('/api/studio/connections/:id', async ({ params }) => { await connections.remove(params.id); await discovery.forget(params.id); modelsCache.invalidate(); return { ok: true } })
+    .post('/api/studio/connections/:id/models/refresh', async ({ params }) => {
+      const connection = await connections.get(params.id)
+      if (connection.adapter === 'cli') throw new Error("This connection can't report its models; list them in its settings.")
+      const state = await discovery.refresh(connection)
+      modelsCache.invalidate()
+      return state
+    })
     .post('/api/studio/connections/:id/probe', async ({ params }) => {
       const connection = await connections.get(params.id)
       if (connection.adapter === 'cli') throw new Error('CLI connections do not advertise protocol capabilities')
-      const proc = Bun.spawn([process.execPath, join(import.meta.dir, '../agent-bridge.ts')], { stdin: 'pipe', stdout: 'pipe', stderr: 'ignore' })
-      const timer = setTimeout(() => proc.kill('SIGTERM'), 35000)
-      try {
-        proc.stdin.write(JSON.stringify({ connection, prompt: '', probe: true }))
-        proc.stdin.end()
-        const [log, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
-        const events = log.split('\n').filter(Boolean).map(line => JSON.parse(line))
-        if (code !== 0) throw new Error(events.at(-1)?.result ?? 'Agent probe failed')
-        return events.find(event => event.type === 'mc_capabilities') ?? { error: 'Agent did not advertise capabilities' }
-      } finally { clearTimeout(timer) }
+      const events = await spawnBridge({ connection, prompt: '', probe: true }, PROBE_TIMEOUT_MS)
+      return events.find(event => event.type === 'mc_capabilities') ?? { error: 'Agent did not advertise capabilities' }
     })
     .get('/api/studio/events', ({ query, request }) => {
       if (!events || !jobs) throw new Error('Live updates unavailable')
