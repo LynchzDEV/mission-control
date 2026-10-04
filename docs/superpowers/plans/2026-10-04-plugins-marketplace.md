@@ -128,7 +128,7 @@ Tests (`test/terminal-first-message.test.ts`, `test/plugin-context-files.test.ts
 ### H2 revisions, round 5 (supersedes round 4's line list)
 - In `test/workflow-runner.test.ts` replace ALL six unconditional sleeps with `await settle()`: `Bun.sleep(100)` ~319, `Bun.sleep(200)` ~385, `Bun.sleep(150)` ~417, `Bun.sleep(200)` ~550, `Bun.sleep(200)` ~573, `Bun.sleep(200)` ~651. Each one precedes an assertion that nothing more happened (attempt count unchanged, no job dispatched), so draining queued callbacks is the exact condition.
 - Bounded condition polls (`for (… && <condition>; i++) await Bun.sleep(…)`, the `until`/`waitFor` helpers, `test/terminals-routes.test.ts:66`, `test/terminals.test.ts:54`) wait on a condition, not a fixed time, and stay unchanged.
-- Done check for this rule: `grep -nE "^\s*await (Bun\.sleep|new Promise\(\(?resolve\)? => setTimeout)" test/workflow-runner.test.ts test/terminals-routes.test.ts` prints nothing (every remaining sleep sits inside a condition loop or helper).
+- Done check for this rule: the six lines listed above no longer contain a sleep, and `test/terminals-routes.test.ts` ~351/~357 per round 2; the helper polls at `test/workflow-runner.test.ts` lines ~29, ~50, ~54 and `test/terminals-routes.test.ts` ~66 are unchanged on purpose.
 
 ## Run H3 — plugin store, manifests, marketplaces, install lifecycle, settings (worktree `.worktree/plg-store`)
 
