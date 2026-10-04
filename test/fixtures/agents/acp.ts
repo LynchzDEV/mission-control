@@ -1,10 +1,13 @@
+import { appendFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { defaultWorkflow } from '../../../server/workflows'
 const lines = createInterface({ input: process.stdin })
 const send = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`)
 for await (const line of lines) {
   const message = JSON.parse(line)
-  if (message.method === 'initialize') send({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: true }, authMethods: [] } })
+  if (process.env.FIXTURE_LOG && message.method) appendFileSync(process.env.FIXTURE_LOG, `${message.method}\n`)
+  if (message.method === 'initialize') send({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: true, ...(process.env.FIXTURE_CLOSE === '1' ? { sessionCapabilities: { close: {} } } : {}) }, authMethods: [] } })
+  else if (message.method === 'session/close') send({ jsonrpc: '2.0', id: message.id, result: {} })
   else if (message.method === 'session/new' || message.method === 'session/load') send({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'fixture-session', configOptions: [{ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'fixture-model', options: [{ value: 'fixture-model', name: 'Fixture' }] }] } })
   else if (message.method === 'session/set_config_option') send({ jsonrpc: '2.0', id: message.id, result: { configOptions: [] } })
   else if (message.method === 'session/prompt') {

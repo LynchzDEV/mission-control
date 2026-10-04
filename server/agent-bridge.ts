@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { readFile, realpath, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, resolve, sep } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
@@ -8,8 +9,9 @@ import { connectionSchema, connectionCommand, connectionEnvironment } from './ag
 import { pathWithFallbackDirs, PARENT_CLAUDE_SESSION_VARS, resolveBinary } from './engines'
 import { mcpSchema } from './workflows'
 import { parseThread, parseSessionId, reportedJobOutcome } from './activity'
+import { modelsFromSession } from './model-discovery'
 
-const launchSchema = z.object({ connection: connectionSchema, prompt: z.string().max(500000), model: z.string().optional(), resumeSessionId: z.string().optional(), mcpServers: z.array(mcpSchema).default([]), probe: z.boolean().default(false), readOnly: z.boolean().default(false) })
+const launchSchema = z.object({ connection: connectionSchema, prompt: z.string().max(500000), model: z.string().optional(), resumeSessionId: z.string().optional(), mcpServers: z.array(mcpSchema).default([]), probe: z.boolean().default(false), discoverModels: z.boolean().default(false), readOnly: z.boolean().default(false) })
 const OUTPUT_LIMIT = 2_000_000
 
 export async function workspaceFile(path: string, cwd: string, writable = false): Promise<string> {
@@ -136,6 +138,12 @@ export async function runAgentBridge(raw: unknown): Promise<number> {
         await agent.request('authenticate', { methodId: connection.authMethod }, { cancellationSignal: handshake })
       }
       if (input.probe) { emit({ type: 'mc_capabilities', capabilities: init.agentCapabilities, authMethods: init.authMethods, agentInfo: init.agentInfo }); return 0 }
+      if (input.discoverModels) {
+        const session = await agent.request<'session/new'>('session/new', { cwd: tmpdir(), mcpServers: [] }, { cancellationSignal: handshake })
+        emit({ type: 'mc_models', ...modelsFromSession(session) })
+        if (init.agentCapabilities?.sessionCapabilities?.close) await agent.request('session/close', { sessionId: session.sessionId }, { cancellationSignal: handshake }).catch(() => {})
+        return 0
+      }
       const mcpServers = input.mcpServers.map(server => ({ name: server.name, command: resolveBinary(server.command), args: server.args, env: Object.entries(server.env).map(([name, reference]) => {
         const value = process.env[reference]
         if (!value) throw new Error(`Missing MCP environment variable: ${reference}`)

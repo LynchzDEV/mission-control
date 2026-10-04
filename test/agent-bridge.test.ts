@@ -56,3 +56,22 @@ test('ACP file operations reject symlink and parent escapes from the workspace',
     expect(await workspaceFile('new.md', join(dir, 'workspace'), true)).toEndWith('/workspace/new.md')
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
+
+test('model discovery reports the session models without sending a task, closing the session only when the agent supports it', async () => {
+  const { mkdtemp, readFile, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const dir = await mkdtemp(join(tmpdir(), 'mc-acp-discovery-'))
+  try {
+    const log = join(dir, 'methods.log')
+    const closing = await bridge({}, { discoverModels: true }, { FIXTURE_LOG: log, FIXTURE_CLOSE: '1' })
+    expect(closing.exit).toBe(0)
+    const reported = closing.output.split('\n').filter(Boolean).map(line => JSON.parse(line)).find(event => event.type === 'mc_models')
+    expect(reported).toEqual({ type: 'mc_models', models: ['fixture-model'], current: 'fixture-model' })
+    expect((await readFile(log, 'utf8')).trim().split('\n')).toEqual(['initialize', 'session/new', 'session/close'])
+    await rm(log)
+    const plain = await bridge({}, { discoverModels: true }, { FIXTURE_LOG: log })
+    expect(plain.exit).toBe(0)
+    expect(plain.output).toContain('mc_models')
+    expect((await readFile(log, 'utf8')).trim().split('\n')).toEqual(['initialize', 'session/new'])
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
