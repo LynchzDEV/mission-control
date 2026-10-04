@@ -92,6 +92,16 @@ describe('install', () => {
     expect(await pathExists(join(pluginFolder('fixture-plugin'), '.mc-build', 'screen.js'))).toBe(true)
   })
 
+  test('a screen that imports a stylesheet builds to screen.js and screen.css', async () => {
+    const source = await repo('styled', isolatedManifest(), {
+      'src/screen.ts': "import './look.css'\nexport default { mount() {} }\n",
+      'src/look.css': '.x { color: red }\n',
+    })
+    await installOk(fileUrl(source), await fixtureSha(source))
+    expect(await pathExists(join(pluginFolder('fixture-plugin'), '.mc-build', 'screen.js'))).toBe(true)
+    expect(await pathExists(join(pluginFolder('fixture-plugin'), '.mc-build', 'screen.css'))).toBe(true)
+  })
+
   test('plugins.json is written at mode 0600', async () => {
     const source = await repo('isolated', isolatedManifest(), { 'src/screen.ts': TRIVIAL_SCREEN })
     await installOk(fileUrl(source), await fixtureSha(source))

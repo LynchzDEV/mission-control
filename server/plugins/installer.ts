@@ -80,7 +80,7 @@ async function defaultBuild(options: { entry: string; outdir: string; format: 'i
       target: 'browser',
       format: options.format,
       outdir: options.outdir,
-      naming: 'screen.js',
+      naming: { entry: 'screen.[ext]', chunk: '[name]-[hash].[ext]', asset: '[name]-[hash].[ext]' },
       minify: true,
     })
     if (!result.success) throw new Error(result.logs.map(String).join('\n'))
