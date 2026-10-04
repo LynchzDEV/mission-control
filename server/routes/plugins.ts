@@ -1,8 +1,9 @@
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { Elysia } from 'elysia'
 
-import { requireLocal } from '../auth'
+import { requireLocal, type GuardContext } from '../auth'
+import { localHostRequest } from '../local-access'
 import { validateWorkspaceCwd } from '../workspace'
 import { ContextTooLarge, writeContextFile } from '../plugins/context-files'
 import { createInstaller, type Installer } from '../plugins/installer'
@@ -24,12 +25,43 @@ function successBody<T extends { ok: true }>(result: T): Record<string, unknown>
 const text = (value: unknown): string => (typeof value === 'string' ? value : '')
 const optionalText = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined)
 
+const PUBLIC_DIR = resolve(import.meta.dir, '..', '..', 'public')
+
+function frameHtml(id: string): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/plugin-frame/${id}/ui.css"></head><body><div id="root"></div><script>window.__MC_PLUGIN__={id:"${id}",runtime:"isolated"}</script><script src="/plugin-frame/${id}/screen.js"></script></body></html>`
+}
+
+function frameCsp(host: string): string {
+  const origin = `http://${host}`
+  return `default-src 'none'; script-src ${origin} 'unsafe-inline'; style-src ${origin} 'unsafe-inline'; img-src ${origin} data:; connect-src 'none'; frame-ancestors ${origin}`
+}
+
+async function isolatedScreenPlugin(id: string): Promise<boolean> {
+  const installed = await getInstalled(id)
+  return installed !== null && installed.enabled && installed.runtime === 'isolated'
+}
+
+// A sandboxed plugin frame has an opaque origin, so its asset requests look cross-site to requireLocal; the handlers still 404 anything but an enabled isolated plugin's own assets.
+const FRAME_ASSET_PATH = /^\/plugin-frame\/[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])\/(?:screen\.js|ui\.css)?$/
+
+async function requireLocalExceptFrameAssets(context: GuardContext): Promise<void | { error: string }> {
+  const request = context.request
+  if (request.method === 'GET'
+    && FRAME_ASSET_PATH.test(new URL(request.url).pathname)
+    && localHostRequest(request)) return
+  return requireLocal(context)
+}
+
 export function pluginsRoutes(deps: { installer?: Installer; runtimes?: Runtimes } = {}) {
   const installer = deps.installer ?? createInstaller()
   const runtimesPromise = deps.runtimes === undefined ? defaultRuntimes() : Promise.resolve(deps.runtimes)
   return new Elysia()
-    .onBeforeHandle(requireLocal)
-    .get('/api/plugins', async () => ({ plugins: await listInstalled() }))
+    .onBeforeHandle(requireLocalExceptFrameAssets)
+    .get('/api/plugins', async () => {
+      const pool = await runtimesPromise
+      const plugins = await listInstalled()
+      return { plugins: plugins.map(plugin => ({ ...plugin, state: pool.stateOf(plugin) })) }
+    })
     .get('/api/plugins/marketplaces', async () => ({ marketplaces: await listMarketplaces() }))
     .post('/api/plugins/marketplaces', async ({ body, set }) => {
       const result = await addMarketplace(text((body as Record<string, unknown> | null)?.url))
@@ -151,5 +183,24 @@ export function pluginsRoutes(deps: { installer?: Installer; runtimes?: Runtimes
       const file = Bun.file(join(pluginFolder(params.id), '.mc-build', 'screen.js'))
       if (!await file.exists()) { set.status = 404; return { error: 'not found' } }
       return new Response(file, { headers: { 'content-type': 'text/javascript' } })
+    })
+    .get('/plugin-frame/:id/', async ({ params, request }) => {
+      if (!await isolatedScreenPlugin(params.id)) return new Response('not found', { status: 404 })
+      const host = request.headers.get('host') ?? '127.0.0.1:7777'
+      return new Response(frameHtml(params.id), {
+        headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': frameCsp(host) },
+      })
+    })
+    .get('/plugin-frame/:id/screen.js', async ({ params }) => {
+      if (!await isolatedScreenPlugin(params.id)) return new Response('not found', { status: 404 })
+      const file = Bun.file(join(pluginFolder(params.id), '.mc-build', 'screen.js'))
+      if (!await file.exists()) return new Response('not found', { status: 404 })
+      return new Response(file, { headers: { 'content-type': 'text/javascript' } })
+    })
+    .get('/plugin-frame/:id/ui.css', async ({ params }) => {
+      if (!await isolatedScreenPlugin(params.id)) return new Response('not found', { status: 404 })
+      const file = Bun.file(join(PUBLIC_DIR, 'plugin-ui.css'))
+      if (!await file.exists()) return new Response('not found', { status: 404 })
+      return new Response(file, { headers: { 'content-type': 'text/css' } })
     })
 }

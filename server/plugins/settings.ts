@@ -6,7 +6,7 @@ import { PluginBusyError, withPluginLock } from './locks'
 import { getInstalled } from './store'
 import type { SettingField } from './manifest'
 
-const SETTINGS_FILE = 'settings.json'
+export const SETTINGS_DIR = 'plugin-settings'
 
 const SERVER_KEY_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/
 const MAX_SETTING_BYTES = 1048576
@@ -29,8 +29,8 @@ function copySettings(values: SettingValues): SettingValues {
   return Object.assign(prototypeSafeValues(), values)
 }
 
-function settingsFile(id: string): string {
-  return join('plugin-data', id, SETTINGS_FILE)
+export function settingsFile(id: string): string {
+  return join(SETTINGS_DIR, `${id}.json`)
 }
 
 async function readSettings(id: string): Promise<SettingValues> {
@@ -43,7 +43,7 @@ async function readSettings(id: string): Promise<SettingValues> {
 }
 
 async function writeSettings(id: string, values: Record<string, string>): Promise<void> {
-  await mkdir(join(configDir(), 'plugin-data', id), { recursive: true, mode: DIR_MODE })
+  await mkdir(join(configDir(), SETTINGS_DIR), { recursive: true, mode: DIR_MODE })
   await writeJsonFile(settingsFile(id), values)
 }
 

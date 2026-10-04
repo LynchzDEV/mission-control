@@ -59,6 +59,139 @@ export async function createPluginRepo(repo: string, manifest: Record<string, un
 
 export const TRIVIAL_SCREEN = 'export default { mount() {} }\n'
 
+export function isolatedFixtureServer(extraMethods: Record<string, string> = {}, options: { stubborn?: boolean } = {}): string {
+  const extras = Object.entries(extraMethods).map(([name, handler]) => `  ${JSON.stringify(name)}: ${handler},`).join('\n')
+  const shutdownLine = options.stubborn === true
+    ? '  if (message.method === \'plugin.shutdown\') return'
+    : '  if (message.method === \'plugin.shutdown\') process.exit(0)'
+  const trapSignal = options.stubborn === true ? 'process.on(\'SIGTERM\', () => {})\n' : ''
+  return `import { closeSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+${trapSignal}
+function classify(error) {
+  const code = typeof error === 'object' && error !== null && error.code !== undefined ? String(error.code) : 'UNKNOWN'
+  if (code === 'EPERM' || code === 'EACCES') return \`DENIED \${code}\`
+  const message = error instanceof Error ? error.message : String(error)
+  return \`ERROR \${code} \${message}\`
+}
+
+const handlers = {
+  readFile: params => {
+    try {
+      return readFileSync(params.path, 'utf8')
+    } catch (error) {
+      return classify(error)
+    }
+  },
+  writeAbs: params => {
+    let fd
+    try {
+      fd = openSync(params.path, 'wx')
+    } catch (error) {
+      return classify(error)
+    }
+    closeSync(fd)
+    try {
+      unlinkSync(params.path)
+    } catch {
+      return \`ERROR could not unlink \${params.path}\`
+    }
+    return \`WROTE \${params.path}\`
+  },
+  writeData: params => {
+    const dataDir = process.env.MC_PLUGIN_DATA
+    if (dataDir === undefined) return 'ERROR MC_PLUGIN_DATA not set'
+    try {
+      writeFileSync(join(dataDir, params.name), 'fixture-data')
+      return 'ok'
+    } catch (error) {
+      return classify(error)
+    }
+  },
+  fetchUrl: async params => {
+    try {
+      const response = await fetch(params.url)
+      return \`STATUS \${response.status}\`
+    } catch (error) {
+      return \`ERROR \${error instanceof Error ? error.message : String(error)}\`
+    }
+  },
+  askSetting: async params => sendHostRequest('settings.get', { key: params.key }),
+  crash: () => {
+    process.exit(1)
+  },
+${extras}
+}
+
+let nextRequestId = 1
+const pendingHostCalls = new Map()
+
+function frame(message) {
+  const body = JSON.stringify(message)
+  return \`Content-Length: \${Buffer.byteLength(body)}\\r\\n\\r\\n\${body}\`
+}
+
+function send(message) {
+  process.stdout.write(frame(message))
+}
+
+function sendHostRequest(method, params) {
+  const id = nextRequestId
+  nextRequestId += 1
+  return new Promise((resolve, reject) => {
+    pendingHostCalls.set(id, { resolve, reject })
+    send({ jsonrpc: '2.0', id, method, params })
+  })
+}
+
+function handleMessage(message) {
+  if (typeof message !== 'object' || message === null) return
+  if (message.method === undefined && message.id !== undefined && pendingHostCalls.has(message.id)) {
+    const waiter = pendingHostCalls.get(message.id)
+    pendingHostCalls.delete(message.id)
+    if (message.error !== undefined) waiter.reject(new Error(message.error.message ?? 'host request failed'))
+    else waiter.resolve(message.result ?? null)
+    return
+  }
+  if (message.method === 'plugin.call') {
+    const call = message.params ?? {}
+    Promise.resolve()
+      .then(() => {
+        const handler = handlers[call.method]
+        if (handler === undefined) throw new Error(\`unknown method: \${call.method}\`)
+        return handler(call.params ?? {})
+      })
+      .then(result => send({ jsonrpc: '2.0', id: message.id, result: result ?? null }))
+      .catch(error => send({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: error instanceof Error ? error.message : String(error) } }))
+    return
+  }
+${shutdownLine}
+}
+
+if (process.env.MC_PLUGIN_DATA !== undefined) {
+  writeFileSync(join(process.env.MC_PLUGIN_DATA, 'server.pid'), \`\${process.pid}\\n\`)
+}
+
+let buffer = Buffer.alloc(0)
+process.stdin.on('data', chunk => {
+  buffer = Buffer.concat([buffer, chunk])
+  for (;;) {
+    const headerEnd = buffer.indexOf('\\r\\n\\r\\n')
+    if (headerEnd < 0) return
+    const lengthLine = buffer.subarray(0, headerEnd).toString('utf8').split('\\r\\n').find(line => /^content-length:/i.test(line))
+    const match = lengthLine !== undefined ? /^content-length:\\s*(\\d+)$/i.exec(lengthLine) : undefined
+    if (match === undefined) process.exit(1)
+    const length = Number(match[1])
+    if (buffer.length < headerEnd + 4 + length) return
+    const body = buffer.subarray(headerEnd + 4, headerEnd + 4 + length).toString('utf8')
+    buffer = buffer.subarray(headerEnd + 4 + length)
+    handleMessage(JSON.parse(body))
+  }
+})
+process.stdin.on('end', () => process.exit(0))
+`
+}
+
 export function isolatedManifest(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'fixture-plugin',

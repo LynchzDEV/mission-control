@@ -5,9 +5,11 @@ import { join } from 'node:path'
 import { Elysia } from 'elysia'
 
 import { getSetting, setServerSetting } from '../server/plugins/settings'
+import { spawnChildProcess } from '../server/plugins/runtime-isolated'
 import { createRuntimes } from '../server/plugins/runtimes'
+import { getInstalled } from '../server/plugins/store'
 import { pluginsRoutes } from '../server/routes/plugins'
-import { commitFixture, createPluginRepo, fileUrl, fixtureSha, isolatedManifest, TRIVIAL_SCREEN, trustedManifest } from './support/plugin-fixtures'
+import { commitFixture, createPluginRepo, fileUrl, fixtureSha, isolatedFixtureServer, isolatedManifest, TRIVIAL_SCREEN, trustedManifest } from './support/plugin-fixtures'
 
 let configDir: string
 let fixtureRoot: string
@@ -112,13 +114,32 @@ describe('call route', () => {
     expect(await response.json()).toEqual({ error: 'boom' })
   })
 
-  test('an isolated plugin answers 501 until its runtime lands', async () => {
-    const source = await createPluginRepo(join(fixtureRoot, 'isolated'), isolatedManifest(), { files: { 'src/screen.ts': TRIVIAL_SCREEN }, tag: 'v1.0.0' })
+  test('an isolated plugin call spawns its runtime and reuses the process', async () => {
+    const source = await createPluginRepo(join(fixtureRoot, 'isolated'), isolatedManifest({ server: 'src/server.ts', permissions: { sessions: ['chat'], settings: true } }), {
+      files: { 'src/server.ts': isolatedFixtureServer({ echo: 'params => params' }), 'src/screen.ts': TRIVIAL_SCREEN },
+      tag: 'v1.0.0',
+    })
     await json('POST', '/api/plugins/install', { repo: fileUrl(source), ref: 'v1.0.0', commit: await fixtureSha(source) })
-    const response = await call('echo')
-    expect(response.status).toBe(501)
-    expect(await response.json()).toEqual({ error: 'Isolated runtime not available yet' })
-  })
+    let spawns = 0
+    const runtimes = await createRuntimes({
+      spawnSupervisor: options => {
+        spawns += 1
+        return spawnChildProcess([process.execPath, options.plugin.serverBundle], options.plugin.dataDir, { ...process.env, ...options.plugin.env })
+      },
+    })
+    const isolatedApp = (): Elysia => new Elysia().use(pluginsRoutes({ runtimes }))
+    const first = await request(isolatedApp, 'POST', '/api/plugins/fixture-plugin/call', { method: 'echo', params: { from: 'isolated' } })
+    expect(first.status).toBe(200)
+    expect(await first.json()).toEqual({ result: { from: 'isolated' } })
+    const second = await request(isolatedApp, 'POST', '/api/plugins/fixture-plugin/call', { method: 'echo', params: {} })
+    expect(second.status).toBe(200)
+    expect(spawns).toBe(1)
+    const installed = await getInstalled('fixture-plugin')
+    if (installed !== null) {
+      const handle = await runtimes.getRuntime(installed)
+      if (handle.ok) await handle.runtime.dispose()
+    }
+  }, 10000)
 
   test('a disabled plugin stops answering on every route', async () => {
     await installTrusted('disabled')
@@ -177,7 +198,7 @@ describe('server context', () => {
     expect(await getSetting('fixture-plugin', '__proto__')).toBe('stored-value')
     expect(await getSetting('fixture-plugin', 'ordinary')).toBe('kept')
 
-    const stored = JSON.parse(await readFile(join(configDir, 'plugin-data', 'fixture-plugin', 'settings.json'), 'utf8'))
+    const stored = JSON.parse(await readFile(join(configDir, 'plugin-settings', 'fixture-plugin.json'), 'utf8'))
     expect(Object.getOwnPropertyDescriptor(stored, '__proto__')?.value).toBe('stored-value')
 
     await setServerSetting('fixture-plugin', '__proto__', null)

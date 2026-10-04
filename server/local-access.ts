@@ -44,3 +44,8 @@ export function localRequestAllowed(request: Request): boolean {
   if (site === null || site === 'same-origin' || site === 'none') return true
   return isTopLevelPageNavigation(request)
 }
+
+export function localHostRequest(request: Request): boolean {
+  const name = hostname(requestHost(request))
+  return name !== null && LOCAL_HOSTS.has(name)
+}

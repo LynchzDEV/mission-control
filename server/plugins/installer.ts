@@ -1,3 +1,4 @@
+import { settingsFile } from './settings'
 import { mkdir, mkdtemp, readdir, rename as fsRename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -40,7 +41,7 @@ export type MarketplaceListing = { repo: string; ref: string }
 export type InstallerDeps = {
   git: (cwd: string, args: string[]) => Promise<string>
   runBunInstall: (dir: string) => Promise<void>
-  build: (options: { entry: string; outdir: string; format: 'iife' | 'esm' }) => Promise<void>
+  build: (options: { entry: string; outdir: string; format: 'iife' | 'esm'; target?: 'browser' | 'bun'; naming?: string; minify?: boolean }) => Promise<void>
   rename: (from: string, to: string) => Promise<void>
   saveInstalled: (plugin: InstalledPlugin) => Promise<void>
   marketplaceListing: (marketplace: string, pluginId: string) => Promise<MarketplaceListing | null>
@@ -73,15 +74,15 @@ async function defaultRunBunInstall(dir: string): Promise<void> {
   if (code !== 0) throw new Error(stderr.trim() || 'bun install failed')
 }
 
-async function defaultBuild(options: { entry: string; outdir: string; format: 'iife' | 'esm' }): Promise<void> {
+async function defaultBuild(options: { entry: string; outdir: string; format: 'iife' | 'esm'; target?: 'browser' | 'bun'; naming?: string; minify?: boolean }): Promise<void> {
   try {
     const result = await Bun.build({
       entrypoints: [options.entry],
-      target: 'browser',
+      target: options.target ?? 'browser',
       format: options.format,
       outdir: options.outdir,
-      naming: { entry: 'screen.[ext]', chunk: '[name]-[hash].[ext]', asset: '[name]-[hash].[ext]' },
-      minify: true,
+      naming: options.naming ?? { entry: 'screen.[ext]', chunk: '[name]-[hash].[ext]', asset: '[name]-[hash].[ext]' },
+      minify: options.minify ?? true,
     })
     if (!result.success) throw new Error(result.logs.map(String).join('\n'))
   } catch (error) {
@@ -167,6 +168,20 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
           entry: join(checkout, manifest.screen),
           outdir: join(checkout, '.mc-build'),
           format: manifest.runtime === 'isolated' ? 'iife' : 'esm',
+          minify: true,
+        })
+      } catch (error) {
+        return { ok: false, status: 400, error: errorMessage(error), step: 'build' }
+      }
+    }
+    if (manifest.runtime === 'isolated' && manifest.server !== undefined) {
+      try {
+        await deps.build({
+          entry: join(checkout, manifest.server),
+          outdir: join(checkout, '.mc-build'),
+          format: 'esm',
+          target: 'bun',
+          naming: 'server.js',
         })
       } catch (error) {
         return { ok: false, status: 400, error: errorMessage(error), step: 'build' }
@@ -385,7 +400,10 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
         await removeInstalled(id)
         await invalidateRuntime(id)
         const keepData = options.keepData !== false
-        if (!keepData) await rm(join(configDir(), 'plugin-data', id), { recursive: true, force: true })
+        if (!keepData) {
+          await rm(join(configDir(), 'plugin-data', id), { recursive: true, force: true })
+          await rm(join(configDir(), settingsFile(id)), { force: true })
+        }
         return { ok: true, keptData: keepData }
       })
     } catch (error) {
