@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { cycleMs, scrollPlan, usageItems } from '../client/usage-card'
+import { cycleMs, scrollPlan, stripProviders, usageItems } from '../client/usage-card'
 import { normalizeUsage } from '../client/provider-usage'
 
 describe('usageItems', () => {
@@ -31,5 +31,15 @@ describe('scrollPlan', () => {
     expect(frames[2]!.offset).toBeCloseTo(15000 / total)
     expect(frames[3]!.offset).toBeCloseTo(25000 / total)
     expect(frames[4]!.offset).toBe(1)
+  })
+})
+
+describe('stripProviders', () => {
+  test('every connected provider gets a card, even one with no usage data', () => {
+    expect(stripProviders(['claude', 'glm', 'codex', 'grok'])).toEqual(['claude', 'glm', 'codex', 'grok'])
+  })
+
+  test('falls back to the built-in three when the provider list fails to load', () => {
+    expect(stripProviders(null)).toEqual(['claude', 'glm', 'codex'])
   })
 })

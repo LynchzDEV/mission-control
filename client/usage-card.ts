@@ -23,6 +23,8 @@ export function usageItems(values: ProviderUsage[]): UsageItem[] {
   })
 }
 
+export const stripProviders = (connected: string[] | null): string[] => connected ?? BUILTINS
+
 export function cycleMs(distance: number, pps = PIXELS_PER_SECOND): number {
   return (distance / pps) * 1000 * 2 + PAUSE_MS * 2
 }
@@ -79,9 +81,8 @@ function startScroll(track: HTMLElement, viewport: HTMLElement, current: Scroll)
 async function refresh(track: HTMLElement, viewport: HTMLElement, current: Scroll): Promise<void> {
   if (document.hidden) return
   const [quota, providers] = await Promise.all([getJson('/api/quota'), getJson('/api/providers')])
-  const ids = providers.ok ? readArray(providers.data.providers).map(p => (p as { id: string }).id) : BUILTINS
-  const withQuota = ids.filter(id => BUILTINS.includes(id) || (quota.ok && quota.data[id] !== undefined))
-  renderUsageCard(track, withQuota.map(id => normalizeUsage(id, quota.ok ? quota.data[id] : null)))
+  const ids = stripProviders(providers.ok ? readArray(providers.data.providers).map(p => (p as { id: string }).id) : null)
+  renderUsageCard(track, ids.map(id => normalizeUsage(id, quota.ok ? quota.data[id] : null)))
   startScroll(track, viewport, current)
 }
 

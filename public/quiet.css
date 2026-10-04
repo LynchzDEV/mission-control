@@ -627,6 +627,7 @@ body[data-live="true"] #agents > .activity-empty, body[data-live="true"] #agents
 .usage-item[data-provider="glm"] { --brand: #3485ff; }
 .usage-item[data-provider="codex"] { --brand: #7a9dff; }
 .usage-item[data-provider="qwen"] { --brand: #6f69f7; }
+.usage-item[data-provider="grok"] { --brand: var(--text-strong); }
 .usage-week meter::-webkit-meter-optimum-value { opacity: .6; }
 a.pill { text-decoration: none; color: var(--text-soft); }
 a.pill:hover { color: var(--accent); }
