@@ -66,6 +66,16 @@ The sidebar on the left lists your chats and live terminals, grouped by Today, Y
 - **Runs**: every run with its attempts, evidence and checks.
 - **Rules**: the core rules every step follows.
 
+### Plugins
+
+**Marketplace** (sidebar footer) adds plugins from git. Add a marketplace link (for example `https://github.com/LynchzDEV/mc-marketplace`), pick a plugin and install it; it then shows under **Plugins** at the top of the sidebar. The first plugin, **ClickUp board**, shows a ClickUp board and starts a chat or terminal on any task, with a dossier of the task (description, subtasks, comments, linked tasks, fields) attached for the AI to read first.
+
+- **Isolated** plugins run under the macOS sandbox: they reach only the hosts they declared, read only their own bundle and data folder, never see your other secrets, and draw their screen in a locked frame. Isolated plugins that use the network need Bun 1.2.23 or newer (`bun upgrade`).
+- **Trusted** plugins load straight into Mission Control and get full access, so installing one asks you to confirm you trust it.
+- A plugin can open the launcher for a chat or terminal, never start one on its own. Its task context is saved in the session folder under `.mission-control/` (kept out of git through `.git/info/exclude`).
+
+Write your own: start from [mc-plugin-template](https://github.com/LynchzDEV/mc-plugin-template) and the [mc-plugin-sdk](https://github.com/LynchzDEV/mc-plugin-sdk) guide. Design: `docs/superpowers/specs/2026-10-04-plugins-marketplace-design.md`.
+
 ### History
 
 **All history** (bottom of the sidebar) and search open one searchable list: chats, live terminals, earlier Claude Code sessions (resume one in a terminal), and Claude or Codex sessions you started outside Mission Control. Only real sessions are listed: Mission Control's own agents, background helpers, MCP servers and non-interactive runs are left out.
@@ -133,6 +143,7 @@ On the same occasions, Mission Control translates Claude's global instructions, 
 - **Local only.** The server binds `127.0.0.1`. A Host / Origin / Fetch-Metadata guard stops web pages from other origins from reading or driving it. Anyone who can open a local connection on this machine has full control, including other OS user accounts and the agent jobs Mission Control spawns.
 - **Credentials** live in the config directory (`0700` folders, `0600` files) and reach the AIs only through their environment. The API token, for scripts and the skill, can be revealed or rotated from the lock button; it grants nothing extra to local callers.
 - **Folders.** Jobs and terminals only run in directories that resolve, after symlinks, under your home folder.
+- **Plugins.** Plugin routes are local only and never accept the API token. Isolated plugins are confined by the OS sandbox and a per-plugin network proxy; trusted plugins have full access and install only after you confirm.
 - **Model output** shown in the chat is sanitized: no scripts, styles, forms, embedded images or element ids from a reply reach the page.
 
 ## How it is built
