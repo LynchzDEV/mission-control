@@ -129,6 +129,15 @@ export function pluginsRoutes(deps: { installer?: Installer; runtimes?: Runtimes
       if (!outcome.ok) { set.status = outcome.status; return { error: outcome.error } }
       return { result: outcome.result }
     })
+    .get('/api/plugins/:id/icon', async ({ params, set }) => {
+      const installed = await getInstalled(params.id)
+      if (installed === null || !installed.enabled || installed.icon === undefined) { set.status = 404; return { error: 'not found' } }
+      const type = installed.icon.endsWith('.svg') ? 'image/svg+xml' : installed.icon.endsWith('.png') ? 'image/png' : null
+      if (type === null) { set.status = 404; return { error: 'not found' } }
+      const file = Bun.file(join(pluginFolder(params.id), installed.icon))
+      if (!await file.exists()) { set.status = 404; return { error: 'not found' } }
+      return new Response(file, { headers: { 'content-type': type } })
+    })
     .get('/plugin-module/:id/screen.js', async ({ params, set }) => {
       const installed = await getInstalled(params.id)
       if (installed === null || !installed.enabled || installed.runtime !== 'trusted') {

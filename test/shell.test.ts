@@ -105,7 +105,7 @@ describe('quiet shell', () => {
   })
 
   test('the shell islands transpile', async () => {
-    for (const island of ['shell', 'shell-composer', 'terminals', 'shell-activity', 'flow-drawer', 'usage-card', 'backdrop', 'chat', 'studio', 'access']) {
+    for (const island of ['shell', 'shell-composer', 'terminals', 'shell-activity', 'flow-drawer', 'usage-card', 'backdrop', 'chat', 'studio', 'access', 'plugins']) {
       const response = await app.handle(new Request(`http://localhost/js/${island}.js`))
       expect(response.status).toBe(200)
       expect((await response.text()).length).toBeGreaterThan(100)

@@ -68,6 +68,48 @@ let liveTerminals: Session[] | null = null
 let numbered: HistoryItem[] = []
 let hidden: Record<string, number> = readHidden()
 
+type PluginLink = { id: string; name: string; icon?: string }
+let pluginRows: PluginLink[] = []
+
+async function loadPlugins(): Promise<void> {
+  const feed = await getJson('/api/plugins')
+  if (!feed.ok) return
+  pluginRows = readArray(feed.data.plugins)
+    .filter(plugin => plugin.enabled === true && typeof plugin.screen === 'string' && typeof plugin.id === 'string')
+    .map(plugin => ({ id: String(plugin.id), name: typeof plugin.name === 'string' && plugin.name !== '' ? plugin.name : String(plugin.id), ...(typeof plugin.icon === 'string' ? { icon: plugin.icon } : {}) }))
+  signature = ''
+  paint(historyItems)
+}
+
+function pluginIcon(plugin: PluginLink): string {
+  return plugin.icon === undefined ? '<svg><use href="#auto-icon"/></svg>' : `<img src="/api/plugins/${encodeURIComponent(plugin.id)}/icon" alt="" width="16" height="16">`
+}
+
+function pluginRow(plugin: PluginLink, className: 'sb-row' | 'sb-mini'): HTMLElement {
+  const element = document.createElement('a')
+  element.className = className
+  element.dataset.kind = 'plugin'
+  element.dataset.key = `plugin:${plugin.id}`
+  element.href = '#'
+  element.onclick = (event) => { event.preventDefault(); dispatchEvent(new CustomEvent('quiet:show-plugin', { detail: plugin.id })) }
+  const icon = document.createElement('span')
+  icon.className = 'sb-ic'
+  icon.innerHTML = pluginIcon(plugin)
+  element.append(icon)
+  if (className === 'sb-mini') {
+    element.title = plugin.name
+    return element
+  }
+  const text = document.createElement('span')
+  text.className = 'sb-t'
+  text.textContent = plugin.name
+  element.append(text)
+  const wrap = document.createElement('div')
+  wrap.className = 'sb-item'
+  wrap.append(element)
+  return wrap
+}
+
 function readHidden(): Record<string, number> {
   try { return JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? '{}') as Record<string, number> } catch { return {} }
 }
@@ -308,16 +350,20 @@ function paint(items: HistoryItem[]): void {
   const rows = groups.flatMap(group => group.items.map(rowOf))
   const keys = numberedKeys(rows.map(row => row.item), document.getElementById('sb-shell')?.classList.contains('collapsed'))
   numbered = keys.flatMap(key => rows.filter(row => keyOf(row.item) === key).map(row => row.item))
-  const next = JSON.stringify([groups.map(group => [group.day, group.items.length]), rows.map(row => [row.item.kind, row.item.id, row.item.title, row.state, row.note, row.item.kind === 'chat' && row.item.pinned === true]), keys])
+  const next = JSON.stringify([pluginRows.map(plugin => [plugin.id, plugin.name, plugin.icon ?? null]), groups.map(group => [group.day, group.items.length]), rows.map(row => [row.item.kind, row.item.id, row.item.title, row.state, row.note, row.item.kind === 'chat' && row.item.pinned === true]), keys])
   if (next === signature) return
   signature = next
   const list = document.getElementById('sidebar-list')!
   const dots = dotColors()
-  list.replaceChildren(...groups.flatMap(group => [
-    Object.assign(document.createElement('p'), { className: 'sb-day', textContent: group.day }),
-    ...group.items.map(item => rowElement(rowOf(item), 'sb-row')),
-  ]))
-  document.getElementById('sidebar-mini')!.replaceChildren(...rows.filter(inRail).map(row => rowElement(row, 'sb-mini')))
+  list.replaceChildren(
+    ...(pluginRows.length > 0 ? [Object.assign(document.createElement('p'), { className: 'sb-day', textContent: 'Plugins' })] : []),
+    ...pluginRows.map(plugin => pluginRow(plugin, 'sb-row')),
+    ...groups.flatMap(group => [
+      Object.assign(document.createElement('p'), { className: 'sb-day', textContent: group.day }),
+      ...group.items.map(item => rowElement(rowOf(item), 'sb-row')),
+    ]),
+  )
+  document.getElementById('sidebar-mini')!.replaceChildren(...pluginRows.map(plugin => pluginRow(plugin, 'sb-mini')), ...rows.filter(inRail).map(row => rowElement(row, 'sb-mini')))
   for (const [key, dot] of dotElements()) blendColor(dot, dots.get(key))
   markSelected()
 }
@@ -381,4 +427,6 @@ if (typeof document !== 'undefined') {
     }
   })
   void poll()
+  void loadPlugins()
+  addEventListener('quiet:plugins-changed', () => void loadPlugins())
 }

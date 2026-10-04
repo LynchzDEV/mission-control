@@ -36,6 +36,14 @@ const BODY = `
     <symbol id="branch-icon" viewBox="0 0 20 20"><circle cx="6" cy="4.5" r="1.8"/><circle cx="6" cy="15.5" r="1.8"/><circle cx="14" cy="7" r="1.8"/><path d="M6 6.3v7.4M14 8.8c0 3-2.5 3.7-8 4.9"/></symbol>
     <symbol id="copy-icon" viewBox="0 0 20 20"><rect x="7" y="7" width="9.5" height="9.5" rx="2"/><path d="M13 7V5a1.5 1.5 0 0 0-1.5-1.5h-6A1.5 1.5 0 0 0 4 5v6a1.5 1.5 0 0 0 1.5 1.5H7"/></symbol>
     <symbol id="open-icon" viewBox="0 0 20 20"><path d="M11 4h5v5M16 4l-7 7M14 12v3.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5H8"/></symbol>
+    <symbol id="store-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8 5 3.5h10L16.5 8"/><path d="M3.5 8a2.2 2.2 0 0 0 4.3 0 2.2 2.2 0 0 0 4.4 0 2.2 2.2 0 0 0 4.3 0"/><path d="M4.5 10v6.5h11V10"/><path d="M8.5 16.5v-3.5h3v3.5"/></symbol>
+    <symbol id="mk-globe" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><path d="M3.5 10h13M10 3.5c2 2 2.8 4.2 2.8 6.5S12 14.5 10 16.5C8 14.5 7.2 12.3 7.2 10S8 5.5 10 3.5z"/></symbol>
+    <symbol id="mk-shield" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M10 3 4.5 5v4.6c0 3.4 2.3 5.9 5.5 7.4 3.2-1.5 5.5-4 5.5-7.4V5z"/></symbol>
+    <symbol id="mk-key" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="12.5" r="3.2"/><path d="m9.3 10.2 6.2-6.2M13.2 6.3l1.8 1.8"/></symbol>
+    <symbol id="mk-warn" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 17 16H3z"/><path d="M10 8.5v3.5M10 14.2v.1"/></symbol>
+    <symbol id="mk-chat" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3h0A1.5 1.5 0 0 1 4 11.5z"/></symbol>
+    <symbol id="mk-link" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8.5 11.5a3 3 0 0 0 4.2 0l2.6-2.6a3 3 0 0 0-4.2-4.2l-1 1"/><path d="M11.5 8.5a3 3 0 0 0-4.2 0l-2.6 2.6a3 3 0 0 0 4.2 4.2l1-1"/></symbol>
+    <symbol id="mk-refresh" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 9A5.5 5.5 0 0 0 5.4 6.5M4.5 11a5.5 5.5 0 0 0 10.1 2.5"/><path d="M5 3.5v3h3M15 16.5v-3h-3"/></symbol>
   </svg>
   <canvas id="backdrop" class="backdrop" aria-hidden="true"></canvas>
   <div class="sb-shell collapsed" id="sb-shell">
@@ -45,7 +53,7 @@ const BODY = `
       <button type="button" id="new-chat" class="sb-new"><svg><use href="#plus-icon"/></svg>New chat</button>
       <button type="button" class="sb-new" data-live><svg><use href="#terminal-icon"/></svg>New terminal</button>
       <nav id="sidebar-list" class="sb-list" aria-label="Recent chats and terminals"></nav>
-      <div class="sb-foot"><button type="button" id="all-history" class="sb-link"><svg><use href="#history-icon"/></svg>All history</button><button type="button" id="open-settings" class="sb-link" data-dialog="settings"><svg><use href="#settings-icon"/></svg>Settings</button></div>
+      <div class="sb-foot"><button type="button" id="open-marketplace" class="sb-link"><svg><use href="#store-icon"/></svg>Marketplace</button><button type="button" id="all-history" class="sb-link"><svg><use href="#history-icon"/></svg>All history</button><button type="button" id="open-settings" class="sb-link" data-dialog="settings"><svg><use href="#settings-icon"/></svg>Settings</button></div>
     </div>
     <div class="sb-strip">
       <button type="button" class="sb-icon" data-sidebar-toggle aria-expanded="false" aria-controls="sidebar" aria-label="Show sidebar" title="Show sidebar"><svg><use href="#sidebar-icon"/></svg></button>
@@ -54,6 +62,7 @@ const BODY = `
       <span class="sb-sep"></span>
       <nav id="sidebar-mini" class="sb-mini-list" aria-label="Live chats and terminals"></nav>
       <span class="sp"></span>
+      <button type="button" class="sb-icon" data-click="open-marketplace" aria-label="Marketplace" title="Marketplace"><svg><use href="#store-icon"/></svg></button>
       <button type="button" class="sb-icon" data-click="all-history" aria-label="All history" title="All history"><svg><use href="#history-icon"/></svg></button>
       <button type="button" class="sb-icon" data-dialog="settings" aria-label="Settings" title="Settings"><svg><use href="#settings-icon"/></svg></button>
     </div>
@@ -117,6 +126,8 @@ const BODY = `
         <header class="studio-heading"><div><h1>Studio</h1><p class="muted">Give your AI team a way to work.</p></div><nav id="studio-nav" aria-label="Studio sections"></nav></header>
         <div id="studio-root"></div>
       </section>
+      <section id="plugin" class="studio" aria-label="Plugin" hidden></section>
+      <section id="marketplace" class="studio" aria-label="Marketplace" hidden></section>
     </div>
 
     <div class="composer-area content-width">
@@ -175,6 +186,17 @@ const BODY = `
 
   </dialog>
 
+  <dialog id="plugin-launch" class="access-dialog flat" aria-labelledby="plugin-launch-title">
+    <header class="dialog-heading"><div><h2 id="plugin-launch-title">Start chat</h2><p class="muted" id="plugin-launch-sub"></p></div><form method="dialog"><button class="round" aria-label="Close" type="submit"><svg><use href="#close-icon"/></svg></button></form></header>
+    <p class="muted" id="plugin-launch-error" role="status"></p>
+    <div class="mk-ctx" id="plugin-launch-ctx" hidden><span><svg><use href="#file-icon"/></svg></span><strong id="plugin-launch-ctx-name"></strong><small id="plugin-launch-ctx-size"></small></div>
+    <form id="plugin-launch-form" class="field-stack">
+      <div class="launcher-fields plugin-launch-fields"><label class="mk-field">AI<select id="plugin-launch-engine"></select></label><label class="mk-field">Model<input id="plugin-launch-model" list="plugin-launch-models" placeholder="Engine default" maxlength="100" autocomplete="off"><datalist id="plugin-launch-models"></datalist></label></div>
+      <label class="mk-field">Working directory<input id="plugin-launch-cwd" list="plugin-launch-recents" placeholder="/path/to/your/project" required autocomplete="off"><datalist id="plugin-launch-recents"></datalist></label>
+      <label class="mk-field">First message (optional)<input id="plugin-launch-message" placeholder="Read the task, then propose a plan"><small class="muted" id="plugin-launch-message-hint" hidden>Type a first message</small></label>
+      <button id="plugin-launch-start" class="pill">Start chat</button>
+    </form>
+  </dialog>
 
   <template id="assistant-row">
     <div class="msg assistant"><span class="avatar"><svg><use href="#spark-icon"/></svg></span><div class="msg-body"><div class="msg-meta"><strong>Mission Control</strong><time>now</time></div></div></div>
@@ -200,6 +222,7 @@ export function ShellPage(props: ShellProps): string {
   <script>try{if(localStorage.getItem('mc.theme')==='dark')document.documentElement.dataset.theme='dark'}catch{}</script>
   <link rel="stylesheet" href="/vendor/xterm.css">
   <link rel="stylesheet" href="/quiet.css">
+  <link rel="stylesheet" href="/plugins.css">
   <link rel="stylesheet" href="/js/studio.css">
   <script>window.MC_WORKSPACE_DIR=${JSON.stringify(props.workspaceDir)}</script>
   <script src="/js/shell.js" type="module" defer></script>
@@ -214,6 +237,7 @@ export function ShellPage(props: ShellProps): string {
   <script src="/js/backdrop.js" type="module" defer></script>
   <script src="/js/access.js" type="module" defer></script>
   <script src="/js/attention.js" type="module" defer></script>
+  <script src="/js/plugins.js" type="module" defer></script>
 </head>
 <body>${BODY}</body>
 </html>`

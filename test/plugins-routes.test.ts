@@ -191,3 +191,41 @@ describe('marketplaces', () => {
     expect(response.status).toBe(400)
   })
 })
+
+describe('plugin icons', () => {
+  const svgIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/></svg>\n'
+  const localGet = (id: string): Promise<Response> => app().handle(new Request(`http://127.0.0.1:7777/api/plugins/${id}/icon`, { headers: { host: '127.0.0.1:7777' } }))
+
+  async function installIconFixture(id: string, manifest: Record<string, unknown>, files: Record<string, string>): Promise<void> {
+    const repo = await createPluginRepo(join(fixtureRoot, `icon-${id}-${crypto.randomUUID().slice(0, 6)}`), isolatedManifest({ id, ...manifest }), { files, tag: 'v1.0.0' })
+    const url = fileUrl(repo)
+    const preview = await (await json('POST', '/api/plugins/preview', { repo: url, ref: 'v1.0.0' })).json()
+    const installed = await json('POST', '/api/plugins/install', { repo: url, ref: 'v1.0.0', commit: preview.commit })
+    expect(installed.status).toBe(200)
+  }
+
+  test('serves the manifest icon for an enabled plugin, svg only', async () => {
+    await installIconFixture('icon-svg', { icon: 'assets/icon.svg' }, { 'assets/icon.svg': svgIcon, 'src/screen.ts': TRIVIAL_SCREEN })
+    const icon = await localGet('icon-svg')
+    expect(icon.status).toBe(200)
+    expect(icon.headers.get('content-type')).toBe('image/svg+xml')
+    expect(await icon.text()).toBe(svgIcon)
+  })
+
+  test('a disabled plugin, a missing icon, other file types and unknown ids all miss', async () => {
+    await installIconFixture('icon-png', { icon: 'assets/icon.png' }, { 'assets/icon.png': 'fake png', 'src/screen.ts': TRIVIAL_SCREEN })
+    expect((await localGet('icon-png')).headers.get('content-type')).toBe('image/png')
+
+    await json('PATCH', '/api/plugins/icon-png', { enabled: false })
+    expect((await localGet('icon-png')).status).toBe(404)
+    await json('PATCH', '/api/plugins/icon-png', { enabled: true })
+
+    await installIconFixture('icon-none', {}, { 'src/screen.ts': TRIVIAL_SCREEN })
+    expect((await localGet('icon-none')).status).toBe(404)
+
+    await installIconFixture('icon-txt', { icon: 'assets/icon.txt' }, { 'assets/icon.txt': 'nope', 'src/screen.ts': TRIVIAL_SCREEN })
+    expect((await localGet('icon-txt')).status).toBe(404)
+
+    expect((await localGet('unknown-plugin')).status).toBe(404)
+  })
+})

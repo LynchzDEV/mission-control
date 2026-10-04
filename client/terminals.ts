@@ -478,6 +478,31 @@ async function resumeSession(resume: ResumeRequest): Promise<void> {
   } finally { opening = false }
 }
 
+export type TerminalLaunch = { engine: string; model?: string; cwd: string; title?: string; initialPrompt?: string }
+
+const DROPPED_PREFIX = "The first message was not sent: this AI's terminal arguments have no {{prompt}} slot."
+
+export function notifyDroppedFirstMessage(prompt: string, clipboard: { writeText(text: string): Promise<void> } = navigator.clipboard): void {
+  void clipboard.writeText(prompt).then(
+    () => toast(`${DROPPED_PREFIX} It is on your clipboard.`, 6000),
+    () => toast(`${DROPPED_PREFIX} Add one in Studio, Manage AIs.`, 6000),
+  )
+}
+
+async function launchTerminal(options: TerminalLaunch): Promise<void> {
+  const cwd = options.cwd.trim()
+  if (cwd === '') { toast('Choose a working directory.', 4000); return }
+  const model = options.model?.trim() ?? ''
+  const result = await postJson('/api/terminals', { engine: options.engine, cwd, cols: 100, rows: 30, ...(model === '' ? {} : { model }), ...(options.title === undefined ? {} : { title: options.title.slice(0, 60) }), ...(options.initialPrompt === undefined ? {} : { initialPrompt: options.initialPrompt }) })
+  if (!result.ok) { toast(`Could not open ${engineName(options.engine)}: ${errorText(result)}`, 4000); return }
+  store(recentKey, JSON.stringify([cwd, ...readRecentDirectories(stored(recentKey)).filter(item => item !== cwd)].slice(0, 12)))
+  const session = result.data as unknown as Session & { firstMessageDropped?: boolean }
+  if (session.firstMessageDropped === true && options.initialPrompt !== undefined) notifyDroppedFirstMessage(options.initialPrompt)
+  sessions = [...sessions.filter(item => item.id !== session.id), session]
+  ensureView(session)
+  activate(session.id)
+}
+
 ;($('live-create') as HTMLFormElement).onsubmit = (event) => { event.preventDefault(); void createTerminal() }
 engineSelect.onchange = () => { modelInput.value = ''; updateModelChoices() }
 addEventListener('quiet:terminal-end', (event) => void endSession((event as CustomEvent<string>).detail))
@@ -485,9 +510,10 @@ addEventListener('quiet:terminal-rename', (event) => { const { id, title } = (ev
 document.addEventListener('dragend', () => paintZones(null, false))
 addEventListener('quiet:design', () => { if (canvas.dataset.live === 'true') visible(false) })
 addEventListener('quiet:open-terminal', (event) => {
-  const detail = (event as CustomEvent<{ restore?: boolean; id?: string; cwd?: string; resume?: ResumeRequest }>).detail
+  const detail = (event as CustomEvent<{ restore?: boolean; id?: string; cwd?: string; resume?: ResumeRequest; launch?: TerminalLaunch }>).detail
   if (detail.id) { void refreshSessions().then(() => { if (views.has(detail.id!)) activate(detail.id!); else toast('That terminal has ended.', 4000) }); return }
   if (detail.resume) { void resumeSession(detail.resume); return }
+  if (detail.launch) { void launchTerminal(detail.launch); return }
   void openTerminal(detail.restore === true, detail.cwd)
 })
 async function reconnect(id: string): Promise<void> {

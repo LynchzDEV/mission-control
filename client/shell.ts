@@ -1,11 +1,13 @@
 import { fold, morph, reveal } from './morph'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
-const screens = ['welcome', 'history', 'conversation', 'studio'] as const
+const screens = ['welcome', 'history', 'conversation', 'studio', 'plugin', 'marketplace'] as const
 const agents = $('agents') as HTMLDialogElement
 const flow = $('flow')
 const message = $('message') as HTMLTextAreaElement
 const composer = $('composer') as HTMLFormElement
+
+const layoutOf = (name: (typeof screens)[number]): string => (name === 'plugin' || name === 'marketplace') ? 'studio' : name
 
 function showScreen(name: (typeof screens)[number]): void {
   const changed = $(name).hidden
@@ -15,7 +17,7 @@ function showScreen(name: (typeof screens)[number]): void {
   dispatchEvent(new Event('quiet:design'))
   dispatchEvent(new CustomEvent('quiet:screen', { detail: name }))
   for (const screen of screens) $(screen).hidden = screen !== name
-  ;(document.querySelector('.canvas') as HTMLElement).dataset.screen = name
+  ;(document.querySelector('.canvas') as HTMLElement).dataset.screen = layoutOf(name)
   const stage = document.querySelector('.stage') as HTMLElement
   if (changed) stage.scrollTop = name === 'conversation' ? stage.scrollHeight : 0
 }

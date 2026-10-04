@@ -997,6 +997,20 @@ async function ensureHome(): Promise<string | null> {
   return askHome(status.data.reason === 'home' ? 'Your projects share only your home folder. Pick the folder that holds them.' : 'No projects yet. Type the folder where your projects live.', candidates)
 }
 
+async function createChat(options: { engine: string; model: string; cwd: string; prompt: string; images: string[]; mode: string | null; project: string | null }): Promise<void> {
+  const result = await postJson('/api/jobs', { engine: options.engine, ...(options.model ? { model: options.model } : {}), ...(options.mode === null ? {} : { permissionMode: options.mode }), cwd: options.cwd, prompt: options.prompt, label: titleFrom(options.prompt), purpose: 'chat', edit: stored('mc.shell.edit') === '1', ...(options.project ? { project: options.project } : {}), ...(options.images.length > 0 ? { images: options.images.map(path => ({ path })) } : {}) })
+  if (!result.ok) { chatError(errorText(result)); return }
+  root = String(result.data.id)
+  if (options.model) keep(`mc.chat.model.${root}`, options.model)
+  if (options.mode !== null) keep(chatModeKey(root), options.mode)
+  document.body.dataset.chat = root
+  document.body.dataset.chatEngine = options.engine
+  setUrl(root)
+  dispatchEvent(new CustomEvent('quiet:chat-agents', { detail: root }))
+  dispatchEvent(new CustomEvent('quiet:chat-open', { detail: root }))
+  await refresh()
+}
+
 async function startChat(prompt: string, images: string[]): Promise<void> {
   const home = await ensureHome()
   if (!home) return
@@ -1005,18 +1019,15 @@ async function startChat(prompt: string, images: string[]): Promise<void> {
   if (!choice.engine) { chatError('No AI is connected yet. Add one in Studio → Manage AIs.'); return }
   const project = stored('mc.shell.project')
   const mode = choice.engine === 'codex' ? null : chatModeChoice(null, stored)
-  const result = await postJson('/api/jobs', { engine: choice.engine, ...(choice.model ? { model: choice.model } : {}), ...(mode === null ? {} : { permissionMode: mode }), cwd: home, prompt, label: titleFrom(prompt), purpose: 'chat', edit: stored('mc.shell.edit') === '1', ...(project ? { project } : {}), ...(images.length > 0 ? { images: images.map(path => ({ path })) } : {}) })
-  if (!result.ok) { chatError(errorText(result)); return }
-  root = String(result.data.id)
-  if (choice.model) keep(`mc.chat.model.${root}`, choice.model)
-  if (mode !== null) keep(chatModeKey(root), mode)
-  document.body.dataset.chat = root
-  document.body.dataset.chatEngine = choice.engine
-  setUrl(root)
-  dispatchEvent(new CustomEvent('quiet:chat-agents', { detail: root }))
-  dispatchEvent(new CustomEvent('quiet:chat-open', { detail: root }))
-  await refresh()
+  await createChat({ engine: choice.engine, model: choice.model, cwd: home, prompt, images, mode, project })
 }
+
+addEventListener('quiet:start-chat', (event) => {
+  const detail = (event as CustomEvent<{ engine: string; model?: string; cwd: string; prompt: string }>).detail
+  show('conversation')
+  const mode = detail.engine === 'codex' ? null : chatModeChoice(null, stored)
+  void createChat({ engine: detail.engine, model: detail.model ?? '', cwd: detail.cwd, prompt: detail.prompt, images: [], mode, project: stored('mc.shell.project') })
+})
 
 function restoreComposer(text: string, images: string[]): void {
   dispatchEvent(new CustomEvent('quiet:message-restore', { detail: { text, images } }))
