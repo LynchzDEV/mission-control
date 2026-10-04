@@ -467,3 +467,11 @@ describe('isolated runtime under the real sandbox (macOS only)', () => {
       expect(betaAllowed.body.result).toBe('STATUS 200')
     }, 30000)
 })
+
+describe('plugin error text', () => {
+  test('drops the json-rpc wrapper so screens can match the plugin message', async () => {
+    const { pluginErrorText } = await import('../server/plugins/runtime-isolated')
+    expect(pluginErrorText(new Error("Request plugin.call failed with message: ClickUp didn't accept this token"))).toBe("ClickUp didn't accept this token")
+    expect(pluginErrorText(new Error('Connect ClickUp first'))).toBe('Connect ClickUp first')
+  })
+})

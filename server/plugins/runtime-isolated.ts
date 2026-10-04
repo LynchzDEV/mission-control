@@ -93,6 +93,12 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`
 }
 
+const METHOD_NOT_FOUND = -32601
+
+export function pluginErrorText(error: unknown): string {
+  return errorMessage(error).replace(/^Request [\w.]+ failed with message: /, '')
+}
+
 export function pluginDataDir(installed: InstalledPlugin): string {
   return join(configDir(), 'plugin-data', installed.id, 'files')
 }
@@ -348,7 +354,7 @@ export function createIsolatedRuntime(installed: InstalledPlugin, deps: Isolated
     } catch (error) {
       if (timedOut) return { ok: false, status: 504, error: 'The plugin did not answer' }
       if (gen.dead) return { ok: false, status: 500, error: stoppedMessage() }
-      return { ok: false, status: 500, error: errorMessage(error) }
+      return { ok: false, status: (error as { code?: unknown }).code === METHOD_NOT_FOUND ? 404 : 500, error: pluginErrorText(error) }
     } finally {
       if (timer !== undefined) clearTimeout(timer)
     }
