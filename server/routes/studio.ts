@@ -87,8 +87,9 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
     })
     .get('/api/studio/connections', async () => {
       const saved = await connections.list()
+      const models = await listModels({ discovery })
       const discovered = await Promise.all(saved.map(async connection => [connection.id, connection.adapter === 'cli' ? null : await discovery.read(connection.id)] as const))
-      return { builtins: BUILTIN_AGENTS, connections: saved, presets: CONNECTION_PRESETS, models: await listModels({ discovery }), roles: (await readConfig()).roles, discovery: Object.fromEntries(discovered) }
+      return { builtins: BUILTIN_AGENTS, connections: saved, presets: CONNECTION_PRESETS, models, roles: (await readConfig()).roles, discovery: Object.fromEntries(discovered) }
     })
     .post('/api/studio/connections', async ({ body }) => { const saved = await saveConnection(connections, discovery, body); modelsCache.invalidate(); return saved })
     .delete('/api/studio/connections/:id', async ({ params }) => { await connections.remove(params.id); await discovery.forget(params.id); modelsCache.invalidate(); return { ok: true } })

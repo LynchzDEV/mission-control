@@ -447,6 +447,11 @@ textarea { line-height: 1.6; }
 .connection-bar em { font-style: normal; text-align: right; color: var(--text); }
 .connection-role { display: inline-block; font-size: 12px; font-weight: 500; padding: 3px 10px; border-radius: var(--r-md); corner-shape: var(--corner); background: var(--role-bg, #ece7f8); color: var(--purple-ink); margin: 0 6px 0 0; }
 .connection-chip { display: inline-block; font: 12px Menlo, monospace; padding: 3px 9px; border-radius: var(--r-sm); corner-shape: var(--corner); border: 1px solid var(--line); margin: 0 6px 6px 0; }
+.connection-discovery { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.connection-section p.connection-discovery { margin: 4px 0 0; }
+.connection-discovery[data-state="error"] > span { color: var(--red-ink); }
+.connection-refresh { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 12px; }
+.connection-refresh svg { width: 13px; height: 13px; }
 .connection-foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 16px; }
 .connection-button { border: 1px solid var(--line); background: transparent; border-radius: var(--r-button); corner-shape: var(--corner); padding: 7px 14px; font-size: 13px; color: var(--text); white-space: nowrap; box-shadow: none; }
 .connection-button:hover { border-color: var(--accent); color: var(--accent); }

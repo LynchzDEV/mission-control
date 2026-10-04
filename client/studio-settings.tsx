@@ -1,5 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import type { AgentConnection } from '../server/agent-connections'
+import type { DiscoveryState } from '../server/model-discovery'
+import { discoveryLine, modelsLabel } from './connection-models'
 import type { WorkflowNode } from '../server/workflows'
 import { normalizeUsage, weeklyOnly, type ProviderUsage, type QuotaWindow } from './provider-usage'
 import { readRecord } from './shared'
@@ -7,7 +9,7 @@ import { api, apiDelete } from './studio-api'
 import { roleWord } from './studio-graph'
 import { DISARM_MS } from './confirm-button'
 
-export type ConnectionList = { builtins: string[]; connections: AgentConnection[]; presets: Array<Partial<AgentConnection>>; models: Record<string, string[]>; roles?: Record<string, { engine: string; model: string | null }> }
+export type ConnectionList = { builtins: string[]; connections: AgentConnection[]; presets: Array<Partial<AgentConnection>>; models: Record<string, string[]>; roles?: Record<string, { engine: string; model: string | null }>; discovery?: Record<string, DiscoveryState | null> }
 type Choice = { kind: 'builtin'; id: string } | { kind: 'connection'; value: AgentConnection } | { kind: 'preset'; value: Partial<AgentConnection> } | { kind: 'presets' }
 type SecretsView = { zaiBaseUrl: string; zaiAuthTokenConfigured: boolean }
 
@@ -68,6 +70,11 @@ function ConfirmRemove({ label, busy, warning, onConfirm }: { label: string; bus
   return <button type="button" className="confirm-morph" data-armed={armed} disabled={busy} aria-label={armed ? 'Remove: click again to confirm' : label} title={armed ? `Click again to remove. ${warning}` : warning} onBlur={() => setArmed(false)} onMouseLeave={() => setArmed(false)} onKeyDown={(event) => { if (event.key === 'Escape') setArmed(false) }} onClick={() => { if (!armed) { setArmed(true); return } setArmed(false); onConfirm() }}><span>{label}</span><span>Remove</span></button>
 }
 
+function ModelDiscoveryLine({ adapter, state, checking, onRefresh }: { adapter: AgentConnection['adapter'] | undefined; state: DiscoveryState | null | undefined; checking: boolean; onRefresh: () => void }) {
+  const line = discoveryLine(adapter, state, Date.now())
+  return <p className="muted connection-small connection-discovery" data-state={state?.error ? 'error' : undefined}><span>{line.text}</span>{line.refresh && <button type="button" className="connection-button connection-refresh" disabled={checking} onClick={onRefresh}><Icon id="history-icon" />{checking ? 'Checking…' : 'Refresh'}</button>}</p>
+}
+
 export function Connections({ list, refresh, report, onError, onConnect }: { list: ConnectionList; refresh: () => Promise<void>; report: (text: string) => void; onError: (text: string) => void; onConnect?: () => void }) {
   const [choice, setChoice] = useState<Choice>({ kind: 'builtin', id: 'claude' })
   const [editing, setEditing] = useState<Partial<AgentConnection>>({})
@@ -76,6 +83,7 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
   const [terminalArgs, setTerminalArgs] = useState('')
   const [probe, setProbe] = useState('')
   const [busy, setBusy] = useState(false)
+  const [checking, setChecking] = useState(false)
   const [advanced, setAdvanced] = useState(false)
   const [details, setDetails] = useState<Details>({ usage: {}, roles: {}, models: {}, glmConfigured: true })
   useEffect(() => {
@@ -98,11 +106,20 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
     } catch (error) { onError((error as Error).message) } finally { setBusy(false) }
   }
   const check = async () => { setBusy(true); try { setProbe(JSON.stringify(await api(`/connections/${editing.id}/probe`, {}), null, 2)); report('Connection checked. No task was sent.') } catch (error) { onError((error as Error).message) } finally { setBusy(false) } }
+  const refreshModels = async () => {
+    setChecking(true)
+    try {
+      const state = await api<DiscoveryState>(`/connections/${editing.id}/models/refresh`, {})
+      await refresh()
+      if (state.error) onError(`Couldn't list models: ${state.error}`)
+      else report(`Found ${state.models.length} model${state.models.length === 1 ? '' : 's'}.`)
+    } catch (error) { onError((error as Error).message) } finally { setChecking(false) }
+  }
   const remove = async () => { setBusy(true); try { await apiDelete(`/connections/${editing.id}`); await refresh(); pick({ kind: 'builtin', id: 'claude' }); report('Connection removed.') } catch (error) { onError((error as Error).message) } finally { setBusy(false) } }
   const current = (test: (item: Choice) => boolean) => test(choice)
   const aiId = choice.kind === 'builtin' ? choice.id : choice.kind === 'presets' ? '' : editing.id ?? ''
   const usedFor = ROLES.filter(role => readRecord(details.roles[role]).engine === aiId)
-  const models = choice.kind === 'builtin' || configured ? details.models[aiId] ?? [] : (editing.models ?? []).filter(Boolean)
+  const models = choice.kind === 'builtin' ? details.models[aiId] ?? [] : configured ? list.models[aiId] ?? details.models[aiId] ?? [] : (editing.models ?? []).filter(Boolean)
   const header = choice.kind === 'builtin'
     ? { name: BUILTIN[choice.id]?.name ?? choice.id, line: BUILTIN[choice.id]?.line ?? 'Built in', description: BUILTIN[choice.id]?.description ?? 'Built-in integration.' }
     : { name: editing.name || 'New connection', line: `${adapterLine(editing.adapter)}${configured ? '' : ' · not saved yet'}`, description: 'Install the app and sign in, then check the connection. Advanced settings are below.' }
@@ -123,7 +140,7 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
         <div className="connection-section"><h3>Usage</h3><UsageBars usage={normalizeUsage(aiId, details.usage[aiId])} /></div>
         <div className="connection-section"><h3>Used for</h3>{usedFor.length ? usedFor.map(role => <span className="connection-role" key={role}>{roleWord(role)}</span>) : <span className="muted connection-small">Not assigned</span>}<p className="muted connection-small">Change in Workflows · Roles</p></div>
       </div>
-      {models.length > 0 && <div className="connection-section"><h3>Models</h3><div>{models.map(model => <span className="connection-chip" key={model}>{model}</span>)}</div></div>}
+      {(models.length > 0 || configured) && <div className="connection-section"><h3>Models</h3>{models.length > 0 && <div>{models.map(model => <span className="connection-chip" key={model}>{model}</span>)}</div>}{configured && <ModelDiscoveryLine adapter={editing.adapter} state={list.discovery?.[aiId]} checking={checking} onRefresh={() => void refreshModels()} />}</div>}
       {choice.kind === 'builtin' && choice.id === 'glm' && <div className="connection-section"><h3>z.ai settings</h3><GlmSettings report={report} onError={onError} /></div>}
       {choice.kind !== 'builtin' && <form className="connection-section field-stack" onSubmit={save}><h3>Connection settings</h3>
         <label>Name<input required value={editing.name ?? ''} onChange={event => setEditing({ ...editing, name: event.target.value })} /></label>
@@ -132,7 +149,7 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
           <label>Adapter<select value={editing.adapter ?? 'acp'} onChange={event => setEditing({ ...editing, adapter: event.target.value as AgentConnection['adapter'] })}><option value="acp">ACP coding agent</option><option value="opencode">OpenCode · API / local models</option><option value="cli">Headless CLI</option></select></label>
           <label>Executable<input required value={editing.command ?? ''} placeholder="qwen" onChange={event => setEditing({ ...editing, command: event.target.value })} /></label>
           <label>Arguments · one per line<textarea rows={3} value={args} onChange={event => setArgs(event.target.value)} /><small className="muted">CLI slots: {'{{prompt}}'}, {'{{model}}'}, {'{{session}}'}. Arguments are passed directly, without a shell.</small></label>
-          <label>Available model IDs · one per line<textarea rows={3} value={(editing.models ?? []).join('\n')} onChange={event => setEditing({ ...editing, models: event.target.value.split('\n') })} /></label>
+          <label>{modelsLabel(editing.adapter)}<textarea rows={3} value={(editing.models ?? []).join('\n')} onChange={event => setEditing({ ...editing, models: event.target.value.split('\n') })} /></label>
           <label>Model family<input value={editing.family ?? ''} placeholder="qwen, grok, llama…" onChange={event => setEditing({ ...editing, family: event.target.value || undefined })} /><small className="muted">Used for the cross-family review when a model ID has no recognized family.</small></label>
           {editing.adapter === 'opencode' && <><label>Base URL (optional)<input type="url" value={editing.baseUrl ?? ''} placeholder="http://localhost:11434/v1" onChange={event => setEditing({ ...editing, baseUrl: event.target.value || undefined })} /></label><label>Provider ID<input value={editing.provider ?? 'custom'} onChange={event => setEditing({ ...editing, provider: event.target.value })} /></label><label>API key environment variable<input value={editing.apiKeyEnv ?? ''} placeholder="OPENROUTER_API_KEY" onChange={event => setEditing({ ...editing, apiKeyEnv: event.target.value || undefined })} /></label><p className="muted">Leave the endpoint blank to use OpenCode's configured providers.</p></>}
           <label>Environment references<textarea rows={3} value={env} placeholder="API_KEY=MY_PROVIDER_KEY" onChange={event => setEnv(event.target.value)} /><small className="muted">Names of variables available to Mission Control. Never enter credential values here.</small></label>
