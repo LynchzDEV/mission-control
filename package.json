@@ -2,11 +2,15 @@
   "name": "mission-control",
   "private": true,
   "type": "module",
+  "bin": {
+    "mctl": "cli/mctl.ts"
+  },
   "scripts": {
     "start": "bun server/index.ts",
     "test": "bun test",
     "postinstall": "bun scripts/postinstall.ts",
-    "typecheck:studio": "tsc -p tsconfig.studio.json"
+    "typecheck:studio": "tsc -p tsconfig.studio.json",
+    "typecheck:cli": "tsc -p tsconfig.cli.json"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.5.0",

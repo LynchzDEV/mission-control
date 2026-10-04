@@ -106,6 +106,22 @@ Mission Control needs no config file. These environment variables change its beh
 
 By default it logs jobs starting and finishing, requests that change something, and every failed request. The chat and sidebar poll in the background every few seconds, so ordinary reads stay quiet unless you run `MC_LOG=verbose bun start`. Request bodies and query strings are never printed.
 
+## Command line
+
+`mctl` drives a running Mission Control from a shell, for people and for AI agents. Install it once with `bun link` in the repo, then run `mctl --help` (or `mctl <group> --help`, e.g. `mctl job --help`).
+
+```sh
+mctl status                          # up/down, usage per provider, role -> engine
+mctl jobs --limit 10                 # newest jobs
+mctl job new "Fix the flaky test" --cwd ~/code/app --follow
+mctl attention                       # what is waiting on you
+mctl runs                            # workflow runs
+```
+
+- `--json` prints the server's JSON as one document (NDJSON for `job follow` and `job new --follow`); every command supports it.
+- `--url` > `MC_URL` > `http://127.0.0.1:7777`. Local URLs need no token. For other URLs set `MC_TOKEN`; otherwise `apiToken` from `secrets.json` is used when present.
+- Exit codes: `0` ok, `1` API error (message on stderr), `2` usage error, `3` Mission Control isn't running.
+
 ## The Claude Code skill
 
 `bun install` (and every server start) links `~/.claude/skills/mc-dispatch` to `skills/mc-dispatch` in this repo, so `git pull` keeps the skill current. With it, a Claude Code session can hand work to Mission Control: it plans, dispatches jobs to the right AI, and reviews them, while you watch the jobs in the Agents drawer and the Flow graph. An existing hand-written skill at that path is moved to `~/.claude/skills-backup/` first, never overwritten.
