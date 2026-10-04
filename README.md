@@ -108,7 +108,7 @@ By default it logs jobs starting and finishing, requests that change something, 
 
 ## Command line
 
-`mctl` drives a running Mission Control from a shell, for people and for AI agents. Install it once with `bun link` in the repo, then run `mctl --help` (or `mctl <group> --help`, e.g. `mctl job --help`).
+`mctl` drives a running Mission Control from a shell, for people and for AI agents. Install it once with `bun link` in the repo, then run `mctl` (banner, version and every command) or `mctl <group> --help`, e.g. `mctl job --help`. `mctl --version` prints the version. For the manual page, link it once with `mkdir -p ~/.local/share/man/man1 && ln -sfn "$PWD/man/mctl.1" ~/.local/share/man/man1/mctl.1`, then `man mctl`.
 
 ```sh
 mctl status                          # up/down, usage per provider, role -> engine

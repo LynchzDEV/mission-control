@@ -1,0 +1,492 @@
+.TH MCTL 1 2026-10-04 "mctl 0.1.0" "User Commands"
+.SH NAME
+mctl \- drive Mission Control from the command line
+.SH SYNOPSIS
+.B mctl
+.I command
+.RI [ subcommand ]
+.RI [ arguments ]
+.RB [ \-\-json ]
+.RB [ \-\-url
+.IR URL ]
+.br
+.B mctl
+.RI [ command ]
+.B \-\-help
+.SH DESCRIPTION
+.B mctl
+talks to a running Mission Control server over its HTTP API. It covers the
+everyday work of the cockpit without a browser: checking status and usage,
+starting and following jobs, answering permission requests, running Studio
+workflows, and managing terminals.
+.PP
+Every command prints short human\-readable output by default. With
+.B \-\-json
+it prints the server's JSON response unchanged, which is the form scripts and
+AI agents should read.
+.PP
+Mission Control must be running (start it with
+.B bun run start
+in the repository).
+.SH GLOBAL OPTIONS
+.TP
+.BI \-\-url " URL"
+Mission Control server address. Default:
+.BR $MC_URL ,
+then
+.BR http://127.0.0.1:7777 .
+.TP
+.B \-\-json
+Print the server JSON as one document on stdout. For
+.B job follow
+and
+.BR "job new \-\-follow" ,
+print NDJSON instead (one JSON object per line, see
+.BR "JSON OUTPUT" ).
+.TP
+.BR \-h ", " \-\-help
+Show help for
+.B mctl
+or for one command group, for example
+.BR "mctl job \-\-help" .
+.TP
+.BR \-v ", " \-\-version
+Print
+.B mctl
+and its version, then exit 0. Works after any command too.
+.PP
+Running
+.B mctl
+with no arguments prints the Mission Control banner, the version and the
+command list.
+.B \-\-help
+prints the command list without the banner, so scripts can read it.
+.PP
+Unknown options are a usage error.
+.SH STATUS AND SETTINGS
+.TP
+.B mctl status
+Whether Mission Control is up, usage per provider (5\-hour, weekly or monthly
+window), and which engine and model play the plan, execute and review roles.
+.TP
+.B mctl roles
+Show the engine and model for each role.
+.TP
+.BI "mctl roles set " "role engine" " \fR[\fB\-\-model\fR \fIM\fR]"
+Assign an engine (and optionally a model) to
+.IR role :
+.BR plan ,
+.B execute
+or
+.BR review .
+The other two roles keep their current values.
+.TP
+.B mctl models
+Models each engine offers.
+.TP
+.B mctl providers
+Connected AI providers.
+.TP
+.B mctl connections
+Built\-in and connected AI agents.
+.TP
+.BI "mctl connection probe " id
+Ask a connected agent what it can do.
+.TP
+.B mctl flow\-approval
+Whether flows started by an AI wait for your approval.
+.TP
+.BI "mctl flow\-approval set " value
+Turn flow approval
+.B on
+or
+.BR off
+.RB ( true " and " false
+also work).
+.TP
+.B mctl policy
+The policy template every workflow step receives.
+.SH WAITING ON YOU
+.TP
+.B mctl attention
+Everything waiting on you: permission requests, finished or stuck jobs, runs
+waiting for approval. Permission requests show the request id that
+.B job permission
+needs.
+.TP
+.BI "mctl attention dismiss " key
+Dismiss one waiting item. Permission requests cannot be dismissed; answer them
+with
+.BR "job permission" .
+.SH HISTORY
+.TP
+.BI "mctl history " \fR[\fB\-\-limit\fR " N\fR]"
+Recent chats, jobs, terminals and sessions.
+.B \-\-limit
+shows only the first
+.I N
+items.
+.TP
+.B mctl outcomes \-\-chat \fIID\fR | \-\-terminal \fIID\fR [\-\-after \fIN\fR] [\-\-limit \fIN\fR]
+Outcome ledger of one chat or terminal. Exactly one of
+.B \-\-chat
+or
+.B \-\-terminal
+is required.
+.B \-\-after
+skips the first
+.I N
+outcomes;
+.B \-\-limit
+returns at most
+.IR N .
+.SH JOBS AND CHATS
+A job is one AI run: a chat turn, a dispatched task, or a workflow step.
+.TP
+.B mctl jobs \fR[\fB\-\-limit\fR \fIN\fR] [\fB\-\-chat\fR \fIID\fR]
+List jobs, newest first: id, status, engine, age and the first line of the
+prompt.
+.B \-\-limit
+keeps the newest
+.IR N ;
+.B \-\-chat
+keeps only jobs of that chat.
+.TP
+.BI "mctl job new " prompt " \fR[\fIoptions\fR]"
+Start a job. Pass
+.B \-
+as the prompt to read it from stdin.
+.RS
+.TP
+.BI \-\-engine " E"
+Engine to run. Default:
+.BR claude .
+.TP
+.BI \-\-model " M"
+Model id.
+.TP
+.BI \-\-cwd " DIR"
+Repository to work in. Default: the current folder.
+.TP
+.BI \-\-label " L"
+Job name. Default: the first line of the prompt, cut to 60 characters.
+.TP
+.B \-\-worktree
+Run in an isolated git worktree.
+.TP
+.B \-\-follow
+Stream the output until the job ends, then exit as
+.B job follow
+does.
+.RE
+.TP
+.BI "mctl job show " id
+One job with its recent activity.
+.TP
+.BI "mctl job log " id
+The full job log as raw text.
+.TP
+.BI "mctl job follow " id
+Stream a job until it ends. Exits 0 if the job finished, 1 if it failed or was
+killed. Following an existing job starts from roughly the last 4 KB of its log.
+In human mode the engine's raw output is printed as it arrives; for Claude and
+Codex that is JSON event lines.
+.TP
+.BI "mctl job reply " "id text"
+Send a follow\-up message to a job. Pass
+.B \-
+as the text to read it from stdin.
+.TP
+.BI "mctl job permission " "id decision" " \-\-request " RID
+Answer a permission request.
+.I decision
+is
+.BR allow_once ,
+.B allow_always
+or
+.BR deny .
+.B \-\-request
+is required; find the id with
+.BR "mctl attention" .
+.TP
+.BI "mctl job kill " id
+Stop a running job.
+.TP
+.BI "mctl job land " id
+Land a job's worktree changes on its branch.
+.TP
+.BI "mctl job reviewed " id
+Mark a job as reviewed.
+.TP
+.BI "mctl job undo " "id toolUseId"
+Undo one Edit or MultiEdit tool call of a chat turn.
+.TP
+.BI "mctl job rename " "id label" " \fR[\fB\-\-lock\fR]"
+Rename a chat.
+.B \-\-lock
+stops automatic retitling. Works on chat roots only.
+.TP
+.BI "mctl job export " id " \fR[\fB\-\-leaf\fR \fITURN\fR]"
+Export a chat as markdown.
+.B \-\-leaf
+picks which branch of the conversation to export.
+.TP
+.BI "mctl job thread " id " \fR[\fB\-\-leaf\fR \fITURN\fR]"
+Messages of a job's thread.
+.TP
+.BI "mctl job commands " id
+Slash commands the job's engine offers.
+.TP
+.BI "mctl job queue " id
+Messages queued behind a running reply.
+.TP
+.BI "mctl job queue rm " "id itemId"
+Remove one queued message.
+.SH STUDIO WORKFLOWS AND RUNS
+.TP
+.B mctl workflows
+Saved workflows; the default is marked with
+.BR * .
+.TP
+.BI "mctl workflow revisions " id
+Revision history of one workflow.
+.TP
+.B mctl runs \fR[\fB\-\-chat\fR \fIID\fR] [\fB\-\-terminal\fR \fIID\fR]
+Workflow runs, optionally only those of one chat or terminal.
+.TP
+.BI "mctl run show " id
+One run in full.
+.TP
+.BI "mctl run start " "workflowId request" " \fR[\fIoptions\fR]"
+Start a workflow run. Pass
+.B \-
+as the request to read it from stdin.
+.RS
+.TP
+.BI \-\-label " L"
+Run name. Default: the first line of the request, cut to 120 characters.
+.TP
+.BI \-\-cwd " DIR"
+Repository to work in. Default: the current folder.
+.TP
+.BI \-\-revision " REV"
+Workflow revision. Default: latest.
+.TP
+.BI \-\-engine " E" "\fR, " \-\-model " M"
+Engine and model override.
+.TP
+.BI \-\-terminal " ID" "\fR, " \-\-chat " ID"
+Terminal or chat that owns the run.
+.RE
+.TP
+.BI "mctl run stop " id
+Stop a run.
+.TP
+.BI "mctl run retry " id
+Retry a run's failed step.
+.TP
+.BI "mctl run pause " id
+Pause a run.
+.TP
+.BI "mctl run resume " id
+Resume a paused run.
+.TP
+.BI "mctl run approve " id " \fR[\fIsession options\fR]"
+Approve a run waiting for you.
+.TP
+.BI "mctl run reject " id " \fR[\fIsession options\fR]"
+Reject a run waiting for you.
+.TP
+.BI "mctl run changes " id " \-\-graph " FILE " \-\-reason " TEXT " \fR[\fB\-\-scope\-grew\fR] [\fIsession options\fR]"
+Propose a change to a running flow.
+.B \-\-graph
+is a JSON file with the proposed graph.
+.B \-\-scope\-grew
+marks a change that widens the scope.
+.TP
+.BI "mctl run step " "runId nodeId" " \fR[\fIsession options\fR]"
+Read a step waiting on this session.
+.TP
+.BI "mctl run step " "runId nodeId" " \-\-post \-\-outcome " O " \-\-summary " TEXT " \fR[\fB\-\-evidence\fR \fITEXT\fR]... [\fB\-\-output\fR \fITEXT\fR] [\fIsession options\fR]"
+Report a step result.
+.I O
+is
+.BR pass ,
+.B fail
+or
+.BR blocked .
+Repeat
+.B \-\-evidence
+for each piece of evidence.
+.TP
+.BI "mctl run remind " "runId nodeId"
+Remind the session about a waiting step. The server only accepts this from the
+browser, so from
+.B mctl
+it fails with exit status 1.
+.PP
+.I Session options
+identify who is answering:
+.BI \-\-chat " ID" ,
+.BI \-\-terminal " ID"
+(the chat or terminal that owns the run) and
+.BI \-\-flow\-version " N"
+(the whole\-number version being answered).
+.SH TERMINALS
+.TP
+.B mctl terminals
+Live terminals: id, engine, age, title and folder.
+.TP
+.BR "mctl terminal new " [ \fIoptions\fR ]
+Open a new terminal.
+.RS
+.TP
+.BI \-\-engine " E"
+Engine to run. Default:
+.BR claude .
+.TP
+.BI \-\-cwd " DIR"
+Folder to open in. Default: the current folder.
+.TP
+.BI \-\-model " M" "\fR, " \-\-title " T"
+Model id and terminal name.
+.TP
+.BI \-\-resume " SID"
+Session id to resume.
+.TP
+.BI \-\-workflow " ID" "\fR, " \-\-revision " REV"
+Pin a workflow (and revision) to the terminal.
+.RE
+.TP
+.BI "mctl terminal rename " "id name"
+Rename a terminal.
+.TP
+.BI "mctl terminal close " id
+End a terminal.
+.TP
+.BI "mctl terminal thread " id
+Transcript of a terminal session.
+.TP
+.BR "mctl terminal sessions " [ \-\-cwd \fI\ DIR\fR ]
+Past sessions a terminal could resume in a folder. Default: the current folder.
+.SH JSON OUTPUT
+With
+.BR \-\-json ,
+each command prints exactly one JSON document: the server's response. A few
+commands wrap text so the output is still JSON:
+.TP
+.B job log
+.B {"log": "..."}
+.TP
+.B job export
+.B {"markdown": "..."}
+.TP
+.B status
+.B {"health": ..., "quota": ..., "roles": ...}
+.PP
+.B job follow
+and
+.B job new \-\-follow
+print NDJSON: one
+.B {"type":"job",...}
+line, one
+.B {"type":"data","data":...}
+line per streamed payload, and a final
+.B {"type":"end","status":"..."}
+line.
+.PP
+Without
+.BR \-\-limit ,
+list commands print the server response unchanged; with it, the list is cut in
+.BR mctl .
+.SH ENVIRONMENT
+.TP
+.B MC_URL
+Server address when
+.B \-\-url
+is not given.
+.TP
+.B MC_TOKEN
+API token sent as
+.BR "Authorization: Bearer" .
+Default: the
+.B apiToken
+field of
+.B secrets.json
+in the Mission Control config folder. Only needed for non\-local addresses;
+requests to 127.0.0.1 or localhost need no token. Over a token, only the job,
+Studio run and read\-only status routes are reachable.
+.TP
+.B MISSION_CONTROL_CONFIG_DIR
+Config folder that holds
+.BR secrets.json .
+Default:
+.BR ~/.config/mission\-control .
+.SH EXIT STATUS
+.TP
+.B 0
+Success. For
+.BR "job follow" ,
+the job finished.
+.TP
+.B 1
+The server returned an error (its message is printed on stderr), or a followed
+job failed or was killed.
+.TP
+.B 2
+Usage error: unknown command or option, missing argument, invalid value.
+.TP
+.B 3
+Mission Control is not reachable at the URL.
+.SH EXAMPLES
+Check that everything is up:
+.PP
+.RS
+.B mctl status
+.RE
+.PP
+Start a job with GLM in the current repository and watch it:
+.PP
+.RS
+.B mctl job new """fix the login bug""" \-\-engine glm \-\-follow
+.RE
+.PP
+Pipe a long prompt from a file:
+.PP
+.RS
+.B mctl job new \- \-\-label refactor < prompt.md
+.RE
+.PP
+See what is waiting, then allow a request once:
+.PP
+.RS
+.B mctl attention
+.br
+.B mctl job permission 32a1609e allow_once \-\-request req_123
+.RE
+.PP
+Start the default workflow and list its runs:
+.PP
+.RS
+.B mctl run start default """build the export page"""
+.br
+.B mctl runs
+.RE
+.PP
+From a script or AI agent, get the newest five jobs as JSON:
+.PP
+.RS
+.B mctl jobs \-\-limit 5 \-\-json
+.RE
+.SH NOT COVERED
+Use the browser for: revealing, rotating or writing secrets; adding or deleting
+connections; workflow drafts, previews and editing; the Studio default
+workflow; chat home and file pickers; job images; terminal file drops; live
+event streams; attaching to a terminal interactively.
+.SH FILES
+.TP
+.B ~/.config/mission\-control/secrets.json
+Holds the API token used for non\-local servers.
+.SH SEE ALSO
+.BR mctl " \-\-help" ,
+the "Command line" section of the Mission Control README.
