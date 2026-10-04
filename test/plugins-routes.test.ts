@@ -1,0 +1,193 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Elysia } from 'elysia'
+
+import { pluginsRoutes } from '../server/routes/plugins'
+import { readConfig, writeConfig } from '../server/secrets'
+import { commitFixture, createPluginRepo, fileUrl, fixtureSha, isolatedManifest, TRIVIAL_SCREEN } from './support/plugin-fixtures'
+
+let configDir: string
+let fixtureRoot: string
+
+beforeEach(async () => {
+  configDir = await mkdtemp(join(tmpdir(), 'mc-plugins-routes-'))
+  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  fixtureRoot = await mkdtemp(join(tmpdir(), 'mc-plugins-repos-'))
+})
+
+afterEach(async () => {
+  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  await rm(configDir, { recursive: true, force: true })
+  await rm(fixtureRoot, { recursive: true, force: true })
+})
+
+const app = () => new Elysia().use(pluginsRoutes())
+const local = (init: RequestInit = {}) => ({ headers: { host: '127.0.0.1:7777', ...(init.headers ?? {}) }, ...init })
+const json = (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => app().handle(new Request(`http://127.0.0.1:7777${path}`, local({
+  method,
+  headers: { 'content-type': 'application/json', ...headers },
+  ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+})))
+
+async function makeFixture(name: string, manifest: Record<string, unknown> = isolatedManifest()): Promise<{ url: string; sha: string }> {
+  const repo = await createPluginRepo(join(fixtureRoot, name), manifest, { files: { 'src/screen.ts': TRIVIAL_SCREEN }, tag: 'v1.0.0' })
+  return { url: fileUrl(repo), sha: await fixtureSha(repo) }
+}
+
+describe('access', () => {
+  test('a request from outside this machine is refused', async () => {
+    const response = await app().handle(new Request('http://evil.example/api/plugins', { headers: { host: 'evil.example' } }))
+    expect(response.status).toBe(403)
+  })
+
+  test('a Bearer-token request from a non-local host is refused', async () => {
+    const response = await app().handle(new Request('http://evil.example/api/plugins', { headers: { host: 'evil.example', authorization: 'Bearer mct_whatever' } }))
+    expect(response.status).toBe(403)
+  })
+})
+
+describe('installed plugins', () => {
+  test('starts empty and lists after an install', async () => {
+    expect(await (await json('GET', '/api/plugins')).json()).toEqual({ plugins: [] })
+    const fixture = await makeFixture('isolated')
+    const installed = await json('POST', '/api/plugins/install', { repo: fixture.url, ref: 'v1.0.0', commit: fixture.sha })
+    expect(installed.status).toBe(200)
+    expect((await (await json('GET', '/api/plugins')).json()).plugins).toHaveLength(1)
+  })
+
+  test('install requires the reviewed commit', async () => {
+    const fixture = await makeFixture('isolated')
+    const response = await json('POST', '/api/plugins/install', { repo: fixture.url, ref: 'v1.0.0' })
+    expect(response.status).toBe(400)
+    expect(await response.text()).toContain('commit is required')
+  })
+
+  test('preview returns what the install prompt shows', async () => {
+    const fixture = await makeFixture('isolated')
+    const response = await json('POST', '/api/plugins/preview', { repo: fixture.url, ref: 'v1.0.0' })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.commit).toBe(fixture.sha)
+    expect(body.runtime).toBe('isolated')
+    expect(body.manifest.id).toBe('fixture-plugin')
+    expect(body.permissions).toEqual({ network: ['api.example.com'], sessions: ['chat'], settings: true })
+  })
+
+  test('preview of an unsupported pluginApi reports the manifest errors', async () => {
+    const fixture = await makeFixture('future', isolatedManifest({ pluginApi: 2 }))
+    const response = await json('POST', '/api/plugins/preview', { repo: fixture.url, ref: 'v1.0.0' })
+    expect(response.status).toBe(400)
+    expect(await response.text()).toContain('This plugin needs a newer Mission Control')
+  })
+
+  test('PATCH flips enabled, DELETE keeps data by default', async () => {
+    const fixture = await makeFixture('isolated')
+    await json('POST', '/api/plugins/install', { repo: fixture.url, ref: 'v1.0.0', commit: fixture.sha })
+
+    const off = await json('PATCH', '/api/plugins/fixture-plugin', { enabled: false })
+    expect(off.status).toBe(200)
+    expect((await off.json()).plugin.enabled).toBe(false)
+
+    const removed = await json('DELETE', '/api/plugins/fixture-plugin', { keepData: false })
+    expect(removed.status).toBe(200)
+    expect((await removed.json()).keptData).toBe(false)
+    expect(stat(join(configDir, 'plugin-data', 'fixture-plugin')).then(() => true, () => false)).resolves.toBe(false)
+  })
+
+  test('update asks for consent when permissions grow', async () => {
+    const repo = await createPluginRepo(join(fixtureRoot, 'grow'), isolatedManifest({ permissions: { network: ['a.example.com'], sessions: ['chat'] } }), { files: { 'src/screen.ts': TRIVIAL_SCREEN }, tag: 'v1.0.0' })
+    const url = fileUrl(repo)
+    await json('POST', '/api/plugins/install', { repo: url, ref: 'v1.0.0', commit: await fixtureSha(repo) })
+    await commitFixture(repo, {
+      'mc-plugin.json': `${JSON.stringify(isolatedManifest({ version: '2.0.0', permissions: { network: ['a.example.com', 'b.example.com'], sessions: ['chat'] } }), null, 2)}\n`,
+    }, { tag: 'v2.0.0' })
+
+    const asked = await json('POST', '/api/plugins/fixture-plugin/update', { ref: 'v2.0.0', commit: await fixtureSha(repo) })
+    expect(asked.status).toBe(409)
+    expect(await asked.json()).toEqual({ needsConsent: true, added: ['Reach b.example.com'] })
+
+    const accepted = await json('POST', '/api/plugins/fixture-plugin/update', { ref: 'v2.0.0', commit: await fixtureSha(repo), accept: true })
+    expect(accepted.status).toBe(200)
+    expect((await accepted.json()).plugin.version).toBe('2.0.0')
+  })
+})
+
+describe('settings', () => {
+  test('secrets never come back and unknown keys are refused', async () => {
+    const fixture = await makeFixture('isolated')
+    await json('POST', '/api/plugins/install', { repo: fixture.url, ref: 'v1.0.0', commit: fixture.sha })
+    await json('PUT', '/api/plugins/fixture-plugin/settings', { key: 'token', value: 'pk-route-secret' })
+
+    const view = await (await json('GET', '/api/plugins/fixture-plugin/settings')).json()
+    expect(view.values).toEqual({})
+    expect(view.configured).toEqual({ token: true })
+    expect(JSON.stringify(view)).not.toContain('pk-route-secret')
+
+    const refused = await json('PUT', '/api/plugins/fixture-plugin/settings', { key: 'unknown', value: 'x' })
+    expect(refused.status).toBe(400)
+
+    const cleared = await json('PUT', '/api/plugins/fixture-plugin/settings', { key: 'token', value: null })
+    expect((await cleared.json()).configured).toEqual({ token: false })
+  })
+
+  test('an unknown plugin 404s', async () => {
+    expect((await json('GET', '/api/plugins/nope/settings')).status).toBe(404)
+  })
+})
+
+describe('marketplaces', () => {
+  test('add lists and remove, preserving the rest of config.json', async () => {
+    const roles = { plan: { engine: 'codex', model: 'gpt-5.1' }, execute: { engine: 'glm', model: null }, review: { engine: 'claude', model: null } }
+    await writeConfig({ roles, chatHome: '/Users/me/work' })
+    const listing = {
+      name: 'Fixture marketplace',
+      plugins: [{ id: 'fixture-plugin', repo: 'https://github.com/LynchzDEV/mc-plugin-fixture', ref: 'v1.0.0', name: 'Fixture', description: '', runtime: 'isolated' }],
+    }
+    const source = await createPluginRepo(join(fixtureRoot, 'market'), listing, { tag: 'v1.0.0', manifestName: 'marketplace.json' })
+    const url = fileUrl(source)
+
+    const added = await json('POST', '/api/plugins/marketplaces', { url })
+    expect(added.status).toBe(200)
+    const config = await readConfig()
+    expect(config.roles).toEqual(roles)
+    expect(config.chatHome).toBe('/Users/me/work')
+    expect(config.marketplaces).toEqual([{ url }])
+
+    const catalogView = await (await json('GET', '/api/plugins/catalog')).json()
+    expect(catalogView.entries[0].plugins).toEqual(listing.plugins)
+
+    const removed = await json('DELETE', '/api/plugins/marketplaces', { url })
+    expect(removed.status).toBe(200)
+    expect((await readConfig()).marketplaces).toEqual([])
+
+    const missing = await json('DELETE', '/api/plugins/marketplaces', { url })
+    expect(missing.status).toBe(404)
+  })
+
+  test('a refresh fetches updates and an unreachable source keeps the cached catalog', async () => {
+    const listing = {
+      name: 'Fixture marketplace',
+      plugins: [{ id: 'fixture-plugin', repo: 'https://github.com/LynchzDEV/mc-plugin-fixture', ref: 'v1.0.0', name: 'Fixture', description: '', runtime: 'isolated' }],
+    }
+    const source = await createPluginRepo(join(fixtureRoot, 'market-refresh'), listing, { tag: 'v1.0.0', manifestName: 'marketplace.json' })
+    const url = fileUrl(source)
+    expect((await json('POST', '/api/plugins/marketplaces', { url })).status).toBe(200)
+
+    const updated = { ...listing, plugins: [{ ...listing.plugins[0]!, ref: 'v1.1.0' }] }
+    await writeFile(join(source, 'marketplace.json'), JSON.stringify(updated))
+    Bun.spawnSync(['git', '-C', source, 'commit', '-qam', 'bump'])
+    expect((await json('POST', '/api/plugins/marketplaces', { url })).status).toBe(200)
+    expect((await (await json('GET', '/api/plugins/catalog')).json()).entries[0].plugins[0].ref).toBe('v1.1.0')
+
+    await rm(source, { recursive: true, force: true })
+    expect((await json('POST', '/api/plugins/marketplaces', { url })).status).toBe(400)
+    expect((await (await json('GET', '/api/plugins/catalog')).json()).entries[0].plugins[0].ref).toBe('v1.1.0')
+  })
+
+  test('a bad marketplace url is refused', async () => {
+    const response = await json('POST', '/api/plugins/marketplaces', { url: 'http://example.com/market' })
+    expect(response.status).toBe(400)
+  })
+})

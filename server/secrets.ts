@@ -33,11 +33,14 @@ export const DEFAULT_ROLES: EngineRoles = {
   review: { engine: 'codex', model: null },
 }
 
+export type MarketplaceRef = { url: string }
+
 export type AppConfig = {
   roles: EngineRoles
   autoReview: boolean
   chatHome: string | null
   flowApproval: boolean
+  marketplaces: MarketplaceRef[]
 }
 
 export type PublicSecretsView = {
@@ -75,7 +78,7 @@ export async function ensureConfigDir(): Promise<string> {
   return dir
 }
 
-async function readJsonFile(file: string): Promise<Record<string, unknown>> {
+export async function readJsonFile(file: string): Promise<Record<string, unknown>> {
   try {
     const raw = await readFile(configPath(file), 'utf8')
     const parsed: unknown = JSON.parse(raw)
@@ -86,7 +89,7 @@ async function readJsonFile(file: string): Promise<Record<string, unknown>> {
   }
 }
 
-async function writeJsonFile(file: string, value: unknown): Promise<void> {
+export async function writeJsonFile(file: string, value: unknown): Promise<void> {
   await ensureConfigDir()
   const path = configPath(file)
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode: FILE_MODE })
@@ -148,6 +151,14 @@ function readRoles(raw: unknown): EngineRoles {
   }
 }
 
+function readMarketplaces(raw: unknown): MarketplaceRef[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap(entry => {
+    const url = typeof entry === 'object' && entry !== null ? asString((entry as Record<string, unknown>).url) : null
+    return url === null ? [] : [{ url }]
+  })
+}
+
 export async function readConfig(): Promise<AppConfig> {
   const raw = await readJsonFile(CONFIG_FILE)
   return {
@@ -155,6 +166,7 @@ export async function readConfig(): Promise<AppConfig> {
     autoReview: raw.autoReview === true,
     chatHome: asString(raw.chatHome),
     flowApproval: raw.flowApproval !== false,
+    marketplaces: readMarketplaces(raw.marketplaces),
   }
 }
 

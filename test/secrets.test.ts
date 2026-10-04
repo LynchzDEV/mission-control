@@ -42,7 +42,7 @@ async function modeOf(path: string): Promise<number> {
 describe('defaults', () => {
   test('missing files fall back to documented defaults', async () => {
     expect(await readSecrets()).toEqual({ zaiAuthToken: null, zaiBaseUrl: DEFAULT_ZAI_BASE_URL, apiToken: null })
-    expect(await readConfig()).toEqual({ roles: DEFAULT_ROLES, autoReview: false, chatHome: null, flowApproval: true })
+    expect(await readConfig()).toEqual({ roles: DEFAULT_ROLES, autoReview: false, chatHome: null, flowApproval: true, marketplaces: [] })
   })
 
   test('corrupt json falls back instead of throwing', async () => {
