@@ -249,56 +249,50 @@ function listPane(): HTMLElement {
   for (const entry of catalogEntries) {
     if ('error' in entry) pane.append(brokenMarketplaceRow(entry.marketplace, entry.error))
   }
-  const addMarket = button('Add a marketplace', 'connection-add', () => { addingMarketplace = !addingMarketplace; render() })
-  addMarket.insertAdjacentHTML('afterbegin', icon('plus-icon'))
-  pane.append(addMarket)
-  if (addingMarketplace) pane.append(marketplaceAddForm())
-  pane.append(Object.assign(document.createElement('div'), { className: 'mk-list-sep' }))
-  pane.append(linkInstallForm())
+  const addLink = button('Add from a link', 'connection-add', () => { addingMarketplace = !addingMarketplace; render() })
+  addLink.insertAdjacentHTML('afterbegin', icon('plus-icon'))
+  pane.append(addLink)
+  if (addingMarketplace) pane.append(addLinkForm())
   return pane
 }
 
-function marketplaceAddForm(): HTMLElement {
+function addLinkForm(): HTMLElement {
   const wrap = document.createElement('div')
-  wrap.className = 'mk-market-add'
+  wrap.className = 'mk-market-add mk-link-add'
   const url = document.createElement('input')
   url.type = 'url'
-  url.placeholder = 'https://github.com/you/your-marketplace'
-  url.setAttribute('aria-label', 'Marketplace url')
+  url.placeholder = 'https://github.com/you/your-plugin or a marketplace'
+  url.setAttribute('aria-label', 'Plugin or marketplace link')
+  const ref = document.createElement('input')
+  ref.type = 'text'
+  ref.placeholder = 'Version (optional: newest tag)'
+  ref.setAttribute('aria-label', 'Version')
   const add = button('Add', 'connection-button', element => {
-    void runBusy(element, 'Adding…', async () => {
-      const result = await postJson('/api/plugins/marketplaces', { url: url.value.trim() })
-      if (!result.ok) return errorText(result)
+    const link = url.value.trim()
+    if (link === '') { failNote('Paste a GitHub link to a plugin or a marketplace.', wrap); return }
+    void runBusy(element, 'Checking…', async () => {
+      const result = await postJson('/api/plugins/add-link', { url: link, ...(ref.value.trim() === '' ? {} : { ref: ref.value.trim() }) })
+      if (!result.ok) return `${errorText(result)}${stepSuffix(result.data)}`
       addingMarketplace = false
-      toast('Marketplace added')
-      await reload()
+      if (result.data.kind === 'marketplace') {
+        toast('Marketplace added')
+        await reload()
+        render()
+        return null
+      }
+      const manifest = result.data.manifest as { id?: string; name?: string; version?: string; description?: string } | undefined
+      if (manifest?.id === undefined || manifest.name === undefined || manifest.version === undefined) return 'This plugin has no readable manifest'
+      const runtime = result.data.runtime === 'trusted' ? 'trusted' : 'isolated'
+      installDraft = {
+        listing: { plugin: { id: manifest.id, repo: link, ref: String(result.data.ref), name: manifest.name, description: manifest.description ?? '', runtime } },
+        preview: { manifest: { id: manifest.id, name: manifest.name, version: manifest.version }, commit: String(result.data.commit ?? ''), permissions: result.data.permissions as PluginPermissions, runtime },
+        error: '',
+      }
       render()
       return null
     }, wrap)
   })
-  wrap.append(url, add)
-  return wrap
-}
-
-function linkInstallForm(): HTMLElement {
-  const wrap = document.createElement('div')
-  wrap.className = 'mk-market-add'
-  wrap.style.display = 'grid'
-  const repo = document.createElement('input')
-  repo.type = 'text'
-  repo.placeholder = 'Repo url (https://…, git@… or file://)'
-  repo.setAttribute('aria-label', 'Plugin repo url')
-  const ref = document.createElement('input')
-  ref.type = 'text'
-  ref.placeholder = 'Ref (branch or tag)'
-  ref.setAttribute('aria-label', 'Plugin ref')
-  const install = button('Install from a link', 'connection-button', element => {
-    const repoUrl = repo.value.trim()
-    const refValue = ref.value.trim()
-    if (repoUrl === '' || refValue === '') { failNote('Give the repo url and the ref to install from.', wrap); return }
-    void openInstallDraft({ plugin: { id: '', repo: repoUrl, ref: refValue, name: 'This plugin', description: '', runtime: 'isolated' } }, element)
-  })
-  wrap.append(repo, ref, install)
+  wrap.append(url, ref, add)
   return wrap
 }
 

@@ -7,6 +7,7 @@ import { localHostRequest } from '../local-access'
 import { validateWorkspaceCwd } from '../workspace'
 import { ContextTooLarge, writeContextFile } from '../plugins/context-files'
 import { createInstaller, type Installer } from '../plugins/installer'
+import { addFromLink } from '../plugins/link'
 import { addMarketplace, catalog, listMarketplaces, removeMarketplace } from '../plugins/marketplaces'
 import { defaultRuntimes, type Runtimes } from '../plugins/runtimes'
 import { setSetting, settingsView } from '../plugins/settings'
@@ -79,6 +80,13 @@ export function pluginsRoutes(deps: { installer?: Installer; runtimes?: Runtimes
       const result = await installer.preview({ repo: text(parsed.repo), ref: text(parsed.ref) })
       if (!result.ok) { set.status = result.status; return failureBody(result) }
       return successBody(result)
+    })
+    .post('/api/plugins/add-link', async ({ body, set }) => {
+      const parsed = (body ?? {}) as Record<string, unknown>
+      const result = await addFromLink(installer, text(parsed.url).trim(), optionalText(parsed.ref)?.trim())
+      if (!result.ok) { set.status = result.status; return { error: result.error, ...(result.step ? { step: result.step } : {}) } }
+      if (result.kind === 'marketplace') return { kind: 'marketplace' }
+      return { kind: 'plugin', ref: result.ref, ...successBody(result.preview) }
     })
     .post('/api/plugins/install', async ({ body, set }) => {
       const parsed = (body ?? {}) as Record<string, unknown>

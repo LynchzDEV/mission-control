@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { Elysia } from 'elysia'
 
 import { marketplaceDir } from '../server/plugins/marketplaces'
+import { pickRef } from '../server/plugins/link'
 import { pluginsRoutes } from '../server/routes/plugins'
 import { readConfig, writeConfig } from '../server/secrets'
 import { commitFixture, createPluginRepo, fileUrl, fixtureSha, isolatedManifest, TRIVIAL_SCREEN } from './support/plugin-fixtures'
@@ -247,5 +248,58 @@ describe('plugin icons', () => {
     expect((await localGet('icon-txt')).status).toBe(404)
 
     expect((await localGet('unknown-plugin')).status).toBe(404)
+  })
+})
+
+describe('add from a link', () => {
+  test('a plugin repo opens the install preview at its newest version tag', async () => {
+    const source = await createPluginRepo(join(fixtureRoot, 'link-plugin'), isolatedManifest(), { tag: 'v1.0.0', files: { 'src/screen.ts': TRIVIAL_SCREEN } })
+    await commitFixture(source, { 'src/screen.ts': `${TRIVIAL_SCREEN}// v1.10\n` }, { tag: 'v1.10.0' })
+    const newest = await fixtureSha(source)
+    await commitFixture(source, { 'src/screen.ts': `${TRIVIAL_SCREEN}// v1.9\n` }, { tag: 'v1.9.0' })
+    const response = await json('POST', '/api/plugins/add-link', { url: fileUrl(source) })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body).toMatchObject({ kind: 'plugin', ref: 'v1.10.0', commit: newest, runtime: 'isolated' })
+    expect(body.manifest.id).toBe('fixture-plugin')
+  })
+
+  test('a plugin repo without version tags uses its default branch, and a typed version wins', async () => {
+    const source = await createPluginRepo(join(fixtureRoot, 'link-untagged'), isolatedManifest(), { files: { 'src/screen.ts': TRIVIAL_SCREEN } })
+    expect(await (await json('POST', '/api/plugins/add-link', { url: fileUrl(source) })).json()).toMatchObject({ kind: 'plugin', ref: 'main' })
+    await commitFixture(source, { 'notes.md': 'x' }, { tag: 'v2.0.0' })
+    await commitFixture(source, { 'notes.md': 'y' }, { tag: 'v3.0.0' })
+    expect(await (await json('POST', '/api/plugins/add-link', { url: fileUrl(source), ref: 'v2.0.0' })).json()).toMatchObject({ kind: 'plugin', ref: 'v2.0.0' })
+  })
+
+  test('a marketplace repo is added as a marketplace', async () => {
+    const listing = { name: 'Linked market', plugins: [] }
+    const source = await createPluginRepo(join(fixtureRoot, 'link-market'), listing, { tag: 'v1.0.0', manifestName: 'marketplace.json' })
+    const response = await json('POST', '/api/plugins/add-link', { url: fileUrl(source) })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ kind: 'marketplace' })
+    expect((await readConfig()).marketplaces).toEqual([{ url: fileUrl(source) }])
+  })
+
+  test('a repo that is neither says so and keeps nothing', async () => {
+    const source = await createPluginRepo(join(fixtureRoot, 'link-neither'), { hello: 'world' }, { manifestName: 'something.json' })
+    const response = await json('POST', '/api/plugins/add-link', { url: fileUrl(source) })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: "This repo isn't a Mission Control plugin or marketplace." })
+    expect((await readConfig()).marketplaces).toEqual([])
+  })
+
+  test('an unreachable or unsupported link is refused plainly', async () => {
+    expect(await (await json('POST', '/api/plugins/add-link', { url: 'http://example.com/x' })).json()).toEqual({ error: 'The link must be https://, git@host:path or file://' })
+    expect(await (await json('POST', '/api/plugins/add-link', { url: `file://${join(fixtureRoot, 'does-not-exist')}` })).json()).toEqual({ error: "Couldn't reach this repo" })
+  })
+})
+
+describe('pickRef', () => {
+  test('prefers the highest version tag over the default branch and ignores peeled tags', () => {
+    const lsRemote = ['ref: refs/heads/trunk\tHEAD', 'aaa\tHEAD', 'bbb\trefs/tags/v1.9.0', 'ccc\trefs/tags/v1.10.0', 'ccc\trefs/tags/v1.10.0^{}', 'ddd\trefs/tags/nightly'].join('\n')
+    expect(pickRef(lsRemote)).toBe('v1.10.0')
+    expect(pickRef('ref: refs/heads/trunk\tHEAD\naaa\tHEAD')).toBe('trunk')
+    expect(pickRef('')).toBeNull()
   })
 })

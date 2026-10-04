@@ -88,3 +88,5 @@
 .mk-market-broken strong { font-weight: 500; overflow-wrap: anywhere; }
 .mk-market-broken small { color: var(--red-ink); font-size: 12px; }
 .mk-market-broken button { justify-self: start; margin-top: 4px; }
+.mk-link-add { display: grid; gap: 8px; }
+.mk-link-add button { justify-self: start; }

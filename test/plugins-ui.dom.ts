@@ -93,6 +93,7 @@ let terminalCreate: (() => Response) | null = null
 
 const providers = { providers: [{ id: 'claude', name: 'Claude', models: ['opus', 'sonnet'] }, { id: 'glm', name: 'GLM', models: ['glm-5.3'] }] }
 let catalogName = 'KlangTech marketplace'
+let addLinkReply: { status: number; body: Record<string, unknown> } = { status: 200, body: { kind: 'marketplace' } }
 let brokenMarketplace: { marketplace: string; error: string } | null = null
 const catalogBody = () => ({ entries: [...(brokenMarketplace ? [brokenMarketplace] : []), { marketplace: 'https://github.com/LynchzDEV/mc-marketplace', name: catalogName, plugins: [{ id: 'hello-board', repo: 'https://github.com/LynchzDEV/mc-plugin-template', ref: 'v2.0.0', name: 'Hello board', description: 'Template: a trusted plugin', runtime: 'trusted' }], skipped: [] }] })
 
@@ -101,6 +102,7 @@ const reply = (request: Sent): Response => {
   if (method === 'GET' && url === '/api/history') return Response.json({ items: [{ kind: 'chat', id: 'c1', title: 'Chat one', updatedAt: Date.now(), project: null, running: false, agents: [] }] })
   if (method === 'GET' && url === '/api/plugins') return Response.json({ plugins: installedPlugins })
   if (method === 'GET' && url === '/api/plugins/catalog') return Response.json(catalogBody())
+  if (method === 'POST' && url === '/api/plugins/add-link') return Response.json(addLinkReply.body, { status: addLinkReply.status })
   if (method === 'DELETE' && url === '/api/plugins/marketplaces') { brokenMarketplace = null; return Response.json({ marketplaces: [] }) }
   if (method === 'GET' && url === '/api/providers') return Response.json(providers)
   if (method === 'GET' && url === '/api/terminals') return Response.json({ sessions: [] })
@@ -245,6 +247,46 @@ test('the bundled plugins island opens the marketplace through the shell event',
   expect(screen.querySelector('.connection-list')).not.toBeNull()
   expect(screen.querySelector('.connection-list [data-plugin="hello-board"]')).not.toBeNull()
   expect(screen.querySelector('.connection-settings')).not.toBeNull()
+})
+
+test('a plugin link opens the install prompt for that plugin at the version found', async () => {
+  addLinkReply = { status: 200, body: { kind: 'plugin', ref: 'v1.1.0', manifest: { id: 'clickup-board', name: 'ClickUp board', version: '1.1.0' }, commit: 'abc123', permissions: { network: ['api.clickup.com'], sessions: ['chat'], settings: true }, runtime: 'isolated' } }
+  dispatchEvent(new CustomEvent('quiet:show', { detail: 'marketplace' }))
+  await flush(4)
+  buttonNamed('Add from a link', byId('marketplace')).click()
+  await flush()
+  const link = byId('marketplace').querySelector('input[aria-label="Plugin or marketplace link"]') as HTMLInputElement
+  link.value = 'https://github.com/LynchzDEV/mc-plugin-clickup'
+  sent.length = 0
+  buttonNamed('Add', byId('marketplace')).click()
+  await flush(4)
+  expect(sent.find(request => request.url === '/api/plugins/add-link')!.body).toEqual({ url: 'https://github.com/LynchzDEV/mc-plugin-clickup' })
+  expect(byId('marketplace').querySelector('.mk-dialog h2')!.textContent).toBe('Install ClickUp board?')
+  expect(byId('marketplace').querySelector('.mk-dialog')!.textContent).toContain('api.clickup.com')
+  buttonNamed('Cancel', byId('marketplace').querySelector('.mk-dialog') as HTMLElement).click()
+  await flush()
+})
+
+test('a marketplace link is added and its listing loads; a bad link says why', async () => {
+  addLinkReply = { status: 200, body: { kind: 'marketplace' } }
+  dispatchEvent(new CustomEvent('quiet:show', { detail: 'marketplace' }))
+  await flush(4)
+  buttonNamed('Add from a link', byId('marketplace')).click()
+  await flush()
+  ;(byId('marketplace').querySelector('input[aria-label="Plugin or marketplace link"]') as HTMLInputElement).value = 'https://github.com/LynchzDEV/mc-marketplace'
+  sent.length = 0
+  buttonNamed('Add', byId('marketplace')).click()
+  await flush(4)
+  expect(sent.map(request => request.url)).toContain('/api/plugins/catalog')
+  expect(byId('marketplace').querySelector('input[aria-label="Plugin or marketplace link"]')).toBeNull()
+  addLinkReply = { status: 400, body: { error: "This repo isn't a Mission Control plugin or marketplace." } }
+  buttonNamed('Add from a link', byId('marketplace')).click()
+  await flush()
+  ;(byId('marketplace').querySelector('input[aria-label="Plugin or marketplace link"]') as HTMLInputElement).value = 'https://github.com/someone/notes'
+  buttonNamed('Add', byId('marketplace')).click()
+  await flush(4)
+  expect(byId('marketplace').textContent).toContain("This repo isn't a Mission Control plugin or marketplace.")
+  addLinkReply = { status: 200, body: { kind: 'marketplace' } }
 })
 
 test('a marketplace that fails to load shows its error and can be removed', async () => {
