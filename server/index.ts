@@ -31,6 +31,7 @@ import { metaRoutes } from './routes/meta'
 import { modelsRoutes } from './routes/models'
 import { providersRoutes } from './routes/providers'
 import { pluginsRoutes } from './routes/plugins'
+import { defaultRuntimes } from './plugins/runtimes'
 import { terminalsRoutes } from './routes/terminals'
 import { outcomesRoutes } from './routes/outcomes'
 import { attentionRoutes } from './routes/attention'
@@ -256,6 +257,8 @@ export async function createApp(): Promise<Elysia> {
     .use(modelsRoutes)
     .use(providersRoutes)
     .use(pluginsRoutes())
+
+  await defaultRuntimes()
 
   if (await publicDirExists()) {
     app.use(staticPlugin({ assets: PUBLIC_DIR, prefix: '', headers: { 'cache-control': 'no-cache' } }))

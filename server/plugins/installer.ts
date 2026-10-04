@@ -9,6 +9,7 @@ import { PluginBusyError, withPluginLock } from './locks'
 import { catalog } from './marketplaces'
 import { parseManifest, permissionsAdded, type PluginManifest, type PluginPermissions, type PluginRuntime } from './manifest'
 import { isAllowedRepoUrl } from './repo-url'
+import { invalidateRuntime } from './runtimes'
 import { getInstalled, pluginFolder, pluginsRoot, removeInstalled, saveInstalled, type InstalledPlugin } from './store'
 
 const GIT_TIMEOUT = 120_000
@@ -359,9 +360,11 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
           const record: InstalledPlugin = {
             ...recordOf(manifest.manifest, { repo, ref, ...(installed.source.marketplace !== undefined ? { marketplace: installed.source.marketplace } : {}) }, sha, installed.installedAt),
             enabled: installed.enabled,
+            ...(installed.runtime === 'trusted' && manifest.manifest.runtime === 'trusted' ? { restartRequired: true } : {}),
           }
           const replaced = await replaceInstalled(id, tmp, record)
           if (replaced !== null) return replaced
+          await invalidateRuntime(id)
           return { ok: true, plugin: record }
         } finally {
           await rm(tmp, { recursive: true, force: true })
@@ -380,6 +383,7 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
         await removeStaleOldFolders(id)
         await rm(pluginFolder(id), { recursive: true, force: true })
         await removeInstalled(id)
+        await invalidateRuntime(id)
         const keepData = options.keepData !== false
         if (!keepData) await rm(join(configDir(), 'plugin-data', id), { recursive: true, force: true })
         return { ok: true, keptData: keepData }
@@ -397,6 +401,7 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
         if (installed === null) return { ok: false, status: 404, error: 'That plugin is not installed' }
         const record: InstalledPlugin = { ...installed, enabled, updatedAt: new Date().toISOString() }
         await deps.saveInstalled(record)
+        if (!enabled) await invalidateRuntime(id)
         return { ok: true, plugin: record }
       })
     } catch (error) {

@@ -20,6 +20,7 @@ export type InstalledPlugin = {
   server?: string
   screen?: string
   enabled: boolean
+  restartRequired?: boolean
   installedAt: string
   updatedAt: string
 }
@@ -77,5 +78,17 @@ export async function removeInstalled(id: string): Promise<void> {
   await exclusive(async () => {
     const current = toInstalledList(await readRegistryRaw())
     await writeRegistry(current.filter(entry => entry.id !== id))
+  })
+}
+
+export async function clearRestartFlags(): Promise<void> {
+  await exclusive(async () => {
+    const current = toInstalledList(await readRegistryRaw())
+    if (!current.some(plugin => plugin.restartRequired === true)) return
+    await writeRegistry(current.map(plugin => {
+      if (plugin.restartRequired !== true) return plugin
+      const { restartRequired: _flag, ...rest } = plugin
+      return rest
+    }))
   })
 }

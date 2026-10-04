@@ -8,6 +8,9 @@ import type { SettingField } from './manifest'
 
 const SETTINGS_FILE = 'settings.json'
 
+const SERVER_KEY_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/
+const MAX_SETTING_BYTES = 1048576
+
 export type SettingsView = {
   fields: SettingField[]
   values: Record<string, string>
@@ -16,13 +19,27 @@ export type SettingsView = {
 
 export type SettingsResult<T> = { ok: true; value: T } | { ok: false; status: number; error: string }
 
+type SettingValues = Record<string, string>
+
+function prototypeSafeValues(): SettingValues {
+  return Object.create(null)
+}
+
+function copySettings(values: SettingValues): SettingValues {
+  return Object.assign(prototypeSafeValues(), values)
+}
+
 function settingsFile(id: string): string {
   return join('plugin-data', id, SETTINGS_FILE)
 }
 
-async function readSettings(id: string): Promise<Record<string, string>> {
+async function readSettings(id: string): Promise<SettingValues> {
   const raw = await readJsonFile(settingsFile(id))
-  return Object.fromEntries(Object.entries(raw).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+  const values = prototypeSafeValues()
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string') values[key] = value
+  }
+  return values
 }
 
 async function writeSettings(id: string, values: Record<string, string>): Promise<void> {
@@ -30,10 +47,10 @@ async function writeSettings(id: string, values: Record<string, string>): Promis
   await writeJsonFile(settingsFile(id), values)
 }
 
-function viewOf(fields: SettingField[], values: Record<string, string>): SettingsView {
+function viewOf(fields: SettingField[], values: SettingValues): SettingsView {
   const secretKeys = new Set(fields.filter(field => field.type === 'secret').map(field => field.key))
-  const safeValues: Record<string, string> = {}
-  const configured: Record<string, boolean> = {}
+  const safeValues = prototypeSafeValues()
+  const configured: Record<string, boolean> = Object.create(null)
   for (const field of fields) {
     const value = values[field.key]
     configured[field.key] = typeof value === 'string' && value !== ''
@@ -56,7 +73,7 @@ export async function setSetting(id: string, key: string, value: string | null):
   try {
     return await withPluginLock(id, async () => {
       const current = await readSettings(id)
-      const next = { ...current }
+      const next = copySettings(current)
       if (value === null) delete next[key]
       else next[key] = value
       await writeSettings(id, next)
@@ -70,4 +87,16 @@ export async function setSetting(id: string, key: string, value: string | null):
 
 export async function getSetting(id: string, key: string): Promise<string | null> {
   return (await readSettings(id))[key] ?? null
+}
+
+export async function setServerSetting(id: string, key: string, value: string | null): Promise<void> {
+  if (!SERVER_KEY_PATTERN.test(key)) throw new Error(`Invalid setting key: ${key}`)
+  if (value !== null && Buffer.byteLength(value) > MAX_SETTING_BYTES) throw new Error('That setting is too large')
+  return withPluginLock(id, async () => {
+    const current = await readSettings(id)
+    const next = copySettings(current)
+    if (value === null) delete next[key]
+    else next[key] = value
+    await writeSettings(id, next)
+  })
 }
