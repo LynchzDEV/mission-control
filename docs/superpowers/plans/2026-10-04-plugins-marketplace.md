@@ -122,6 +122,9 @@ Tests (`test/terminal-first-message.test.ts`, `test/plugin-context-files.test.ts
 - Step 4 is removed: H2 does NOT edit `server/secrets.ts`. `server/plugins/context-files.ts` imports the already-exported `configDir()` from `server/secrets.ts` and creates folders with `mkdir(dir, { recursive: true, mode: 0o700 })` and files with `writeFile(path, markdown, { mode: 0o600 })` followed by `chmod(path, 0o600)`.
 - Files this run may edit: `server/terminals.ts`, `server/routes/terminals.ts`, `server/plugins/context-files.ts` (new), `test/terminal-first-message.test.ts` (new), `test/plugin-context-files.test.ts` (new), `test/terminals-routes.test.ts` (only the two sleeps, round 2). Nothing else.
 
+### H2 revisions, round 4
+- `test/workflow-runner.test.ts` imports `TerminalRecord` from the changed module, so it joins the allowlist with exactly this change: add near the top `async function settle(): Promise<void> { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)) }` and replace `await Bun.sleep(100)` (~line 319) and `await Bun.sleep(200)` (~line 385) with `await settle()`. Those two tests assert that nothing more happens; `settle()` drains queued callbacks without any wall-clock wait. No other change to that file; run it three times, all green.
+
 ## Run H3 — plugin store, manifests, marketplaces, install lifecycle, settings (worktree `.worktree/plg-store`)
 
 Decisions:
