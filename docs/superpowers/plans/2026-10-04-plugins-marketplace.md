@@ -208,6 +208,9 @@ Tests (`test/plugin-runtime-trusted.test.ts`): fixture trusted plugin with metho
 - Replace the v1→v2 test with: after updating a trusted fixture from v1 to v2, `/call version` still returns `'v1'` and `GET /api/plugins` shows `restartRequired: true`; a fresh `createRuntimes()` (simulated restart) on the same config dir returns `'v2'` and clears `restartRequired`.
 - Uninstall or disable of a trusted plugin: its routes stop answering immediately (404/409 from the store check), even though its module stays in memory.
 
+### H4 revisions, round 3 (restart test)
+- The restart half of the update test runs in a fresh Bun process (Bun's module cache is process-wide): `Bun.spawn([process.execPath, 'test/support/plugin-call.ts', <pluginId>, 'version'], { env: { ...process.env, MISSION_CONTROL_CONFIG_DIR: dir } })` where `test/support/plugin-call.ts` builds `createRuntimes()`, calls the method once, prints the JSON result to stdout and exits 0. Assert stdout is `"v2"` and, after it exits, `plugins.json` shows `restartRequired` cleared for that plugin (clearing happens in `createRuntimes()` at startup). The same-process half stays: after the update `/call version` returns `'v1'` and `restartRequired: true`.
+
 ## Run H5 — isolated runtime (worktree `.worktree/plg-spike`, after H1 GO and H4 land)
 
 Decisions: copy the sandbox config, allow paths and env handling from `docs/spikes/2026-10-04-plugin-sandbox/README.md` exactly. `server/plugins/runtime-isolated.ts` `createIsolatedRuntime(installed, deps)`:
