@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util'
 
 import { ApiError, createClient, UnreachableError, type FetchLike } from './client'
 import { UsageError, type Command, type Context, type OptionSpec, type OptionValues } from './command'
+import { jobCommands } from './commands/jobs'
 import { systemCommands } from './commands/system'
 
 export const DEFAULT_URL = 'http://127.0.0.1:7777'
@@ -21,7 +22,7 @@ export type MainDeps = {
   pollMs?: number
 }
 
-export const COMMANDS: Command[] = [...systemCommands]
+export const COMMANDS: Command[] = [...systemCommands, ...jobCommands]
 
 const GLOBAL_OPTIONS: Record<string, OptionSpec> = {
   url: { type: 'string', description: `Mission Control URL (default: $MC_URL, then ${DEFAULT_URL})`, placeholder: 'URL' },
