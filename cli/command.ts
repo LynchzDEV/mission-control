@@ -86,13 +86,13 @@ export function records(value: unknown, key: string): Array<Record<string, unkno
 export const SESSION_OPTIONS: Record<string, OptionSpec> = {
   chat: { type: 'string', description: 'chat id that owns the run', placeholder: 'ID' },
   terminal: { type: 'string', description: 'terminal id that owns the run', placeholder: 'ID' },
-  version: { type: 'string', description: 'version number being answered', placeholder: 'N' },
+  'flow-version': { type: 'string', description: 'flow version number being answered', placeholder: 'N' },
 }
 
 export function sessionBody(ctx: Context): Record<string, unknown> {
   const chat = stringOpt(ctx, 'chat')
   const terminal = stringOpt(ctx, 'terminal')
-  const version = countOpt(ctx, 'version')
+  const version = countOpt(ctx, 'flow-version')
   return {
     ...(chat === undefined ? {} : { chat }),
     ...(terminal === undefined ? {} : { terminalId: terminal }),

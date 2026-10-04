@@ -4,12 +4,14 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
+import { BANNER } from './banner'
 import { ApiError, createClient, UnreachableError, type FetchLike } from './client'
 import { UsageError, type Command, type Context, type OptionSpec, type OptionValues } from './command'
 import { jobCommands } from './commands/jobs'
 import { studioCommands } from './commands/studio'
 import { systemCommands } from './commands/system'
 
+export const VERSION = '0.1.0'
 export const DEFAULT_URL = 'http://127.0.0.1:7777'
 const DEFAULT_POLL_MS = 1000
 
@@ -29,6 +31,7 @@ const GLOBAL_OPTIONS: Record<string, OptionSpec> = {
   url: { type: 'string', description: `Mission Control URL (default: $MC_URL, then ${DEFAULT_URL})`, placeholder: 'URL' },
   json: { type: 'boolean', description: 'print the server JSON as one document (NDJSON for follow)' },
   help: { type: 'boolean', short: 'h', description: 'show help' },
+  version: { type: 'boolean', short: 'v', description: 'print the mctl version' },
 }
 
 const OUT_OF_SCOPE = 'Not covered here (use the browser): secrets reveal/rotate/write, connection create/delete, drafts, preview, studio default, workflow and policy editing, chat home and file pickers, job images, terminal drops, live event streams, attaching to a terminal.'
@@ -141,10 +144,18 @@ function showHelp(deps: MainDeps, text: string, requested: boolean): number {
 async function dispatch(argv: string[], deps: MainDeps): Promise<number> {
   const pre = preParse(argv)
   const wantsHelp = pre.values.help === true
+  if (pre.values.version === true) {
+    deps.stdout(`mctl ${VERSION}\n`)
+    return 0
+  }
   const command = findCommand(pre.positionals)
 
   if (command === undefined) {
-    if (pre.positionals.length === 0) return showHelp(deps, rootHelp(), wantsHelp)
+    if (pre.positionals.length === 0 && !wantsHelp) {
+      deps.stdout(`${BANNER}  mctl v${VERSION}\n\n${rootHelp()}`)
+      return 0
+    }
+    if (pre.positionals.length === 0) return showHelp(deps, rootHelp(), true)
     const group = pre.positionals[0]
     if (isGroup(group) && pre.positionals.length === 1) return showHelp(deps, prefixHelp([group!]), wantsHelp)
     throw new UsageError(`unknown command: ${pre.positionals.join(' ')}`, isGroup(group) ? group : undefined)

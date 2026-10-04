@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { main, type MainDeps } from '../cli/mctl'
+import { main, VERSION, type MainDeps } from '../cli/mctl'
 
 let configDir: string
 
@@ -137,7 +137,7 @@ const ROWS: Row[] = [
   { argv: ['run', 'pause', 'run-1'], method: 'POST', path: '/api/studio/runs/run-1/pause' },
   { argv: ['run', 'resume', 'run-1'], method: 'POST', path: '/api/studio/runs/run-1/resume' },
   { argv: ['run', 'approve', 'run-1'], method: 'POST', path: '/api/studio/runs/run-1/approve', body: {} },
-  { argv: ['run', 'approve', 'run-1', '--chat', 'chat-1', '--version', '2'], method: 'POST', path: '/api/studio/runs/run-1/approve', body: { chat: 'chat-1', version: 2 } },
+  { argv: ['run', 'approve', 'run-1', '--chat', 'chat-1', '--flow-version', '2'], method: 'POST', path: '/api/studio/runs/run-1/approve', body: { chat: 'chat-1', version: 2 } },
   { argv: ['run', 'reject', 'run-1', '--terminal', 't-1'], method: 'POST', path: '/api/studio/runs/run-1/reject', body: { terminalId: 't-1' } },
   { argv: ['run', 'step', 'run-1', 'build'], method: 'GET', path: '/api/studio/runs/run-1/steps/build' },
   {
@@ -226,7 +226,7 @@ describe('usage errors exit 2 without calling the server', () => {
     ['outcomes with neither chat nor terminal', ['outcomes']],
     ['outcomes with both chat and terminal', ['outcomes', '--chat', 'a', '--terminal', 'b']],
     ['non-numeric limit', ['jobs', '--limit', 'lots']],
-    ['non-numeric version', ['run', 'approve', 'r', '--version', 'two']],
+    ['non-numeric version', ['run', 'approve', 'r', '--flow-version', 'two']],
     ['group without a subcommand', ['run']],
   ]
   for (const [name, argv] of cases) {
@@ -311,10 +311,28 @@ describe('help', () => {
     expect(h.calls).toEqual([])
   })
 
-  test('no arguments prints help and exits 2', async () => {
+  test('no arguments shows the Mission Control banner, the version and help', async () => {
     const h = harness()
-    expect(await main([], h.deps)).toBe(2)
-    expect(h.err()).toContain('Usage')
+    expect(await main([], h.deps)).toBe(0)
+    expect(h.out()).toContain('███╗   ███╗')
+    expect(h.out()).toContain(`v${VERSION}`)
+    expect(h.out()).toContain('Usage')
+    expect(h.calls).toEqual([])
+  })
+
+  test('--help stays plain so scripts never parse the banner', async () => {
+    const h = harness()
+    await main(['--help'], h.deps)
+    expect(h.out()).not.toContain('███')
+  })
+
+  test('--version prints the version alone, even after a command', async () => {
+    for (const argv of [['--version'], ['-v'], ['jobs', '--version']]) {
+      const h = harness()
+      expect(await main(argv, h.deps)).toBe(0)
+      expect(h.out()).toBe(`mctl ${VERSION}\n`)
+      expect(h.calls).toEqual([])
+    }
   })
 
   test('group help lists only that group', async () => {
