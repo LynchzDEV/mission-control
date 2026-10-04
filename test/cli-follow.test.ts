@@ -87,6 +87,34 @@ describe('job follow', () => {
     expect(f.out()).toContain('existing-job')
   })
 
+  test('a stream slower than the job still delivers the final output', async () => {
+    const h = harness(echoResolver)
+    await main(['job', 'new', 'late-tail', '--json'], h.deps)
+    const { id } = JSON.parse(h.out()) as { id: string }
+    const f = harness(echoResolver)
+    f.deps.fetch = async (request) => {
+      const response = await h.deps.fetch(request)
+      if (!new URL(request.url).pathname.endsWith('/stream') || response.body === null) return response
+      const source = response.body
+      const delayed = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          await Bun.sleep(500)
+          const reader = source.getReader()
+          for (;;) {
+            const { done, value } = await reader.read().catch(() => ({ done: true, value: undefined }))
+            if (done) break
+            controller.enqueue(value)
+          }
+          controller.close()
+        },
+        cancel: () => source.cancel(),
+      })
+      return new Response(delayed, { headers: response.headers })
+    }
+    expect(await main(['job', 'follow', id], f.deps)).toBe(0)
+    expect(f.out()).toContain('late-tail')
+  })
+
   test('an unknown job id exits 1', async () => {
     const h = harness(echoResolver)
     expect(await main(['job', 'follow', 'nope'], h.deps)).toBe(1)

@@ -4,7 +4,8 @@ import { cell, firstLine, keyValue, relativeAge, table } from '../format'
 
 const DEFAULT_ENGINE = 'claude'
 const LABEL_MAX = 60
-const FINAL_DRAIN_MS = 200
+const DRAIN_TIMEOUT_MS = 5000
+const DRAIN_POLL_MS = 20
 const RECENT_ACTIVITY = 10
 const PERMISSION_DECISIONS = ['allow_once', 'allow_always', 'deny'] as const
 
@@ -88,13 +89,13 @@ async function follow(ctx: Context, id: string, fromStart: boolean): Promise<num
   const reading = readSse(response, controller.signal, onData).catch(() => {})
   try {
     const status = await waitForEnd(ctx, id)
-    await sleep(FINAL_DRAIN_MS)
+    const log = await ctx.client.getText(`/api/jobs/${segment(id)}/log`)
+    const caughtUp = (): boolean => fromStart ? printed.length >= log.length : log === '' || (printed !== '' && log.endsWith(printed))
+    const deadline = Date.now() + DRAIN_TIMEOUT_MS
+    while (!caughtUp() && Date.now() < deadline) await sleep(DRAIN_POLL_MS)
     controller.abort()
     await reading
-    if (fromStart) {
-      const log = await ctx.client.getText(`/api/jobs/${segment(id)}/log`)
-      if (log.startsWith(printed) && log.length > printed.length) onData(log.slice(printed.length))
-    }
+    if (fromStart && log.startsWith(printed) && log.length > printed.length) onData(log.slice(printed.length))
     if (ctx.json) ctx.out(`${JSON.stringify({ type: 'end', status })}\n`)
     else if (status !== 'done') ctx.err(`Job ${id} ${status}\n`)
     return status === 'done' ? 0 : 1
