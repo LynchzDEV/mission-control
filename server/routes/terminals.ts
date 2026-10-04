@@ -13,6 +13,7 @@ import { validateWorkspaceCwd } from '../workspace'
 
 export const CLOSE_TERMINAL_NOT_FOUND = 4404
 export const CLOSE_TERMINAL_ENDED = 4410
+export const MAX_INITIAL_PROMPT_LENGTH = 8000
 const RESUME_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 type ControlMessage =
@@ -74,6 +75,15 @@ function terminalApi(registry: TerminalRegistry, helpers: TerminalHelpers): Elys
         set.status = 400
         return { error: 'invalid session id' }
       }
+      const initialPrompt = typeof payload.initialPrompt === 'string' && payload.initialPrompt.trim() !== '' ? payload.initialPrompt.trim() : undefined
+      if (initialPrompt !== undefined && initialPrompt.length > MAX_INITIAL_PROMPT_LENGTH) {
+        set.status = 400
+        return { error: 'initialPrompt too long' }
+      }
+      if (initialPrompt !== undefined && resumeSessionId !== undefined) {
+        set.status = 400
+        return { error: 'initialPrompt cannot be used when resuming' }
+      }
       const title = typeof payload.title === 'string' ? payload.title : undefined
       if (['workflowId', 'revision'].some(key => payload[key] !== undefined && (typeof payload[key] !== 'string' || payload[key] === ''))) {
         set.status = 400
@@ -88,6 +98,7 @@ function terminalApi(registry: TerminalRegistry, helpers: TerminalHelpers): Elys
         revision: payload.revision as string | undefined,
         ...(model === undefined ? {} : { model }),
         ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
+        ...(initialPrompt === undefined ? {} : { initialPrompt }),
         ...(title === undefined ? {} : { title }),
       })
       if (!result.ok) {

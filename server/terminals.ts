@@ -42,6 +42,7 @@ export type TerminalRecord = {
   title: string
   sessionId: string | null
   inSessionAware?: true
+  firstMessageDropped?: true
   workflow?: { id: string; revision: string; name: string; selectedDefault: boolean; design?: boolean }
 }
 
@@ -52,6 +53,7 @@ export type CreateTerminalParams = {
   rows?: unknown
   model?: string
   resumeSessionId?: string
+  initialPrompt?: string
   title?: string
   workflowId?: string
   revision?: string
@@ -119,13 +121,25 @@ export function terminalArgs(
   resumeSessionId: string | undefined,
   sessionId?: string,
   instructions?: string,
+  initialPrompt?: string,
 ): string[] {
   return [
     ...(engine === 'codex' ? ['--dangerously-bypass-approvals-and-sandbox'] : []),
     ...(resumeSessionId === undefined ? (engine === 'codex' || sessionId === undefined ? [] : ['--session-id', sessionId]) : ['--resume', resumeSessionId]),
     ...modelArgs(engine, model),
     ...(instructions ? engine === 'codex' ? ['-c', `developer_instructions=${JSON.stringify(instructions)}`] : ['--append-system-prompt', instructions] : []),
+    ...(initialPrompt ? [initialPrompt] : []),
   ]
+}
+
+export type ConnectionArgVars = { model?: string; instructions?: string; prompt?: string }
+
+export function connectionTerminalArgs(template: string[], vars: ConnectionArgVars): { args: string[]; promptUsed: boolean } {
+  const hasSlot = template.some(arg => arg.includes('{{prompt}}'))
+  const args = template
+    .filter(arg => vars.prompt || arg !== '{{prompt}}')
+    .map(arg => arg.replaceAll('{{model}}', vars.model ?? '').replaceAll('{{instructions}}', vars.instructions ?? '').replaceAll('{{prompt}}', vars.prompt ?? ''))
+  return { args, promptUsed: hasSlot && Boolean(vars.prompt) }
 }
 
 export type RingBuffer = { chunks: Buffer[]; bytes: number }
@@ -235,9 +249,12 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     const instructions = terminalInstructions({ id, workflow, mcUrl, cwd: cwdCheck.path })
     const sessionId = connection || engine === 'codex' ? null : (params.resumeSessionId ?? crypto.randomUUID())
     let pty: IPty
+    let firstMessageDropped = false
     try {
       const command = connection ? resolveBinary(connection.command) : terminalCommand(engine as EngineName)
-      const args = connection ? connection.terminalArgs!.map(arg => arg.replaceAll('{{model}}', params.model ?? '').replaceAll('{{instructions}}', instructions)) : fakeEnginesEnabled() ? [] : terminalArgs(engine as EngineName, params.model, params.resumeSessionId, sessionId ?? undefined, instructions)
+      const fromConnection = connection ? connectionTerminalArgs(connection.terminalArgs!, { model: params.model, instructions, prompt: params.initialPrompt }) : null
+      firstMessageDropped = Boolean(params.initialPrompt) && fromConnection !== null && !fromConnection.promptUsed
+      const args = fromConnection ? fromConnection.args : fakeEnginesEnabled() ? [] : terminalArgs(engine as EngineName, params.model, params.resumeSessionId, sessionId ?? undefined, instructions, params.initialPrompt)
       pty = spawn(command, args, {
         name: 'xterm-256color',
         cols,
@@ -257,6 +274,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       title: normalizeTitle(params.title) ?? `${engine.toUpperCase()} · ${basename(cwdCheck.path)}`,
       sessionId,
       inSessionAware: true,
+      ...(firstMessageDropped ? { firstMessageDropped: true as const } : {}),
       workflow,
     }
     const session: Session = { record, pty, buffer: createRingBuffer(), listeners: new Set(), transcript: sessionId === null ? null : claudeTranscriptPath(env.CLAUDE_CONFIG_DIR, cwdCheck.path, sessionId) }
