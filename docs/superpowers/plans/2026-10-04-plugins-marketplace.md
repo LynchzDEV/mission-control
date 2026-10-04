@@ -118,6 +118,10 @@ Tests (`test/terminal-first-message.test.ts`, `test/plugin-context-files.test.ts
   - line ~357 (after `await second.close()`): delete the `setTimeout(50)`; the following `expect(registry.get(terminal.id)).toBeDefined()` stays and runs directly after `await second.close()`.
 - No other change to that file. Run it three times in a row; all three must pass.
 
+### H2 revisions, round 3 (supersedes step 4)
+- Step 4 is removed: H2 does NOT edit `server/secrets.ts`. `server/plugins/context-files.ts` imports the already-exported `configDir()` from `server/secrets.ts` and creates folders with `mkdir(dir, { recursive: true, mode: 0o700 })` and files with `writeFile(path, markdown, { mode: 0o600 })` followed by `chmod(path, 0o600)`.
+- Files this run may edit: `server/terminals.ts`, `server/routes/terminals.ts`, `server/plugins/context-files.ts` (new), `test/terminal-first-message.test.ts` (new), `test/plugin-context-files.test.ts` (new), `test/terminals-routes.test.ts` (only the two sleeps, round 2). Nothing else.
+
 ## Run H3 — plugin store, manifests, marketplaces, install lifecycle, settings (worktree `.worktree/plg-store`)
 
 Decisions:
