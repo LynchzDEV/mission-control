@@ -209,6 +209,9 @@ Decisions: copy the sandbox config, allow paths and env handling from `docs/spik
 
 Tests (`test/plugin-runtime-isolated.test.ts`, macOS only — skip with a clear `test.skipIf(process.platform !== 'darwin')`): fixture isolated plugin (copy of the spike fixture using the SDK-less raw protocol) → call works; reading `secrets.json` of the temp config dir → `DENIED`; fetch non-allowed host → `DENIED`; crash method (`process.exit(1)`) → call rejects with "The plugin stopped"; 3 crashes → 409; idle stop with injected 100 ms idle → process exits; frame HTML has the CSP header with the request origin.
 
+### H5 note from the spike (VERDICT: GO)
+- sandbox-runtime's network proxy runs in the host process and needs Bun ≥ 1.2.23 (Bun 1.2.17 cannot parse HTTP CONNECT in node:http). `createIsolatedRuntime` checks `Bun.version` with `Bun.semver.satisfies(Bun.version, '>=1.2.23')` before spawning; if not satisfied every call fails with 503 `"Isolated plugins need Bun 1.2.23 or newer. Run: bun upgrade"`, and `GET /api/plugins` marks those plugins `state: 'needs-bun-upgrade'`. Test: inject the version string ('1.2.17' → that error, '1.4.2' → spawns).
+
 ## Run H6 — UI (worktree `.worktree/plg-store`, after H3–H5 land)
 
 Split as MC_SHAPE paths: (a) sidebar + Marketplace screen, (b) plugin screen host + launch dialog + plugin-ui.css.
