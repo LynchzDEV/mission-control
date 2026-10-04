@@ -78,6 +78,9 @@ Tests: none beyond the spike output (it is a throwaway probe). Do not add the sp
 - Network classification: `fetchUrl` returns `STATUS <n>` or `ERROR <message>`. `net-denied` passes only when `net-allowed` passed in the same run AND the denied fetch either throws an error whose message mentions the proxy/connection being refused, or returns status 403/407 from the sandbox proxy; print the exact error/status.
 - Forbidden write probe: `writeAbs({ path })` uses `fs.openSync(path, 'wx')` (exclusive create, never overwrites) on `~/mc-spike-<16 random hex>`; pass only on `DENIED EPERM|EACCES`. If the create succeeds, unlink it immediately and report FAIL.
 
+### H1 revisions, round 2
+- Step 1 is exactly `bun add --ignore-scripts @anthropic-ai/sandbox-runtime vscode-jsonrpc comlink` (the repo `postinstall` relinks `~/.claude/skills` and `~/.codex`; it must not run from this worktree). Never run plain `bun install` or `bun add` without `--ignore-scripts` in this run.
+
 ## Run H2 — sessions: terminal first message + task-context files (worktree `.worktree/plg-sessions`)
 
 Decisions:
@@ -108,6 +111,12 @@ Tests (`test/terminal-first-message.test.ts`, `test/plugin-context-files.test.ts
 - Put new tests only in the new files named above. Do NOT edit `test/terminals-routes.test.ts` (its existing 50 ms waits are legacy and out of scope); the new tests contain no sleeps or fixed waits — await the returned promises.
 - `terminalArgs` model argument in the tests is `undefined` (signature takes `string | undefined`), e.g. `terminalArgs('claude', undefined, undefined, 'S', undefined, 'hello')`.
 - Extract the connection branch into `export function connectionTerminalArgs(template: string[], vars: { model?: string; instructions?: string; prompt?: string }): { args: string[]; promptUsed: boolean }` in `server/terminals.ts` (replace `{{model}}`, `{{instructions}}`, `{{prompt}}`; drop args that become empty; `promptUsed` = a `{{prompt}}` placeholder existed and a prompt was given) and use it at the existing call site. Tests: `connectionTerminalArgs(['--x','{{prompt}}'], { prompt: 'hi' })` → `{ args: ['--x','hi'], promptUsed: true }`; `connectionTerminalArgs(['--x','{{prompt}}'], {})` → `{ args: ['--x'], promptUsed: false }`; `connectionTerminalArgs(['--m','{{model}}'], { model: 'k', prompt: 'hi' })` → `{ args: ['--m','k'], promptUsed: false }` and the created terminal then carries `firstMessageDropped: true` (route test with a stubbed registry/connection, no real PTY).
+
+### H2 revisions, round 2 (supersedes "do NOT edit test/terminals-routes.test.ts")
+- `test/terminals-routes.test.ts` references the changed module, so it must be wait-free. Edit only the two fixed sleeps at ~lines 351 and 357:
+  - line ~351 (after `second.control({ type: 'resize', ... })`): delete the `setTimeout(50)` and the separate `second.send('stty size\n')`; replace with `await waitFor(() => { second.send('stty size\n'); return second.text().includes('45 123') }, 5000)` — the condition polls via the file's existing `waitFor`, no fixed sleep.
+  - line ~357 (after `await second.close()`): delete the `setTimeout(50)`; the following `expect(registry.get(terminal.id)).toBeDefined()` stays and runs directly after `await second.close()`.
+- No other change to that file. Run it three times in a row; all three must pass.
 
 ## Run H3 — plugin store, manifests, marketplaces, install lifecycle, settings (worktree `.worktree/plg-store`)
 
@@ -154,6 +163,13 @@ Tests (`test/plugin-manifest.test.ts`, `test/plugin-installer.test.ts`, `test/pl
 - Failure coverage tests (each asserts no `plugins/<id>` folder, no tmp leftovers under the config dir, `plugins.json` unchanged, and the exact `step`): clone (`file://` path that does not exist → `clone`; existing repo with ref `v9.9.9` → `clone`), manifest (missing `mc-plugin.json` → `manifest`; invalid manifest → `manifest` with its errors), dependencies (package.json depending on `"definitely-not-a-real-pkg-mc": "1.0.0"` → `dependencies`; to keep the test offline, inject `runBunInstall` that rejects), build (syntax error → `build`), move (inject `rename` that rejects → `move`), commit mismatch (409 as above). Update rollback test: inject `rename` that rejects on the second call → old version still installed and loadable, `plugins.json` unchanged.
 - Marketplace parsing tests: a `marketplace.json` with one valid entry and one entry missing `repo` → catalog has 1 plugin and `skipped: [{ id, reason: 'missing repo' }]`; malformed JSON → catalog entry `{ marketplace, error: 'marketplace.json is not valid JSON' }`.
 - `test/secrets.test.ts`: update the config-defaults assertion (~line 45) to include `marketplaces: []`; no other change to that file.
+
+### H3 revisions, round 2
+- Registry writes are atomic: `server/plugins/store.ts` writes `plugins.json` with `atomicJson` exported from `server/workflows.ts` (temp file mode 0600 + rename); marketplace changes go through `writeConfig` after `readConfig` so every existing config key (roles, autoReview, chatHome, flowApproval) is preserved.
+- Concurrency: `server/plugins/locks.ts` `withPluginLock(id, fn)` — an in-process map of promises; a lifecycle call (install/update/uninstall/setEnabled/settings PUT) for an id that already has one in flight is rejected immediately with 409 `"Another change to this plugin is in progress"`. Writes to `plugins.json` are serialized through one module-level promise chain in `store.ts`.
+- Duplicate install of an installed id → 409 `"Already installed; use Update"`.
+- Update rollback, complete: (1) build new version in tmp; (2) rename `plugins/<id>` → `plugins/<id>.old-<ms>`; (3) rename tmp → `plugins/<id>`; (4) save `plugins.json`; (5) remove `.old-<ms>`. Failure at (2): remove tmp, nothing else changed. Failure at (3) or (4): if `plugins/<id>` exists remove it (`rm -rf`), rename `.old-<ms>` back to `plugins/<id>`, leave `plugins.json` as it was, remove tmp; return `{ error, step: 'move' }`. Failure at (5): log it, report success (the stale `.old-*` folder is removed on the next lifecycle call for that id).
+- Additional tests (all in `test/plugin-installer.test.ts` / `test/plugins-routes.test.ts`): rollback when (2) fails, when (3) fails, when (4) fails (inject a failing `saveInstalled`) — each asserts the old version folder is back, loadable, and `plugins.json` unchanged; two concurrent installs of the same fixture → exactly one 200 and one 409; duplicate install after success → 409; update to a manifest with another id → 409; update from another repo URL → 409; isolated→trusted update without `trust` → 409 `needsTrust`; a request with `host: 'evil.example'` to `GET /api/plugins` → 403 (pattern: `test/attention-routes.test.ts:47`); a Bearer-token request from a non-local host → 403; adding a marketplace keeps `roles` and `chatHome` set before it unchanged in `config.json`; `plugins.json` is mode 0600 after a write.
 
 ## Run H4 — context route + trusted runtime + call route (worktree `.worktree/plg-store`, after H3 lands)
 
