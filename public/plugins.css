@@ -43,3 +43,44 @@
 .mk-dialog footer { display: flex; justify-content: flex-end; gap: 10px; }
 .mk-dialog input:not([type="checkbox"]), .mk-dialog select { background: var(--field); border: 0; box-shadow: none; border-radius: var(--r-sm); corner-shape: var(--corner); color: var(--text); font: inherit; font-size: 13px; padding: 9px 11px; }
 .mk-fail { color: var(--danger); }
+
+/* Plugin screen components, shared with the SDK ui.css */
+.mk-board-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 22px 0 18px; }
+.mk-board-bar select { font-size: 14px; font-weight: 500; padding: 8px 12px; }
+.mk-folder { display: inline-flex; align-items: center; gap: 7px; font: 12px Menlo, monospace; color: var(--text); padding: 6px 10px; border-radius: var(--r-sm); corner-shape: var(--corner); background: var(--field); }
+.mk-folder svg { width: 14px; height: 14px; color: var(--muted); }
+.mk-board-bar .sp { flex: 1; }
+.mk-board-bar .muted { font-size: 12px; }
+.mk-cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(250px, 1fr); gap: 16px; overflow-x: auto; padding-bottom: 24px; align-items: start; }
+.mk-col { border-radius: var(--r-lg); corner-shape: var(--corner); padding: 12px; background: color-mix(in srgb, var(--hi) 22%, var(--paper)); border: 1px solid var(--line); }
+.mk-col > header { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: var(--text-soft); margin: 2px 4px 12px; }
+.mk-col > header i { width: 9px; height: 9px; border-radius: 3px; background: var(--st); }
+.mk-col > header em { font-style: normal; font-weight: 400; color: var(--muted); }
+.mk-card { position: relative; display: grid; gap: 8px; padding: 13px 14px; margin-bottom: 10px; border-radius: var(--r-md); corner-shape: var(--corner); background: var(--paper); box-shadow: var(--raised); font-size: 13px; }
+.mk-card strong { font-weight: 500; color: var(--text-strong); line-height: 1.4; }
+.mk-meta { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; }
+.mk-meta .sp { flex: 1; }
+.mk-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.mk-meta svg { width: 12px; height: 12px; }
+.mk-av { display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 24px; border-radius: 50%; font-size: 9px; letter-spacing: -.2px; font-weight: 600; color: #fff; background: var(--a, #8062bd); }
+.mk-chip { font-size: 11px; padding: 1px 7px; border-radius: var(--r-xs); background: var(--field); color: var(--text-soft); }
+.mk-acts { display: none; gap: 8px; padding-top: 4px; border-top: 1px solid var(--line); }
+.mk-card:hover .mk-acts, .mk-card:focus-within .mk-acts, .mk-card[data-hover] .mk-acts { display: flex; }
+.mk-acts button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: 12px; }
+.mk-acts svg { width: 13px; height: 13px; }
+.mk-card[data-hover] { outline: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+.mk-empty { max-width: 520px; margin: 70px auto; text-align: center; display: grid; gap: 14px; justify-items: center; }
+.mk-empty h2 { font-size: 20px; font-weight: 500; margin: 0; color: var(--text-strong); }
+.mk-empty p { margin: 0; line-height: 1.6; }
+.mk-empty form { display: grid; gap: 10px; width: 100%; text-align: left; margin-top: 8px; }
+.mk-seg { display: inline-flex; gap: 4px; padding: 3px; border-radius: var(--r-button); corner-shape: var(--corner); background: var(--field); }
+.mk-seg button { border: 0; box-shadow: none; background: transparent; padding: 6px 14px; font-size: 13px; border-radius: 8px; color: var(--text-soft); }
+.mk-seg button[aria-pressed="true"] { background: var(--paper); color: var(--text-strong); box-shadow: var(--raised); }
+.mk-tree { border: 1px solid var(--line); border-radius: var(--r-md); corner-shape: var(--corner); padding: 6px; font-size: 13px; max-height: 260px; overflow: auto; }
+.mk-tree div { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; }
+.mk-tree div[data-d="1"] { padding-left: 26px; }
+.mk-tree div[data-d="2"] { padding-left: 44px; }
+.mk-tree div[data-d="3"] { padding-left: 62px; }
+.mk-tree div[aria-selected="true"] { background: var(--purple-bg); color: var(--purple-ink); }
+.mk-tree svg { width: 13px; height: 13px; color: var(--muted); }
+.mk-tree em { margin-left: auto; font-style: normal; font-size: 11px; color: var(--muted); }
