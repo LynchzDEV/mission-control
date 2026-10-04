@@ -17,6 +17,7 @@ import {
 } from './engines'
 import { validateWorkspaceCwd } from './workspace'
 import { connectionEnvironment, createConnectionStore, type AgentConnection } from './agent-connections'
+import { modelDiscovery } from './model-discovery'
 import { configDir, listenTarget } from './secrets'
 import { createWorkflowStore } from './workflows'
 import { flowDesignRules } from './flow-design'
@@ -195,7 +196,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     const engine = params.engine
     let connection: AgentConnection | undefined
     if (!isEngineName(engine)) {
-      try { connection = await createConnectionStore().get(engine) }
+      try { connection = await modelDiscovery().effective(await createConnectionStore().get(engine)) }
       catch { return { ok: false, status: 400, error: 'unknown engine' } }
       if (!connection.terminalArgs) return { ok: false, status: 400, error: 'Configure interactive terminal arguments for this connection in Studio' }
       if (params.resumeSessionId) return { ok: false, status: 400, error: 'Interactive resume is not configured for this connection' }

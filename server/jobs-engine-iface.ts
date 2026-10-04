@@ -35,6 +35,7 @@ export const fakeEchoResolver: EngineResolver = ({ engine, prompt }) => ({
 
 import { buildEnv, fakeEnginesEnabled, modelArgs, resolveBinary, resolveEngine, type EngineName, ENGINE_NAMES } from './engines'
 import { createConnectionStore } from './agent-connections'
+import { modelDiscovery } from './model-discovery'
 import { chatEnv, ensureChatProfile } from './chat-profile'
 import { ensureWorkerProfiles } from './worker-profile'
 import type { BridgeLaunch } from './chat-bridge-core'
@@ -97,7 +98,7 @@ async function chatBridgeSpawn(
 
 export const realEngineResolver: EngineResolver = async ({ engine, prompt, resumeSessionId, model, connection, coreRules, mcpServers, readOnly, purpose, edit, images, permissionMode, forkSession, resumeSessionAt, allowedTools }) => {
   if (!ENGINE_NAMES.includes(engine as EngineName)) {
-    const selected = connection ?? await createConnectionStore().get(engine)
+    const selected = await modelDiscovery().effective(connection ?? await createConnectionStore().get(engine))
     if (selected.id !== engine) throw new Error('Connection does not match the selected engine')
     return { cmd: process.execPath, args: [join(import.meta.dir, 'agent-bridge.ts')], env: {}, stdin: JSON.stringify({ connection: selected, prompt, resumeSessionId, model, mcpServers, readOnly, purpose, edit }) }
   }

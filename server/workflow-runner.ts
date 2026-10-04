@@ -7,6 +7,7 @@ import { isAbsolute, join, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import { parseThread } from './activity'
 import { BUILTIN_AGENTS, createConnectionStore, modelFamily, SESSION_ENGINE, type AgentConnection } from './agent-connections'
+import { modelDiscovery } from './model-discovery'
 import { resolveBinary } from './engines'
 import { addPathWorktree, applyPath, changedFileCount, commitPath, git, gitTimed, removePathWorktree, snapshotCommit } from './job-worktrees'
 import { type JobManager, type JobRecord, readLogFile, redactSecrets } from './jobs'
@@ -324,7 +325,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       const engine = node.agent.engine ?? role.engine
       const model = node.agent.model ?? (node.agent.engine ? null : role.model)
       const builtin = BUILTIN_AGENTS.includes(engine as typeof BUILTIN_AGENTS[number])
-      const connection = builtin ? undefined : await connections.get(engine)
+      const connection = builtin ? undefined : await modelDiscovery(deps.base).effective(await connections.get(engine))
       if (node.mcpServers.length && (!connection || connection.adapter === 'cli')) throw new Error(`${node.title}: attached MCP servers need an ACP connection`)
       const ownFamily = builtin ? engine === 'codex' ? 'gpt' : engine : connection?.family ?? node.agent.family
       const family = (modelFamily(model) ?? ownFamily)?.toLowerCase() ?? null

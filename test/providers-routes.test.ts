@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { Elysia } from 'elysia'
 
 import { createConnectionStore } from '../server/agent-connections'
+import { modelDiscovery } from '../server/model-discovery'
 import { createApp } from '../server/index'
 import { modelsCache } from '../server/routes/models'
 import { readApiToken } from '../server/secrets'
@@ -33,6 +34,14 @@ describe('GET /api/providers', () => {
     expect(response.status).toBe(200)
     const { providers } = (await response.json()) as { providers: Array<{ id: string }> }
     expect(providers.map(p => p.id)).toEqual(['claude', 'glm', 'codex', 'qwen'])
+  })
+
+  test('a connection lists its discovered models first, then its own extras', async () => {
+    await createConnectionStore(dir).save({ id: 'grok', name: 'Grok', adapter: 'acp', command: 'grok', args: ['agent', 'stdio'], models: ['grok-4.5', 'grok-custom'] })
+    await modelDiscovery(dir).write('grok', { models: ['grok-4.7', 'grok-4.5'], current: 'grok-4.7', checkedAt: Date.now(), error: null })
+    const response = await app.handle(new Request('http://localhost/api/providers'))
+    const { providers } = (await response.json()) as { providers: Array<{ id: string; models: string[] }> }
+    expect(providers.find(p => p.id === 'grok')?.models).toEqual(['grok-4.7', 'grok-4.5', 'grok-custom'])
   })
 
   test('403 for a rebinding host without a token', async () => {

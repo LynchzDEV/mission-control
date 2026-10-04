@@ -6,6 +6,7 @@ import { GLM_MODEL } from './engines'
 import { zaiOrigin, type FetchLike } from './quota'
 import { readSecrets, type Secrets } from './secrets'
 import { createConnectionStore } from './agent-connections'
+import { modelDiscovery, type ModelDiscovery } from './model-discovery'
 
 export type ModelLists = Record<string, string[]>
 
@@ -23,7 +24,7 @@ const CODEX_FALLBACK = [
 const GLM_FALLBACK = [GLM_MODEL, 'glm-5.3-flash']
 const GLM_TIMEOUT_MS = 5_000
 
-export type ModelDeps = { codexCachePath?: string; fetchImpl?: FetchLike; secrets?: () => Promise<Secrets> }
+export type ModelDeps = { codexCachePath?: string; fetchImpl?: FetchLike; secrets?: () => Promise<Secrets>; discovery?: ModelDiscovery }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -83,6 +84,9 @@ export async function listModels(deps: ModelDeps = {}): Promise<ModelLists> {
     (deps.secrets ?? readSecrets)().then((secrets) => glmModels(secrets, deps.fetchImpl)),
     codexModels(deps.codexCachePath),
   ])
+  const discovery = deps.discovery ?? modelDiscovery()
   const connections = await createConnectionStore().list()
-  return { claude: [...CLAUDE_MODEL_ALIASES], glm, codex, ...Object.fromEntries(connections.map(connection => [connection.id, connection.models])) }
+  for (const connection of connections) void discovery.ensureFresh(connection).catch(() => null)
+  const effective = await Promise.all(connections.map(connection => discovery.effective(connection)))
+  return { claude: [...CLAUDE_MODEL_ALIASES], glm, codex, ...Object.fromEntries(effective.map(connection => [connection.id, connection.models])) }
 }

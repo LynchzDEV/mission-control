@@ -5,6 +5,7 @@ import { quotaCache } from './routes/quota'
 import { readRoles } from './routes/roles'
 import { readConfig, type EngineRoles } from './secrets'
 import { BUILTIN_AGENTS, connectionEnvironment, createConnectionStore } from './agent-connections'
+import { modelDiscovery } from './model-discovery'
 
 export function buildReviewPrompt(source: JobRecord): string {
   return [
@@ -60,7 +61,7 @@ export async function maybeAutoReview(
   let readiness: ReviewerReadiness
   if (BUILTIN_AGENTS.includes(review.engine as typeof BUILTIN_AGENTS[number])) readiness = reviewerReadiness(review.engine, await (deps.probeQuota ?? (() => quotaCache.get()))())
   else {
-    try { connectionEnvironment(await createConnectionStore().get(review.engine)); readiness = { ok: true } }
+    try { connectionEnvironment(await modelDiscovery().effective(await createConnectionStore().get(review.engine))); readiness = { ok: true } }
     catch { readiness = { ok: false, reason: 'reviewer connection is not configured' } }
   }
   if (!readiness.ok) {
