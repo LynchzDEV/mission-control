@@ -26,7 +26,6 @@ export const connectionSchema = z.object({
   if (BUILTIN_AGENTS.includes(value.id as typeof BUILTIN_AGENTS[number])) ctx.addIssue({ code: 'custom', message: 'Cannot replace a built-in connection' })
   if (value.adapter === 'cli' && !value.args.some(arg => arg.includes('{{prompt}}'))) ctx.addIssue({ code: 'custom', message: 'CLI arguments need a {{prompt}} slot' })
   if (value.adapter !== 'opencode' && (value.baseUrl || value.apiKeyEnv)) ctx.addIssue({ code: 'custom', message: 'Custom API settings require the OpenCode adapter' })
-  if (value.adapter === 'opencode' && value.baseUrl && value.models.length === 0) ctx.addIssue({ code: 'custom', message: 'A custom endpoint needs at least one model ID' })
 })
 export type AgentConnection = z.infer<typeof connectionSchema>
 
