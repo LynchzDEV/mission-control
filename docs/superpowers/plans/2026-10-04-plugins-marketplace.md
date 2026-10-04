@@ -125,6 +125,11 @@ Tests (`test/terminal-first-message.test.ts`, `test/plugin-context-files.test.ts
 ### H2 revisions, round 4
 - `test/workflow-runner.test.ts` imports `TerminalRecord` from the changed module, so it joins the allowlist with exactly this change: add near the top `async function settle(): Promise<void> { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)) }` and replace `await Bun.sleep(100)` (~line 319) and `await Bun.sleep(200)` (~line 385) with `await settle()`. Those two tests assert that nothing more happens; `settle()` drains queued callbacks without any wall-clock wait. No other change to that file; run it three times, all green.
 
+### H2 revisions, round 5 (supersedes round 4's line list)
+- In `test/workflow-runner.test.ts` replace ALL six unconditional sleeps with `await settle()`: `Bun.sleep(100)` ~319, `Bun.sleep(200)` ~385, `Bun.sleep(150)` ~417, `Bun.sleep(200)` ~550, `Bun.sleep(200)` ~573, `Bun.sleep(200)` ~651. Each one precedes an assertion that nothing more happened (attempt count unchanged, no job dispatched), so draining queued callbacks is the exact condition.
+- Bounded condition polls (`for (… && <condition>; i++) await Bun.sleep(…)`, the `until`/`waitFor` helpers, `test/terminals-routes.test.ts:66`, `test/terminals.test.ts:54`) wait on a condition, not a fixed time, and stay unchanged.
+- Done check for this rule: `grep -nE "^\s*await (Bun\.sleep|new Promise\(\(?resolve\)? => setTimeout)" test/workflow-runner.test.ts test/terminals-routes.test.ts` prints nothing (every remaining sleep sits inside a condition loop or helper).
+
 ## Run H3 — plugin store, manifests, marketplaces, install lifecycle, settings (worktree `.worktree/plg-store`)
 
 Decisions:
