@@ -197,6 +197,12 @@ Steps: 1 `server/plugins/runtime-trusted.ts`; 2 `server/plugins/runtimes.ts`; 3 
 
 Tests (`test/plugin-runtime-trusted.test.ts`): fixture trusted plugin with method `echo` returning params and `secret` returning `ctx.settings.get('token')` → `/call` echo returns params; `secret` returns the stored value; unknown method 404; a method that never resolves → 504 after the timeout (inject a 50 ms timeout through deps for the test); disabled plugin → 409; `/context` writes file and returns path; plugin without sessions permission → 403.
 
+### H4 revisions after plan review
+- Server-side settings: `server/plugins/settings.ts` gains `setServerSetting(id, key, value: string | null)` with no declared-key check (key must match `/^[A-Za-z0-9_.-]{1,64}$/`, value ≤ 1048576 bytes, else throws). `ctx.settings.set` uses it; `ctx.settings.get` reads any key. `PUT /api/plugins/:id/settings` keeps rejecting undeclared keys (H3 behaviour unchanged).
+- Runtime cache lifecycle: `server/plugins/runtimes.ts` caches runtimes in a `Map<id, { commit, runtime }>`; `getRuntime(installed)` reuses an entry only when `commit` matches, otherwise disposes and rebuilds. The trusted loader imports `pathToFileURL(entryPath).href + '?v=' + installed.commit` so a new commit bypasses Bun's module cache. Export `invalidateRuntime(id)`; the installer (H3 `server/plugins/installer.ts`) calls it after a successful update, after uninstall, and after `setEnabled(id, false)`.
+- Method lookup uses `Object.hasOwn(methods, name)` (inherited names like `toString`, `constructor` → 404 `No method <name>`).
+- Extra tests: `GET /plugin-module/<id>/screen.js` → 200 with `content-type: text/javascript` for an enabled trusted plugin, 404 for an isolated plugin, 404 when disabled; `/call` on an isolated plugin → 501 `Isolated runtime not available yet`; a method throwing `new Error('boom')` → 500 `{ error: 'boom' }`; method `toString` → 404; `ctx.settings.set('boards', '[]')` from a method succeeds while `PUT` of key `boards` → 400; after updating a fixture from v1 (`version` returns `'v1'`) to v2 (`'v2'`) the next `/call version` returns `'v2'`.
+
 ## Run H5 — isolated runtime (worktree `.worktree/plg-spike`, after H1 GO and H4 land)
 
 Decisions: copy the sandbox config, allow paths and env handling from `docs/spikes/2026-10-04-plugin-sandbox/README.md` exactly. `server/plugins/runtime-isolated.ts` `createIsolatedRuntime(installed, deps)`:
