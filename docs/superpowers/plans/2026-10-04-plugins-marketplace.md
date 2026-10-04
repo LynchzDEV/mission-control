@@ -239,6 +239,11 @@ Tests (`test/plugin-runtime-isolated.test.ts`, macOS only — skip with a clear 
 - Fixture setup for integration tests: the fixture is a real plugin repo created by `test/support/plugin-fixtures.ts` whose server imports `vscode-jsonrpc/node` and the SDK-less protocol; it is installed through the normal installer into a `mkdtemp` config dir with `runBunInstall` pointing its `node_modules` at the repo's (symlink `<checkout>/node_modules` → the mission-control `node_modules`) so the bundle step resolves offline. The bundle then has no runtime imports, so the sandbox needs no ancestor reads.
 - Validation the run must show (macOS): fixture reads `<configDir>/secrets.json` → `DENIED EPERM`; reads `<checkout>/mc-plugin.json` (outside `.mc-build`) → `DENIED EPERM`; reads a file in its data folder → ok; plus every test listed in round 1. Network tests gated by Bun ≥ 1.2.23 as in round 1.
 
+### H5 revisions, round 3 (supersedes round 2's fixture setup and the version gate scope)
+- Fixture plugins have NO dependencies: `test/support/plugin-fixtures.ts` gains `isolatedFixtureServer(methods)` source text that implements the JSON-RPC Content-Length framing inline over `process.stdin`/`process.stdout` (~40 lines, no imports beyond `node:fs`/`node:path`), with methods `readFile`, `writeAbs`, `writeData`, `fetchUrl`, `askSetting`, `crash` mirroring the spike fixture. No `package.json`, so the installer's dependency step is skipped and no node_modules or symlinks are involved; the bundle step still runs (single-file output).
+- The Bun ≥ 1.2.23 gate applies only to isolated plugins whose `permissions.network` is non-empty (the proxy is only needed then). Plugins without network permissions run on any Bun, so on this machine (1.2.17) every filesystem, settings, crash and idle integration test runs for real; the network tests use a second fixture with `network: ['example.com']` and are `test.skipIf(!Bun.semver.satisfies(Bun.version, '>=1.2.23'))`. The gate is unit-tested with injected versions (`'1.2.17'` + network → 503 message; `'1.2.17'` + no network → spawns; `'1.4.2'` + network → spawns).
+- When the sandbox wraps a plugin without network permission, pass `network: { allowedDomains: [] }` (block all).
+
 ## Run H6 — UI (worktree `.worktree/plg-store`, after H3–H5 land)
 
 Split as MC_SHAPE paths: (a) sidebar + Marketplace screen, (b) plugin screen host + launch dialog + plugin-ui.css.
@@ -263,6 +268,11 @@ Verification (orchestrator): render in a real browser at the end (Run E).
 - Optional context: when a session request has no `context`, the launch dialog hides the task-context note and does not call `/context`; the prompt is the first message alone. A chat needs a non-empty prompt (Start stays disabled until one is typed, with the hint "Type a first message"); a terminal may start with none.
 - Iframe host test with a stubbed frame (`test/plugins-ui.test.ts`): mounting an isolated plugin creates `iframe[sandbox="allow-scripts"]` with `src="/plugin-frame/<id>/"`; the host endpoint accepts a `message` event whose `source` is that iframe's `contentWindow` (stub object) and ignores one whose `source` is `window` or `null` (assert the `mc` handler was not invoked).
 - Catalog: the Marketplace reads `GET /api/plugins/catalog` (cached listings, H3) on open and after "Add a marketplace"; it re-syncs only on that explicit action (no timers).
+
+### H6 revisions, round 2
+- Check for update refreshes first: if `installed.source.marketplace` is set, call `POST /api/plugins/marketplaces { url: source.marketplace }` (re-syncs that marketplace; on failure show `Couldn't reach this marketplace` and stop), then `GET /api/plugins/catalog` for the listing ref, then preview as in round 1.
+- Dropped first message: after `POST /api/terminals`, if the response has `firstMessageDropped: true`, copy the prompt with `navigator.clipboard.writeText(prompt)` and dispatch `quiet:toast` with `The first message was not sent: this AI's terminal arguments have no {{prompt}} slot. It is on your clipboard.` (if the clipboard write rejects: `… no {{prompt}} slot. Add one in Studio, Manage AIs.`).
+- DOM tests use JSDOM exactly like `test/attention-dom.test.ts` (same setup/teardown), not happy-dom. Test the dropped-message toast with a stubbed `postJson` returning `firstMessageDropped: true`, and the update flow's marketplace re-sync call order (`marketplaces` POST before `catalog` GET before `preview`).
 
 ## Run S1 — SDK (repo `mc-plugin-sdk`)
 
