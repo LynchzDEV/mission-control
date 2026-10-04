@@ -73,6 +73,11 @@ Steps:
 
 Tests: none beyond the spike output (it is a throwaway probe). Do not add the spike to `bun test`.
 
+### H1 revisions after plan review
+- Denial classification: `readFile`/`writeAbs`/`writeData` return `DENIED <code>` ONLY when the error code is `EPERM` or `EACCES`; any other error returns `ERROR <code> <message>` and the probe is FAIL. `read-secret`, `read-ssh` pass only on `DENIED EPERM|EACCES`.
+- Network classification: `fetchUrl` returns `STATUS <n>` or `ERROR <message>`. `net-denied` passes only when `net-allowed` passed in the same run AND the denied fetch either throws an error whose message mentions the proxy/connection being refused, or returns status 403/407 from the sandbox proxy; print the exact error/status.
+- Forbidden write probe: `writeAbs({ path })` uses `fs.openSync(path, 'wx')` (exclusive create, never overwrites) on `~/mc-spike-<16 random hex>`; pass only on `DENIED EPERM|EACCES`. If the create succeeds, unlink it immediately and report FAIL.
+
 ## Run H2 — sessions: terminal first message + task-context files (worktree `.worktree/plg-sessions`)
 
 Decisions:
@@ -98,6 +103,11 @@ Tests (`test/terminal-first-message.test.ts`, `test/plugin-context-files.test.ts
 - `writeContextFile('clickup-board', { name: 'HerMEZ kood queue', markdown: '# x' }, new Date('2026-10-04T10:11:12Z'))` → path ends with `context/clickup-board/20261004-101112-hermez-kood-queue.md`, file mode `0o600`.
 - 600 KB markdown → throws `ContextTooLarge`.
 - a file with mtime 31 days ago is removed by the next write; one 29 days old stays.
+
+### H2 revisions after plan review
+- Put new tests only in the new files named above. Do NOT edit `test/terminals-routes.test.ts` (its existing 50 ms waits are legacy and out of scope); the new tests contain no sleeps or fixed waits — await the returned promises.
+- `terminalArgs` model argument in the tests is `undefined` (signature takes `string | undefined`), e.g. `terminalArgs('claude', undefined, undefined, 'S', undefined, 'hello')`.
+- Extract the connection branch into `export function connectionTerminalArgs(template: string[], vars: { model?: string; instructions?: string; prompt?: string }): { args: string[]; promptUsed: boolean }` in `server/terminals.ts` (replace `{{model}}`, `{{instructions}}`, `{{prompt}}`; drop args that become empty; `promptUsed` = a `{{prompt}}` placeholder existed and a prompt was given) and use it at the existing call site. Tests: `connectionTerminalArgs(['--x','{{prompt}}'], { prompt: 'hi' })` → `{ args: ['--x','hi'], promptUsed: true }`; `connectionTerminalArgs(['--x','{{prompt}}'], {})` → `{ args: ['--x'], promptUsed: false }`; `connectionTerminalArgs(['--m','{{model}}'], { model: 'k', prompt: 'hi' })` → `{ args: ['--m','k'], promptUsed: false }` and the created terminal then carries `firstMessageDropped: true` (route test with a stubbed registry/connection, no real PTY).
 
 ## Run H3 — plugin store, manifests, marketplaces, install lifecycle, settings (worktree `.worktree/plg-store`)
 
@@ -135,6 +145,15 @@ Tests (`test/plugin-manifest.test.ts`, `test/plugin-installer.test.ts`, `test/pl
 - update adding a network host without `accept` → 409 `needsConsent` with `added: ['Reach b.example.com']`; with `accept: true` → 200.
 - uninstall `keepData: false` removes `plugin-data/<id>`; default keeps it.
 - settings GET never contains a secret value; PUT unknown key → 400.
+
+### H3 revisions after plan review
+- Reviewed-commit binding: `POST /api/plugins/preview` returns `{ manifest, commit, permissions, runtime }`. `install` and `update` require body `commit` (the SHA from preview); after cloning, if `git rev-parse HEAD` ≠ `commit` → 409 `"The plugin changed since you reviewed it; preview again"`, tmp removed.
+- Update identity rules: the new manifest `id` must equal the installed id (else 409 `"The update changed the plugin id"`); the source repo URL must equal the installed `source.repo` (else 409 `"The update comes from a different repo"`); runtime isolated→trusted requires body `trust: true` (else 409 `{ needsTrust: true }`); permission growth needs `accept: true` (409 `{ needsConsent: true, added }`).
+- Update replacement with rollback: build the new version fully in tmp; rename `plugins/<id>` → `plugins/<id>.old-<epoch ms>`; rename tmp → `plugins/<id>`; save `plugins.json`; delete the `.old-*` folder. If any step after the first rename fails, rename the old folder back, leave `plugins.json` unchanged, return `{ error, step: 'move' }`.
+- Installer deps are injectable for tests: `createInstaller({ git, runBunInstall, build, rename })` with real defaults.
+- Failure coverage tests (each asserts no `plugins/<id>` folder, no tmp leftovers under the config dir, `plugins.json` unchanged, and the exact `step`): clone (`file://` path that does not exist → `clone`; existing repo with ref `v9.9.9` → `clone`), manifest (missing `mc-plugin.json` → `manifest`; invalid manifest → `manifest` with its errors), dependencies (package.json depending on `"definitely-not-a-real-pkg-mc": "1.0.0"` → `dependencies`; to keep the test offline, inject `runBunInstall` that rejects), build (syntax error → `build`), move (inject `rename` that rejects → `move`), commit mismatch (409 as above). Update rollback test: inject `rename` that rejects on the second call → old version still installed and loadable, `plugins.json` unchanged.
+- Marketplace parsing tests: a `marketplace.json` with one valid entry and one entry missing `repo` → catalog has 1 plugin and `skipped: [{ id, reason: 'missing repo' }]`; malformed JSON → catalog entry `{ marketplace, error: 'marketplace.json is not valid JSON' }`.
+- `test/secrets.test.ts`: update the config-defaults assertion (~line 45) to include `marketplaces: []`; no other change to that file.
 
 ## Run H4 — context route + trusted runtime + call route (worktree `.worktree/plg-store`, after H3 lands)
 
