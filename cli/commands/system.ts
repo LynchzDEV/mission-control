@@ -1,5 +1,5 @@
 import { ApiError, segment } from '../client'
-import { arg, countOpt, emit, oneOf, records, stringOpt, UsageError, type Command, type Context } from '../command'
+import { arg, countOpt, emit, flag, oneOf, records, stringOpt, UsageError, type Command, type Context } from '../command'
 import { cell, keyValue, relativeAge, table } from '../format'
 
 const ROLE_NAMES = ['plan', 'execute', 'review'] as const
@@ -83,6 +83,30 @@ function terminalsText(value: unknown): string {
     { header: 'TITLE', value: (row) => cell(row.title) },
     { header: 'CWD', value: (row) => cell(row.cwd) },
   ])
+}
+
+function modelsText(models: unknown, state: unknown): string {
+  const record = isRecord(state) ? state : {}
+  const names = Array.isArray(models) ? models.filter((model): model is string => typeof model === 'string') : []
+  const lines = [`models: ${names.length ? names.join(', ') : '(none)'}`]
+  if (typeof record.current === 'string') lines.push(`current: ${record.current}`)
+  lines.push(`checked: ${typeof record.checkedAt === 'number' ? `${relativeAge(record.checkedAt)} ago` : 'never'}`)
+  if (typeof record.error === 'string') lines.push(`error: ${record.error}`)
+  return `${lines.join('\n')}\n`
+}
+
+async function connectionModels(ctx: Context): Promise<void> {
+  const id = arg(ctx, 'id')
+  if (flag(ctx, 'refresh')) {
+    const state = await ctx.client.post(`/api/studio/connections/${segment(id)}/models/refresh`)
+    emit(ctx, state, (value) => modelsText(isRecord(value) ? value.models : [], value))
+    return
+  }
+  const doc = await ctx.client.get('/api/studio/connections')
+  const record = isRecord(doc) ? doc : {}
+  if (!records(record, 'connections').some((connection) => connection.id === id)) throw new ApiError(404, `Connection "${id}" is not configured`)
+  const state = isRecord(record.discovery) ? record.discovery[id] ?? null : null
+  emit(ctx, state, (value) => modelsText(isRecord(record.models) ? record.models[id] : [], value))
 }
 
 const MODEL_OPTION = { model: { type: 'string', description: 'model id', placeholder: 'M' } } as const
@@ -192,6 +216,13 @@ export const systemCommands: Command[] = [
     args: ['id'],
     summary: 'Ask a connected agent what it can do',
     run: async (ctx) => emit(ctx, await ctx.client.post(`/api/studio/connections/${segment(arg(ctx, 'id'))}/probe`), keyValue),
+  },
+  {
+    path: ['connection', 'models'],
+    args: ['id'],
+    options: { refresh: { type: 'boolean', description: 'ask the agent for its models now' } },
+    summary: 'Models a connected agent reports, when they were checked and any error',
+    run: connectionModels,
   },
   { path: ['flow-approval'], summary: 'Whether flows started by an AI wait for your approval', run: async (ctx) => emit(ctx, await ctx.client.get('/api/flow-approval'), keyValue) },
   {

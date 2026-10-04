@@ -20,11 +20,14 @@ afterEach(async () => {
 type Call = { method: string; path: string; query: Record<string, string>; body: unknown }
 
 const ROLES = { plan: { engine: 'claude', model: null }, execute: { engine: 'glm', model: null }, review: { engine: 'codex', model: 'gpt-5' }, autoReview: false }
+const GROK_STATE = { models: ['grok-4.7', 'grok-4.5'], current: 'grok-4.7', checkedAt: Date.now() - 3 * 60_000, error: null }
+const CONNECTIONS = { builtins: ['claude'], connections: [{ id: 'grok', adapter: 'acp', models: ['grok-custom'] }], models: { grok: ['grok-4.7', 'grok-4.5', 'grok-custom'] }, discovery: { grok: GROK_STATE } }
 const JOB = { id: 'job-1', status: 'done', engine: 'claude', label: 'Fix the bug', prompt: 'Fix the bug\nmore', startedAt: Date.now() - 120_000 }
 
 function cannedResponse(method: string, path: string): Response {
   if (method === 'GET' && path === '/api/roles') return Response.json(ROLES)
   if (method === 'GET' && path === '/api/jobs') return Response.json({ jobs: [JOB] })
+  if (method === 'GET' && path === '/api/studio/connections') return Response.json(CONNECTIONS)
   if (path.endsWith('/export.md')) return new Response('# Fix the bug\n', { headers: { 'content-type': 'text/markdown' } })
   if (path.endsWith('/log')) return new Response('line one\nline two\n', { headers: { 'content-type': 'text/plain' } })
   return Response.json({ ok: true })
@@ -86,6 +89,8 @@ const ROWS: Row[] = [
   { argv: ['terminal', 'sessions', '--cwd', '/repo'], method: 'GET', path: '/api/terminals/sessions', query: { cwd: '/repo' } },
   { argv: ['connections'], method: 'GET', path: '/api/studio/connections' },
   { argv: ['connection', 'probe', 'my-acp'], method: 'POST', path: '/api/studio/connections/my-acp/probe' },
+  { argv: ['connection', 'models', 'grok'], method: 'GET', path: '/api/studio/connections' },
+  { argv: ['connection', 'models', 'grok', '--refresh'], method: 'POST', path: '/api/studio/connections/grok/models/refresh' },
   { argv: ['flow-approval'], method: 'GET', path: '/api/flow-approval' },
   { argv: ['flow-approval', 'set', 'on'], method: 'PUT', path: '/api/flow-approval', body: { flowApproval: true } },
   { argv: ['flow-approval', 'set', 'false'], method: 'PUT', path: '/api/flow-approval', body: { flowApproval: false } },
@@ -292,6 +297,40 @@ describe('output', () => {
     expect(doc.health).toEqual({ ok: true })
     expect(doc.roles).toEqual(ROLES)
     expect(doc.quota).toEqual({ ok: true })
+  })
+
+  test('connection models prints the effective list, when it was checked and any error', async () => {
+    const h = harness()
+    expect(await main(['connection', 'models', 'grok'], h.deps)).toBe(0)
+    expect(h.out()).toBe('models: grok-4.7, grok-4.5, grok-custom\ncurrent: grok-4.7\nchecked: 3m ago\n')
+    const failing = harness((method, path) => path === '/api/studio/connections' ? Response.json({ ...CONNECTIONS, discovery: { grok: { ...GROK_STATE, error: 'grok is not signed in' } } }) : cannedResponse(method, path))
+    await main(['connection', 'models', 'grok'], failing.deps)
+    expect(failing.out()).toContain('error: grok is not signed in\n')
+  })
+
+  test('connection models says when nothing was checked yet', async () => {
+    const h = harness((method, path) => path === '/api/studio/connections' ? Response.json({ ...CONNECTIONS, discovery: { grok: null } }) : cannedResponse(method, path))
+    expect(await main(['connection', 'models', 'grok'], h.deps)).toBe(0)
+    expect(h.out()).toBe('models: grok-4.7, grok-4.5, grok-custom\nchecked: never\n')
+  })
+
+  test('connection models --json prints the discovery state', async () => {
+    const h = harness()
+    expect(await main(['connection', 'models', 'grok', '--json'], h.deps)).toBe(0)
+    expect(JSON.parse(h.out())).toEqual(GROK_STATE)
+  })
+
+  test('connection models --refresh prints what the check found', async () => {
+    const fresh = { ...GROK_STATE, checkedAt: Date.now() }
+    const h = harness((method, path) => path.endsWith('/models/refresh') ? Response.json(fresh) : cannedResponse(method, path))
+    expect(await main(['connection', 'models', 'grok', '--refresh'], h.deps)).toBe(0)
+    expect(h.out()).toBe('models: grok-4.7, grok-4.5\ncurrent: grok-4.7\nchecked: 0s ago\n')
+  })
+
+  test('connection models with an unknown id is an API-style error', async () => {
+    const h = harness()
+    expect(await main(['connection', 'models', 'ghost'], h.deps)).toBe(1)
+    expect(h.err()).toContain('Connection "ghost" is not configured')
   })
 
   test('job show with an unknown id is an API-style error', async () => {

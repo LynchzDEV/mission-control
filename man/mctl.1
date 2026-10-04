@@ -93,6 +93,20 @@ Built\-in and connected AI agents.
 .BI "mctl connection probe " id
 Ask a connected agent what it can do.
 .TP
+.BI "mctl connection models " id " \fR[\fB\-\-refresh\fR]"
+The models a connected agent offers: what it reported first, then any extra IDs from its settings,
+when they were last checked, and the last error.
+Mission Control re-checks a day after a success and 15 minutes after a failure, whenever the list is read.
+CLI connections cannot report models; list them in the connection's settings.
+With
+.BR \-\-json ,
+prints the saved check result.
+.RS
+.TP
+.B \-\-refresh
+Ask the agent for its models now and print what it found.
+.RE
+.TP
 .B mctl flow\-approval
 Whether flows started by an AI wait for your approval.
 .TP
