@@ -22,12 +22,23 @@ export function createFrameEndpoint(frame: HTMLIFrameElement): FrameEndpoint {
   return { endpoint, close }
 }
 
-let teardown: (() => void) | null = null
+type MountedScreen = { key: string; view: HTMLElement; teardown: () => void }
+
+const mounted = new Map<string, MountedScreen>()
 
 export async function openPluginScreen(installed: InstalledPlugin): Promise<void> {
-  teardown?.()
-  teardown = null
   const section = document.getElementById('plugin') as HTMLElement
+  const key = `${installed.commit}:${installed.updatedAt}`
+  for (const screen of mounted.values()) screen.view.hidden = true
+  const existing = mounted.get(installed.id)
+  if (existing !== undefined && existing.key === key && section.contains(existing.view)) {
+    existing.view.hidden = false
+    return
+  }
+  existing?.teardown()
+  existing?.view.remove()
+  const view = document.createElement('div')
+  view.dataset.pluginView = installed.id
   const heading = document.createElement('header')
   heading.className = 'studio-heading'
   const intro = document.createElement('div')
@@ -40,7 +51,10 @@ export async function openPluginScreen(installed: InstalledPlugin): Promise<void
   heading.append(intro)
   const root = document.createElement('div')
   root.className = 'plugin-screen'
-  section.replaceChildren(heading, root)
+  view.append(heading, root)
+  section.append(view)
+  const screen: MountedScreen = { key, view, teardown: () => {} }
+  mounted.set(installed.id, screen)
   const mc = createScreenApi(installed, openPluginLaunch)
   if (installed.runtime === 'trusted') {
     const mod = await import(`/plugin-module/${encodeURIComponent(installed.id)}/screen.js`) as ScreenModule
@@ -56,5 +70,5 @@ export async function openPluginScreen(installed: InstalledPlugin): Promise<void
   root.append(frame)
   const exposed = createFrameEndpoint(frame)
   expose(mc, exposed.endpoint)
-  teardown = exposed.close
+  screen.teardown = exposed.close
 }

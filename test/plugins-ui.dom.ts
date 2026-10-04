@@ -415,9 +415,21 @@ test('quiet:start-chat creates the chat job in the given folder', async () => {
   expect(job!.body).toMatchObject({ engine: 'glm', model: 'glm-5.3', cwd: '/work/app', purpose: 'chat', prompt: 'Read the task context in /x/y.md before anything else.' })
 })
 
+test('opening a plugin again keeps its loaded screen; an update rebuilds it', async () => {
+  await pluginScreen.openPluginScreen(clickupPlugin)
+  const first = byId('plugin').querySelector('[data-plugin-view="clickup-board"] iframe')
+  await pluginScreen.openPluginScreen(clickupPlugin)
+  expect(byId('plugin').querySelectorAll('[data-plugin-view="clickup-board"]')).toHaveLength(1)
+  expect(byId('plugin').querySelector('[data-plugin-view="clickup-board"] iframe')).toBe(first)
+  expect((byId('plugin').querySelector('[data-plugin-view="clickup-board"]') as HTMLElement).hidden).toBe(false)
+  await pluginScreen.openPluginScreen({ ...clickupPlugin, commit: 'aaaaaa', updatedAt: '2026-10-05T00:00:00.000Z' })
+  expect(byId('plugin').querySelectorAll('[data-plugin-view="clickup-board"]')).toHaveLength(1)
+  expect(byId('plugin').querySelector('[data-plugin-view="clickup-board"] iframe')).not.toBe(first)
+})
+
 test('an isolated plugin mounts in a sandboxed frame and only its window can call the host api', async () => {
   await pluginScreen.openPluginScreen(clickupPlugin)
-  const frame = byId('plugin').querySelector('iframe') as HTMLIFrameElement
+  const frame = byId('plugin').querySelector('[data-plugin-view="clickup-board"] iframe') as HTMLIFrameElement
   expect(frame).not.toBeNull()
   expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
   expect(frame.getAttribute('src')).toBe('/plugin-frame/clickup-board/')
