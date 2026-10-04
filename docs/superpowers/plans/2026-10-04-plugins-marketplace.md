@@ -203,6 +203,11 @@ Tests (`test/plugin-runtime-trusted.test.ts`): fixture trusted plugin with metho
 - Method lookup uses `Object.hasOwn(methods, name)` (inherited names like `toString`, `constructor` → 404 `No method <name>`).
 - Extra tests: `GET /plugin-module/<id>/screen.js` → 200 with `content-type: text/javascript` for an enabled trusted plugin, 404 for an isolated plugin, 404 when disabled; `/call` on an isolated plugin → 501 `Isolated runtime not available yet`; a method throwing `new Error('boom')` → 500 `{ error: 'boom' }`; method `toString` → 404; `ctx.settings.set('boards', '[]')` from a method succeeds while `PUT` of key `boards` → 400; after updating a fixture from v1 (`version` returns `'v1'`) to v2 (`'v2'`) the next `/call version` returns `'v2'`.
 
+### H4 revisions, round 2 (supersedes the query-string cache busting)
+- Bun 1.2.17 ignores `?v=` on file imports, so a trusted plugin's server code cannot be reloaded in-process. Decision: a trusted plugin's module is imported once per process (plain `import(pathToFileURL(entryPath).href)`). After a successful update of a trusted plugin, `plugins.json` records `restartRequired: true` for it, `GET /api/plugins` returns that flag, and calls keep using the already-loaded module until Mission Control restarts; on startup (`createRuntimes()` with an empty cache) the flag is cleared for every plugin. Isolated plugins (H5) start a new process per runtime, so `invalidateRuntime(id)` after update/uninstall/disable stops that process and they pick up new code without a restart.
+- Replace the v1→v2 test with: after updating a trusted fixture from v1 to v2, `/call version` still returns `'v1'` and `GET /api/plugins` shows `restartRequired: true`; a fresh `createRuntimes()` (simulated restart) on the same config dir returns `'v2'` and clears `restartRequired`.
+- Uninstall or disable of a trusted plugin: its routes stop answering immediately (404/409 from the store check), even though its module stays in memory.
+
 ## Run H5 — isolated runtime (worktree `.worktree/plg-spike`, after H1 GO and H4 land)
 
 Decisions: copy the sandbox config, allow paths and env handling from `docs/spikes/2026-10-04-plugin-sandbox/README.md` exactly. `server/plugins/runtime-isolated.ts` `createIsolatedRuntime(installed, deps)`:
