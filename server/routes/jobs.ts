@@ -366,7 +366,7 @@ export function createLogStreamResponse(path: string, signal: AbortSignal, secre
       } catch {
         watcher = null
       }
-      if (startOffset !== undefined) await pushUpdates()
+      await pushUpdates()
 
       heartbeat = setInterval(() => {
         if (closed) return
