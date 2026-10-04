@@ -43,7 +43,7 @@ function GlmSettings({ report, onError }: { report: (text: string) => void; onEr
 }
 
 const ENGINE_TINTS: Record<string, string> = { claude: '#d4a091', glm: '#91b0dc', codex: '#bfd38b' }
-const LOGOS = new Set(['claude', 'glm', 'codex', 'qwen'])
+const LOGOS = new Set(['claude', 'glm', 'codex', 'qwen', 'grok'])
 const ROLES = ['plan', 'execute', 'review'] as const
 type Details = { usage: Record<string, unknown>; roles: Record<string, unknown>; models: Record<string, string[]>; glmConfigured: boolean }
 const adapterLine = (adapter: AgentConnection['adapter'] | undefined) => adapter === 'cli' ? 'Headless CLI' : adapter === 'opencode' ? 'OpenCode' : 'ACP agent'

@@ -80,7 +80,7 @@
   --card-proposed: #2d2a3b;
   --studio-dots: #3d4351;
 }
-:root[data-theme="dark"] img[src$="/glm.svg"] { filter: invert(1); }
+:root[data-theme="dark"] :is(img[src$="/glm.svg"], img[src$="/grok.svg"]) { filter: invert(1); }
 * { box-sizing: border-box; }
 body { margin: 0; padding: 0; font-family: inherit; line-height: normal; background: transparent; }
 p { margin-bottom: 1em; }
