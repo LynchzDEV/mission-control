@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Elysia } from 'elysia'
 
+import { marketplaceDir } from '../server/plugins/marketplaces'
 import { pluginsRoutes } from '../server/routes/plugins'
 import { readConfig, writeConfig } from '../server/secrets'
 import { commitFixture, createPluginRepo, fileUrl, fixtureSha, isolatedManifest, TRIVIAL_SCREEN } from './support/plugin-fixtures'
@@ -184,6 +185,25 @@ describe('marketplaces', () => {
     await rm(source, { recursive: true, force: true })
     expect((await json('POST', '/api/plugins/marketplaces', { url })).status).toBe(400)
     expect((await (await json('GET', '/api/plugins/catalog')).json()).entries[0].plugins[0].ref).toBe('v1.1.0')
+  })
+
+  test('a plugin repo added as a marketplace is refused with a pointer to Install from a link', async () => {
+    const plugin = await createPluginRepo(join(fixtureRoot, 'plugin-as-market'), isolatedManifest(), { tag: 'v1.0.0', files: { 'src/screen.ts': TRIVIAL_SCREEN } })
+    const url = fileUrl(plugin)
+    const response = await json('POST', '/api/plugins/marketplaces', { url })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'This link is a plugin, not a marketplace. Use Install from a link to install it.' })
+    expect((await readConfig()).marketplaces).toEqual([])
+    expect(await stat(marketplaceDir(url)).then(() => true, () => false)).toBe(false)
+  })
+
+  test('a repo without marketplace.json is refused and not kept', async () => {
+    const plain = await createPluginRepo(join(fixtureRoot, 'plain-repo'), { hello: 'world' }, { manifestName: 'something.json' })
+    const url = fileUrl(plain)
+    const response = await json('POST', '/api/plugins/marketplaces', { url })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'This repo has no marketplace.json, so it is not a marketplace.' })
+    expect((await readConfig()).marketplaces).toEqual([])
   })
 
   test('a bad marketplace url is refused', async () => {

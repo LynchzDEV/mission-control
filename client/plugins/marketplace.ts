@@ -191,6 +191,29 @@ function choiceRow(options: { id: string; name: string; note: string; icon?: str
   return row
 }
 
+function brokenMarketplaceRow(url: string, error: string): HTMLElement {
+  const row = document.createElement('div')
+  row.className = 'mk-market-broken'
+  row.dataset.marketplace = url
+  row.append(Object.assign(document.createElement('strong'), { textContent: url }))
+  row.append(Object.assign(document.createElement('small'), { textContent: error }))
+  row.append(button('Remove', 'connection-button', async (element) => {
+    element.disabled = true
+    element.textContent = 'Removing…'
+    const response = await fetch('/api/plugins/marketplaces', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url }) })
+    if (!response.ok) {
+      element.disabled = false
+      element.textContent = 'Remove'
+      toast(`Couldn't remove this marketplace (${response.status})`)
+      return
+    }
+    toast('Marketplace removed')
+    await reload()
+    render()
+  }))
+  return row
+}
+
 function listPane(): HTMLElement {
   const pane = document.createElement('aside')
   pane.className = 'connection-list'
@@ -222,6 +245,9 @@ function listPane(): HTMLElement {
       pressed: selected?.kind === 'listing' && selected.listing.plugin.id === listing.plugin.id,
       onSelect: () => { updateState = null; installDraft = null; selected = { kind: 'listing', listing }; render() },
     }))
+  }
+  for (const entry of catalogEntries) {
+    if ('error' in entry) pane.append(brokenMarketplaceRow(entry.marketplace, entry.error))
   }
   const addMarket = button('Add a marketplace', 'connection-add', () => { addingMarketplace = !addingMarketplace; render() })
   addMarket.insertAdjacentHTML('afterbegin', icon('plus-icon'))

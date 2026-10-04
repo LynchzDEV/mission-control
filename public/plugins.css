@@ -84,3 +84,7 @@
 .mk-tree div[aria-selected="true"] { background: var(--purple-bg); color: var(--purple-ink); }
 .mk-tree svg { width: 13px; height: 13px; color: var(--muted); }
 .mk-tree em { margin-left: auto; font-style: normal; font-size: 11px; color: var(--muted); }
+.mk-market-broken { display: grid; gap: 4px; width: 100%; padding: 10px 12px; border-radius: var(--r-md); corner-shape: var(--corner); border: 1px solid color-mix(in srgb, var(--red-ink) 30%, var(--line)); background: color-mix(in srgb, var(--red-bg) 45%, var(--paper)); font-size: 13px; }
+.mk-market-broken strong { font-weight: 500; overflow-wrap: anywhere; }
+.mk-market-broken small { color: var(--red-ink); font-size: 12px; }
+.mk-market-broken button { justify-self: start; margin-top: 4px; }

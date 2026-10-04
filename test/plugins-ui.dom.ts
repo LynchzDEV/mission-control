@@ -93,13 +93,15 @@ let terminalCreate: (() => Response) | null = null
 
 const providers = { providers: [{ id: 'claude', name: 'Claude', models: ['opus', 'sonnet'] }, { id: 'glm', name: 'GLM', models: ['glm-5.3'] }] }
 let catalogName = 'KlangTech marketplace'
-const catalogBody = () => ({ entries: [{ marketplace: 'https://github.com/LynchzDEV/mc-marketplace', name: catalogName, plugins: [{ id: 'hello-board', repo: 'https://github.com/LynchzDEV/mc-plugin-template', ref: 'v2.0.0', name: 'Hello board', description: 'Template: a trusted plugin', runtime: 'trusted' }], skipped: [] }] })
+let brokenMarketplace: { marketplace: string; error: string } | null = null
+const catalogBody = () => ({ entries: [...(brokenMarketplace ? [brokenMarketplace] : []), { marketplace: 'https://github.com/LynchzDEV/mc-marketplace', name: catalogName, plugins: [{ id: 'hello-board', repo: 'https://github.com/LynchzDEV/mc-plugin-template', ref: 'v2.0.0', name: 'Hello board', description: 'Template: a trusted plugin', runtime: 'trusted' }], skipped: [] }] })
 
 const reply = (request: Sent): Response => {
   const { url, method } = request
   if (method === 'GET' && url === '/api/history') return Response.json({ items: [{ kind: 'chat', id: 'c1', title: 'Chat one', updatedAt: Date.now(), project: null, running: false, agents: [] }] })
   if (method === 'GET' && url === '/api/plugins') return Response.json({ plugins: installedPlugins })
   if (method === 'GET' && url === '/api/plugins/catalog') return Response.json(catalogBody())
+  if (method === 'DELETE' && url === '/api/plugins/marketplaces') { brokenMarketplace = null; return Response.json({ marketplaces: [] }) }
   if (method === 'GET' && url === '/api/providers') return Response.json(providers)
   if (method === 'GET' && url === '/api/terminals') return Response.json({ sessions: [] })
   if (method === 'POST' && url === '/api/jobs') return Response.json({ id: 'job-9' })
@@ -243,6 +245,19 @@ test('the bundled plugins island opens the marketplace through the shell event',
   expect(screen.querySelector('.connection-list')).not.toBeNull()
   expect(screen.querySelector('.connection-list [data-plugin="hello-board"]')).not.toBeNull()
   expect(screen.querySelector('.connection-settings')).not.toBeNull()
+})
+
+test('a marketplace that fails to load shows its error and can be removed', async () => {
+  brokenMarketplace = { marketplace: 'https://github.com/LynchzDEV/mc-plugin-clickup', error: 'marketplace.json is missing — sync this marketplace first' }
+  dispatchEvent(new CustomEvent('quiet:show', { detail: 'marketplace' }))
+  await flush(4)
+  const row = byId('marketplace').querySelector('.mk-market-broken[data-marketplace="https://github.com/LynchzDEV/mc-plugin-clickup"]') as HTMLElement
+  expect(row.textContent).toContain('marketplace.json is missing')
+  sent.length = 0
+  buttonNamed('Remove', row).click()
+  await flush(4)
+  expect(sent.find(request => request.method === 'DELETE')).toEqual({ url: '/api/plugins/marketplaces', method: 'DELETE', body: { url: 'https://github.com/LynchzDEV/mc-plugin-clickup' } })
+  expect(byId('marketplace').querySelector('.mk-market-broken')).toBeNull()
 })
 
 test('a marketplace name from the catalog renders as text, never as markup', async () => {

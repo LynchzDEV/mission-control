@@ -61,12 +61,24 @@ export async function syncMarketplace(url: string): Promise<void> {
   await applyPrivateModes(dir)
 }
 
+async function notAMarketplace(dir: string): Promise<string | null> {
+  if (await stat(join(dir, 'marketplace.json')).then(() => true, () => false)) return null
+  if (await stat(join(dir, 'mc-plugin.json')).then(() => true, () => false)) return 'This link is a plugin, not a marketplace. Use Install from a link to install it.'
+  return 'This repo has no marketplace.json, so it is not a marketplace.'
+}
+
 export async function addMarketplace(url: string): Promise<MarketplaceResult> {
   if (!isAllowedRepoUrl(url)) return { ok: false, status: 400, error: 'Marketplace url must be https://, git@host:path or file://' }
   try {
     await syncMarketplace(url)
   } catch (error) {
     return { ok: false, status: 400, error: `Couldn't reach this marketplace: ${errorMessage(error)}` }
+  }
+  const notMarketplace = await notAMarketplace(marketplaceDir(url))
+  if (notMarketplace !== null) {
+    const kept = (await listMarketplaces()).some(entry => entry.url === url)
+    if (!kept) await rm(marketplaceDir(url), { recursive: true, force: true })
+    return { ok: false, status: 400, error: notMarketplace }
   }
   const current = await listMarketplaces()
   const next = [...current.filter(entry => entry.url !== url), { url }]
