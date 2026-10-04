@@ -103,13 +103,14 @@ export function Connections({ list, refresh, report, onError, onConnect }: { lis
       const references = Object.fromEntries(env.split('\n').map(line => line.trim()).filter(Boolean).map(line => { const [key, reference, extra] = line.split('='); if (!key || !reference || extra) throw new Error('Use TARGET_ENV=SOURCE_ENV, one per line'); return [key.trim(), reference.trim()] }))
       const saved = await api<AgentConnection>('/connections', { ...editing, models: (editing.models ?? []).map(model => model.trim()).filter(Boolean), args: args.split('\n').filter(Boolean), env: references, terminalArgs: terminalArgs ? terminalArgs.split('\n').filter(Boolean) : editing.terminalArgs !== undefined ? [] : undefined })
       pick({ kind: 'connection', value: saved }); await refresh(); report('AI connection saved. Sign in to its app before running it.'); onConnect?.()
+      if (saved.adapter !== 'cli') void refreshModels(saved.id)
     } catch (error) { onError((error as Error).message) } finally { setBusy(false) }
   }
   const check = async () => { setBusy(true); try { setProbe(JSON.stringify(await api(`/connections/${editing.id}/probe`, {}), null, 2)); report('Connection checked. No task was sent.') } catch (error) { onError((error as Error).message) } finally { setBusy(false) } }
-  const refreshModels = async () => {
+  const refreshModels = async (id = editing.id) => {
     setChecking(true)
     try {
-      const state = await api<DiscoveryState>(`/connections/${editing.id}/models/refresh`, {})
+      const state = await api<DiscoveryState>(`/connections/${id}/models/refresh`, {})
       await refresh()
       if (state.error) onError(`Couldn't list models: ${state.error}`)
       else report(`Found ${state.models.length} model${state.models.length === 1 ? '' : 's'}.`)
