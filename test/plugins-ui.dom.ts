@@ -268,6 +268,23 @@ test('a plugin link opens the install prompt for that plugin at the version foun
   await flush()
 })
 
+test('a wildcard network permission reads as any address ending in that domain', async () => {
+  addLinkReply = { status: 200, body: { kind: 'plugin', ref: 'v1.5.0', manifest: { id: 'clickup-board', name: 'ClickUp board', version: '1.5.0' }, commit: 'abc124', permissions: { network: ['api.clickup.com', '*.clickup-attachments.com'], sessions: ['chat'], settings: true }, runtime: 'isolated' } }
+  dispatchEvent(new CustomEvent('quiet:show', { detail: 'marketplace' }))
+  await flush(4)
+  buttonNamed('Add from a link', byId('marketplace')).click()
+  await flush()
+  const link = byId('marketplace').querySelector('input[aria-label="Plugin or marketplace link"]') as HTMLInputElement
+  link.value = 'https://github.com/LynchzDEV/mc-plugin-clickup'
+  buttonNamed('Add', byId('marketplace')).click()
+  await flush(4)
+  const dialog = byId('marketplace').querySelector('.mk-dialog') as HTMLElement
+  expect(dialog.textContent).toContain('Reach any address ending in .clickup-attachments.com')
+  expect(dialog.textContent).not.toContain('*.clickup-attachments.com')
+  buttonNamed('Cancel', dialog).click()
+  await flush()
+})
+
 test('a marketplace link is added and its listing loads; a bad link says why', async () => {
   addLinkReply = { status: 200, body: { kind: 'marketplace' } }
   dispatchEvent(new CustomEvent('quiet:show', { detail: 'marketplace' }))
