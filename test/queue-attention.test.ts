@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { createAttentionStore } from '../server/attention'
-import { raiseQueueAlert, watchQueueAlerts } from '../server/queue-attention'
+import { raiseQueueAlert, sweepQueueAlerts, watchQueueAlerts } from '../server/queue-attention'
 import { createQueueStore, type NewQueueItem } from '../server/queue-store'
 
 let dir: string
@@ -42,4 +42,16 @@ test('a stopped watcher leaves alerts alone', async () => {
   watchQueueAlerts(store, attention)()
   await store.update(item.id, { state: 'building' })
   expect(keys(attention)).toEqual([`queue:${item.id}`])
+})
+
+test('a sweep clears alerts left from before a restart without waiting for a change', async () => {
+  const store = createQueueStore(join(dir, 'queue.json'))
+  const attention = createAttentionStore(join(dir, 'attention.json'))
+  const moved = await store.add(task('a'), 'end')
+  const waiting = await store.update((await store.add(task('b'), 'end')).id, { state: 'ready' })
+  await raiseQueueAlert(attention, moved, 'Built and ready for review')
+  await raiseQueueAlert(attention, waiting, 'Built and ready for review')
+  await attention.raise({ key: 'queue:missing', kind: 'queue', title: 'Gone', detail: 'x', command: null, chatId: null, jobId: null, requestId: null })
+  expect(await sweepQueueAlerts(store, attention)).toBe(2)
+  expect(keys(attention)).toEqual([`queue:${waiting.id}`])
 })

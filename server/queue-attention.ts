@@ -1,4 +1,4 @@
-import { attentionKey, type AttentionStore } from './attention'
+import { attentionKey, type AttentionItem, type AttentionStore } from './attention'
 import type { QueueItem, QueueStore } from './queue-store'
 
 const NEEDS_PERSON = new Set<QueueItem['state']>(['ready', 'failed', 'waiting-info'])
@@ -7,12 +7,16 @@ export function raiseQueueAlert(attention: AttentionStore, item: QueueItem, reas
   return attention.raise({ key: attentionKey.queue(item.id), kind: 'queue', title: item.title, detail: reason, command: null, chatId: null, jobId: null, requestId: null })
 }
 
+function needsNoPerson(store: QueueStore, alert: AttentionItem): boolean {
+  if (alert.kind !== 'queue') return false
+  const item = store.get(alert.key.slice('queue:'.length))
+  return item === undefined || !NEEDS_PERSON.has(item.state)
+}
+
+export function sweepQueueAlerts(store: QueueStore, attention: AttentionStore): Promise<number> {
+  return attention.resolveWhere(alert => needsNoPerson(store, alert))
+}
+
 export function watchQueueAlerts(store: QueueStore, attention: AttentionStore): () => void {
-  return store.subscribe(() => {
-    void attention.resolveWhere(alert => {
-      if (alert.kind !== 'queue') return false
-      const item = store.get(alert.key.slice('queue:'.length))
-      return item === undefined || !NEEDS_PERSON.has(item.state)
-    })
-  })
+  return store.subscribe(() => { void sweepQueueAlerts(store, attention) })
 }

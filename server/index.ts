@@ -39,11 +39,12 @@ import { createQueueEngine, type QueueEngine } from './queue-engine'
 import { pluginSource } from './queue-source'
 import { createQueueStore, queuePath } from './queue-store'
 import { queueRoutes } from './routes/queue'
+import { queueTree } from './queue-tree'
 import { terminalsRoutes } from './routes/terminals'
 import { outcomesRoutes } from './routes/outcomes'
 import { attentionRoutes } from './routes/attention'
 import { createAttentionStore } from './attention'
-import { raiseQueueAlert, watchQueueAlerts } from './queue-attention'
+import { raiseQueueAlert, sweepQueueAlerts, watchQueueAlerts } from './queue-attention'
 import { createOutcomeLedger, OUTCOME_RETENTION_MS } from './outcomes'
 import { createSessionResolver } from './outcome-session'
 import { secretsRoutes } from './routes/secrets'
@@ -226,7 +227,10 @@ export async function createApp(): Promise<Elysia> {
   watchQueueAlerts(queueStore, attention)
   const bootQueue = queueEngine
   void bootQueue.recover().then(
-    () => bootQueue.checkReplies().catch(error => console.error('Queue reply check failed', error)),
+    () => {
+      void sweepQueueAlerts(queueStore, attention).catch(error => console.error('Queue alert sweep failed', error))
+      return bootQueue.checkReplies().catch(error => console.error('Queue reply check failed', error))
+    },
     error => console.error('Queue recover failed', error),
   )
   const REPLY_SWEEP_MS = 15 * 60_000
@@ -287,7 +291,7 @@ export async function createApp(): Promise<Elysia> {
     .use(modelsRoutes)
     .use(providersRoutes)
     .use(pluginsRoutes())
-    .use(queueRoutes(queueStore, queueEngine))
+    .use(queueRoutes(queueStore, queueEngine, () => queueTree(queueStore.list())))
 
   await defaultRuntimes()
 
