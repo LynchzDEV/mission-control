@@ -7,7 +7,11 @@ export type QueueItemView = {
 
 export type QueuePlugin = { id: string; name: string; icon?: string; enabled: boolean }
 export type QueueFlow = { id: string; name: string }
-export type QueueContext = { plugins: QueuePlugin[]; flows: QueueFlow[]; now: number; checkedAt: number | null; openIds: ReadonlySet<string> }
+export type QueueLayout = 'list' | 'tree'
+export type QueueContext = {
+  plugins: QueuePlugin[]; flows: QueueFlow[]; now: number; checkedAt: number | null; openIds: ReadonlySet<string>
+  layout?: QueueLayout; treeView?: HTMLElement
+}
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const LINE = 'Items from your sources, built one at a time. Nothing reaches the remote until you land it.'
@@ -68,7 +72,7 @@ export function lineText(items: readonly QueueItemView[], queuedIndex: number): 
   return `${ordinal(queuedIndex + 1 + (items.some(item => item.state === 'building') ? 1 : 0))} in line`
 }
 
-function pill(state: QueueState): HTMLElement {
+export function pill(state: QueueState): HTMLElement {
   const { s, label, icon: iconId } = PILL[state]
   return el('span', { class: 'pill-state', 'data-s': s }, ...(iconId ? [icon(iconId)] : []), label)
 }
@@ -82,11 +86,11 @@ function heading(context: QueueContext): HTMLElement {
 
 const addButton = (): HTMLElement => button('Add item', 'connection-button q-btn', { 'data-act': 'add' }, 'plus-icon')
 
-function summary(items: readonly QueueItemView[]): HTMLElement {
+function summary(items: readonly QueueItemView[], shown: QueueLayout): HTMLElement {
   const counts = STATES.map(state => [state, items.filter(item => item.state === state).length] as const).filter(([, count]) => count > 0)
   const layout = el('nav', { class: 'mk-seg q-layout', 'aria-label': 'Layout' },
-    button('List', '', { 'data-layout': 'list', 'aria-pressed': 'true' }),
-    button('Git tree', '', { 'data-layout': 'tree', 'aria-pressed': 'false', disabled: true }))
+    button('List', '', { 'data-layout': 'list', 'aria-pressed': String(shown === 'list') }),
+    button('Git tree', '', { 'data-layout': 'tree', 'aria-pressed': String(shown === 'tree') }))
   return el('div', { class: 'q-bar' },
     ...counts.map(([state, count]) => el('span', { class: 'pill-state', 'data-s': PILL[state].s }, `${count} ${PILL[state].count}`)),
     el('span', { class: 'sp' }), el('span', { class: 'muted' }, 'One builds at a time'), layout, addButton())
@@ -104,7 +108,7 @@ function sourceBadge(item: QueueItemView, plugins: readonly QueuePlugin[]): HTML
   return el('a', { class: 'q-src', href: item.url, target: '_blank', rel: 'noopener noreferrer', title: `Open ${item.externalId} in ${plugin?.name ?? item.source}` }, ...parts, icon('open-icon'))
 }
 
-function flowName(item: QueueItemView, flows: readonly QueueFlow[]): string {
+export function flowName(item: Pick<QueueItemView, 'flowId'>, flows: readonly QueueFlow[]): string {
   if (item.flowId === null) return 'Default flow'
   return flows.find(flow => flow.id === item.flowId)?.name ?? item.flowId
 }
@@ -179,8 +183,10 @@ export function renderQueue(items: readonly QueueItemView[], context: QueueConte
   if (items.length === 0) {
     return el('div', { class: 'q-screen' }, heading(context), el('div', { class: 'q-bar' }, el('span', { class: 'sp' }), addButton()), emptyState())
   }
+  const treeView = context.layout === 'tree' ? context.treeView : undefined
+  if (treeView !== undefined) return el('div', { class: 'q-screen' }, heading(context), summary(items, 'tree'), treeView)
   const hint = el('button', { type: 'button', class: 'connection-add q-hint', 'data-act': 'add' }, icon('plus-icon'), 'Add an item from a source plugin, or run ', el('code', {}, 'mctl queue add'))
-  return el('div', { class: 'q-screen' }, heading(context), summary(items), el('div', { class: 'q-list' }, ...items.map(item => row(item, items, context))), hint)
+  return el('div', { class: 'q-screen' }, heading(context), summary(items, 'list'), el('div', { class: 'q-list' }, ...items.map(item => row(item, items, context))), hint)
 }
 
 const isText = (value: unknown): value is string => typeof value === 'string'

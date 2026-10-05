@@ -1,5 +1,7 @@
+import type { QueueTree } from '../server/queue-tree'
 import { createAddDialog } from './queue-dialog'
-import { readQueueItems, renderQueue, type QueueFlow, type QueueItemView, type QueuePlugin } from './queue-view'
+import { readQueueTree, renderTree } from './queue-tree'
+import { readQueueItems, renderQueue, type QueueFlow, type QueueItemView, type QueueLayout, type QueuePlugin } from './queue-view'
 import { errorText, getJson, postJson, readArray, readRecord, type ApiResult } from './shared'
 
 export { parseItemRef } from './queue-dialog'
@@ -7,6 +9,8 @@ export { renderQueue } from './queue-view'
 
 const REFRESH_MS = 30_000
 const FOCUS_MS = 1600
+const LAYOUT_KEY = 'mc.queue.layout'
+const ROW_SELECTOR = '.q-row, .q-notyet, .q-tree-tip'
 
 let items: QueueItemView[] = []
 let plugins: QueuePlugin[] = []
@@ -15,9 +19,25 @@ let checkedAt: number | null = null
 let loaded = false
 let dragId: string | null = null
 let focusId: string | null = null
+let paintAfterDrag = false
+let layout: QueueLayout = savedLayout()
+let tree: QueueTree | null = null
+let treeError: string | null = null
+let treeRequest = 0
 const openIds = new Set<string>()
 
 const toast = (text: string): void => { dispatchEvent(new CustomEvent('quiet:toast', { detail: text })) }
+
+function savedLayout(): QueueLayout {
+  try { return localStorage.getItem(LAYOUT_KEY) === 'tree' ? 'tree' : 'list' } catch { return 'list' }
+}
+
+function statusLine(text: string): HTMLElement {
+  const line = document.createElement('p')
+  line.className = 'muted q-status'
+  line.textContent = text
+  return line
+}
 
 async function deleteJson(url: string): Promise<ApiResult> {
   try {
@@ -43,8 +63,8 @@ function readFlows(value: unknown): QueueFlow[] {
 }
 
 function start(section: HTMLElement): void {
-  const rowsOf = (): HTMLElement[] => [...section.querySelectorAll<HTMLElement>('.q-row')]
-  const rowFor = (target: EventTarget | null): HTMLElement | null => (target instanceof Element ? target.closest<HTMLElement>('.q-row') : null)
+  const rowsOf = (): HTMLElement[] => [...section.querySelectorAll<HTMLElement>(ROW_SELECTOR)]
+  const rowFor = (target: EventTarget | null): HTMLElement | null => (target instanceof Element ? target.closest<HTMLElement>(ROW_SELECTOR) : null)
   const itemFor = (id: string | undefined): QueueItemView | undefined => items.find(item => item.id === id)
   const dialog = createAddDialog(() => ({ plugins, flows, items }), toast)
 
@@ -57,17 +77,34 @@ function start(section: HTMLElement): void {
     setTimeout(() => row.removeAttribute('data-focus'), FOCUS_MS)
   }
 
+  function treeView(): HTMLElement {
+    if (treeError !== null) return statusLine(`Could not load the git tree: ${treeError}`)
+    return tree === null ? statusLine('Loading the git tree…') : renderTree(tree, items, flows)
+  }
+
   function paint(): void {
     if (!loaded) return
-    section.replaceChildren(renderQueue(items, { plugins, flows, now: Date.now(), checkedAt, openIds }))
+    if (dragId !== null) { paintAfterDrag = true; return }
+    const shown = layout === 'tree' ? { layout, treeView: treeView() } : { layout }
+    section.replaceChildren(renderQueue(items, { plugins, flows, now: Date.now(), checkedAt, openIds, ...shown }))
     applyFocus()
   }
 
-  function showStatus(text: string): void {
-    const line = document.createElement('p')
-    line.className = 'muted q-status'
-    line.textContent = text
-    section.replaceChildren(line)
+  async function loadTree(): Promise<void> {
+    const request = ++treeRequest
+    const result = await getJson('/api/queue/tree')
+    if (request !== treeRequest || layout !== 'tree') return
+    if (result.ok) tree = readQueueTree(result.data)
+    treeError = result.ok ? null : errorText(result)
+    paint()
+  }
+
+  function showLayout(next: QueueLayout): void {
+    layout = next
+    try { localStorage.setItem(LAYOUT_KEY, next) } catch {}
+    treeError = null
+    paint()
+    if (next === 'tree') void loadTree()
   }
 
   async function loadContext(): Promise<void> {
@@ -99,6 +136,8 @@ function start(section: HTMLElement): void {
     const button = target?.closest<HTMLElement>('[data-act]')
     const item = itemFor(button?.dataset.id)
     const action = button?.dataset.act
+    const layoutButton = target?.closest<HTMLElement>('[data-layout]')
+    if (layoutButton) { showLayout(layoutButton.dataset.layout === 'tree' ? 'tree' : 'list'); return }
     if (button && action === 'check') { void checkReplies(button); return }
     if (button && action === 'add') { dialog.open(); return }
     if (button && item && action === 'requeue') { void act(button, () => postJson(`/api/queue/${encodeURIComponent(item.id)}/requeue`, {}), `Requeued ${item.title}`); return }
@@ -117,6 +156,13 @@ function start(section: HTMLElement): void {
     return row?.hasAttribute('data-movable') === true && dragId !== null && row.dataset.id !== dragId ? row : null
   }
   const clearDrop = (): void => { for (const row of rowsOf()) row.removeAttribute('data-drop') }
+  const endDrag = (): void => {
+    dragId = null
+    clearDrop()
+    if (!paintAfterDrag) return
+    paintAfterDrag = false
+    paint()
+  }
   section.addEventListener('dragstart', (event) => {
     const row = rowFor(event.target)
     if (row?.hasAttribute('data-movable') !== true) return
@@ -134,14 +180,14 @@ function start(section: HTMLElement): void {
   section.addEventListener('drop', (event) => {
     const row = dropTarget(event)
     const moving = dragId
-    dragId = null
-    clearDrop()
+    endDrag()
     if (row === null || moving === null) return
     event.preventDefault()
     const to = items.findIndex(item => item.id === row.dataset.id)
     void postJson(`/api/queue/${encodeURIComponent(moving)}/move`, { to }).then((result) => { if (!result.ok) toast(errorText(result)) })
   })
-  section.addEventListener('dragend', () => { dragId = null; clearDrop() })
+  section.addEventListener('dragend', endDrag)
+  addEventListener('dragend', () => { if (dragId !== null) endDrag() })
 
   addEventListener('quiet:queue-focus', (event) => {
     focusId = String((event as CustomEvent<string>).detail)
@@ -151,7 +197,7 @@ function start(section: HTMLElement): void {
   addEventListener('quiet:screen', (event) => { if ((event as CustomEvent<string>).detail === 'queue') void loadContext() })
   setInterval(() => { if (!section.hidden && dragId === null) paint() }, REFRESH_MS)
 
-  showStatus('Loading the queue…')
+  section.replaceChildren(statusLine('Loading the queue…'))
   const stream = new EventSource('/api/queue/stream')
   stream.onmessage = (event: MessageEvent) => {
     try {
@@ -159,8 +205,9 @@ function start(section: HTMLElement): void {
     } catch { return }
     loaded = true
     paint()
+    if (layout === 'tree') void loadTree()
   }
-  stream.onerror = () => { if (!loaded) showStatus('Could not load the queue. Mission Control keeps trying.') }
+  stream.onerror = () => { if (!loaded) section.replaceChildren(statusLine('Could not load the queue. Mission Control keeps trying.')) }
   void loadContext()
 }
 

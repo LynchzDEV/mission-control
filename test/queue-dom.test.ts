@@ -152,7 +152,8 @@ test('each state offers its own actions', () => {
   expect(actions('w1')).toEqual(['Requeue'])
   expect(actions('r1')).toEqual(['Requeue', 'Open run'])
   expect(actions('f1')).toEqual(['Requeue', 'Open run'])
-  expect(buttonNamed('Git tree', view).disabled).toBe(true)
+  expect(buttonNamed('Git tree', view).disabled).toBe(false)
+  expect(buttonNamed('Git tree', view).getAttribute('aria-pressed')).toBe('false')
   expect(buttonNamed('List', view).getAttribute('aria-pressed')).toBe('true')
 })
 
@@ -280,4 +281,58 @@ test('the Add form refuses a link with no id before posting', async () => {
   expect(calls.filter(call => call.method === 'POST')).toEqual([])
   expect((dialog().querySelector('[role="alert"]') as HTMLElement).textContent).toBe('Paste a task link or id')
   dialog().close()
+})
+
+const treeCalls = () => calls.filter(call => call.url === '/api/queue/tree')
+const tree = { repos: [{ repo: '/Users/me/api', base: { branch: 'main', commits: [{ sha: '4f2a9c1', subject: 'kood: timeout copy' }] }, lanes: [{ itemId: 'r1', branch: 'queue/invoice-pdf-footer', worktree: '/Users/me/api/.worktree/queue-invoice-pdf-footer', forkSha: '4f2a9c1', commits: [{ sha: '3be81f0', subject: 'fix round 1: footer' }] }] }] }
+
+test('Git tree shows the branches, follows the stream and is remembered', async () => {
+  replies.set('GET /api/queue/tree', () => Response.json(tree))
+  expect(buttonNamed('List', section()).getAttribute('aria-pressed')).toBe('true')
+  click(buttonNamed('Git tree', section()))
+  await flush()
+  expect(window.localStorage.getItem('mc.queue.layout')).toBe('tree')
+  expect(buttonNamed('Git tree', section()).getAttribute('aria-pressed')).toBe('true')
+  expect(section().querySelector('.q-list')).toBeNull()
+  expect([...section().querySelectorAll('.q-tree-tip .q-ref')].map(ref => ref.textContent)).toEqual(['queue/invoice-pdf-footer'])
+  expect(treeCalls()).toHaveLength(1)
+  FakeSource.last.send(all)
+  await flush()
+  expect(treeCalls()).toHaveLength(2)
+  click(buttonNamed('List', section()))
+  await flush()
+  expect(window.localStorage.getItem('mc.queue.layout')).toBe('list')
+  expect(rows().map(row => row.dataset.id)).toEqual(all.map(entry => entry.id))
+  FakeSource.last.send(all)
+  await flush()
+  expect(treeCalls()).toHaveLength(2)
+})
+
+test('a git tree that cannot load says so in place', async () => {
+  replies.set('GET /api/queue/tree', () => Response.json({ error: 'Not found' }, { status: 404 }))
+  click(buttonNamed('Git tree', section()))
+  await flush()
+  expect(section().querySelector('.q-status')?.textContent).toBe('Could not load the git tree: Not found')
+  expect(section().querySelector('.q-bar')).not.toBeNull()
+  click(buttonNamed('List', section()))
+  await flush()
+})
+
+test('a stream update during a drag waits for the drag to end', async () => {
+  const dragged = rowOf('q2')
+  drag('dragstart', dragged)
+  FakeSource.last.send([...all, item({ id: 'q3', title: 'New queued item' })])
+  await flush()
+  expect(rowOf('q2')).toBe(dragged)
+  expect(rowOf('q3')).toBeUndefined()
+  drag('dragend', dragged)
+  expect(rowOf('q3')).toBeDefined()
+})
+
+test('a drag that ends outside the screen still lets go', async () => {
+  drag('dragstart', rowOf('q2'))
+  dispatchEvent(new Event('dragend'))
+  const over = new window.Event('dragover', { bubbles: true, cancelable: true })
+  rowOf('q1').dispatchEvent(over)
+  expect(over.defaultPrevented).toBe(false)
 })
