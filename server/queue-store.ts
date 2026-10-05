@@ -1,0 +1,122 @@
+import { readFileSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+
+import type { RunEvents } from './run-events'
+import { configDir } from './secrets'
+import { atomicJson } from './workflows'
+
+export const QUEUE_FILE = 'queue.json'
+
+export type QueueState = 'queued' | 'building' | 'waiting-info' | 'ready' | 'failed'
+
+export type QueueItem = {
+  id: string; source: string; externalId: string; title: string; url: string; repo: string; flowId: string | null
+  state: QueueState; worktree: string | null; contextPath: string | null; answerPaths: string[]
+  runIds: string[]; currentRunId: string | null; questions: string[]; lastSeenId: string | null; error: string | null
+  createdAt: number; updatedAt: number
+}
+
+export type NewQueueItem = Pick<QueueItem, 'source' | 'externalId' | 'title' | 'url' | 'repo' | 'flowId'>
+export type QueuePatch = Partial<Omit<QueueItem, 'id' | 'createdAt' | 'updatedAt'>>
+
+export type QueueStore = RunEvents & {
+  list(): QueueItem[]
+  get(id: string): QueueItem | undefined
+  add(item: NewQueueItem, position: 'end' | 'next'): Promise<QueueItem>
+  update(id: string, patch: QueuePatch): Promise<QueueItem>
+  remove(id: string): Promise<boolean>
+  move(id: string, to: number): Promise<boolean>
+  toFront(id: string): Promise<void>
+}
+
+const STATES = new Set<string>(['queued', 'building', 'waiting-info', 'ready', 'failed'])
+const isText = (value: unknown): value is string => typeof value === 'string'
+const isTextOrNull = (value: unknown): boolean => value === null || typeof value === 'string'
+const isTexts = (value: unknown): boolean => Array.isArray(value) && value.every(isText)
+
+function isItem(value: unknown): value is QueueItem {
+  if (typeof value !== 'object' || value === null) return false
+  const item = value as Record<string, unknown>
+  return [item.id, item.source, item.externalId, item.title, item.url, item.repo].every(isText)
+    && STATES.has(item.state as string)
+    && [item.flowId, item.worktree, item.contextPath, item.currentRunId, item.lastSeenId, item.error].every(isTextOrNull)
+    && isTexts(item.answerPaths) && isTexts(item.runIds) && isTexts(item.questions)
+    && typeof item.createdAt === 'number' && typeof item.updatedAt === 'number'
+}
+
+function load(path: string): QueueItem[] {
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { items?: unknown }
+    return Array.isArray(parsed.items) ? parsed.items.filter(isItem) : []
+  } catch {
+    return []
+  }
+}
+
+export function queuePath(): string {
+  return join(configDir(), QUEUE_FILE)
+}
+
+export function createQueueStore(path: string, clock: () => number = Date.now): QueueStore {
+  let items = load(path)
+  let writes: Promise<void> = Promise.resolve()
+  const listeners = new Set<() => void>()
+  const changed = () => { for (const listener of listeners) listener() }
+
+  const save = (next: QueueItem[]): Promise<void> => {
+    items = next
+    changed()
+    const snapshot = { items }
+    const write = writes.then(async () => {
+      await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+      await atomicJson(path, snapshot)
+    })
+    writes = write.catch(error => console.error('queue write failed', error))
+    return write
+  }
+
+  const reorder = (id: string, to: number): QueueItem[] | null => {
+    const from = items.findIndex(item => item.id === id)
+    if (from === -1) return null
+    const rest = items.filter(item => item.id !== id)
+    const at = Math.max(0, Math.min(to, rest.length))
+    return [...rest.slice(0, at), items[from]!, ...rest.slice(at)]
+  }
+
+  return {
+    changed,
+    subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    list: () => items,
+    get: id => items.find(item => item.id === id),
+    async add(input, position) {
+      const now = clock()
+      const item: QueueItem = { ...input, id: crypto.randomUUID(), state: 'queued', worktree: null, contextPath: null, answerPaths: [], runIds: [], currentRunId: null, questions: [], lastSeenId: null, error: null, createdAt: now, updatedAt: now }
+      await save(position === 'next' ? [item, ...items] : [...items, item])
+      return item
+    },
+    async update(id, patch) {
+      const current = items.find(item => item.id === id)
+      if (current === undefined) throw new Error(`No queue item ${id}`)
+      const next: QueueItem = { ...current, ...patch, updatedAt: clock() }
+      await save(items.map(item => (item.id === id ? next : item)))
+      return next
+    },
+    async remove(id) {
+      const rest = items.filter(item => item.id !== id)
+      if (rest.length === items.length) return false
+      await save(rest)
+      return true
+    },
+    async move(id, to) {
+      const next = reorder(id, to)
+      if (next === null) return false
+      await save(next)
+      return true
+    },
+    async toFront(id) {
+      const next = reorder(id, 0)
+      if (next !== null) await save(next)
+    },
+  }
+}
