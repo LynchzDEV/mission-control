@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -20,7 +20,7 @@ function harness(over: Partial<QueueEngineDeps> = {}, sourceOver: Partial<QueueS
   const runs = new Map<string, RunView>()
   const started: Array<{ cwd: string; request: string; label: string; workflowId?: string }> = []
   const posted: Array<{ id: string; kind: string; lines: string[] }> = []
-  const alerts: Array<{ title: string; reason: string }> = []
+  const alerts: Array<{ title: string; reason: string; state: string }> = []
   let next = 0
   const runner: QueueRunner = {
     start: async input => { started.push(input); const id = `run-${++next}`; runs.set(id, { id, status: 'running', error: null, attempts: [] }); return { id } },
@@ -38,7 +38,7 @@ function harness(over: Partial<QueueEngineDeps> = {}, sourceOver: Partial<QueueS
     prepareWorktree: async (repo, label) => ({ worktree: join(repo, '.worktree', label) }),
     writeContext: async (pluginId, context, cwd) => join(cwd, '.mission-control', 'context', pluginId, `${context.name}.md`),
     pluginFiles: pluginId => join(dir, 'plugin-data', pluginId, 'files'),
-    needsYou: (item, reason) => { alerts.push({ title: item.title, reason }) },
+    needsYou: (item, reason) => { alerts.push({ title: item.title, reason, state: item.state }) },
     ...over,
   }
   const settle = (id: string, run: Partial<RunView>) => { const done = { ...runs.get(id)!, ...run }; runs.set(id, done); return done }
@@ -71,7 +71,7 @@ test('a passed run makes the item ready, tells you, and starts the next', async 
   await h.engine.add({ ...add, externalId: '2' })
   await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))
   expect(states(h.store.list())).toEqual(['1:ready', '2:building'])
-  expect(h.alerts).toEqual([{ title: 'Task 1', reason: 'Built and ready for review' }])
+  expect(h.alerts).toEqual([{ title: 'Task 1', reason: 'Built and ready for review', state: 'ready' }])
 })
 
 test('a run blocked with questions posts them, parks the item and frees the slot', async () => {
@@ -88,8 +88,16 @@ test('a blocked run without questions, a failed or a stopped run fails the item 
   const h = harness()
   await h.engine.add(add)
   await h.engine.onRunSettled(h.settle('run-1', { status: 'blocked', error: 'Visit cap reached', attempts: [] }))
-  expect(h.store.list()[0]).toMatchObject({ state: 'failed', error: 'Visit cap reached' })
-  expect(h.alerts).toEqual([{ title: 'Task 1', reason: 'Visit cap reached' }])
+  await h.engine.add({ ...add, externalId: '2' })
+  await h.engine.onRunSettled(h.settle('run-2', { status: 'failed', error: 'Agent crashed' }))
+  await h.engine.add({ ...add, externalId: '3' })
+  await h.engine.onRunSettled(h.settle('run-3', { status: 'stopped', error: null }))
+  expect(h.store.list().map(item => [item.state, item.error])).toEqual([['failed', 'Visit cap reached'], ['failed', 'Agent crashed'], ['failed', 'Run stopped']])
+  expect(h.alerts).toEqual([
+    { title: 'Task 1', reason: 'Visit cap reached', state: 'failed' },
+    { title: 'Task 2', reason: 'Agent crashed', state: 'failed' },
+    { title: 'Task 3', reason: 'Run stopped', state: 'failed' },
+  ])
 })
 
 test('posting the questions failing fails the item with the reason', async () => {
@@ -133,7 +141,38 @@ test('requeue puts a failed item back at the end and builds it when free', async
   const again = await h.engine.requeue(h.store.list()[0]!.id)
   expect(again.state).toBe('building')
   expect(again.error).toBeNull()
-  await expect(h.engine.requeue('nope')).rejects.toThrow('No queue item nope')
+  const quiet = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await expect(h.engine.requeue('nope')).rejects.toThrow('No queue item nope')
+  } finally { quiet.mockRestore() }
+})
+
+test('requeue moves the item behind the others', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  await h.engine.add({ ...add, externalId: '2' })
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'failed', error: 'boom' }))
+  await h.engine.requeue(h.store.list()[0]!.id)
+  expect(states(h.store.list())).toEqual(['2:building', '1:queued'])
+})
+
+test('requeue builds a ready item again', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))
+  const again = await h.engine.requeue(h.store.list()[0]!.id)
+  expect(again).toMatchObject({ state: 'building', currentRunId: 'run-2', runIds: ['run-1', 'run-2'] })
+})
+
+test('requeue refuses an item that is still building and leaves it alone', async () => {
+  const h = harness()
+  const item = await h.engine.add(add)
+  const quiet = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await expect(h.engine.requeue(item.id)).rejects.toThrow('It is building now')
+  } finally { quiet.mockRestore() }
+  expect(h.store.get(item.id)).toMatchObject({ state: 'building', currentRunId: 'run-1' })
+  expect(h.started).toHaveLength(1)
 })
 
 test('recover settles an item whose run finished while MC was down', async () => {
@@ -150,4 +189,12 @@ test('recover fails an item whose run is gone', async () => {
   h.runs.delete('run-1')
   await h.engine.recover()
   expect(h.store.list()[0]).toMatchObject({ state: 'failed', error: 'Its run is gone' })
+})
+
+test('recover leaves an item whose run is still running', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  await h.engine.recover()
+  expect(h.store.list()[0]).toMatchObject({ state: 'building', currentRunId: 'run-1' })
+  expect(h.started).toHaveLength(1)
 })

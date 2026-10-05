@@ -29,22 +29,37 @@ export type QueueEngine = {
   checkReplies(): Promise<{ checked: number; resumed: number }>
 }
 
+const MAX_RUN_LABEL = 120
+const REQUEUEABLE: ReadonlySet<QueueItem['state']> = new Set(['failed', 'ready'])
+
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
-function queueSteps(deps: QueueEngineDeps) {
+function found(store: QueueStore, id: string): QueueItem {
+  const item = store.get(id)
+  if (item === undefined) throw new Error(`No queue item ${id}`)
+  return item
+}
+
+type QueueSteps = {
+  fail(item: QueueItem, reason: string): Promise<void>
+  settle(run: RunView): Promise<void>
+  startNext(): Promise<void>
+}
+
+function queueSteps(deps: QueueEngineDeps): QueueSteps {
   const { store } = deps
 
   async function fail(item: QueueItem, reason: string): Promise<void> {
-    await store.update(item.id, { state: 'failed', error: reason, currentRunId: null })
-    deps.needsYou(item, reason)
+    const failed = await store.update(item.id, { state: 'failed', error: reason, currentRunId: null })
+    deps.needsYou(failed, reason)
   }
 
   async function settle(run: RunView): Promise<void> {
     const item = store.list().find(entry => entry.state === 'building' && entry.currentRunId === run.id)
     if (item === undefined || !SETTLED.has(run.status)) return
     if (run.status === 'done') {
-      await store.update(item.id, { state: 'ready', currentRunId: null, error: null })
-      deps.needsYou(item, 'Built and ready for review')
+      const ready = await store.update(item.id, { state: 'ready', currentRunId: null, error: null })
+      deps.needsYou(ready, 'Built and ready for review')
       return
     }
     const questions = questionsOf(run)
@@ -61,7 +76,7 @@ function queueSteps(deps: QueueEngineDeps) {
     const { worktree } = item.worktree !== null ? { worktree: item.worktree } : await deps.prepareWorktree(item.repo, branchLabel(item))
     const contextPath = item.contextPath ?? await deps.writeContext(item.source, { name: `item-${item.externalId}`, markdown: (await deps.source(item.source).item({ id: item.externalId })).contextMarkdown }, worktree)
     const ready = { ...item, worktree, contextPath }
-    const run = await deps.runner.start({ cwd: worktree, request: runRequest(ready), label: item.title.slice(0, 120), ...(item.flowId ? { workflowId: item.flowId } : {}) }, { startedByUser: true })
+    const run = await deps.runner.start({ cwd: worktree, request: runRequest(ready), label: item.title.slice(0, MAX_RUN_LABEL), ...(item.flowId ? { workflowId: item.flowId } : {}) }, { startedByUser: true })
     await store.update(item.id, { state: 'building', worktree, contextPath, currentRunId: run.id, runIds: [...item.runIds, run.id], error: null })
     const now = deps.runner.get(run.id)
     if (now !== undefined && SETTLED.has(now.status)) await settle(now)
@@ -95,13 +110,14 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     return store.get(item.id) ?? item
   }
 
-  async function requeue(id: string): Promise<QueueItem> {
-    if (store.get(id) === undefined) throw new Error(`No queue item ${id}`)
+  const requeue = (id: string): Promise<QueueItem> => serial(async () => {
+    const item = found(store, id)
+    if (!REQUEUEABLE.has(item.state)) throw new Error(`It is ${item.state} now`)
     await store.update(id, { state: 'queued', error: null, currentRunId: null })
     await store.move(id, store.list().length)
-    await serial(startNext)
-    return store.get(id)!
-  }
+    await startNext()
+    return found(store, id)
+  })
 
   async function recover(): Promise<void> {
     await serial(async () => {
