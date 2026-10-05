@@ -79,7 +79,7 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
     if (questions.length === 0) return fail(item, run.error ?? `Run ${run.status}`)
     try {
       const posted = await deps.source(item.source).post({ id: item.externalId, kind: 'ask', lines: questions })
-      await store.update(item.id, { state: 'waiting-info', questions, lastSeenId: posted.commentId, currentRunId: null })
+      await store.update(item.id, { state: 'waiting-info', questions, lastSeenId: item.lastSeenId ?? posted.commentId, currentRunId: null })
     } catch (error) {
       await fail(item, `Could not post the questions: ${message(error)}`)
     }

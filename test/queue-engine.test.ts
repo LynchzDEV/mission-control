@@ -351,3 +351,16 @@ test('requeue refuses while the item\'s last run is running again in Studio', as
   expect(h.store.list()[0]).toMatchObject({ state: 'failed', runIds: ['run-1'] })
   expect(h.started).toHaveLength(1)
 })
+
+test('asking again keeps the reply cursor so replies written meanwhile are still read', async () => {
+  let comment = 0
+  const h = harness({}, { post: async () => ({ commentId: `c${++comment}` }) })
+  await h.engine.add(add)
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'blocked', attempts: [blockedWith(['Which page?'])] }))
+  const item = h.store.list()[0]!
+  expect(item.lastSeenId).toBe('c1')
+  await h.store.update(item.id, { lastSeenId: 'r1' })
+  await h.engine.requeue(item.id)
+  await h.engine.onRunSettled(h.settle('run-2', { status: 'blocked', attempts: [blockedWith(['Which button?'])] }))
+  expect(h.store.get(item.id)).toMatchObject({ state: 'waiting-info', questions: ['Which button?'], lastSeenId: 'r1' })
+})
