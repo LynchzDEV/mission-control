@@ -12,6 +12,8 @@ It runs on your machine, binds to `127.0.0.1`, and keeps its state in plain JSON
 
 Requires [Bun](https://bun.sh) 1.2 or newer.
 
+On Windows, run it inside WSL2: see [Install on Windows](docs/install-windows.md).
+
 ```sh
 git clone https://github.com/LynchzDEV/mission-control.git
 cd mission-control
