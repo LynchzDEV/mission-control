@@ -34,8 +34,10 @@ export function alertFor(item: AttentionItem): { title: string; options: AlertOp
   return { title: item.title, options: { body, tag: item.key, renotify: false, icon: '/favicon.svg', data: dataOf(item), actions: ACTIONS[item.kind] } }
 }
 
+export const QUEUE_HASH = '#queue'
+
 export const linkFor = (data: AlertData): string =>
-  data.chatId !== null ? `/?chat=${encodeURIComponent(data.chatId)}` : data.jobId !== null ? `/?job=${encodeURIComponent(data.jobId)}` : '/'
+  data.kind === 'queue' ? `/${QUEUE_HASH}` : data.chatId !== null ? `/?chat=${encodeURIComponent(data.chatId)}` : data.jobId !== null ? `/?job=${encodeURIComponent(data.jobId)}` : '/'
 
 export function requestFor(action: string, data: AlertData): { url: string; body: unknown; verb: string } | null {
   if (data.jobId === null) return null

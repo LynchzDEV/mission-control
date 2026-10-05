@@ -46,10 +46,12 @@ const ticks: Array<{ id: number; ms: number; run: () => void }> = []
 const cleared: number[] = []
 const realSetInterval = globalThis.setInterval
 const realClearInterval = globalThis.clearInterval
+const workerMessages: Array<(event: { data: unknown }) => void> = []
+const screensAtLoad: unknown[] = []
 
 beforeAll(async () => {
   Object.assign(globalThis, { window, document: doc, EventSource: FakeSource, Notification: fakeNotification, localStorage: window.localStorage, HTMLElement: window.HTMLElement, location: window.location })
-  Object.defineProperty(globalThis.navigator, 'serviceWorker', { configurable: true, value: { ready: Promise.resolve(registration), register: async () => registration, addEventListener() {} } })
+  Object.defineProperty(globalThis.navigator, 'serviceWorker', { configurable: true, value: { ready: Promise.resolve(registration), register: async () => registration, addEventListener: (_type: string, listener: (event: { data: unknown }) => void) => { workerMessages.push(listener) } } })
   globalThis.fetch = (async (url: string, init?: RequestInit) => { posted.push({ url: String(url), body: typeof init?.body === 'string' ? JSON.parse(init.body) : null }); return reply() }) as typeof fetch
   addEventListener('quiet:open-chat', (event) => opened.push(['chat', (event as CustomEvent).detail]))
   addEventListener('quiet:agent-open', (event) => opened.push(['job', (event as CustomEvent).detail]))
@@ -58,7 +60,12 @@ beforeAll(async () => {
     setInterval: (run: () => void, ms: number) => { ticks.push({ id: ticks.length + 1, ms, run }); return ticks.length },
     clearInterval: (id: number) => { cleared.push(id) },
   })
+  window.location.hash = '#queue'
+  const onLoadShow = (event: Event) => { screensAtLoad.push((event as CustomEvent).detail) }
+  addEventListener('quiet:show', onLoadShow)
   await import('../client/attention')
+  removeEventListener('quiet:show', onLoadShow)
+  window.location.hash = ''
 })
 
 afterAll(() => {
@@ -147,6 +154,22 @@ test('a queue item offers Open queue, which shows the queue screen', async () =>
   removeEventListener('quiet:show', onShow)
   expect(shownScreens).toEqual(['queue'])
   expect($('attention').hidden).toBe(true)
+})
+
+test('a page opened at #queue shows the Queue screen', () => {
+  expect(screensAtLoad).toEqual(['queue'])
+})
+
+test('a queue alert click relayed by the worker shows the Queue screen; a chat link still opens the chat', () => {
+  const shownScreens: unknown[] = []
+  const onShow = (event: Event) => { shownScreens.push((event as CustomEvent).detail) }
+  addEventListener('quiet:show', onShow)
+  opened.length = 0
+  for (const listener of workerMessages) listener({ data: { type: 'mc:open', link: '/#queue' } })
+  for (const listener of workerMessages) listener({ data: { type: 'mc:open', link: '/?chat=c9' } })
+  removeEventListener('quiet:show', onShow)
+  expect(shownScreens).toEqual(['queue'])
+  expect(opened).toEqual([['chat', 'c9']])
 })
 
 test('Escape and a click elsewhere close the list', () => {

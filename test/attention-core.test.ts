@@ -5,6 +5,7 @@ import type { AttentionItem } from '../server/attention'
 
 const item = (patch: Partial<AttentionItem>): AttentionItem => ({ key: 'needs:c1', kind: 'needs', title: 'Login fix', detail: 'Needs you: Build it', command: null, chatId: 'c1', jobId: null, requestId: null, createdAt: 0, ...patch })
 const perm = item({ key: 'perm:j1:r1', kind: 'permission', detail: 'Wants to run a command', command: 'bun test', jobId: 'j1', requestId: 'r1' })
+const queued = item({ key: 'queue:i1', kind: 'queue', title: 'Login copy', detail: 'Built and ready for review', chatId: null, jobId: null, requestId: null })
 const loop = item({ key: 'loop:j2', kind: 'loop', title: 'Army export', detail: 'May be stuck: 81 turns in 20 min', chatId: null, jobId: 'j2' })
 
 test('tab title carries the count only when something waits', () => {
@@ -40,9 +41,10 @@ test('a queue alert has no buttons and reads its reason', () => {
   expect(alertFor(queued).options.body).toBe('Built and ready for review')
 })
 
-test('links open the chat when there is one, else the job', () => {
+test('links open the chat when there is one, else the job; a queue alert links to the Queue screen', () => {
   expect(linkFor(perm)).toBe('/?chat=c1')
   expect(linkFor(loop)).toBe('/?job=j2')
+  expect(linkFor(queued)).toBe('/#queue')
 })
 
 test('buttons map to the real endpoints and decisions', () => {
@@ -103,4 +105,13 @@ test('a body click focuses an open tab and asks it to open the link, else opens 
   expect(seen).toEqual(['focus', { type: 'mc:open', link: '/?chat=c1' }])
   await handleAlertClick('', loop, run.deps)
   expect(run.calls).toEqual(['open /?job=j2'])
+})
+
+test('a queue alert click asks an open tab to show the Queue screen, else opens the cockpit on it', async () => {
+  const run = recorder(200)
+  const seen: unknown[] = []
+  await handleAlertClick('', queued, { ...run.deps, windows: async () => [{ focus: async () => { seen.push('focus') }, postMessage: (message) => { seen.push(message) } }] })
+  expect(seen).toEqual(['focus', { type: 'mc:open', link: '/#queue' }])
+  await handleAlertClick('', queued, run.deps)
+  expect(run.calls).toEqual(['open /#queue'])
 })

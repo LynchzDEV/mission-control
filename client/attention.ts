@@ -1,5 +1,5 @@
 import type { AttentionItem } from '../server/attention'
-import { ageText, alertFor, diffItems, requestFor, shouldAlert, tabTitle } from './attention-core'
+import { ageText, alertFor, diffItems, QUEUE_HASH, requestFor, shouldAlert, tabTitle } from './attention-core'
 
 const MUTE_KEY = 'mc.alerts'
 const AGE_REFRESH_MS = 60_000
@@ -128,7 +128,7 @@ async function errorText(response: Response): Promise<string> {
 
 async function act(item: AttentionItem, action: string): Promise<void> {
   if (action === 'open') { openTarget(item); return }
-  if (action === 'open-queue') { setOpen(false); dispatchEvent(new CustomEvent('quiet:show', { detail: 'queue' })); return }
+  if (action === 'open-queue') { showQueue(); return }
   const request = action === 'dismiss' ? { url: `/api/attention/${encodeURIComponent(item.key)}/dismiss`, body: null, verb: 'dismiss' } : requestFor(action, item)
   if (request === null) return
   busy.add(item.key)
@@ -172,9 +172,15 @@ async function onSnapshot(next: AttentionItem[]): Promise<void> {
   await alert(raised)
 }
 
+function showQueue(): void {
+  setOpen(false)
+  dispatchEvent(new CustomEvent('quiet:show', { detail: 'queue' }))
+}
+
 function openLink(link: string): void {
-  const params = new URL(link, location.origin).searchParams
-  openTarget({ chatId: params.get('chat'), jobId: params.get('job') })
+  const url = new URL(link, location.origin)
+  if (url.hash === QUEUE_HASH) { showQueue(); return }
+  openTarget({ chatId: url.searchParams.get('chat'), jobId: url.searchParams.get('job') })
 }
 
 bell.addEventListener('click', () => setOpen(panel.hidden === true))
@@ -214,3 +220,4 @@ if ('serviceWorker' in navigator) {
 
 const initialJob = new URLSearchParams(location.search).get('job')
 if (initialJob !== null) openTarget({ chatId: null, jobId: initialJob })
+if (location.hash === QUEUE_HASH) showQueue()
