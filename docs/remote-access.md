@@ -9,6 +9,7 @@ Mission Control normally answers only on the machine it runs on. You can let you
    `tailscale serve --bg 7777`
 
    Never use `tailscale funnel`. Funnel puts the app on the public internet.
+   Use only `tailscale serve --bg 7777` (HTTPS). Never `--tcp` or `--tls-terminated-tcp`: those pass raw traffic without the forwarding headers the app relies on to tell remote requests apart.
 
 2. Find your machine name. `tailscale serve status` prints the address, for example `https://lynchzpc-wsl.tail1234.ts.net`.
 
