@@ -232,10 +232,11 @@ describe('job lifecycle', () => {
     expect(served).not.toContain(TOKEN)
   })
 
-  test('listJobs returns newest first', async () => {
+  test('listJobs returns newest first, even for jobs started in the same millisecond', async () => {
     const repo = join(home, 'repo')
     await initGitRepo(repo)
-    const manager = createJobManager({ home })
+    const sameMillisecond = () => 1_700_000_000_000
+    const manager = createJobManager({ home, now: sameMillisecond })
 
     const first = await manager.createJob(
       { engine: 'claude', cwd: repo, prompt: 'one', label: 'first' },
@@ -250,10 +251,10 @@ describe('job lifecycle', () => {
     await waitForStatus(manager, first.job.id)
     await waitForStatus(manager, second.job.id)
 
-    const listed = manager.listJobs()
-    const firstIndex = listed.findIndex((job) => job.id === first.job.id)
-    const secondIndex = listed.findIndex((job) => job.id === second.job.id)
-    expect(secondIndex).toBeLessThan(firstIndex)
+    const order = (jobs: JobRecord[]) => jobs.map((job) => job.id).filter((id) => id === first.job.id || id === second.job.id)
+    expect(manager.getJob(first.job.id)!.startedAt).toBe(manager.getJob(second.job.id)!.startedAt)
+    expect(order(manager.listJobs())).toEqual([second.job.id, first.job.id])
+    expect(order(createJobManager({ home, now: sameMillisecond }).listJobs())).toEqual([second.job.id, first.job.id])
   })
 })
 

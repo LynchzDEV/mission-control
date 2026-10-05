@@ -315,6 +315,8 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   let { jobs, lineCount } = loadJobs(jsonlPath)
   if (lineCount > jobs.size) lineCount = compactJobs(jsonlPath, jobs, lineCount)
   const persistedJobs = new Map(jobs)
+  const creationOrder = new Map([...jobs.keys()].map((id, index) => [id, index]))
+  const createdAs = (id: string): number => creationOrder.get(id) ?? -1
   const home = options.home
   const activityIntervalMs = options.activityIntervalMs ?? ACTIVITY_THROTTLE_MS
   const clock = options.now ?? Date.now
@@ -442,6 +444,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   }
 
   async function persist(record: JobRecord): Promise<void> {
+    if (!creationOrder.has(record.id)) creationOrder.set(record.id, creationOrder.size)
     jobs.set(record.id, record)
     const write = persistence.then(async () => {
       await appendJsonl(jsonlPath, record)
@@ -951,7 +954,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
   }
 
   function listJobs(): JobRecord[] {
-    return [...jobs.values()].sort((a, b) => b.startedAt - a.startedAt)
+    return [...jobs.values()].sort((a, b) => b.startedAt - a.startedAt || createdAs(b.id) - createdAs(a.id))
   }
 
   function getJob(id: string): JobRecord | undefined {
