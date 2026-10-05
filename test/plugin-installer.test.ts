@@ -92,6 +92,16 @@ describe('install', () => {
     expect(await pathExists(join(pluginFolder('fixture-plugin'), '.mc-build', 'screen.js'))).toBe(true)
   })
 
+  test('records queueSource when the manifest declares it true', async () => {
+    const source = await repo('queue-source', isolatedManifest({ queueSource: true }), { 'src/screen.ts': TRIVIAL_SCREEN })
+    expect((await installOk(fileUrl(source), await fixtureSha(source))).queueSource).toBe(true)
+  })
+
+  test('leaves queueSource off the record when the manifest says false', async () => {
+    const source = await repo('queue-source-off', isolatedManifest({ queueSource: false }), { 'src/screen.ts': TRIVIAL_SCREEN })
+    expect('queueSource' in await installOk(fileUrl(source), await fixtureSha(source))).toBe(false)
+  })
+
   test('a screen that imports a stylesheet builds to screen.js and screen.css', async () => {
     const source = await repo('styled', isolatedManifest(), {
       'src/screen.ts': "import './look.css'\nexport default { mount() {} }\n",

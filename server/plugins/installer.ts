@@ -223,6 +223,7 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
       ...(manifest.icon !== undefined ? { icon: manifest.icon } : {}),
       ...(manifest.server !== undefined ? { server: manifest.server } : {}),
       ...(manifest.screen !== undefined ? { screen: manifest.screen } : {}),
+      ...(manifest.queueSource === true ? { queueSource: true as const } : {}),
       enabled: true,
       installedAt,
       updatedAt: now,

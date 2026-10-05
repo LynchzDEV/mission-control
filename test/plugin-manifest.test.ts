@@ -27,6 +27,16 @@ describe('parseManifest', () => {
     expect(parseManifest(CLICKUP_MANIFEST)).toEqual({ ok: true, manifest: CLICKUP_MANIFEST })
   })
 
+  test('queueSource is optional and must be a boolean', () => {
+    expect(parseManifest({ ...CLICKUP_MANIFEST, queueSource: true })).toEqual({ ok: true, manifest: { ...CLICKUP_MANIFEST, queueSource: true } })
+    expect(parseManifest({ ...CLICKUP_MANIFEST, queueSource: false })).toEqual({ ok: true, manifest: { ...CLICKUP_MANIFEST, queueSource: false } })
+    const absent = parseManifest(CLICKUP_MANIFEST)
+    expect(absent.ok && absent.manifest.queueSource).toBeUndefined()
+    const wrong = parseManifest({ ...CLICKUP_MANIFEST, queueSource: 'yes' })
+    expect(wrong.ok).toBe(false)
+    if (!wrong.ok) expect(wrong.errors.join('\n')).toContain('queueSource')
+  })
+
   test('refuses a pluginApi the host does not speak', () => {
     const result = parseManifest({ ...CLICKUP_MANIFEST, pluginApi: 2 })
     expect(result.ok).toBe(false)

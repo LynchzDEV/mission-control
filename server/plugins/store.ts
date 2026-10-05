@@ -19,6 +19,7 @@ export type InstalledPlugin = {
   icon?: string
   server?: string
   screen?: string
+  queueSource?: true
   enabled: boolean
   restartRequired?: boolean
   installedAt: string

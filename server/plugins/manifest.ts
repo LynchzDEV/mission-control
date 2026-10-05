@@ -30,6 +30,7 @@ export type PluginManifest = {
   icon?: string
   server?: string
   screen?: string
+  queueSource?: boolean
   permissions: PluginPermissions
   settings?: SettingField[]
 }
@@ -53,6 +54,7 @@ const manifestSchema = z.object({
   icon: z.string().optional(),
   server: z.string().optional(),
   screen: z.string().optional(),
+  queueSource: z.boolean().optional(),
   permissions: z.object({
     network: z.array(z.string()).optional(),
     sessions: z.array(z.enum(['chat', 'terminal'])).optional(),
