@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -86,4 +86,26 @@ test('the file is written as { items }', async () => {
   const store = createQueueStore(path)
   await store.add(item('a'), 'end')
   expect(JSON.parse(await readFile(path, 'utf8')).items).toHaveLength(1)
+})
+
+test('an undefined patch value leaves the field as is and the item survives a reload', async () => {
+  const store = createQueueStore(path)
+  const a = await store.add(item('a'), 'end')
+  await store.update(a.id, { error: undefined, state: 'failed' })
+  expect(createQueueStore(path).list()).toMatchObject([{ id: a.id, error: null, state: 'failed' }])
+})
+
+test('a corrupt file logs once and a missing file logs nothing', async () => {
+  const errors = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    createQueueStore(path)
+    expect(errors).toHaveBeenCalledTimes(0)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, '{not json')
+    createQueueStore(path)
+    expect(errors).toHaveBeenCalledTimes(1)
+    expect(errors.mock.calls[0]![0]).toBe(`queue list unreadable, starting empty: ${path}`)
+  } finally {
+    errors.mockRestore()
+  }
 })

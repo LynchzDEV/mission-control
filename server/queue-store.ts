@@ -45,14 +45,20 @@ function isItem(value: unknown): value is QueueItem {
     && typeof item.createdAt === 'number' && typeof item.updatedAt === 'number'
 }
 
+const isMissingFile = (error: unknown): boolean => (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
+
 function load(path: string): QueueItem[] {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as { items?: unknown }
     return Array.isArray(parsed.items) ? parsed.items.filter(isItem) : []
-  } catch {
+  } catch (error) {
+    if (!isMissingFile(error)) console.error(`queue list unreadable, starting empty: ${path}`, error)
     return []
   }
 }
+
+const definedFields = (patch: QueuePatch): QueuePatch =>
+  Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined))
 
 export function queuePath(): string {
   return join(configDir(), QUEUE_FILE)
@@ -98,7 +104,7 @@ export function createQueueStore(path: string, clock: () => number = Date.now): 
     async update(id, patch) {
       const current = items.find(item => item.id === id)
       if (current === undefined) throw new Error(`No queue item ${id}`)
-      const next: QueueItem = { ...current, ...patch, updatedAt: clock() }
+      const next: QueueItem = { ...current, ...definedFields(patch), updatedAt: clock() }
       await save(items.map(item => (item.id === id ? next : item)))
       return next
     },
