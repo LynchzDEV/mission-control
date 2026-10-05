@@ -165,6 +165,7 @@ beforeAll(async () => {
     requestAnimationFrame: globalThis.requestAnimationFrame ?? window.requestAnimationFrame,
     cancelAnimationFrame: globalThis.cancelAnimationFrame ?? window.cancelAnimationFrame,
     ResizeObserver: class { observe(): void {} unobserve(): void {} disconnect(): void {} },
+    EventSource: class { onmessage = null; onerror = null; close(): void {} },
     setInterval: ((handler: () => void, ms: number) => ({ handler, ms })) as unknown as typeof setInterval,
     addEventListener: bus.addEventListener.bind(bus),
     removeEventListener: bus.removeEventListener.bind(bus),
@@ -188,7 +189,7 @@ afterAll(() => {
   Object.assign(globalThis, realBus)
   Object.assign(globalThis, { setInterval: realSetInterval, clearInterval: realClearInterval })
   Reflect.deleteProperty(globalThis.navigator, 'clipboard')
-  for (const key of ['window', 'document', 'Node', 'HTMLElement', 'HTMLCanvasElement', 'Option', 'localStorage', 'location', 'matchMedia', 'ResizeObserver']) Reflect.deleteProperty(globalThis, key)
+  for (const key of ['window', 'document', 'Node', 'HTMLElement', 'HTMLCanvasElement', 'Option', 'localStorage', 'location', 'matchMedia', 'ResizeObserver', 'EventSource']) Reflect.deleteProperty(globalThis, key)
   window.close()
 })
 

@@ -1,4 +1,5 @@
-import { getJson, readArray } from './shared'
+import { getJson, readArray, readRecord } from './shared'
+import { readQueueItems, type QueueItemView, type QueueState } from './queue-view'
 import { blendColor, fold, glide, settleIn } from './morph'
 import { chatSignal, historyDay, historyOpen, type HistoryItem } from './chat-view'
 import { renameValue, sessionSlot, type Session } from './terminal-state'
@@ -13,6 +14,14 @@ const CHAT_ICON = '<svg viewBox="0 0 20 20"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h
 const TERMINAL_ICON = '<svg><use href="#terminal-icon"/></svg>'
 const SHORTCUT_SLOTS = 9
 const HIDDEN_KEY = 'mc.sidebar.hidden'
+const QUEUE_KEY = 'queue'
+const QUEUE_DOT: Record<QueueState, { s: string; label: string }> = {
+  building: { s: 'running', label: 'Building' },
+  queued: { s: 'queued', label: 'Queued' },
+  'waiting-info': { s: 'waiting', label: 'Waiting info' },
+  ready: { s: 'done', label: 'Ready' },
+  failed: { s: 'failed', label: 'Failed' },
+}
 const keyOf = (item: HistoryItem): string => `${item.kind}:${item.id}`
 const isLiveTerminal = (item: HistoryItem): boolean => item.kind === 'terminal' && item.live
 
@@ -62,6 +71,8 @@ function rowOf(item: HistoryItem): Row {
 }
 
 let openChatId: string | null = null
+let screen: string | null = null
+let queueItems: QueueItemView[] = []
 let signature = ''
 let historyItems: HistoryItem[] = []
 let liveTerminals: Session[] | null = null
@@ -110,6 +121,56 @@ function pluginRow(plugin: PluginLink, className: 'sb-row' | 'sb-mini'): HTMLEle
   return wrap
 }
 
+function queueLink(kind: 'queue' | 'queue-item', key: string, onOpen: () => void): HTMLAnchorElement {
+  const element = document.createElement('a')
+  element.className = 'sb-row'
+  element.dataset.kind = kind
+  element.dataset.key = key
+  element.href = '#'
+  element.onclick = (event) => { event.preventDefault(); onOpen() }
+  return element
+}
+
+function inItem(element: HTMLElement): HTMLElement {
+  const wrap = document.createElement('div')
+  wrap.className = 'sb-item'
+  wrap.append(element)
+  return wrap
+}
+
+const showQueue = (): void => { dispatchEvent(new CustomEvent('quiet:show', { detail: 'queue' })) }
+
+function queueItemRow(item: QueueItemView): HTMLElement {
+  const element = queueLink('queue-item', `queue-item:${item.id}`, () => {
+    showQueue()
+    dispatchEvent(new CustomEvent('quiet:queue-focus', { detail: item.id }))
+  })
+  const dot = document.createElement('span')
+  dot.className = 'q-dot'
+  dot.dataset.s = QUEUE_DOT[item.state].s
+  const text = document.createElement('span')
+  text.className = 'sb-t'
+  text.textContent = item.title
+  text.append(Object.assign(document.createElement('small'), { textContent: QUEUE_DOT[item.state].label }))
+  element.append(dot, text)
+  return inItem(element)
+}
+
+function queueGroup(items: readonly QueueItemView[]): HTMLElement[] {
+  if (items.length === 0) return []
+  const head = queueLink('queue', QUEUE_KEY, showQueue)
+  const icon = document.createElement('span')
+  icon.className = 'sb-ic'
+  icon.innerHTML = '<svg><use href="#q-queue"/></svg>'
+  const text = Object.assign(document.createElement('span'), { className: 'sb-t', textContent: 'Queue' })
+  const count = Object.assign(document.createElement('em'), { className: 'q-sb-n', textContent: String(items.length) })
+  head.append(icon, text, count)
+  const group = document.createElement('div')
+  group.className = 'q-sb q-sb-children'
+  group.append(inItem(head), ...items.map(queueItemRow))
+  return [group]
+}
+
 function readHidden(): Record<string, number> {
   try { return JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? '{}') as Record<string, number> } catch { return {} }
 }
@@ -126,6 +187,7 @@ let renaming = false
 
 function selectedKey(): string | null {
   if (document.body.dataset.live === 'true') { const id = new URL(location.href).searchParams.get('terminal'); return id ? `terminal:${id}` : null }
+  if (screen === 'queue') return QUEUE_KEY
   return openChatId && !document.getElementById('conversation')?.hidden ? `chat:${openChatId}` : null
 }
 
@@ -350,14 +412,14 @@ function paint(items: HistoryItem[]): void {
   const rows = groups.flatMap(group => group.items.map(rowOf))
   const keys = numberedKeys(rows.map(row => row.item), document.getElementById('sb-shell')?.classList.contains('collapsed'))
   numbered = keys.flatMap(key => rows.filter(row => keyOf(row.item) === key).map(row => row.item))
-  const next = JSON.stringify([pluginRows.map(plugin => [plugin.id, plugin.name, plugin.icon ?? null]), groups.map(group => [group.day, group.items.length]), rows.map(row => [row.item.kind, row.item.id, row.item.title, row.state, row.note, row.item.kind === 'chat' && row.item.pinned === true]), keys])
+  const next = JSON.stringify([pluginRows.map(plugin => [plugin.id, plugin.name, plugin.icon ?? null]), queueItems.map(item => [item.source, item.id, item.title, item.state]), groups.map(group => [group.day, group.items.length]), rows.map(row => [row.item.kind, row.item.id, row.item.title, row.state, row.note, row.item.kind === 'chat' && row.item.pinned === true]), keys])
   if (next === signature) return
   signature = next
   const list = document.getElementById('sidebar-list')!
   const dots = dotColors()
   list.replaceChildren(
     ...(pluginRows.length > 0 ? [Object.assign(document.createElement('p'), { className: 'sb-day', textContent: 'Plugins' })] : []),
-    ...pluginRows.map(plugin => pluginRow(plugin, 'sb-row')),
+    ...pluginRows.flatMap(plugin => [pluginRow(plugin, 'sb-row'), ...queueGroup(queueItems.filter(item => item.source === plugin.id))]),
     ...groups.flatMap(group => [
       Object.assign(document.createElement('p'), { className: 'sb-day', textContent: group.day }),
       ...group.items.map(item => rowElement(rowOf(item), 'sb-row')),
@@ -384,7 +446,8 @@ if (typeof document !== 'undefined') {
   addEventListener('quiet:new-chat', () => { openChatId = null; markSelected() })
   addEventListener('quiet:sidebar-toggle', () => paint(historyItems))
   addEventListener('quiet:terminal-ended', (event) => hide(`terminal:${(event as CustomEvent<string>).detail}`))
-  for (const name of ['quiet:screen', 'quiet:activity-scope']) addEventListener(name, markSelected)
+  addEventListener('quiet:screen', (event) => { screen = String((event as CustomEvent<string>).detail); markSelected() })
+  addEventListener('quiet:activity-scope', markSelected)
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void poll() })
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target : null
@@ -428,5 +491,10 @@ if (typeof document !== 'undefined') {
   })
   void poll()
   void loadPlugins()
+  const queueStream = new EventSource('/api/queue/stream')
+  queueStream.onmessage = (event: MessageEvent) => {
+    try { queueItems = readQueueItems(readRecord(JSON.parse(String(event.data))).items) } catch { return }
+    paint(historyItems)
+  }
   addEventListener('quiet:plugins-changed', () => void loadPlugins())
 }
