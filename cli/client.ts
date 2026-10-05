@@ -3,7 +3,7 @@ export type FetchLike = (request: Request) => Promise<Response>
 export type Query = Record<string, string | undefined>
 
 export class ApiError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly body: unknown = null) {
     super(message)
     this.name = 'ApiError'
   }
@@ -25,7 +25,7 @@ export type Client = {
   post(path: string, body?: unknown): Promise<unknown>
   put(path: string, body: unknown): Promise<unknown>
   patch(path: string, body: unknown): Promise<unknown>
-  del(path: string): Promise<unknown>
+  del(path: string, body?: unknown): Promise<unknown>
   stream(path: string, query: Query, signal: AbortSignal): Promise<Response>
 }
 
@@ -44,12 +44,20 @@ function jsonError(text: string): string | null {
   }
 }
 
-async function errorMessage(response: Response): Promise<string> {
+function parsedBody(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+async function apiError(response: Response): Promise<ApiError> {
   const text = await response.text().catch(() => '')
   const serverError = jsonError(text)
-  if (serverError !== null) return serverError
   const snippet = text.trim().slice(0, ERROR_SNIPPET_MAX)
-  return snippet === '' ? `HTTP ${response.status}` : `HTTP ${response.status}: ${snippet}`
+  const message = serverError ?? (snippet === '' ? `HTTP ${response.status}` : `HTTP ${response.status}: ${snippet}`)
+  return new ApiError(response.status, message, parsedBody(text))
 }
 
 async function readBody(response: Response): Promise<unknown> {
@@ -85,7 +93,7 @@ export function createClient(options: ClientOptions): Client {
       if (init.signal?.aborted) throw error
       throw new UnreachableError(base)
     }
-    if (!response.ok) throw new ApiError(response.status, await errorMessage(response))
+    if (!response.ok) throw await apiError(response)
     return response
   }
 
@@ -96,7 +104,7 @@ export function createClient(options: ClientOptions): Client {
     post: async (path, body) => readBody(await send('POST', path, { body })),
     put: async (path, body) => readBody(await send('PUT', path, { body })),
     patch: async (path, body) => readBody(await send('PATCH', path, { body })),
-    del: async (path) => readBody(await send('DELETE', path)),
+    del: async (path, body) => readBody(await send('DELETE', path, body === undefined ? {} : { body })),
     stream: (path, query, signal) => send('GET', path, { query, signal }),
   }
 }

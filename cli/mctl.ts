@@ -7,7 +7,9 @@ import { parseArgs } from 'node:util'
 import { BANNER } from './banner'
 import { ApiError, createClient, UnreachableError, type FetchLike } from './client'
 import { UsageError, type Command, type Context, type OptionSpec, type OptionValues } from './command'
+import { clickupCommands } from './commands/clickup'
 import { jobCommands } from './commands/jobs'
+import { pluginCommands } from './commands/plugins'
 import { studioCommands } from './commands/studio'
 import { systemCommands } from './commands/system'
 
@@ -25,7 +27,7 @@ export type MainDeps = {
   pollMs?: number
 }
 
-export const COMMANDS: Command[] = [...systemCommands, ...jobCommands, ...studioCommands]
+export const COMMANDS: Command[] = [...systemCommands, ...jobCommands, ...studioCommands, ...pluginCommands, ...clickupCommands]
 
 const GLOBAL_OPTIONS: Record<string, OptionSpec> = {
   url: { type: 'string', description: `Mission Control URL (default: $MC_URL, then ${DEFAULT_URL})`, placeholder: 'URL' },
