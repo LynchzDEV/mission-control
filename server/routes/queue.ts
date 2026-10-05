@@ -56,7 +56,7 @@ const isConflict = (error: unknown): boolean => error instanceof QueueRefusal &&
 const removeExplanation = (error: unknown): string => (isConflict(error) ? 'Stop its run in Studio first' : NO_ITEM)
 const moveExplanation = (error: unknown): string => (isConflict(error) ? message(error) : NO_ITEM)
 
-export function queueRoutes(store: QueueStore, engine: QueueEngineRoutes, tree: () => Promise<QueueTree> = () => queueTree(store.list())): Elysia {
+export function queueRoutes(store: QueueStore, engine: QueueEngineRoutes, tree: () => Promise<QueueTree> = () => queueTree(store.list())) {
   return new Elysia()
     .onBeforeHandle(requireLocal)
     .get('/api/queue', () => ({ items: store.list() }))
