@@ -3,7 +3,7 @@ import { ageText, alertFor, diffItems, requestFor, shouldAlert, tabTitle } from 
 
 const MUTE_KEY = 'mc.alerts'
 const AGE_REFRESH_MS = 60_000
-const ICONS: Record<AttentionItem['kind'], string> = { permission: 'code-icon', loop: 'auto-icon', needs: 'close-icon' }
+const ICONS: Record<AttentionItem['kind'], string> = { permission: 'code-icon', loop: 'auto-icon', needs: 'close-icon', queue: 'flow-icon' }
 const OFF_TEXT = 'Get an alert with buttons when something needs you, even with this tab hidden.'
 const BLOCKED_TEXT = "Allow notifications for this site in your browser's settings."
 
@@ -55,6 +55,7 @@ function actions(item: AttentionItem): HTMLElement {
   const open = item.chatId !== null ? 'Open chat' : 'Open job'
   if (item.kind === 'permission') row.append(button('Deny', 'deny', 'text-button nt-danger', item.key), node('span', 'sp'), button('Open chat', 'open', 'text-button', item.key), button('Allow once', 'allow', 'pill nt-primary', item.key))
   else if (item.kind === 'loop') row.append(button('Stop job', 'stop', 'text-button nt-danger', item.key), node('span', 'sp'), button(open, 'open', 'pill', item.key))
+  else if (item.kind === 'queue') row.append(node('span', 'sp'), button('Open queue', 'open-queue', 'pill', item.key))
   else row.append(node('span', 'sp'), button(open, 'open', 'pill', item.key))
   return row
 }
@@ -127,6 +128,7 @@ async function errorText(response: Response): Promise<string> {
 
 async function act(item: AttentionItem, action: string): Promise<void> {
   if (action === 'open') { openTarget(item); return }
+  if (action === 'open-queue') { setOpen(false); dispatchEvent(new CustomEvent('quiet:show', { detail: 'queue' })); return }
   const request = action === 'dismiss' ? { url: `/api/attention/${encodeURIComponent(item.key)}/dismiss`, body: null, verb: 'dismiss' } : requestFor(action, item)
   if (request === null) return
   busy.add(item.key)

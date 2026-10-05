@@ -43,6 +43,7 @@ import { terminalsRoutes } from './routes/terminals'
 import { outcomesRoutes } from './routes/outcomes'
 import { attentionRoutes } from './routes/attention'
 import { createAttentionStore } from './attention'
+import { raiseQueueAlert, watchQueueAlerts } from './queue-attention'
 import { createOutcomeLedger, OUTCOME_RETENTION_MS } from './outcomes'
 import { createSessionResolver } from './outcome-session'
 import { secretsRoutes } from './routes/secrets'
@@ -220,9 +221,9 @@ export async function createApp(): Promise<Elysia> {
     prepareWorktree: (repo, label) => prepareWorktree(repo, label),
     writeContext: (pluginId, context, cwd) => writeContextFile(pluginId, context, new Date(), cwd),
     pluginFiles: pluginId => join(configDir(), 'plugin-data', pluginId, 'files'),
-    // ponytail: console until 1c adds the queue attention kind
-    needsYou: (item, reason) => console.warn(`Queue: ${item.title}: ${reason}`),
+    needsYou: (item, reason) => { void raiseQueueAlert(attention, item, reason).catch(error => console.error('Queue alert failed', error)) },
   })
+  watchQueueAlerts(queueStore, attention)
   const bootQueue = queueEngine
   void bootQueue.recover().then(
     () => bootQueue.checkReplies().catch(error => console.error('Queue reply check failed', error)),

@@ -13,6 +13,7 @@ const ACTIONS: Record<AttentionItem['kind'], AlertOptions['actions']> = {
   permission: [{ action: 'allow', title: 'Allow once' }, { action: 'deny', title: 'Deny' }],
   loop: [{ action: 'stop', title: 'Stop job' }],
   needs: [],
+  queue: [],
 }
 
 export const tabTitle = (count: number): string => (count > 0 ? `(${count}) Mission Control` : 'Mission Control')

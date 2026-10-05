@@ -133,6 +133,22 @@ test('Open chat closes the list and opens that chat; Open job opens the agents p
   expect(opened).toEqual([['chat', 'c1'], ['job', { jobId: 'j2' }]])
 })
 
+test('a queue item offers Open queue, which shows the queue screen', async () => {
+  const queued = item({ key: 'queue:i1', kind: 'queue', title: 'Login copy', detail: 'Built and ready for review', chatId: null })
+  const shownScreens: unknown[] = []
+  const onShow = (event: Event) => { shownScreens.push((event as CustomEvent).detail) }
+  addEventListener('quiet:show', onShow)
+  FakeSource.last.send([perm, loop, needs, queued])
+  await flush()
+  $('open-attention').click()
+  const open = $('attention-list').querySelector('[data-key="queue:i1"] [data-act="open-queue"]') as HTMLElement
+  expect(open.textContent).toBe('Open queue')
+  open.click()
+  removeEventListener('quiet:show', onShow)
+  expect(shownScreens).toEqual(['queue'])
+  expect($('attention').hidden).toBe(true)
+})
+
 test('Escape and a click elsewhere close the list', () => {
   $('open-attention').click()
   doc.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }))

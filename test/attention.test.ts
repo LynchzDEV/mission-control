@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -50,10 +50,20 @@ test('prune drops permission and loop items for jobs no longer running and keeps
   expect(store.list().map(item => item.key).sort()).toEqual([attentionKey.loop('alive'), attentionKey.needs('c1')].sort())
 })
 
+test('prune keeps queue items without a job', async () => {
+  const store = createAttentionStore(file())
+  await store.raise({ key: attentionKey.queue('i1'), kind: 'queue', title: 'Login copy', detail: 'Built and ready for review', command: null, chatId: null, jobId: null, requestId: null })
+  await store.prune(() => false)
+  expect(store.list().map(item => item.key)).toEqual(['queue:i1'])
+})
+
 test('a corrupt file starts empty instead of throwing', () => {
   const path = file()
   writeFileSync(path, '{not json')
+  const logged = spyOn(console, 'error').mockImplementation(() => {})
   expect(createAttentionStore(path).list()).toEqual([])
+  expect(logged).toHaveBeenCalledTimes(1)
+  logged.mockRestore()
 })
 
 test('every change notifies subscribers and the file holds the list', async () => {

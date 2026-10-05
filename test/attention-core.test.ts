@@ -34,6 +34,12 @@ test('each kind gets its title, second line, tag and buttons', () => {
   expect(alertFor(item({})).options.actions).toEqual([])
 })
 
+test('a queue alert has no buttons and reads its reason', () => {
+  const queued = item({ key: 'queue:i1', kind: 'queue', title: 'Login copy', detail: 'Built and ready for review', chatId: null, jobId: null, requestId: null })
+  expect(alertFor(queued).options.actions).toEqual([])
+  expect(alertFor(queued).options.body).toBe('Built and ready for review')
+})
+
 test('links open the chat when there is one, else the job', () => {
   expect(linkFor(perm)).toBe('/?chat=c1')
   expect(linkFor(loop)).toBe('/?job=j2')

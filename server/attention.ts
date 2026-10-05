@@ -9,7 +9,7 @@ import { atomicJson } from './workflows'
 
 export const ATTENTION_FILE = 'attention.json'
 
-export type AttentionKind = 'permission' | 'needs' | 'loop'
+export type AttentionKind = 'permission' | 'needs' | 'loop' | 'queue'
 
 export type AttentionItem = {
   key: string
@@ -35,6 +35,7 @@ export const attentionKey = {
   permission: (jobId: string, requestId: string) => `perm:${jobId}:${requestId}`,
   needs: (chatId: string) => `needs:${chatId}`,
   loop: (jobId: string) => `loop:${jobId}`,
+  queue: (itemId: string) => `queue:${itemId}`,
 }
 
 export function chatOfJob(record: Pick<JobRecord, 'purpose' | 'threadRoot' | 'chatId'>): string | null {
@@ -46,7 +47,7 @@ export function attentionPath(): string {
   return join(configDir(), ATTENTION_FILE)
 }
 
-const KINDS = new Set<string>(['permission', 'needs', 'loop'])
+const KINDS = new Set<string>(['permission', 'needs', 'loop', 'queue'])
 const isText = (value: unknown): value is string => typeof value === 'string'
 const isTextOrNull = (value: unknown): boolean => value === null || typeof value === 'string'
 
@@ -107,7 +108,7 @@ export function createAttentionStore(path = attentionPath(), clock: () => number
       return removed
     },
     prune: async isRunning => {
-      const kept = items.filter(item => item.kind === 'needs' || (item.jobId !== null && isRunning(item.jobId)))
+      const kept = items.filter(item => item.kind === 'needs' || item.kind === 'queue' || (item.jobId !== null && isRunning(item.jobId)))
       if (kept.length !== items.length) await save(kept)
     },
   }
