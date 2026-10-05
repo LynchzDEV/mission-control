@@ -24,10 +24,14 @@ export function runRequest(item: Pick<QueueItem, 'title' | 'url' | 'contextPath'
   ].join('\n')
 }
 
+type Attempt = RunView['attempts'][number]
+
+const byAgent = (attempt: Attempt): boolean => attempt.jobId !== null || attempt.inSession === true
+
 export function questionsOf(run: RunView): string[] {
-  const settled = run.attempts.filter(attempt => attempt.result !== null && attempt.endedAt !== null)
+  const settled = run.attempts.filter(attempt => attempt.result !== null && attempt.endedAt !== null && !attempt.interrupted)
   const last = settled.sort((a, b) => (a.endedAt ?? 0) - (b.endedAt ?? 0)).at(-1)
-  if (run.status !== 'blocked' || last === undefined || last.interrupted || last.result?.outcome !== 'blocked') return []
+  if (run.status !== 'blocked' || last === undefined || !byAgent(last) || last.result?.outcome !== 'blocked') return []
   return last.result.evidence.map(line => line.trim()).filter(line => line !== '')
 }
 

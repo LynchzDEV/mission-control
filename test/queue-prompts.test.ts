@@ -54,13 +54,24 @@ test('branchLabel keeps a long id whole and drops the title slug when there is n
   expect(branchLabel({ title: 'Login copy', externalId: id })).toBe(`queue-${id}`)
 })
 
-test.todo('BUG: a step blocked with questions loses them when a parallel step is interrupted as the run blocks', () => {
+test('a step blocked with questions keeps them when a parallel step is interrupted as the run blocks', () => {
   const asked = attempt({ nodeId: 'plan-a', number: 2, endedAt: 9, result: { outcome: 'blocked', summary: 'Need info', evidence: ['Which page?'] } })
   const sibling = attempt({ nodeId: 'plan-b', number: 1, endedAt: 10, interrupted: true, result: { outcome: 'blocked', summary: 'Interrupted before it finished', evidence: [] } })
   expect(questionsOf(run('blocked', [sibling, asked]))).toEqual(['Which page?'])
 })
 
-test.todo('BUG: a join conflict the runner blocked on is asked of the requester as questions', () => {
+test('a join conflict the runner blocked on is never asked of the requester', () => {
   const join = attempt({ nodeId: 'join', number: 3, jobId: null, endedAt: 9, result: { outcome: 'blocked', summary: 'Paths could not be joined: a.ts', evidence: ['Joined: p1', 'Conflicts in p2: a.ts'] } })
   expect(questionsOf(run('blocked', [join]))).toEqual([])
+})
+
+test('questionsOf reads the questions of a step run in the session, which has no job', () => {
+  const asked = attempt({ jobId: null, inSession: true, endedAt: 9, result: { outcome: 'blocked', summary: 'Need info', evidence: ['Which page?'] } })
+  expect(questionsOf(run('blocked', [asked]))).toEqual(['Which page?'])
+})
+
+test('questionsOf does not reach back to an older blocked step once a join conflict blocks the run', () => {
+  const older = attempt({ nodeId: 'plan-a', number: 1, endedAt: 5, result: { outcome: 'blocked', summary: 'Need info', evidence: ['Which page?'] } })
+  const join = attempt({ nodeId: 'join', number: 2, jobId: null, endedAt: 9, result: { outcome: 'blocked', summary: 'Paths could not be joined: a.ts', evidence: ['Conflicts in p2: a.ts'] } })
+  expect(questionsOf(run('blocked', [older, join]))).toEqual([])
 })
