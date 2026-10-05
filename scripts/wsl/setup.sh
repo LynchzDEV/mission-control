@@ -50,7 +50,7 @@ check_platform() {
 }
 
 install_apt_packages() {
-  local packages=(git curl unzip lsof ripgrep ca-certificates python3 make g++)
+  local packages=(git curl unzip lsof ripgrep ca-certificates python3 make g++ nodejs)
   if $with_plugins; then packages+=(bubblewrap socat); fi
   say "Installing system packages: ${packages[*]} (sudo may ask for your password)"
   as_root apt-get update -y
@@ -116,7 +116,15 @@ ensure_codex_cli() {
     return
   fi
   say "Installing Codex CLI"
-  bun add -g @openai/codex
+  with_bun_as_node bun add -g @openai/codex
+}
+
+verify_codex_cli() {
+  if codex --version >/dev/null 2>&1; then
+    say "Codex CLI $(codex --version) runs"
+  else
+    warn "codex --version failed; Codex needs Node.js 16+ (sudo apt-get install nodejs) or review jobs and 'codex login' will fail"
+  fi
 }
 
 ensure_login_path() {
@@ -155,14 +163,20 @@ check_repo_location() {
   esac
 }
 
-install_dependencies() {
-  local repo_dir="$1" node_shim
+with_bun_as_node() {
+  local node_shim status=0
   node_shim="$(mktemp -d)"
   ln -s "$(command -v bun)" "$node_shim/node"
-  say "Installing dependencies in $repo_dir"
   # Ubuntu's apt node 18 cannot run node-gyp@latest (node-pty build), so Bun stands in as node.
-  (cd "$repo_dir" && PATH="$node_shim:$PATH" bun install)
+  PATH="$node_shim:$PATH" "$@" || status=$?
   rm -r -- "$node_shim"
+  return "$status"
+}
+
+install_dependencies() {
+  local repo_dir="$1"
+  say "Installing dependencies in $repo_dir"
+  (cd "$repo_dir" && with_bun_as_node bun install)
 }
 
 print_next_steps() {
@@ -170,7 +184,7 @@ print_next_steps() {
   cat <<EOF
 
 Setup finished. Next steps:
-  1. Open a new terminal (or run: source ~/.bashrc) so bun and claude are on your PATH.
+  1. Open a new terminal (or run: source ~/.profile) so bun and claude are on your PATH.
   2. Sign in to Claude:   claude      (follow the login prompt, then exit)
   3. Sign in to Codex:    codex login (needed before the first review job)
   4. GLM runs the build jobs by default: paste your z.ai token in Studio -> Manage AIs -> GLM,
@@ -193,6 +207,7 @@ main() {
   if $install_cli; then
     ensure_claude_cli
     ensure_codex_cli
+    verify_codex_cli
   else
     say "Skipping Claude/Codex CLI installs (--no-cli)"
   fi
