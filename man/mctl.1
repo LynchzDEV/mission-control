@@ -383,6 +383,116 @@ Transcript of a terminal session.
 .TP
 .BR "mctl terminal sessions " [ \-\-cwd \fI\ DIR\fR ]
 Past sessions a terminal could resume in a folder. Default: the current folder.
+.SH PLUGINS AND MARKETPLACES
+Plugins are installed from git and listed by marketplaces. Isolated plugins run
+under the OS sandbox; trusted plugins get full access.
+.TP
+.B mctl plugin list
+Installed plugins: id, version, runtime, state and name.
+.TP
+.B mctl plugin catalog \fR[\fB\-\-refresh\fR]
+Plugins your marketplaces offer, and any marketplace that failed to load.
+.B \-\-refresh
+fetches every marketplace first.
+.TP
+.BI "mctl plugin add " link " \fR[\fB\-\-ref\fR \fIREF\fR] [\fB\-\-yes\fR] [\fB\-\-trust\fR]"
+A plugin link shows what the plugin asks for; add
+.B \-\-yes
+to install it (and
+.B \-\-trust
+for a trusted plugin). A marketplace link is added. Without
+.B \-\-ref
+the newest version tag is used, or the default branch.
+.TP
+.BI "mctl plugin update " id " \fR[\fB\-\-yes\fR] [\fB\-\-accept\fR] [\fB\-\-trust\fR]"
+Check for a newer version (re\-reading its marketplace first) and, with
+.BR \-\-yes ,
+apply it. An update that asks for more needs
+.BR \-\-accept ;
+one that becomes trusted needs
+.BR \-\-trust .
+.TP
+.BI "mctl plugin remove " id " \fR[\fB\-\-delete\-data\fR]"
+Uninstall; its settings and files are kept unless
+.BR \-\-delete\-data .
+.TP
+.BI "mctl plugin enable " id ", mctl plugin disable " id
+Turn a plugin on or off.
+.TP
+.BI "mctl plugin settings " id
+Its settings; secrets show only whether they are set.
+.TP
+.BI "mctl plugin set " "id key value" ", mctl plugin unset " "id key"
+Change a declared setting. A value of
+.B \-
+is read from stdin, which keeps tokens out of shell history.
+.TP
+.BI "mctl plugin call " "id method" " \fR[\fB\-\-params\fR \fIJSON\fR|\fB\-\fR]"
+Call one of the plugin's own server methods and print its result.
+.TP
+.BI "mctl marketplace list\fR, \fBmctl marketplace add " url "\fR, \fBmctl marketplace remove " url
+Manage marketplaces directly;
+.B add
+on an existing one refreshes it.
+.SH CLICKUP BOARD
+Commands for the ClickUp board plugin (clickup\-board). A board is named by its
+id or its name.
+.TP
+.BI "mctl clickup connect " token
+Save your ClickUp personal token
+.RB ( \- " reads stdin)"
+and check it.
+.TP
+.B mctl clickup boards
+Saved boards with their filter count and folder.
+.TP
+.BI "mctl clickup board " board " \fR[\fB\-\-search\fR \fITEXT\fR] [\fB\-\-all\fR]"
+The board as the screen shows it, with its saved filters applied: tasks per
+status and how many of the total are shown.
+.B \-\-all
+ignores the saved filters.
+.TP
+.B mctl clickup board add \fR(\fB\-\-link\fR \fIURL\fR | \fB\-\-list\fR \fIID\fR) \fB\-\-folder\fR \fIDIR\fR [\fB\-\-name\fR \fINAME\fR]
+Save a board from a ClickUp list or board view link, or a list id.
+.TP
+.BI "mctl clickup board remove " board
+Remove a saved board.
+.TP
+.B mctl clickup tree \fR[\fB\-\-team\fR|\fB\-\-space\fR|\fB\-\-folder\fR \fIID\fR]
+Browse workspaces, spaces, folders and lists to find a list id.
+.TP
+.BI "mctl clickup filters " board " \fR[\fB\-\-fields\fR]"
+The board's filters, numbered; the ClickUp view's own filter is marked
+.BR (view) .
+.B \-\-fields
+lists every field and its operators.
+.TP
+.BI "mctl clickup filter add " "board field operator" " \fR[\fB\-\-value\fR \fIV\fR]..."
+Add a filter. Fields, operators and values are matched by name, as in the
+screen, for example
+.B Assignee \(dqis any of\(dq \-\-value Me
+or
+.BR "Planning is \-\-value \(dqSprint 17\(dq" .
+Dates for Before and After are YYYY\-MM\-DD.
+.TP
+.BI "mctl clickup filter remove " "board N" "\fR, \fBmctl clickup filter clear " board "\fR, \fBmctl clickup filter join " "board " and|or
+Remove filter N, remove all of them (the view's own stay), or combine them
+with AND or OR.
+.TP
+.BI "mctl clickup task " id
+Print the task dossier the AI reads first.
+.TP
+.BI "mctl clickup start " id " \fR[\fIoptions\fR]"
+Write the task dossier into the session folder and start a chat (or with
+.B \-\-terminal
+a terminal) that reads it first. The folder is
+.BR \-\-cwd ,
+else the
+.B \-\-board
+folder, else the current one; the AI is
+.BR \-\-engine ,
+else the plan role. Also
+.BR \-\-model " and " \-\-message .
 .SH JSON OUTPUT
 With
 .BR \-\-json ,
@@ -491,6 +601,18 @@ From a script or AI agent, get the newest five jobs as JSON:
 .PP
 .RS
 .B mctl jobs \-\-limit 5 \-\-json
+.RE
+.PP
+Install ClickUp board and work a task from the shell:
+.PP
+.RS
+.nf
+mctl plugin add https://github.com/LynchzDEV/mc\-plugin\-clickup \-\-yes
+mctl clickup connect \- < token.txt
+mctl clickup filter add main Assignee "is any of" \-\-value Me
+mctl clickup board main
+mctl clickup start 86d4ccpu2 \-\-board main
+.fi
 .RE
 .SH NOT COVERED
 Use the browser for: revealing, rotating or writing secrets; adding or deleting

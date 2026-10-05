@@ -126,6 +126,10 @@ mctl jobs --limit 10                 # newest jobs
 mctl job new "Fix the flaky test" --cwd ~/code/app --follow
 mctl attention                       # what is waiting on you
 mctl runs                            # workflow runs
+mctl plugin add https://github.com/LynchzDEV/mc-plugin-clickup --yes
+mctl clickup board main              # the board, saved filters applied
+mctl clickup filter add main Assignee "is any of" --value Me
+mctl clickup start 86d4ccpu2 --board main   # chat with the task dossier attached
 ```
 
 - `--json` prints the server's JSON as one document (NDJSON for `job follow` and `job new --follow`); every command supports it.
