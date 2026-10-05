@@ -1308,9 +1308,11 @@ test('a report with acceptance checks answers at once, checks in the background 
   expect(Date.now() - started).toBeLessThan(800)
   expect(reported.attempts[0]!.status).toBe('checking')
   await expect(runner.report(approved.id, 'plan', planReport, owner)).rejects.toMatchObject({ status: 409, message: 'That step is not waiting for the session' })
-  const checked = await until(approved.id, run => run.attempts.length === 2)
-  expect(checked.attempts[0]).toMatchObject({ status: 'settled', result: { outcome: 'pass' } })
+  const checked = await until(approved.id, run => run.attempts.length >= 2)
+  expect(checked.attempts[0]).toMatchObject({ nodeId: 'plan', status: 'settled', result: { outcome: 'pass' } })
   expect(checked.attempts[0]!.checks[0]!.exitCode).toBe(0)
+  expect(checked.attempts.filter(attempt => attempt.nodeId === 'plan')).toHaveLength(1)
+  expect(checked.attempts[1]!.nodeId).toBe('verify-plan')
 })
 
 test('a report is redacted and records who reported it', async () => {
