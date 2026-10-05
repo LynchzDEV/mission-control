@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { main, type MainDeps } from '../cli/mctl'
@@ -83,6 +83,14 @@ describe('mctl queue', () => {
     expect(body !== undefined && 'flowId' in body).toBe(false)
   })
 
+  test('add sends --repo as an absolute path from the current directory or home', async () => {
+    for (const [given, sent] of [['../x', '/work/x'], ['~/x', join(homedir(), 'x')], ['~', homedir()]] as const) {
+      const h = harness(() => Response.json({ item: { id: 'a1', title: 'Login copy' } }), '/work/here')
+      expect(await main(['queue', 'add', 'clickup-board', '86d3j4f8q', '--repo', given], h.deps)).toBe(0)
+      expect(h.calls[0]?.body?.repo).toBe(sent)
+    }
+  })
+
   test('move sends a whole number and rejects anything else', async () => {
     const ok = harness(() => Response.json({ items: [] }))
     expect(await main(['queue', 'move', 'a1', '2'], ok.deps)).toBe(0)
@@ -135,6 +143,6 @@ describe('mctl queue', () => {
     const h = harness()
     expect(await main(['--help'], h.deps)).toBe(0)
     expect(h.out()).toContain('mctl queue requeue <id>')
-    expect(h.out()).toContain('Put a failed or ready item back in line')
+    expect(h.out()).toContain('Put a failed, ready or waiting item back in line')
   })
 })

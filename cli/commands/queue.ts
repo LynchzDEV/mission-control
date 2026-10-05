@@ -1,5 +1,7 @@
+import { resolve } from 'node:path'
+
 import { segment } from '../client'
-import { arg, emit, flag, records, stringOpt, UsageError, type Command, type Context } from '../command'
+import { arg, emit, expandHome, flag, records, stringOpt, UsageError, type Command, type Context } from '../command'
 import { cell, table } from '../format'
 
 type Json = Record<string, unknown>
@@ -37,7 +39,7 @@ function addBody(ctx: Context): Json {
   return {
     source: arg(ctx, 'source'),
     externalId: arg(ctx, 'externalId'),
-    repo: stringOpt(ctx, 'repo') ?? ctx.cwd,
+    repo: resolve(ctx.cwd, expandHome(stringOpt(ctx, 'repo') ?? ctx.cwd)),
     ...(flowId === undefined ? {} : { flowId }),
     position: flag(ctx, 'next') ? 'next' : 'end',
   }
@@ -72,7 +74,7 @@ export const queueCommands: Command[] = [
   {
     path: ['queue', 'requeue'],
     args: ['id'],
-    summary: 'Put a failed or ready item back in line',
+    summary: 'Put a failed, ready or waiting item back in line',
     run: async (ctx) => emit(ctx, await ctx.client.post(itemPath(ctx, '/requeue'), {}), () => 'Back in the queue.\n'),
   },
   {

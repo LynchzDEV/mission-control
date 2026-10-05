@@ -1,6 +1,4 @@
-import { homedir } from 'node:os'
-
-import { arg, emit, flag, listOpt, oneOf, stringOpt, textArg, UsageError, type Command, type Context } from '../command'
+import { arg, emit, expandHome, flag, listOpt, oneOf, stringOpt, textArg, UsageError, type Command, type Context } from '../command'
 import { cell, keyValue, table } from '../format'
 import { callPlugin } from './plugins'
 
@@ -134,10 +132,6 @@ function boardText(value: unknown): string {
       { header: 'WHO', value: (task) => (Array.isArray(task.assignees) ? task.assignees.filter(isRecord).map((who) => cell(who.initials)).join(' ') : '') || '-' },
     ])
   }).join('')
-}
-
-function expandHome(path: string): string {
-  return path === '~' || path.startsWith('~/') ? homedir() + path.slice(1) : path
 }
 
 async function startSession(ctx: Context): Promise<void> {

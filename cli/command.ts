@@ -1,3 +1,5 @@
+import { homedir } from 'node:os'
+
 import type { Client } from './client'
 
 export type OptionSpec = {
@@ -98,4 +100,8 @@ export function sessionBody(ctx: Context): Record<string, unknown> {
     ...(terminal === undefined ? {} : { terminalId: terminal }),
     ...(version === undefined ? {} : { version }),
   }
+}
+
+export function expandHome(path: string): string {
+  return path === '~' || path.startsWith('~/') ? homedir() + path.slice(1) : path
 }
