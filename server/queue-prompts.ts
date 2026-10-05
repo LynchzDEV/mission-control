@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import type { QueueItem } from './queue-store'
 import type { SourceReply } from './queue-source'
 import type { WorkflowRun } from './workflow-runner'
@@ -8,8 +10,10 @@ export const SETTLED: ReadonlySet<WorkflowRun['status']> = new Set(['done', 'fai
 
 const MAX_BRANCH = 60
 
-export function branchLabel(item: Pick<QueueItem, 'title' | 'externalId'>): string {
-  const id = item.externalId.toLowerCase().replace(/[^a-z0-9]+/g, '')
+const sourceTag = (source: string): string => createHash('sha256').update(source).digest('hex').slice(0, 4)
+
+export function branchLabel(item: Pick<QueueItem, 'title' | 'externalId' | 'source'>): string {
+  const id = `${item.externalId.toLowerCase().replace(/[^a-z0-9]+/g, '')}-${sourceTag(item.source)}`
   const room = MAX_BRANCH - 'queue-'.length - id.length - 1
   const slug = item.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, Math.max(0, room)).replace(/-+$/, '')
   return slug ? `queue-${slug}-${id}` : `queue-${id}`

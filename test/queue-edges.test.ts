@@ -298,7 +298,7 @@ test.todo('BUG: requeue of an item whose worktree was deleted by hand starts its
   expect(existsSync(h.started[1]!.cwd)).toBe(true)
 })
 
-test.todo('BUG: two items with the same title and id from different sources share one worktree', async () => {
+test('two items with the same title and id from different sources get their own worktrees', async () => {
   const h = harness()
   const first = await h.engine.add(add)
   await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))

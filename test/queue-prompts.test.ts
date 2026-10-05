@@ -10,10 +10,15 @@ test('SETTLED holds the four end states', () => {
   expect([...SETTLED].sort()).toEqual(['blocked', 'done', 'failed', 'stopped'])
 })
 
-test('branchLabel is queue- plus a short slug of the title and the id', () => {
-  expect(branchLabel({ title: 'Login page copy (TH)!', externalId: '86d3j4f8q' })).toBe('queue-login-page-copy-th-86d3j4f8q')
-  expect(branchLabel({ title: 'ภาษาไทย', externalId: 'abc' })).toBe('queue-abc')
-  expect(branchLabel({ title: 'x'.repeat(80), externalId: 'id' }).length).toBeLessThanOrEqual(60)
+test('branchLabel is queue- plus a short slug of the title, the id and a tag of the source', () => {
+  expect(branchLabel({ title: 'Login page copy (TH)!', externalId: '86d3j4f8q', source: 'clickup-board' })).toBe('queue-login-page-copy-th-86d3j4f8q-a8c0')
+  expect(branchLabel({ title: 'ภาษาไทย', externalId: 'abc', source: 'clickup-board' })).toBe('queue-abc-a8c0')
+  expect(branchLabel({ title: 'x'.repeat(80), externalId: 'id', source: 'clickup-board' }).length).toBeLessThanOrEqual(60)
+})
+
+test('branchLabel differs for the same title and id from another source', () => {
+  expect(branchLabel({ title: 'Login copy', externalId: '1', source: 'other-board' })).toBe('queue-login-copy-1-524a')
+  expect(branchLabel({ title: 'Login copy', externalId: '1', source: 'clickup-board' })).toBe('queue-login-copy-1-a8c0')
 })
 
 test('runRequest points at the context, lists answers, and explains how to ask', () => {
@@ -51,7 +56,7 @@ test('questionsOf ignores a stopped run even when its last step asked questions'
 
 test('branchLabel keeps a long id whole and drops the title slug when there is no room', () => {
   const id = 'a'.repeat(70)
-  expect(branchLabel({ title: 'Login copy', externalId: id })).toBe(`queue-${id}`)
+  expect(branchLabel({ title: 'Login copy', externalId: id, source: 'clickup-board' })).toBe(`queue-${id}-a8c0`)
 })
 
 test('a step blocked with questions keeps them when a parallel step is interrupted as the run blocks', () => {

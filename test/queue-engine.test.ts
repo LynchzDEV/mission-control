@@ -53,9 +53,9 @@ test('adding an item fetches its title and starts building it in its own worktre
   const item = await h.engine.add({ ...add, flowId: 'wf-1' })
   expect(item.title).toBe('Task 1')
   const built = h.store.get(item.id)!
-  expect(built).toMatchObject({ state: 'building', currentRunId: 'run-1', runIds: ['run-1'], worktree: '/repo/.worktree/queue-task-1-1' })
-  expect(built.contextPath).toBe('/repo/.worktree/queue-task-1-1/.mission-control/context/clickup-board/item-1.md')
-  expect(h.started).toEqual([{ cwd: '/repo/.worktree/queue-task-1-1', request: expect.stringContaining('Work on "Task 1"'), label: 'Task 1', workflowId: 'wf-1' }])
+  expect(built).toMatchObject({ state: 'building', currentRunId: 'run-1', runIds: ['run-1'], worktree: '/repo/.worktree/queue-task-1-1-a8c0' })
+  expect(built.contextPath).toBe('/repo/.worktree/queue-task-1-1-a8c0/.mission-control/context/clickup-board/item-1.md')
+  expect(h.started).toEqual([{ cwd: '/repo/.worktree/queue-task-1-1-a8c0', request: expect.stringContaining('Work on "Task 1"'), label: 'Task 1', workflowId: 'wf-1' }])
 })
 
 test('two adds at once build only the first; the second waits queued', async () => {
