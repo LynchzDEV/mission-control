@@ -2,7 +2,7 @@ import { Elysia } from 'elysia'
 import { z } from 'zod'
 
 import { requireLocal } from '../auth'
-import type { QueueEngine } from '../queue-engine'
+import { QueueRefusal, type QueueEngine } from '../queue-engine'
 import type { QueueStore } from '../queue-store'
 import { queueTree, type QueueTree } from '../queue-tree'
 import { eventStreamResponse } from '../run-events'
@@ -22,20 +22,12 @@ const moveSchema = z.object({ to: z.number().int().min(0) })
 const NO_ITEM = 'No such queue item'
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
-function refusalStatus(error: unknown): number | undefined {
-  const text = message(error)
-  if (text.startsWith('No queue item')) return 404
-  if (text.startsWith('It is ') || text === 'Already in the queue') return 409
-  return undefined
-}
-
 async function refusing<T>(set: Status, work: () => Promise<T>, explain: (error: unknown) => string = message): Promise<T | { error: string }> {
   try {
     return await work()
   } catch (error) {
-    const status = refusalStatus(error)
-    if (status === undefined) throw error
-    set.status = status
+    if (!(error instanceof QueueRefusal)) throw error
+    set.status = error.status
     return { error: explain(error) }
   }
 }
@@ -60,8 +52,9 @@ async function addItem(engine: QueueEngineRoutes, body: unknown, set: Status) {
   }
 }
 
-const removeExplanation = (error: unknown): string => (message(error) === 'It is building now' ? 'Stop its run in Studio first' : NO_ITEM)
-const moveExplanation = (error: unknown): string => (refusalStatus(error) === 409 ? message(error) : NO_ITEM)
+const isConflict = (error: unknown): boolean => error instanceof QueueRefusal && error.status === 409
+const removeExplanation = (error: unknown): string => (isConflict(error) ? 'Stop its run in Studio first' : NO_ITEM)
+const moveExplanation = (error: unknown): string => (isConflict(error) ? message(error) : NO_ITEM)
 
 export function queueRoutes(store: QueueStore, engine: QueueEngineRoutes, tree: () => Promise<QueueTree> = () => queueTree(store.list())): Elysia {
   return new Elysia()

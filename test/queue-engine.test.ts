@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { createQueueEngine, type QueueEngineDeps, type QueueRunner } from '../server/queue-engine'
+import { createQueueEngine, QueueRefusal, type QueueEngineDeps, type QueueRunner } from '../server/queue-engine'
 import type { RunView } from '../server/queue-prompts'
 import type { QueueSource } from '../server/queue-source'
 import { createQueueStore, type QueueItem } from '../server/queue-store'
@@ -363,4 +363,23 @@ test('asking again keeps the reply cursor so replies written meanwhile are still
   await h.engine.requeue(item.id)
   await h.engine.onRunSettled(h.settle('run-2', { status: 'blocked', attempts: [blockedWith(['Which button?'])] }))
   expect(h.store.get(item.id)).toMatchObject({ state: 'waiting-info', questions: ['Which button?'], lastSeenId: 'r1' })
+})
+
+test('the engine\'s own refusals carry 404 for an unknown item and 409 for its state', async () => {
+  const h = harness()
+  const item = await h.engine.add(add)
+  const refusals: unknown[] = []
+  const quiet = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    for (const attempt of [h.engine.requeue('nope'), h.engine.remove('nope'), h.engine.move('nope', 0), h.engine.requeue(item.id), h.engine.remove(item.id), h.engine.move(item.id, 0), h.engine.add(add)]) {
+      refusals.push(await attempt.then(() => null, (error: unknown) => error))
+    }
+  } finally { quiet.mockRestore() }
+  expect(refusals.every(error => error instanceof QueueRefusal)).toBe(true)
+  expect(refusals.map(error => (error as QueueRefusal).status)).toEqual([404, 404, 404, 409, 409, 409, 409])
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'failed', error: 'boom' }))
+  h.settle('run-1', { status: 'running', error: null })
+  const studio = await h.engine.requeue(item.id).then(() => null, (error: unknown) => error)
+  expect(studio).toBeInstanceOf(QueueRefusal)
+  expect(studio).toMatchObject({ status: 409, message: 'It is running in Studio now' })
 })

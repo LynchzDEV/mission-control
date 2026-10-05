@@ -43,9 +43,18 @@ const MAX_IMAGE_BYTES = 3_932_160
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
+export class QueueRefusal extends Error {
+  constructor(message: string, readonly status: 404 | 409) {
+    super(message)
+    this.name = 'QueueRefusal'
+  }
+}
+
+const stateRefusal = (state: QueueItem['state']): QueueRefusal => new QueueRefusal(`It is ${state} now`, 409)
+
 function found(store: QueueStore, id: string): QueueItem {
   const item = store.get(id)
-  if (item === undefined) throw new Error(`No queue item ${id}`)
+  if (item === undefined) throw new QueueRefusal(`No queue item ${id}`, 404)
   return item
 }
 
@@ -233,7 +242,7 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
   }
 
   const refuseDuplicate = (input: AddInput): void => {
-    if (store.list().some(item => item.source === input.source && item.externalId === input.externalId)) throw new Error('Already in the queue')
+    if (store.list().some(item => item.source === input.source && item.externalId === input.externalId)) throw new QueueRefusal('Already in the queue', 409)
   }
 
   async function add(input: AddInput): Promise<QueueItem> {
@@ -253,8 +262,8 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
 
   const requeue = (id: string): Promise<QueueItem> => serial(async () => {
     const item = found(store, id)
-    if (!REQUEUEABLE.has(item.state)) throw new Error(`It is ${item.state} now`)
-    if (runningInStudio(item)) throw new Error('It is running in Studio now')
+    if (!REQUEUEABLE.has(item.state)) throw stateRefusal(item.state)
+    if (runningInStudio(item)) throw new QueueRefusal('It is running in Studio now', 409)
     await store.update(id, { state: 'queued', error: null, currentRunId: null, questions: [] })
     await store.move(id, store.list().length)
     await startNext()
@@ -262,13 +271,13 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
   })
 
   const remove = (id: string): Promise<void> => serial(async () => {
-    if (found(store, id).state === 'building') throw new Error('It is building now')
+    if (found(store, id).state === 'building') throw stateRefusal('building')
     await store.remove(id)
   })
 
   const move = (id: string, to: number): Promise<void> => serial(async () => {
     const item = found(store, id)
-    if (item.state !== 'queued') throw new Error(`It is ${item.state} now`)
+    if (item.state !== 'queued') throw stateRefusal(item.state)
     await store.move(id, to)
   })
 

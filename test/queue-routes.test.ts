@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Elysia } from 'elysia'
 
-import type { QueueEngine } from '../server/queue-engine'
+import { QueueRefusal, type QueueEngine } from '../server/queue-engine'
 import { createQueueStore } from '../server/queue-store'
 import { queueRoutes } from '../server/routes/queue'
 
@@ -30,12 +30,12 @@ afterAll(async () => {
 type Engine = Pick<QueueEngine, 'add' | 'requeue' | 'checkReplies' | 'remove' | 'move'>
 
 function engine(items: ReturnType<typeof store>, over: Partial<QueueEngine> = {}): Engine {
-  const found = (id: string) => { const item = items.get(id); if (item === undefined) throw new Error(`No queue item ${id}`); return item }
+  const found = (id: string) => { const item = items.get(id); if (item === undefined) throw new QueueRefusal(`No queue item ${id}`, 404); return item }
   return {
     add: async input => items.add({ ...newItem, externalId: input.externalId, repo: input.repo, flowId: input.flowId ?? null }, input.position ?? 'end'),
     requeue: async id => items.update(id, { state: 'queued' }),
     checkReplies: async () => ({ checked: 2, resumed: 1 }),
-    remove: async id => { if (found(id).state === 'building') throw new Error('It is building now'); await items.remove(id) },
+    remove: async id => { if (found(id).state === 'building') throw new QueueRefusal('It is building now', 409); await items.remove(id) },
     move: async (id, to) => { found(id); await items.move(id, to) },
     ...over,
   }
@@ -75,7 +75,7 @@ test('POST refuses a repo that is missing, not git, or outside home before the e
 
 test('POST maps an item already in the queue to 409', async () => {
   const items = store()
-  const app = new Elysia().use(queueRoutes(items, engine(items, { add: async () => { throw new Error('Already in the queue') } })))
+  const app = new Elysia().use(queueRoutes(items, engine(items, { add: async () => { throw new QueueRefusal('Already in the queue', 409) } })))
   const twice = await post(app, '/api/queue', { source: 'clickup-board', externalId: '1', repo })
   expect(twice.status).toBe(409)
   expect((await twice.json()).error).toBe('Already in the queue')
@@ -86,7 +86,7 @@ test('delete and move go through the engine so they wait for a build in progress
   const a = await items.add(newItem, 'end')
   const seen: string[] = []
   const app = new Elysia().use(queueRoutes(items, engine(items, {
-    remove: async id => { seen.push(`remove ${id}`); throw new Error('It is building now') },
+    remove: async id => { seen.push(`remove ${id}`); throw new QueueRefusal('It is building now', 409) },
     move: async (id, to) => { seen.push(`move ${id} ${to}`) },
   })))
   const removing = await call(app, `/api/queue/${a.id}`, { method: 'DELETE' })
@@ -100,7 +100,7 @@ test('delete and move go through the engine so they wait for a build in progress
 test('move refuses an item that is not queued with 409 and says why', async () => {
   const items = store()
   const a = await items.add(newItem, 'end')
-  const app = new Elysia().use(queueRoutes(items, engine(items, { move: async () => { throw new Error('It is building now') } })))
+  const app = new Elysia().use(queueRoutes(items, engine(items, { move: async () => { throw new QueueRefusal('It is building now', 409) } })))
   const refused = await post(app, `/api/queue/${a.id}/move`, { to: 0 })
   expect(refused.status).toBe(409)
   expect((await refused.json()).error).toBe('It is building now')
@@ -138,14 +138,16 @@ test('delete and requeue refuse a building item and 404 unknown ids', async () =
 test('requeue maps the engine refusals to 404 and 409 and rethrows anything else', async () => {
   const items = store()
   const a = await items.add(newItem, 'end')
-  const refusing = (text: string) => new Elysia().use(queueRoutes(items, engine(items, { requeue: async () => { throw new Error(text) } })))
-  const busy = await post(refusing('It is queued now'), `/api/queue/${a.id}/requeue`)
+  const refusing = (error: Error) => new Elysia().use(queueRoutes(items, engine(items, { requeue: async () => { throw error } })))
+  const busy = await post(refusing(new QueueRefusal('It is queued now', 409)), `/api/queue/${a.id}/requeue`)
   expect(busy.status).toBe(409)
   expect((await busy.json()).error).toBe('It is queued now')
-  const gone = await post(refusing(`No queue item ${a.id}`), `/api/queue/${a.id}/requeue`)
+  const gone = await post(refusing(new QueueRefusal(`No queue item ${a.id}`, 404)), `/api/queue/${a.id}/requeue`)
   expect(gone.status).toBe(404)
   expect((await gone.json()).error).toBe(`No queue item ${a.id}`)
-  expect((await post(refusing('disk full'), `/api/queue/${a.id}/requeue`)).status).toBe(500)
+  expect((await post(refusing(new Error('disk full')), `/api/queue/${a.id}/requeue`)).status).toBe(500)
+  expect((await post(refusing(new Error(`No queue item ${a.id}`)), `/api/queue/${a.id}/requeue`)).status).toBe(500)
+  expect((await post(refusing(new Error('It is broken')), `/api/queue/${a.id}/requeue`)).status).toBe(500)
 })
 
 test('a request from another site is refused', async () => {
@@ -162,4 +164,26 @@ test('GET tree returns what the tree source builds', async () => {
   const response = await call(app, '/api/queue/tree')
   expect(response.status).toBe(200)
   expect(await response.json()).toEqual(tree)
+})
+
+test('POST reports a source error that reads like a refusal as 502', async () => {
+  const items = store()
+  for (const text of ['It is broken', 'No queue item here', 'Already in the queue']) {
+    const app = new Elysia().use(queueRoutes(items, engine(items, { add: async () => { throw new Error(text) } })))
+    const failed = await post(app, '/api/queue', { source: 'clickup-board', externalId: '1', repo })
+    expect(failed.status).toBe(502)
+    expect((await failed.json()).error).toBe(text)
+  }
+})
+
+test('move and delete map only engine refusals to 404 and 409', async () => {
+  const items = store()
+  const a = await items.add(newItem, 'end')
+  const app = (error: Error) => new Elysia().use(queueRoutes(items, engine(items, { move: async () => { throw error }, remove: async () => { throw error } })))
+  const gone = await post(app(new QueueRefusal(`No queue item ${a.id}`, 404)), `/api/queue/${a.id}/move`, { to: 0 })
+  expect(gone.status).toBe(404)
+  expect((await gone.json()).error).toBe('No such queue item')
+  expect((await post(app(new Error('It is broken')), `/api/queue/${a.id}/move`, { to: 0 })).status).toBe(500)
+  expect((await call(app(new Error('It is building now')), `/api/queue/${a.id}`, { method: 'DELETE' })).status).toBe(500)
+  expect((await call(app(new QueueRefusal(`No queue item ${a.id}`, 404)), `/api/queue/${a.id}`, { method: 'DELETE' })).status).toBe(404)
 })
