@@ -1,4 +1,9 @@
+import { remoteAccessEnabled } from '../local-access'
+
 export type ShellProps = { workspaceDir: string }
+
+const LOCAL_ONLY_NOTE = 'This app answers only on this machine.'
+const TAILSCALE_NOTE = 'This app answers on this machine and to the Tailscale users you allow.'
 
 const BODY = `
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -174,7 +179,7 @@ const BODY = `
   </main>
   </div>
 
-  <dialog id="settings" class="access-dialog" aria-labelledby="settings-title"><header class="dialog-heading"><h2 id="settings-title">Settings</h2><form method="dialog"><button class="round" aria-label="Close settings" autofocus><svg><use href="#close-icon"/></svg></button></form></header><div class="field-stack"><label class="switch-label"><input id="theme-dark" type="checkbox" role="switch">Dark theme</label><label class="switch-label"><input id="motion" type="checkbox" role="switch">Background motion</label></div><p class="muted">This app answers only on this machine.</p><div class="field-stack"><label>Address<input id="access-host" value="" readonly></label>
+  <dialog id="settings" class="access-dialog" aria-labelledby="settings-title"><header class="dialog-heading"><h2 id="settings-title">Settings</h2><form method="dialog"><button class="round" aria-label="Close settings" autofocus><svg><use href="#close-icon"/></svg></button></form></header><div class="field-stack"><label class="switch-label"><input id="theme-dark" type="checkbox" role="switch">Dark theme</label><label class="switch-label"><input id="motion" type="checkbox" role="switch">Background motion</label></div><p class="muted">${LOCAL_ONLY_NOTE}</p><div class="field-stack"><label>Address<input id="access-host" value="" readonly></label>
     <label>API token<span class="token-row"><input id="access-token" value="" readonly aria-describedby="access-token-note"><button type="button" class="text-button" id="access-reveal">Reveal</button><button type="button" class="confirm-morph" id="access-rotate" aria-label="Rotate API token" title="Scripts and the dispatch skill using the current token stop working until they read the new one."><span>Rotate</span><span>Make new token</span></button></span></label><p class="muted" id="access-token-note" role="status">For scripts and the dispatch skill. It grants nothing extra on this machine.</p></div>
     <form id="access-home-form" class="field-stack"><label>Chat home<span class="token-row"><input id="access-home" autocomplete="off" spellcheck="false" placeholder="/Users/you/projects" aria-describedby="access-home-note"><button type="submit" class="text-button">Save</button></span></label><p class="muted" id="access-home-note" role="status"></p></form>
     <div class="field-stack"><label class="switch-label"><input id="access-flow-approval" type="checkbox" role="switch">Ask me before a flow runs</label><p id="access-flow-note" class="muted">When off, flows start as soon as an AI picks them, and big changes apply on their own.</p></div></dialog>
@@ -244,6 +249,6 @@ export function ShellPage(props: ShellProps): string {
   <script src="/js/plugins.js" type="module" defer></script>
   <script src="/js/queue.js" type="module" defer></script>
 </head>
-<body>${BODY}</body>
+<body>${remoteAccessEnabled() ? BODY.replace(LOCAL_ONLY_NOTE, TAILSCALE_NOTE) : BODY}</body>
 </html>`
 }

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto'
 
-import { localRequestAllowed } from './local-access'
+import { localRequestAllowed, peerAddress, type PeerServer } from './local-access'
 import { readApiToken } from './secrets'
 
 const TOKEN_SCOPED_GET_ONLY_PATHS = new Set(['/api/quota', '/api/meta', '/api/roles', '/api/models', '/api/providers'])
@@ -35,10 +35,10 @@ export async function verifyBearerToken(header: string | null): Promise<boolean>
   return timingSafeEqual(providedBuf, expectedBuf)
 }
 
-export type GuardContext = { request: Request; set: { status?: number | string } }
+export type GuardContext = { request: Request; set: { status?: number | string }; server?: PeerServer | null }
 
 export async function requireLocal(context: GuardContext) {
-  if (localRequestAllowed(context.request)) return
+  if (localRequestAllowed(context.request, peerAddress(context.server, context.request))) return
   const { pathname } = new URL(context.request.url)
   if (allowToken(pathname, context.request.method) && (await verifyBearerToken(context.request.headers.get('authorization')))) return
   context.set.status = 403

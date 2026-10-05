@@ -6,7 +6,7 @@ import { staticPlugin } from '@elysiajs/static'
 import { Elysia } from 'elysia'
 
 import { maybeAutoReview } from './auto-review'
-import { localRequestAllowed } from './local-access'
+import { localRequestAllowed, peerAddress } from './local-access'
 import { quotaRoutes } from './routes/quota'
 import { historyRoutes } from './routes/history'
 import { createExternalSessionsCache, ownedPids } from './history'
@@ -127,8 +127,8 @@ const RETIRED_PAGES: Record<string, string> = {
 function retiredPageRedirects() {
   const instance = new Elysia()
   for (const [path, location] of Object.entries(RETIRED_PAGES)) {
-    instance.get(path, ({ request, set }) => {
-      if (!localRequestAllowed(request)) { set.status = 403; return 'local access only' }
+    instance.get(path, ({ request, server, set }) => {
+      if (!localRequestAllowed(request, peerAddress(server, request))) { set.status = 403; return 'local access only' }
       set.status = 302
       set.headers['location'] = location
       return ''
@@ -254,8 +254,8 @@ export async function createApp(): Promise<Elysia> {
       if (!shouldLogRequest(request.method, status, verboseLog)) return
       log(requestLine(request.method, request.url, status, performance.now() - (requestStarts.get(request) ?? performance.now())))
     })
-    .get('/', async ({ request, set }) => {
-      if (!localRequestAllowed(request)) { set.status = 403; return 'local access only' }
+    .get('/', async ({ request, server, set }) => {
+      if (!localRequestAllowed(request, peerAddress(server, request))) { set.status = 403; return 'local access only' }
       return appShellPage()
     })
     .get('/js/:file', async ({ params, set }) => {
