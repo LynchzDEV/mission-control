@@ -32,7 +32,7 @@ import { modelsRoutes } from './routes/models'
 import { providersRoutes } from './routes/providers'
 import { pluginsRoutes } from './routes/plugins'
 import { defaultRuntimes } from './plugins/runtimes'
-import { prepareWorktree } from './job-worktrees'
+import { isWorktreeOf, prepareWorktree } from './job-worktrees'
 import { getInstalled } from './plugins/store'
 import { createQueueEngine, type QueueEngine } from './queue-engine'
 import { writeQueueContext } from './queue-files'
@@ -220,6 +220,7 @@ export async function createApp(): Promise<Elysia> {
     runner: workflowRunner,
     source: pluginId => pluginSource(pluginId, { installed: getInstalled, runtimes: defaultRuntimes }),
     prepareWorktree: (repo, label) => prepareWorktree(repo, label),
+    isWorktree: (repo, worktree) => isWorktreeOf(repo, worktree),
     writeContext: (pluginId, context, cwd) => writeQueueContext(pluginId, context, cwd),
     pluginFiles: pluginId => join(configDir(), 'plugin-data', pluginId, 'files'),
     needsYou: (item, reason) => { void raiseQueueAlert(attention, item, reason).catch(error => console.error('Queue alert failed', error)) },

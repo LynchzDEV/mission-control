@@ -1,87 +1,18 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { writeContextFile } from '../server/plugins/context-files'
-import { createQueueEngine, QueueRefusal, type QueueEngineDeps, type QueueRunner } from '../server/queue-engine'
-import { writeQueueContext } from '../server/queue-files'
-import type { RunView } from '../server/queue-prompts'
-import type { QueueSource, SourceReplies } from '../server/queue-source'
-import { createQueueStore, type QueueItem } from '../server/queue-store'
-import type { WorkflowAttempt } from '../server/workflow-runner'
+import { QueueRefusal, type QueueEngineDeps, type QueueRunner } from '../server/queue-engine'
+import type { QueueSource } from '../server/queue-source'
+import { add, blockedWith, parkedItem, queueHarness, refusal, reply, states } from './support/queue-harness'
 
 let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'mc-queue-edges-')) })
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
-const blockedWith = (evidence: string[], over: Partial<WorkflowAttempt> = {}): WorkflowAttempt => ({ nodeId: 'plan', number: 1, jobId: 'j', status: 'settled', prompt: '', startedAt: 1, endedAt: 2, result: { outcome: 'blocked', summary: 'Need info', evidence }, checks: [], output: '', workspace: null, tokenId: 't', pathId: 'main', from: [], ...over })
-const reply = (id: string, text: string): SourceReplies => ({ replies: [{ id, author: 'Ploy', text, images: [] }], lastId: id })
-const noReplies: SourceReplies = { replies: [], lastId: null }
-
-type Started = { cwd: string; request: string; label: string; workflowId?: string }
-
-function harness(over: Partial<QueueEngineDeps> = {}, sourceOver: Partial<QueueSource> = {}) {
-  const queueFile = join(dir, 'queue.json')
-  const store = createQueueStore(queueFile)
-  const runs = new Map<string, RunView>()
-  const started: Started[] = []
-  const posted: Array<{ id: string; kind: string; lines: string[] }> = []
-  const alerts: Array<{ title: string; reason: string; state: string }> = []
-  const sinceIds: Array<string | null> = []
-  let replies: () => Promise<SourceReplies> = async () => noReplies
-  let next = 0
-  const runner: QueueRunner = {
-    start: async input => { started.push(input); const id = `run-${++next}`; runs.set(id, { id, status: 'running', error: null, attempts: [] }); return { id } },
-    get: id => runs.get(id),
-  }
-  const source: QueueSource = {
-    item: async ({ id }) => ({ title: `Task ${id}`, url: `https://x/t/${id}`, contextMarkdown: `# ${id}` }),
-    post: async input => { posted.push(input); return { commentId: 'c1' } },
-    replies: async ({ sinceId }) => { sinceIds.push(sinceId); return replies() },
-    ...sourceOver,
-  }
-  const deps: QueueEngineDeps = {
-    store, runner,
-    source: () => source,
-    prepareWorktree: async (repo, label) => {
-      const worktree = join(dir, repo.replace(/\W/g, '_'), '.worktree', label)
-      await mkdir(worktree, { recursive: true })
-      await writeFile(join(worktree, '.git'), 'gitdir: elsewhere')
-      return { worktree }
-    },
-    writeContext: async (pluginId, context, cwd) => { const folder = join(cwd, '.mission-control', 'queue', pluginId); await mkdir(folder, { recursive: true }); const path = join(folder, `${context.name}.md`); await writeFile(path, context.markdown); return path },
-    pluginFiles: pluginId => join(dir, 'plugin-data', pluginId, 'files'),
-    needsYou: (item, reason) => { alerts.push({ title: item.title, reason, state: item.state }) },
-    ...over,
-  }
-  const settle = (id: string, run: Partial<RunView>) => { const done = { ...runs.get(id)!, ...run }; runs.set(id, done); return done }
-  const restart = (runnerOver: Partial<QueueRunner> = {}) => {
-    const reloaded = createQueueStore(queueFile)
-    return { store: reloaded, engine: createQueueEngine({ ...deps, store: reloaded, runner: { ...runner, ...runnerOver } }) }
-  }
-  return {
-    engine: createQueueEngine(deps), store, runs, started, posted, alerts, sinceIds, settle, restart, deps,
-    answer: (next: () => Promise<SourceReplies>) => { replies = next },
-  }
-}
-
-const add = { source: 'clickup-board', externalId: '1', repo: '/repo' }
-const states = (items: QueueItem[]) => items.map(item => `${item.externalId}:${item.state}`)
-
-async function refusal(work: Promise<unknown>): Promise<unknown> {
-  const quiet = spyOn(console, 'error').mockImplementation(() => {})
-  try {
-    return await work.then(() => null, (error: unknown) => error)
-  } finally { quiet.mockRestore() }
-}
-
-async function parkedItem(h: ReturnType<typeof harness>) {
-  const item = await h.engine.add(add)
-  await h.engine.onRunSettled(h.settle('run-1', { status: 'blocked', attempts: [blockedWith(['Which page?'])] }))
-  return h.store.get(item.id)!
-}
+const harness = (over: Partial<QueueEngineDeps> = {}, sourceOver: Partial<QueueSource> = {}) => queueHarness(dir, over, sourceOver)
 
 test('requeue refuses an item that is already queued and leaves it in line', async () => {
   const h = harness()
@@ -283,42 +214,12 @@ test('replies without a cursor count as a failed read and are never applied', as
   expect(h.alerts.filter(alert => alert.reason.startsWith('Could not read replies'))).toEqual([{ title: 'Task 1', reason: 'Could not read replies: clickup-board returned replies without a lastId', state: 'waiting-info' }])
 })
 
-test.todo('BUG: a reply for an item whose worktree was deleted by hand starts a run in a recreated folder that is not a worktree', async () => {
-  const h = harness()
-  const parked = await parkedItem(h)
-  await rm(parked.worktree!, { recursive: true, force: true })
-  h.answer(async () => reply('r1', 'The login page'))
-  await h.engine.checkReplies()
-  expect(h.started.slice(1).every(start => existsSync(join(start.cwd, '.git')))).toBe(true)
-})
-
-test.todo('BUG: requeue of an item whose worktree was deleted by hand starts its run on the missing path', async () => {
-  const h = harness()
-  const item = await h.engine.add(add)
-  await h.engine.onRunSettled(h.settle('run-1', { status: 'failed', error: 'boom' }))
-  await rm(h.store.get(item.id)!.worktree!, { recursive: true, force: true })
-  await h.engine.requeue(item.id)
-  expect(existsSync(h.started[1]!.cwd)).toBe(true)
-})
-
 test('two items with the same title and id from different sources get their own worktrees', async () => {
   const h = harness()
   const first = await h.engine.add(add)
   await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))
   const second = await h.engine.add({ ...add, source: 'other-board' })
   expect(h.store.get(second.id)!.worktree).not.toBe(h.store.get(first.id)!.worktree)
-})
-
-test('a context sweep 30 days after the first build leaves the files the next run is told to read', async () => {
-  const h = harness({ writeContext: (pluginId, context, cwd) => writeQueueContext(pluginId, context, cwd) })
-  const parked = await parkedItem(h)
-  await writeContextFile('clickup-board', { name: 'session', markdown: '# s' }, new Date(Date.now() + 31 * 24 * 60 * 60 * 1000), parked.worktree!)
-  h.answer(async () => reply('r1', 'The login page'))
-  await h.engine.checkReplies()
-  const resumed = h.store.get(parked.id)!
-  expect(h.started[1]!.request).toContain(parked.contextPath!)
-  expect(existsSync(parked.contextPath!)).toBe(true)
-  expect(existsSync(resumed.answerPaths[0]!)).toBe(true)
 })
 
 test('restart: a queued item is built by recover', async () => {

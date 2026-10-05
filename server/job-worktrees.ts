@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -131,7 +131,10 @@ export async function prepareWorktree(baseRepo: string, label: string) {
   if (branch === baseBranch) throw new Error('worktree label must differ from the base branch')
   const worktree = join(baseRepo, '.worktree', branch)
   const entries = (await git(baseRepo, 'worktree', 'list', '--porcelain')).split('\n\n')
-  const existing = entries.find((entry) => entry.split('\n').includes(`worktree ${worktree}`))
+  const listed = entries.find((entry) => entry.split('\n').includes(`worktree ${worktree}`))
+  const prunable = listed?.split('\n').some(line => line.startsWith('prunable')) === true
+  if (prunable) await git(baseRepo, 'worktree', 'prune')
+  const existing = prunable ? undefined : listed
   if (existing !== undefined) {
     if (!existing.split('\n').includes(`branch refs/heads/${branch}`)) {
       throw new Error('existing worktree has a different branch')
@@ -145,4 +148,14 @@ export async function prepareWorktree(baseRepo: string, label: string) {
     }
   }
   return { worktree, baseRepo, baseBranch }
+}
+
+export async function isWorktreeOf(repo: string, worktree: string): Promise<boolean> {
+  const commonDir = async (cwd: string) => realpath(await git(cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+  try {
+    const [top, own, base, real] = await Promise.all([git(worktree, 'rev-parse', '--show-toplevel'), commonDir(worktree), commonDir(repo), realpath(worktree)])
+    return top === real && own === base
+  } catch {
+    return false
+  }
 }

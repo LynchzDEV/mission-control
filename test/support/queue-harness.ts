@@ -1,0 +1,79 @@
+import { spyOn } from 'bun:test'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+
+import { createQueueEngine, type QueueEngineDeps, type QueueRunner } from '../../server/queue-engine'
+import type { RunView } from '../../server/queue-prompts'
+import type { QueueSource, SourceReplies } from '../../server/queue-source'
+import { createQueueStore, type QueueItem } from '../../server/queue-store'
+import type { WorkflowAttempt } from '../../server/workflow-runner'
+
+export const blockedWith = (evidence: string[], over: Partial<WorkflowAttempt> = {}): WorkflowAttempt => ({ nodeId: 'plan', number: 1, jobId: 'j', status: 'settled', prompt: '', startedAt: 1, endedAt: 2, result: { outcome: 'blocked', summary: 'Need info', evidence }, checks: [], output: '', workspace: null, tokenId: 't', pathId: 'main', from: [], ...over })
+export const reply = (id: string, text: string): SourceReplies => ({ replies: [{ id, author: 'Ploy', text, images: [] }], lastId: id })
+export const noReplies: SourceReplies = { replies: [], lastId: null }
+
+export type Started = { cwd: string; request: string; label: string; workflowId?: string }
+
+export function queueHarness(dir: string, over: Partial<QueueEngineDeps> = {}, sourceOver: Partial<QueueSource> = {}) {
+  const queueFile = join(dir, 'queue.json')
+  const store = createQueueStore(queueFile)
+  const runs = new Map<string, RunView>()
+  const started: Started[] = []
+  const posted: Array<{ id: string; kind: string; lines: string[] }> = []
+  const alerts: Array<{ title: string; reason: string; state: string }> = []
+  const sinceIds: Array<string | null> = []
+  let replies: () => Promise<SourceReplies> = async () => noReplies
+  let next = 0
+  const runner: QueueRunner = {
+    start: async input => { started.push(input); const id = `run-${++next}`; runs.set(id, { id, status: 'running', error: null, attempts: [] }); return { id } },
+    get: id => runs.get(id),
+  }
+  const source: QueueSource = {
+    item: async ({ id }) => ({ title: `Task ${id}`, url: `https://x/t/${id}`, contextMarkdown: `# ${id}` }),
+    post: async input => { posted.push(input); return { commentId: 'c1' } },
+    replies: async ({ sinceId }) => { sinceIds.push(sinceId); return replies() },
+    ...sourceOver,
+  }
+  const deps: QueueEngineDeps = {
+    store, runner,
+    source: () => source,
+    prepareWorktree: async (repo, label) => {
+      const worktree = join(dir, repo.replace(/\W/g, '_'), '.worktree', label)
+      await mkdir(worktree, { recursive: true })
+      await writeFile(join(worktree, '.git'), 'gitdir: elsewhere')
+      return { worktree }
+    },
+    writeContext: async (pluginId, context, cwd) => { const folder = join(cwd, '.mission-control', 'queue', pluginId); await mkdir(folder, { recursive: true }); const path = join(folder, `${context.name}.md`); await writeFile(path, context.markdown); return path },
+    pluginFiles: pluginId => join(dir, 'plugin-data', pluginId, 'files'),
+    needsYou: (item, reason) => { alerts.push({ title: item.title, reason, state: item.state }) },
+    ...over,
+  }
+  const settle = (id: string, run: Partial<RunView>) => { const done = { ...runs.get(id)!, ...run }; runs.set(id, done); return done }
+  const restart = (runnerOver: Partial<QueueRunner> = {}) => {
+    const reloaded = createQueueStore(queueFile)
+    return { store: reloaded, engine: createQueueEngine({ ...deps, store: reloaded, runner: { ...runner, ...runnerOver } }) }
+  }
+  return {
+    engine: createQueueEngine(deps), store, runs, started, posted, alerts, sinceIds, settle, restart, deps,
+    answer: (next: () => Promise<SourceReplies>) => { replies = next },
+  }
+}
+
+export const add = { source: 'clickup-board', externalId: '1', repo: '/repo' }
+export const states = (items: QueueItem[]) => items.map(item => `${item.externalId}:${item.state}`)
+
+export async function refusal(work: Promise<unknown>): Promise<unknown> {
+  const quiet = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    return await work.then(() => null, (error: unknown) => error)
+  } finally { quiet.mockRestore() }
+}
+
+export async function parkedItem(h: QueueHarness) {
+  const item = await h.engine.add(add)
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'blocked', attempts: [blockedWith(['Which page?'])] }))
+  return h.store.get(item.id)!
+}
+
+
+export type QueueHarness = ReturnType<typeof queueHarness>

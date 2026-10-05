@@ -3,6 +3,7 @@ import { branchLabel, questionsOf, runRequest, SETTLED, type RunView } from './q
 import { message, replyCheck } from './queue-replies'
 import type { QueueSource } from './queue-source'
 import type { QueueItem, QueueStore } from './queue-store'
+import { fileExists, worktreeRestorer } from './queue-worktree'
 
 export type QueueRunner = {
   start(input: { cwd: string; request: string; label: string; workflowId?: string }, context: { startedByUser: boolean }): Promise<{ id: string }>
@@ -14,6 +15,7 @@ export type QueueEngineDeps = {
   runner: QueueRunner
   source(pluginId: string): QueueSource
   prepareWorktree(repo: string, label: string): Promise<{ worktree: string }>
+  isWorktree?(repo: string, worktree: string): Promise<boolean>
   writeContext(pluginId: string, context: TaskContext, cwd: string): Promise<string>
   pluginFiles(pluginId: string): string
   needsYou(item: QueueItem, reason: string): void
@@ -115,9 +117,17 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
     deps.needsYou(ready, 'Built and ready for review')
   }
 
+  const restore = worktreeRestorer(deps)
+
+  async function contextIn(item: QueueItem, worktree: string): Promise<string> {
+    if (item.contextPath !== null && await fileExists(item.contextPath)) return item.contextPath
+    const detail = await deps.source(item.source).item({ id: item.externalId })
+    return deps.writeContext(item.source, { name: `item-${item.externalId}`, markdown: detail.contextMarkdown }, worktree)
+  }
+
   async function build(item: QueueItem): Promise<void> {
-    const { worktree } = item.worktree !== null ? { worktree: item.worktree } : await deps.prepareWorktree(item.repo, branchLabel(item))
-    const contextPath = item.contextPath ?? await deps.writeContext(item.source, { name: `item-${item.externalId}`, markdown: (await deps.source(item.source).item({ id: item.externalId })).contextMarkdown }, worktree)
+    const worktree = item.worktree === null ? (await deps.prepareWorktree(item.repo, branchLabel(item))).worktree : await restore({ ...item, worktree: item.worktree })
+    const contextPath = await contextIn(item, worktree)
     const ready = { ...item, worktree, contextPath }
     const run = await deps.runner.start({ cwd: worktree, request: runRequest(ready), label: item.title.slice(0, MAX_RUN_LABEL), ...(item.flowId ? { workflowId: item.flowId } : {}) }, { startedByUser: true })
     await store.update(item.id, { state: 'building', worktree, contextPath, currentRunId: run.id, runIds: [...item.runIds, run.id], error: null })
@@ -186,7 +196,7 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     await store.move(id, to)
   })
 
-  const replies = replyCheck(deps)
+  const replies = replyCheck(deps, fail)
   const stillWaiting = (read: QueueItem): { item: QueueItem; worktree: string } | undefined => {
     const item = store.get(read.id)
     if (item?.state !== 'waiting-info' || item.lastSeenId !== read.lastSeenId || item.worktree === null || runningInStudio(item)) return undefined

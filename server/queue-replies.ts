@@ -3,6 +3,7 @@ import { importImages, queueFolder } from './queue-files'
 import { answersMarkdown } from './queue-prompts'
 import type { SourceReplies, SourceReply } from './queue-source'
 import type { QueueItem } from './queue-store'
+import { worktreeRestorer, WorktreeGone } from './queue-worktree'
 
 const MAX_REPLY_FAILURES = 3
 
@@ -25,15 +26,17 @@ export type ReplyCheck = {
   apply(item: QueueItem, worktree: string, result: SourceReplies): Promise<boolean>
 }
 
-export function replyCheck(deps: QueueEngineDeps): ReplyCheck {
+export function replyCheck(deps: QueueEngineDeps, fail: (item: QueueItem, reason: string) => Promise<void>): ReplyCheck {
   const { store } = deps
+  const restore = worktreeRestorer(deps)
   const readFailures = failureCounter(deps, 'Could not read replies')
   const saveFailures = failureCounter(deps, 'Could not save the replies')
 
-  async function resume(item: QueueItem, worktree: string, replies: SourceReply[], lastId: string | null): Promise<void> {
+  async function resume(item: QueueItem, stored: string, replies: SourceReply[], lastId: string | null): Promise<void> {
+    const worktree = await restore({ repo: item.repo, worktree: stored })
     const images = await importImages(deps.pluginFiles(item.source), replies, queueFolder(worktree, item.source))
     const path = await deps.writeContext(item.source, { name: `answers-${item.externalId}`, markdown: answersMarkdown(item.questions, replies, images) }, worktree)
-    await store.update(item.id, { state: 'queued', answerPaths: [...item.answerPaths, path], questions: [], lastSeenId: lastId ?? item.lastSeenId })
+    await store.update(item.id, { state: 'queued', worktree, answerPaths: [...item.answerPaths, path], questions: [], lastSeenId: lastId ?? item.lastSeenId })
     await store.toFront(item.id)
   }
 
@@ -56,6 +59,7 @@ export function replyCheck(deps: QueueEngineDeps): ReplyCheck {
       saveFailures.clear(item.id)
       return true
     } catch (error) {
+      if (error instanceof WorktreeGone) { await fail(item, error.message); return false }
       console.error('queue resume failed', error)
       saveFailures.record(item, error)
       return false
