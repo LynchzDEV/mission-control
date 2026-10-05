@@ -35,7 +35,7 @@ async function parked(replies: () => Promise<SourceReplies>, overrides: Partial<
   runs.set(blocked.id, blocked)
   await engine.onRunSettled(blocked)
   Object.assign(deps, overrides)
-  return { engine, store, item, alerts, requests, files }
+  return { engine, store, item, alerts, requests, files, runs, blocked }
 }
 
 function silencedErrors() {
@@ -343,4 +343,16 @@ test('a regular file already at the copy target is replaced with a private copy'
   await h.engine.checkReplies()
   expect(await readFile(join(folder, 'r1-0-shot.png'), 'utf8')).toBe('png-bytes')
   expect((await stat(join(folder, 'r1-0-shot.png'))).mode & 0o777).toBe(0o600)
+})
+
+test('a reply waits while the last run is live again in Studio and applies once it is blocked again', async () => {
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'The login page', images: [] }], lastId: 'r1' }))
+  h.runs.set('run-1', { ...h.blocked, status: 'running' })
+  expect(await h.engine.checkReplies()).toEqual({ checked: 1, resumed: 0 })
+  expect(h.store.get(h.item.id)).toMatchObject({ state: 'waiting-info', lastSeenId: 'c1', answerPaths: [] })
+  const blockedAgain: RunView = { ...h.blocked, attempts: [...h.blocked.attempts, { ...h.blocked.attempts[0]!, number: 2 }] }
+  h.runs.set('run-1', blockedAgain)
+  await h.engine.onRunSettled(blockedAgain)
+  expect(await h.engine.checkReplies()).toEqual({ checked: 1, resumed: 1 })
+  expect(h.store.get(h.item.id)).toMatchObject({ state: 'building', lastSeenId: 'r1' })
 })

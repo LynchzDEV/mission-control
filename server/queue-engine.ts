@@ -303,7 +303,7 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
   const replies = replyCheck(deps)
   const stillWaiting = (read: QueueItem): { item: QueueItem; worktree: string } | undefined => {
     const item = store.get(read.id)
-    if (item?.state !== 'waiting-info' || item.lastSeenId !== read.lastSeenId || item.worktree === null) return undefined
+    if (item?.state !== 'waiting-info' || item.lastSeenId !== read.lastSeenId || item.worktree === null || runningInStudio(item)) return undefined
     return { item, worktree: item.worktree }
   }
 
