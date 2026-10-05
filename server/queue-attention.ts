@@ -18,5 +18,5 @@ export function sweepQueueAlerts(store: QueueStore, attention: AttentionStore): 
 }
 
 export function watchQueueAlerts(store: QueueStore, attention: AttentionStore): () => void {
-  return store.subscribe(() => { void sweepQueueAlerts(store, attention) })
+  return store.subscribe(() => { void sweepQueueAlerts(store, attention).catch((error: unknown) => console.error('Queue alert sweep failed', error)) })
 }

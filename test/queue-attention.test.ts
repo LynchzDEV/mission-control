@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -54,4 +54,26 @@ test('a sweep clears alerts left from before a restart without waiting for a cha
   await attention.raise({ key: 'queue:missing', kind: 'queue', title: 'Gone', detail: 'x', command: null, chatId: null, jobId: null, requestId: null })
   expect(await sweepQueueAlerts(store, attention)).toBe(2)
   expect(keys(attention)).toEqual([`queue:${waiting.id}`])
+})
+
+test('a failed sweep is logged, never left unhandled', async () => {
+  const store = createQueueStore(join(dir, 'queue.json'))
+  const real = createAttentionStore(join(dir, 'attention.json'))
+  const failure = new Error('disk full')
+  const attention = { ...real, resolveWhere: () => Promise.reject(failure) }
+  const unhandled: unknown[] = []
+  const onUnhandled = (reason: unknown): void => { unhandled.push(reason) }
+  process.on('unhandledRejection', onUnhandled)
+  const logged = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    const stop = watchQueueAlerts(store, attention)
+    await store.add(task('a'), 'end')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    stop()
+    expect(logged.mock.calls).toEqual([['Queue alert sweep failed', failure]])
+    expect(unhandled).toEqual([])
+  } finally {
+    logged.mockRestore()
+    process.off('unhandledRejection', onUnhandled)
+  }
 })
