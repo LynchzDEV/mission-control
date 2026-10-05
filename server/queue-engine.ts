@@ -202,7 +202,7 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
 
   const checkReplies = async (): Promise<{ checked: number; resumed: number }> => {
     const waiting = store.list().filter(item => item.state === 'waiting-info' && item.worktree !== null)
-    const reads = await Promise.allSettled(waiting.map(item => replies.read(item)))
+    const reads = await Promise.allSettled(waiting.map(item => runningInStudio(item) ? Promise.resolve(null) : replies.read(item)))
     return serial(async () => {
       let resumed = 0
       for (const [index, read] of reads.entries()) {

@@ -346,9 +346,11 @@ test('a regular file already at the copy target is replaced with a private copy'
 })
 
 test('a reply waits while the last run is live again in Studio and applies once it is blocked again', async () => {
-  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'The login page', images: [] }], lastId: 'r1' }))
+  let reads = 0
+  const h = await parked(async () => { reads += 1; return { replies: [{ id: 'r1', author: 'Ploy', text: 'The login page', images: [] }], lastId: 'r1' } })
   h.runs.set('run-1', { ...h.blocked, status: 'running' })
   expect(await h.engine.checkReplies()).toEqual({ checked: 1, resumed: 0 })
+  expect(reads).toBe(0)
   expect(h.store.get(h.item.id)).toMatchObject({ state: 'waiting-info', lastSeenId: 'c1', answerPaths: [] })
   const blockedAgain: RunView = { ...h.blocked, attempts: [...h.blocked.attempts, { ...h.blocked.attempts[0]!, number: 2 }] }
   h.runs.set('run-1', blockedAgain)
