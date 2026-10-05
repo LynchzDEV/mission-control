@@ -223,7 +223,11 @@ export async function createApp(): Promise<Elysia> {
     // ponytail: console until 1c adds the queue attention kind
     needsYou: (item, reason) => console.warn(`Queue: ${item.title}: ${reason}`),
   })
-  void queueEngine.recover().catch(error => console.error('Queue recover failed', error))
+  const bootQueue = queueEngine
+  void bootQueue.recover().then(
+    () => bootQueue.checkReplies().catch(error => console.error('Queue reply check failed', error)),
+    error => console.error('Queue recover failed', error),
+  )
   const REPLY_SWEEP_MS = 15 * 60_000
   setInterval(() => { void queueEngine?.checkReplies().catch(error => console.error('Queue reply check failed', error)) }, REPLY_SWEEP_MS).unref()
   await workflowBuilder.recover()

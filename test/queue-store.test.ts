@@ -77,7 +77,11 @@ test('every change notifies subscribers', async () => {
 test('a corrupt file or malformed entries load as empty instead of crashing', async () => {
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, '{not json')
-  expect(createQueueStore(path).list()).toEqual([])
+  const quiet = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    expect(createQueueStore(path).list()).toEqual([])
+    expect(quiet).toHaveBeenCalledTimes(1)
+  } finally { quiet.mockRestore() }
   await writeFile(path, JSON.stringify({ items: [{ id: 'x' }] }))
   expect(createQueueStore(path).list()).toEqual([])
 })
