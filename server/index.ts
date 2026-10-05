@@ -10,7 +10,7 @@ import { localRequestAllowed } from './local-access'
 import { quotaRoutes } from './routes/quota'
 import { historyRoutes } from './routes/history'
 import { createExternalSessionsCache, ownedPids } from './history'
-import { listenTarget } from './secrets'
+import { configDir, listenTarget } from './secrets'
 import { createJobManager } from './jobs'
 import { attentionEvents } from './attention-events'
 import { createChatFlusher } from './chat-reports'
@@ -32,6 +32,13 @@ import { modelsRoutes } from './routes/models'
 import { providersRoutes } from './routes/providers'
 import { pluginsRoutes } from './routes/plugins'
 import { defaultRuntimes } from './plugins/runtimes'
+import { prepareWorktree } from './job-worktrees'
+import { writeContextFile } from './plugins/context-files'
+import { getInstalled } from './plugins/store'
+import { createQueueEngine, type QueueEngine } from './queue-engine'
+import { pluginSource } from './queue-source'
+import { createQueueStore, queuePath } from './queue-store'
+import { queueRoutes } from './routes/queue'
 import { terminalsRoutes } from './routes/terminals'
 import { outcomesRoutes } from './routes/outcomes'
 import { attentionRoutes } from './routes/attention'
@@ -180,12 +187,16 @@ export async function createApp(): Promise<Elysia> {
     },
   })
   const terminalRegistry = createTerminalRegistry({ log: createTerminalLog() })
+  let queueEngine: QueueEngine | undefined
   const workflowRunner = createWorkflowRunner({
     manager: jobManager,
     resolver: realEngineResolver,
     store: workflowStore,
     terminals: terminalRegistry,
-    onRunSettled: run => { void chatFlusher.onRunSettled(run).catch(error => console.error('Workflow chat report failed', error)) },
+    onRunSettled: run => {
+      void chatFlusher.onRunSettled(run).catch(error => console.error('Workflow chat report failed', error))
+      void queueEngine?.onRunSettled(run).catch(error => console.error('Queue settle failed', error))
+    },
     onSessionStep: run => { void chatFlusher.onSessionStep(run).catch(error => console.error('In Session chat nudge failed', error)) },
     onChange: () => runEvents.changed(),
   })
@@ -201,6 +212,20 @@ export async function createApp(): Promise<Elysia> {
   })
   const workflowBuilder = createWorkflowBuilder({ manager: jobManager, resolver: realEngineResolver, store: workflowStore })
   await workflowRunner.recover()
+  const queueStore = createQueueStore(queuePath())
+  queueEngine = createQueueEngine({
+    store: queueStore,
+    runner: workflowRunner,
+    source: pluginId => pluginSource(pluginId, { installed: getInstalled, runtimes: defaultRuntimes }),
+    prepareWorktree: (repo, label) => prepareWorktree(repo, label),
+    writeContext: (pluginId, context, cwd) => writeContextFile(pluginId, context, new Date(), cwd),
+    pluginFiles: pluginId => join(configDir(), 'plugin-data', pluginId, 'files'),
+    // ponytail: console until 1c adds the queue attention kind
+    needsYou: (item, reason) => console.warn(`Queue: ${item.title}: ${reason}`),
+  })
+  void queueEngine.recover().catch(error => console.error('Queue recover failed', error))
+  const REPLY_SWEEP_MS = 15 * 60_000
+  setInterval(() => { void queueEngine?.checkReplies().catch(error => console.error('Queue reply check failed', error)) }, REPLY_SWEEP_MS).unref()
   await workflowBuilder.recover()
   await attention.prune(jobId => jobManager.getJob(jobId)?.status === 'running')
   void chatFlusher.recoverAll().catch(error => console.error('Chat catch-up failed', error))
@@ -257,6 +282,7 @@ export async function createApp(): Promise<Elysia> {
     .use(modelsRoutes)
     .use(providersRoutes)
     .use(pluginsRoutes())
+    .use(queueRoutes(queueStore, queueEngine))
 
   await defaultRuntimes()
 
