@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { cp, mkdtemp, readdir, readFile, rm, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
 import { writeQueueContext } from '../server/queue-files'
 import { blockedWith, parkedItem, queueHarness, reply, type QueueHarness } from './support/queue-harness'
@@ -79,6 +79,22 @@ test('an answers file with no backup is dropped from the item and logged once', 
     expect(warn).toHaveBeenCalledTimes(1)
     expect(String(warn.mock.calls[0]![0])).toContain(answers)
   } finally { warn.mockRestore() }
+})
+
+test('a queue folder swapped for a link stops the build before any answers are restored through it', async () => {
+  const h = queueHarness(dir, { writeContext: (pluginId, context, cwd) => writeQueueContext(pluginId, context, cwd) })
+  const item = await answeredThenFailed(h)
+  const folder = dirname(item.answerPaths[0]!)
+  const outside = await mkdtemp(join(tmpdir(), 'mc-queue-outside-'))
+  try {
+    await cp(item.contextPath!, join(outside, basename(item.contextPath!)))
+    await rm(folder, { recursive: true, force: true })
+    await symlink(outside, folder)
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    try { await h.engine.requeue(item.id) } finally { error.mockRestore() }
+    expect(await readdir(outside)).toEqual([basename(item.contextPath!)])
+    expect(h.store.get(item.id)).toMatchObject({ state: 'failed' })
+  } finally { await rm(outside, { recursive: true, force: true }) }
 })
 
 test('removing an item from the queue deletes its answers backup folder', async () => {

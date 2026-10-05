@@ -1,6 +1,7 @@
 import type { TaskContext } from './plugins/context-files'
 import { dropAnswerBackups, restoreAnswers } from './queue-answers'
 import { branchLabel, questionsOf, runRequest, SETTLED, type RunView } from './queue-prompts'
+import { refuseLinkedQueueFolders } from './queue-files'
 import { message, replyCheck } from './queue-replies'
 import type { QueueSource } from './queue-source'
 import type { QueueItem, QueueStore } from './queue-store'
@@ -137,6 +138,7 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
 
   async function build(item: QueueItem): Promise<void> {
     const worktree = item.worktree === null ? (await deps.prepareWorktree(item.repo, branchLabel(item))).worktree : await restore({ ...item, worktree: item.worktree })
+    await refuseLinkedQueueFolders(worktree, item.source)
     const contextPath = await contextIn(item, worktree)
     const answerPaths = await answersOf(item)
     const ready = { ...item, worktree, contextPath, answerPaths }
