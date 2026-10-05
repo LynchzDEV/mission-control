@@ -1,5 +1,5 @@
 import { constants } from 'node:fs'
-import { lstat, mkdir, open, realpath, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, open, realpath, writeFile, type FileHandle } from 'node:fs/promises'
 import { basename, join, resolve, sep } from 'node:path'
 
 import { SESSION_CONTEXT_DIR, type TaskContext } from './plugins/context-files'
@@ -99,6 +99,18 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
   return { fail, settle, startNext }
 }
 
+async function readCapped(handle: FileHandle, candidate: string): Promise<Buffer> {
+  const buffer = Buffer.alloc(MAX_IMAGE_BYTES + 1)
+  let filled = 0
+  while (filled < buffer.length) {
+    const { bytesRead } = await handle.read(buffer, filled, buffer.length - filled, filled)
+    if (bytesRead === 0) break
+    filled += bytesRead
+  }
+  if (filled > MAX_IMAGE_BYTES) throw new Error(`image over ${MAX_IMAGE_BYTES} bytes: ${candidate}`)
+  return buffer.subarray(0, filled)
+}
+
 async function readInsideFile(realBase: string, candidate: string): Promise<Buffer> {
   const handle = await open(candidate, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
   try {
@@ -108,10 +120,8 @@ async function readInsideFile(realBase: string, candidate: string): Promise<Buff
     const real = await realpath(candidate)
     if (!real.startsWith(realBase + sep)) throw new Error(`outside the plugin folder: ${candidate}`)
     const named = await lstat(real)
-    if (!named.isFile() || named.dev !== opened.dev || named.ino !== opened.ino) throw new Error(`changed while checking: ${candidate}`)
-    const bytes = await handle.readFile()
-    if (bytes.length > MAX_IMAGE_BYTES) throw new Error(`image over ${MAX_IMAGE_BYTES} bytes: ${candidate}`)
-    return bytes
+    if (!named.isFile() || named.nlink !== 1 || named.dev !== opened.dev || named.ino !== opened.ino) throw new Error(`changed while checking: ${candidate}`)
+    return await readCapped(handle, candidate)
   } finally {
     await handle.close()
   }
