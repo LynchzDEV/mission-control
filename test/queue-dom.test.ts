@@ -61,7 +61,7 @@ beforeAll(async () => {
     calls.push(call)
     const reply = replies.get(`${call.method} ${call.url}`)
     if (reply) return reply()
-    if (call.url === '/api/queue') return Response.json({ items: [queuedA, queuedB] })
+    if (call.url === '/api/queue') return Response.json({ items: [queuedA, queuedB], checkedAt: NOW - 3 * 60_000 })
     if (call.url === '/api/plugins') return Response.json({ plugins })
     if (call.url === '/api/studio/workflows') return Response.json({ workflows: flows, selected: flows[1] })
     return Response.json({ ok: true })
@@ -203,6 +203,10 @@ test('a queued row cannot be dropped onto a row that is not queued', async () =>
   drag('dragend', rowOf('q2'))
   await flush()
   expect(calls).toEqual([])
+})
+
+test('the screen starts from when the server last checked replies', () => {
+  expect(section().querySelector('.q-checked')?.textContent).toBe('Checked 3 min ago')
 })
 
 test('requeue, remove and check call their routes', async () => {

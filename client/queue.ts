@@ -205,8 +205,15 @@ function start(section: HTMLElement): void {
     if (layout === 'tree') void loadTree()
   }
 
+  function showChecked(at: unknown): void {
+    if (typeof at !== 'number') return
+    checkedAt = at
+    paint()
+  }
+
   async function loadItems(): Promise<void> {
     const result = await getJson('/api/queue')
+    if (result.ok && checkedAt === null) showChecked(result.data.checkedAt)
     if (loaded) return
     if (result.ok) showItems(readQueueItems(result.data.items))
     else section.replaceChildren(statusLine('Could not load the queue. Mission Control keeps trying.'))
@@ -214,6 +221,7 @@ function start(section: HTMLElement): void {
 
   section.replaceChildren(statusLine('Loading the queue…'))
   addEventListener('quiet:queue-items', (event) => showItems(readQueueItems((event as CustomEvent<unknown>).detail)))
+  addEventListener('quiet:queue-checked', (event) => showChecked((event as CustomEvent<unknown>).detail))
   void loadItems()
   void loadContext()
 }

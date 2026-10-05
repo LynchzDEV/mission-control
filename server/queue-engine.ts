@@ -20,6 +20,7 @@ export type QueueEngineDeps = {
   writeContext(pluginId: string, context: TaskContext, cwd: string): Promise<string>
   pluginFiles(pluginId: string): string
   needsYou(item: QueueItem, reason: string): void
+  now?: () => number
 }
 
 export type AddInput = { source: string; externalId: string; repo: string; flowId?: string | null; position?: 'end' | 'next' }
@@ -33,6 +34,8 @@ export type QueueEngine = {
   remove(id: string): Promise<void>
   move(id: string, to: number): Promise<void>
   checkReplies(): Promise<{ checked: number; resumed: number }>
+  checkedAt(): number | null
+  subscribeChecks(listener: () => void): () => void
 }
 
 const MAX_RUN_LABEL = 120
@@ -307,6 +310,13 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     return { item, worktree: item.worktree }
   }
 
+  let lastCheckedAt: number | null = null
+  const checkListeners = new Set<() => void>()
+  const markChecked = (): void => {
+    lastCheckedAt = (deps.now ?? Date.now)()
+    for (const listener of checkListeners) listener()
+  }
+
   const checkReplies = async (): Promise<{ checked: number; resumed: number }> => {
     const waiting = store.list().filter(item => item.state === 'waiting-info' && item.worktree !== null)
     const reads = await Promise.allSettled(waiting.map(item => replies.read(item)))
@@ -319,7 +329,7 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
       }
       await startNext()
       return { checked: waiting.length, resumed }
-    })
+    }).then((counts) => { markChecked(); return counts })
   }
 
   async function recover(): Promise<void> {
@@ -342,5 +352,7 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     kick: () => serial(startNext),
     onRunSettled: run => serial(async () => { await settle(run); await startNext() }),
     checkReplies,
+    checkedAt: () => lastCheckedAt,
+    subscribeChecks: (listener) => { checkListeners.add(listener); return () => { checkListeners.delete(listener) } },
   }
 }

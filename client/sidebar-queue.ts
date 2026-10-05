@@ -18,9 +18,15 @@ export const currentQueueItems = (): readonly QueueItemView[] => queueItems
 export function openQueueStream(onChange: () => void): void {
   const stream = new EventSource('/api/queue/stream')
   stream.onmessage = (event: MessageEvent) => {
-    try { queueItems = readQueueItems(readRecord(JSON.parse(String(event.data))).items) } catch { return }
+    let checkedAt: unknown
+    try {
+      const snapshot = readRecord(JSON.parse(String(event.data)))
+      queueItems = readQueueItems(snapshot.items)
+      checkedAt = snapshot.checkedAt
+    } catch { return }
     onChange()
     dispatchEvent(new CustomEvent('quiet:queue-items', { detail: queueItems }))
+    if (typeof checkedAt === 'number') dispatchEvent(new CustomEvent('quiet:queue-checked', { detail: checkedAt }))
   }
 }
 

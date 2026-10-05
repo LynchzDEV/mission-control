@@ -27,7 +27,7 @@ afterAll(async () => {
   await rm(plain, { recursive: true, force: true })
 })
 
-type Engine = Pick<QueueEngine, 'add' | 'requeue' | 'checkReplies' | 'remove' | 'move'>
+type Engine = Pick<QueueEngine, 'add' | 'requeue' | 'checkReplies' | 'remove' | 'move' | 'checkedAt' | 'subscribeChecks'>
 
 function engine(items: ReturnType<typeof store>, over: Partial<QueueEngine> = {}): Engine {
   const found = (id: string) => { const item = items.get(id); if (item === undefined) throw new QueueRefusal(`No queue item ${id}`, 404); return item }
@@ -37,6 +37,8 @@ function engine(items: ReturnType<typeof store>, over: Partial<QueueEngine> = {}
     checkReplies: async () => ({ checked: 2, resumed: 1 }),
     remove: async id => { if (found(id).state === 'building') throw new QueueRefusal('It is building now', 409); await items.remove(id) },
     move: async (id, to) => { found(id); await items.move(id, to) },
+    checkedAt: () => null,
+    subscribeChecks: () => () => {},
     ...over,
   }
 }
@@ -186,4 +188,34 @@ test('move and delete map only engine refusals to 404 and 409', async () => {
   expect((await post(app(new Error('It is broken')), `/api/queue/${a.id}/move`, { to: 0 })).status).toBe(500)
   expect((await call(app(new Error('It is building now')), `/api/queue/${a.id}`, { method: 'DELETE' })).status).toBe(500)
   expect((await call(app(new QueueRefusal(`No queue item ${a.id}`, 404)), `/api/queue/${a.id}`, { method: 'DELETE' })).status).toBe(404)
+})
+
+test('GET says when replies were last checked, or null before the first check', async () => {
+  const items = store()
+  let checkedAt: number | null = null
+  const app = new Elysia().use(queueRoutes(items, engine(items, { checkedAt: () => checkedAt })))
+  expect(await (await call(app, '/api/queue')).json()).toEqual({ items: [], checkedAt: null })
+  checkedAt = 1_700_000_000_000
+  expect(await (await call(app, '/api/queue')).json()).toEqual({ items: [], checkedAt: 1_700_000_000_000 })
+})
+
+test('the stream sends checkedAt and sends again when a check finishes with no item changes', async () => {
+  const items = store()
+  let checkedAt: number | null = null
+  const listeners = new Set<() => void>()
+  const app = new Elysia().use(queueRoutes(items, engine(items, {
+    checkedAt: () => checkedAt,
+    subscribeChecks: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+  })))
+  const aborting = new AbortController()
+  const response = await app.handle(new Request('http://127.0.0.1:7777/api/queue/stream', { headers: { host: '127.0.0.1:7777' }, signal: aborting.signal }))
+  const reader = response.body!.getReader()
+  const nextData = async (): Promise<unknown> => JSON.parse(new TextDecoder().decode((await reader.read()).value).replace(/^data: /, '').trim())
+  expect(await nextData()).toEqual({ items: [], checkedAt: null })
+  checkedAt = 42
+  for (const listener of listeners) listener()
+  expect(await nextData()).toEqual({ items: [], checkedAt: 42 })
+  aborting.abort()
+  await reader.cancel()
+  expect(listeners.size).toBe(0)
 })

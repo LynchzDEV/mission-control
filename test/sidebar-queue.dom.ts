@@ -23,7 +23,7 @@ class FakeSource {
   onerror: (() => void) | null = null
   constructor(readonly url: string) { FakeSource.opened.push(this) }
   close(): void {}
-  send(items: QueueItem[]): void { this.onmessage?.({ data: JSON.stringify({ items }) }) }
+  send(items: QueueItem[], checkedAt: number | null = null): void { this.onmessage?.({ data: JSON.stringify({ items, checkedAt }) }) }
 }
 
 let plugins: Array<Record<string, unknown>> = [
@@ -50,6 +50,7 @@ const waiting = item({ id: 'w1', state: 'waiting-info', title: 'Bulk import cont
 const ready = item({ id: 'r1', state: 'ready', title: 'Invoice PDF footer' })
 const failed = item({ id: 'f1', state: 'failed', title: 'Kood queue retry' })
 
+const checkedText = (): string | null | undefined => doc.querySelector('#queue .q-checked')?.textContent
 const list = (): HTMLElement => doc.getElementById('sidebar-list') as HTMLElement
 const groups = (): HTMLElement[] => [...list().querySelectorAll<HTMLElement>('.q-sb')]
 const stream = (): FakeSource => FakeSource.opened[0]!
@@ -98,6 +99,16 @@ test('each stream message is passed on to the Queue screen, and a late first lis
   await flush()
   const screenIds = [...doc.querySelectorAll<HTMLElement>('#queue .q-row')].map(row => row.dataset.id)
   expect(screenIds).toEqual(['b1', 'q1', 'w1', 'r1', 'f1'])
+})
+
+test('the Queue screen says Not checked yet until the server has checked', () => {
+  expect(checkedText()).toBe('Not checked yet')
+})
+
+test('the Queue screen shows how long ago the server last checked replies', async () => {
+  stream().send([building, queued, waiting, ready, failed], Date.now() - 7 * 60_000)
+  await flush()
+  expect(checkedText()).toBe('Checked 7 min ago')
 })
 
 test('items sit in a group right under the plugin they came from', async () => {

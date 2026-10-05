@@ -5,11 +5,11 @@ import { requireLocal } from '../auth'
 import { QueueRefusal, type QueueEngine } from '../queue-engine'
 import type { QueueStore } from '../queue-store'
 import { queueTree, type QueueTree } from '../queue-tree'
-import { eventStreamResponse } from '../run-events'
+import { eventStreamResponse, type RunEvents } from '../run-events'
 import { validateWorkspaceCwd } from '../workspace'
 
 type Status = { status?: number | string }
-type QueueEngineRoutes = Pick<QueueEngine, 'add' | 'requeue' | 'checkReplies' | 'remove' | 'move'>
+type QueueEngineRoutes = Pick<QueueEngine, 'add' | 'requeue' | 'checkReplies' | 'remove' | 'move' | 'checkedAt' | 'subscribeChecks'>
 
 const addSchema = z.object({
   source: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/),
@@ -56,12 +56,24 @@ const isConflict = (error: unknown): boolean => error instanceof QueueRefusal &&
 const removeExplanation = (error: unknown): string => (isConflict(error) ? 'Stop its run in Studio first' : NO_ITEM)
 const moveExplanation = (error: unknown): string => (isConflict(error) ? message(error) : NO_ITEM)
 
+function itemsAndChecks(store: QueueStore, engine: QueueEngineRoutes): RunEvents {
+  return {
+    changed: store.changed,
+    subscribe(listener) {
+      const stopItems = store.subscribe(listener)
+      const stopChecks = engine.subscribeChecks(listener)
+      return () => { stopItems(); stopChecks() }
+    },
+  }
+}
+
 export function queueRoutes(store: QueueStore, engine: QueueEngineRoutes, tree: () => Promise<QueueTree> = () => queueTree(store.list())) {
+  const snapshot = () => ({ items: store.list(), checkedAt: engine.checkedAt() })
   return new Elysia()
     .onBeforeHandle(requireLocal)
-    .get('/api/queue', () => ({ items: store.list() }))
+    .get('/api/queue', snapshot)
     .get('/api/queue/tree', () => tree())
-    .get('/api/queue/stream', ({ request }) => eventStreamResponse(store, () => ({ items: store.list() }), request.signal))
+    .get('/api/queue/stream', ({ request }) => eventStreamResponse(itemsAndChecks(store, engine), snapshot, request.signal))
     .post('/api/queue', ({ body, set }) => addItem(engine, body, set))
     .post('/api/queue/check', () => engine.checkReplies())
     .post('/api/queue/:id/move', async ({ params, body, set }) => {
