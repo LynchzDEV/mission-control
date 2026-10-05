@@ -1,6 +1,9 @@
-import type { TaskContext } from './plugins/context-files'
-import { branchLabel, questionsOf, runRequest, SETTLED, type RunView } from './queue-prompts'
-import type { QueueSource } from './queue-source'
+import { copyFile, mkdir } from 'node:fs/promises'
+import { basename, join, resolve, sep } from 'node:path'
+
+import { SESSION_CONTEXT_DIR, type TaskContext } from './plugins/context-files'
+import { answersMarkdown, branchLabel, questionsOf, runRequest, SETTLED, type RunView } from './queue-prompts'
+import type { QueueSource, SourceReply } from './queue-source'
 import type { QueueItem, QueueStore } from './queue-store'
 
 export type QueueRunner = {
@@ -31,6 +34,7 @@ export type QueueEngine = {
 
 const MAX_RUN_LABEL = 120
 const REQUEUEABLE: ReadonlySet<QueueItem['state']> = new Set(['failed', 'ready'])
+const MAX_REPLY_FAILURES = 3
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
@@ -93,6 +97,50 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
   return { fail, settle, startNext }
 }
 
+async function importImages(root: string, replies: SourceReply[], folder: string): Promise<string[]> {
+  const base = resolve(root)
+  const copied: string[] = []
+  await mkdir(folder, { recursive: true, mode: 0o700 })
+  for (const reply of replies) {
+    for (const image of reply.images) {
+      const from = resolve(base, image.path)
+      if (!from.startsWith(base + sep)) continue
+      const to = join(folder, `${reply.id}-${basename(image.name)}`.replace(/[^A-Za-z0-9._-]/g, '-'))
+      try { await copyFile(from, to); copied.push(to) } catch (error) { console.error('queue image copy failed', error) }
+    }
+  }
+  return copied
+}
+
+function replyCheck(deps: QueueEngineDeps): (item: QueueItem) => Promise<boolean> {
+  const { store } = deps
+  const replyFailures = new Map<string, number>()
+
+  async function resume(item: QueueItem, replies: SourceReply[], lastId: string | null): Promise<void> {
+    const worktree = item.worktree!
+    const folder = join(worktree, SESSION_CONTEXT_DIR, 'context', item.source)
+    const images = await importImages(deps.pluginFiles(item.source), replies, folder)
+    const path = await deps.writeContext(item.source, { name: `answers-${item.externalId}`, markdown: answersMarkdown(item.questions, replies, images) }, worktree)
+    await store.update(item.id, { state: 'queued', answerPaths: [...item.answerPaths, path], questions: [], lastSeenId: lastId ?? item.lastSeenId })
+    await store.toFront(item.id)
+  }
+
+  return async function checkOne(item: QueueItem): Promise<boolean> {
+    try {
+      const { replies, lastId } = await deps.source(item.source).replies({ id: item.externalId, sinceId: item.lastSeenId })
+      replyFailures.delete(item.id)
+      if (replies.length === 0) return false
+      await resume(item, replies, lastId)
+      return true
+    } catch (error) {
+      const failures = (replyFailures.get(item.id) ?? 0) + 1
+      replyFailures.set(item.id, failures % MAX_REPLY_FAILURES)
+      if (failures === MAX_REPLY_FAILURES) deps.needsYou(store.get(item.id) ?? item, `Could not read replies: ${message(error)}`)
+      return false
+    }
+  }
+}
+
 export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
   const { store } = deps
   const { fail, settle, startNext } = queueSteps(deps)
@@ -119,6 +167,15 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     return found(store, id)
   })
 
+  const checkOne = replyCheck(deps)
+  const checkReplies = (): Promise<{ checked: number; resumed: number }> => serial(async () => {
+    const waiting = store.list().filter(item => item.state === 'waiting-info' && item.worktree !== null)
+    let resumed = 0
+    for (const item of waiting) if (await checkOne(item)) resumed += 1
+    await startNext()
+    return { checked: waiting.length, resumed }
+  })
+
   async function recover(): Promise<void> {
     await serial(async () => {
       for (const item of store.list().filter(entry => entry.state === 'building')) {
@@ -136,6 +193,6 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     recover,
     kick: () => serial(startNext),
     onRunSettled: run => serial(async () => { await settle(run); await startNext() }),
-    checkReplies: async () => ({ checked: 0, resumed: 0 }),
+    checkReplies,
   }
 }
