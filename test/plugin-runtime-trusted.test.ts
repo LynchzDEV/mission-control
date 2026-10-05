@@ -242,6 +242,20 @@ describe('context route', () => {
     }
   })
 
+  test('a session folder that is not a git repo still gets its task context', async () => {
+    await installTrusted('context-plain')
+    const session = await mkdtemp(join(homedir(), '.mc-context-plain-'))
+    try {
+      const response = await json('POST', '/api/plugins/fixture-plugin/context', { name: 'Task plan', markdown: '# Plain\n', cwd: session })
+      expect(response.status).toBe(200)
+      const { path } = await response.json()
+      expect(path).toContain(join(await realpath(session), '.mission-control', 'context', 'fixture-plugin'))
+      expect(await readFile(path, 'utf8')).toBe('# Plain\n')
+    } finally {
+      await rm(session, { recursive: true, force: true })
+    }
+  })
+
   test('the context route needs a folder under home', async () => {
     await installTrusted('context-cwd')
     expect((await json('POST', '/api/plugins/fixture-plugin/context', { name: 'x', markdown: 'y' })).status).toBe(400)

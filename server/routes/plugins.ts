@@ -151,7 +151,7 @@ export function pluginsRoutes(deps: { installer?: Installer; runtimes?: Runtimes
       if (typeof parsed.name !== 'string' || parsed.name === '') { set.status = 400; return { error: 'name is required' } }
       if (typeof parsed.markdown !== 'string') { set.status = 400; return { error: 'markdown is required' } }
       if (typeof parsed.cwd !== 'string' || parsed.cwd === '') { set.status = 400; return { error: 'cwd is required' } }
-      const folder = await validateWorkspaceCwd(parsed.cwd)
+      const folder = await validateWorkspaceCwd(parsed.cwd, undefined, { requireGit: false })
       if (!folder.ok) { set.status = 400; return { error: folder.error } }
       try {
         return { path: await writeContextFile(params.id, { name: parsed.name, markdown: parsed.markdown }, new Date(), folder.path) }
