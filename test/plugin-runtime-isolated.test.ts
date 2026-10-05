@@ -6,6 +6,7 @@ import { Elysia } from 'elysia'
 
 import {
   pluginDataDir,
+  sandboxConfigFor,
   spawnChildProcess,
   spawnSupervisorProcess,
   type SupervisorProcess,
@@ -127,6 +128,16 @@ describe('bun version gate', () => {
     const outcome = await callResult(app, 'fixture-plugin', 'echo', { ok: true })
     expect(outcome.status).toBe(200)
     expect(outcome.body).toEqual({ result: { ok: true } })
+  })
+})
+
+describe('sandbox config', () => {
+  test('passes wildcard and plain network entries to allowedDomains unchanged', async () => {
+    const network = ['api.clickup.com', '*.clickup-attachments.com']
+    await installFixture('net-wild', isolatedManifest({ id: 'net-wild', server: 'src/server.ts', permissions: { network, settings: true } }), isolatedFixtureServer())
+    await mkdir(pluginDataDir(await installedPlugin('net-wild')), { recursive: true })
+    const config = await sandboxConfigFor(await installedPlugin('net-wild'))
+    expect(config.network).toEqual({ allowedDomains: network, deniedDomains: [] })
   })
 })
 

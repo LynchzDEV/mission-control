@@ -21,12 +21,14 @@ export async function callPlugin(client: Client, id: string, method: string, par
   }
 }
 
+const networkLine = (entry: string): string => (entry.startsWith('*.') ? `Reach any address ending in ${entry.slice(1)}` : `Reach ${entry}`)
+
 function permissionLines(permissions: unknown): string[] {
   if (!isRecord(permissions)) return []
   const network = Array.isArray(permissions.network) ? permissions.network.map(String) : []
   const sessions = Array.isArray(permissions.sessions) ? permissions.sessions.map(String) : []
   return [
-    ...network.map((host) => `Reach ${host}`),
+    ...network.map(networkLine),
     ...(sessions.includes('chat') ? ['Start chats'] : []),
     ...(sessions.includes('terminal') ? ['Start terminals'] : []),
     ...(permissions.settings === true ? ['Keep its own settings'] : []),

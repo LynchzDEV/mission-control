@@ -77,11 +77,12 @@ describe('mctl plugin', () => {
   })
 
   test('add shows what a plugin asks for, and installs only with --yes', async () => {
-    const preview = { kind: 'plugin', ref: 'v1.3.0', commit: 'abc', runtime: 'isolated', manifest: { name: 'ClickUp board', version: '1.3.0' }, permissions: { network: ['api.clickup.com'], sessions: ['chat'], settings: true } }
+    const preview = { kind: 'plugin', ref: 'v1.3.0', commit: 'abc', runtime: 'isolated', manifest: { name: 'ClickUp board', version: '1.3.0' }, permissions: { network: ['api.clickup.com', '*.clickup-attachments.com'], sessions: ['chat'], settings: true } }
     const reply: Reply = (call) => (call.path === '/api/plugins/add-link' ? Response.json(preview) : call.path === '/api/plugins/install' ? Response.json({ plugin: { name: 'ClickUp board', version: '1.3.0' } }) : undefined)
     const look = harness(reply)
     expect(await main(['plugin', 'add', 'https://github.com/x/mc-plugin-clickup'], look.deps)).toBe(0)
     expect(look.out()).toContain('Reach api.clickup.com')
+    expect(look.out()).toContain('Reach any address ending in .clickup-attachments.com')
     expect(look.out()).toContain('Run again with --yes')
     expect(look.calls.some((call) => call.path === '/api/plugins/install')).toBe(false)
     const install = harness(reply)

@@ -6,6 +6,17 @@ export const PLUGIN_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/
 
 export const NETWORK_HOST_PATTERN = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/
 
+const WILDCARD_PREFIX = '*.'
+
+export function isNetworkPermission(entry: string): boolean {
+  const host = entry.startsWith(WILDCARD_PREFIX) ? entry.slice(WILDCARD_PREFIX.length) : entry
+  return NETWORK_HOST_PATTERN.test(host)
+}
+
+export function networkPermissionText(entry: string): string {
+  return entry.startsWith(WILDCARD_PREFIX) ? `Reach any address ending in ${entry.slice(1)}` : `Reach ${entry}`
+}
+
 export type SettingFieldType = 'text' | 'secret'
 
 export type SettingField = { key: string; label: string; type: SettingFieldType; help?: string }
@@ -93,7 +104,7 @@ export function parseManifest(raw: unknown): ParseManifestResult {
     if (path !== undefined && !insideRepoPath(path)) add(`${field} must be a path inside the plugin folder`)
   }
   for (const host of value.permissions.network ?? []) {
-    if (!NETWORK_HOST_PATTERN.test(host)) add(`network permission "${host}" must be a plain host name like api.example.com`)
+    if (!isNetworkPermission(host)) add(`network permission "${host}" must be a plain host name like api.example.com, or *. and a host like *.example.com`)
   }
   const settingKeys = new Set<string>()
   for (const field of value.settings ?? []) {
@@ -108,7 +119,7 @@ const SESSION_KIND_LABEL: Record<SessionKind, string> = { chat: 'Start chats', t
 
 export function permissionsAdded(old: PluginPermissions, next: PluginPermissions): string[] {
   const oldHosts = new Set(old.network ?? [])
-  const hosts = (next.network ?? []).filter(host => !oldHosts.has(host)).map(host => `Reach ${host}`)
+  const hosts = (next.network ?? []).filter(host => !oldHosts.has(host)).map(networkPermissionText)
   const oldKinds = new Set(old.sessions ?? [])
   const kinds = (next.sessions ?? []).filter(kind => !oldKinds.has(kind)).map(kind => SESSION_KIND_LABEL[kind])
   const settings = old.settings !== true && next.settings === true ? ['Keep its own settings'] : []

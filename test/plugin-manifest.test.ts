@@ -58,8 +58,16 @@ describe('parseManifest', () => {
     expect(parseManifest({ ...CLICKUP_MANIFEST, screen: '/abs.ts' }).ok).toBe(false)
   })
 
-  test('refuses wildcard and non-plain network permissions', () => {
-    for (const host of ['*.clickup.com', 'https://api.clickup.com', 'api.clickup.com/path', 'API.ClickUp.com']) {
+  test('accepts a *. wildcard over a host of at least two labels', () => {
+    const network = ['api.clickup.com', '*.clickup-attachments.com']
+    expect(parseManifest({ ...CLICKUP_MANIFEST, permissions: { ...CLICKUP_MANIFEST.permissions, network } })).toEqual({
+      ok: true,
+      manifest: { ...CLICKUP_MANIFEST, permissions: { ...CLICKUP_MANIFEST.permissions, network } },
+    })
+  })
+
+  test('refuses other wildcard shapes and non-plain network permissions', () => {
+    for (const host of ['*.com', '*', 'a.*.b', '**.x', '*clickup.com', '*.', 'https://api.clickup.com', 'api.clickup.com/path', 'API.ClickUp.com', '*.API.clickup.com']) {
       const result = parseManifest({ ...CLICKUP_MANIFEST, permissions: { ...CLICKUP_MANIFEST.permissions, network: [host] } })
       expect(result.ok, host).toBe(false)
       if (!result.ok) expect(result.errors.join('\n')).toContain(host)
@@ -67,7 +75,7 @@ describe('parseManifest', () => {
   })
 
   test('the network format rule holds for trusted plugins too', () => {
-    expect(parseManifest({ ...CLICKUP_MANIFEST, runtime: 'trusted', permissions: { network: ['*.example.com'] } }).ok).toBe(false)
+    expect(parseManifest({ ...CLICKUP_MANIFEST, runtime: 'trusted', permissions: { network: ['*.com'] } }).ok).toBe(false)
   })
 
   test('refuses a settings key declared twice', () => {
@@ -92,6 +100,13 @@ describe('permissionsAdded', () => {
       { network: ['a.com'] },
       { network: ['a.com', 'b.com'], sessions: ['chat'] },
     )).toEqual(['Reach b.com', 'Start chats'])
+  })
+
+  test('words a wildcard host as any address ending in that domain', () => {
+    expect(permissionsAdded(
+      { network: ['api.clickup.com'] },
+      { network: ['api.clickup.com', '*.clickup-attachments.com'] },
+    )).toEqual(['Reach any address ending in .clickup-attachments.com'])
   })
 
   test('reports nothing when permissions only shrink', () => {
