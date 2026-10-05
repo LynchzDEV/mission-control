@@ -1,11 +1,11 @@
-import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { afterAll, beforeAll, expect, spyOn, test } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
 import { mkdtemp, realpath, rm, symlink } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Elysia } from 'elysia'
 
-import { QueueRefusal, SourceFailure, type QueueEngine } from '../server/queue-engine'
+import { createQueueEngine, QueueRefusal, SourceFailure, type QueueEngine } from '../server/queue-engine'
 import { createQueueStore } from '../server/queue-store'
 import { queueRoutes } from '../server/routes/queue'
 
@@ -226,4 +226,46 @@ test('POST maps an unexpected local failure to 500, not a source error', async (
   const app = new Elysia().use(queueRoutes(items, engine(items, { add: async () => { throw new Error('disk full') } })))
   const failed = await post(app, '/api/queue', { source: 'clickup-board', externalId: '1', repo })
   expect(failed.status).toBe(500)
+})
+
+function realEngine(items: ReturnType<typeof store>) {
+  const runs = new Map<string, { id: string; status: 'running' | 'done'; error: null; attempts: [] }>()
+  let next = 0
+  return createQueueEngine({
+    store: items,
+    runner: { start: async () => { const id = `run-${++next}`; runs.set(id, { id, status: 'running', error: null, attempts: [] }); return { id } }, get: id => runs.get(id) },
+    source: () => ({ item: async ({ id }) => ({ title: `Task ${id}`, url: 'u', contextMarkdown: '# t' }), post: async () => ({ commentId: 'c1' }), replies: async () => ({ replies: [], lastId: null }) }),
+    prepareWorktree: async (_repo, label) => ({ worktree: join(repo, '.worktree', label) }),
+    writeContext: async (_pluginId, context, cwd) => join(cwd, `${context.name}.md`),
+    pluginFiles: () => repo,
+    needsYou: () => {},
+  })
+}
+
+test('with the real engine: add builds, a queued item cannot be requeued, and a queued item can be removed', async () => {
+  const items = store()
+  const app = new Elysia().use(queueRoutes(items, realEngine(items)))
+  const first = await post(app, '/api/queue', { source: 'clickup-board', externalId: '1', repo })
+  expect((await first.json()).item).toMatchObject({ state: 'building', title: 'Task 1' })
+  const second = (await (await post(app, '/api/queue', { source: 'clickup-board', externalId: '2', repo })).json()).item
+  expect(second.state).toBe('queued')
+  const twice = await post(app, '/api/queue', { source: 'clickup-board', externalId: '2', repo })
+  expect(twice.status).toBe(409)
+  const quiet = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    const requeued = await post(app, `/api/queue/${second.id}/requeue`)
+    expect(requeued.status).toBe(409)
+    expect((await requeued.json()).error).toBe('It is queued now')
+    expect((await call(app, `/api/queue/${items.list()[0]!.id}`, { method: 'DELETE' })).status).toBe(409)
+  } finally { quiet.mockRestore() }
+  expect((await call(app, `/api/queue/${second.id}`, { method: 'DELETE' })).status).toBe(200)
+  expect(items.list().map(item => item.externalId)).toEqual(['1'])
+  expect(await (await post(app, '/api/queue/check')).json()).toEqual({ checked: 0, resumed: 0 })
+})
+
+test('move refuses a position that is not a whole number', async () => {
+  const items = store()
+  const a = await items.add(newItem, 'end')
+  const app = new Elysia().use(queueRoutes(items, engine(items)))
+  for (const to of [1.5, '1', null]) expect((await post(app, `/api/queue/${a.id}/move`, { to })).status).toBe(400)
 })

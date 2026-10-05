@@ -44,3 +44,23 @@ test('answersMarkdown pairs the questions with each reply and its images', () =>
   const md = answersMarkdown(['Which page?'], [{ id: 'r1', author: 'Ploy', text: 'The login page', images: [] }, { id: 'r2', author: 'Ploy', text: 'See screenshot', images: [] }], ['/wt/ctx/shot.png'])
   expect(md).toBe('# Answers from the requester\n\n## Questions asked\n\n- Which page?\n\n## Replies\n\n### Ploy\n\nThe login page\n\n### Ploy\n\nSee screenshot\n\n## Images\n\n- /wt/ctx/shot.png\n')
 })
+
+test('questionsOf ignores a stopped run even when its last step asked questions', () => {
+  expect(questionsOf(run('stopped', [attempt({ result: { outcome: 'blocked', summary: 'Need info', evidence: ['Which page?'] } })]))).toEqual([])
+})
+
+test('branchLabel keeps a long id whole and drops the title slug when there is no room', () => {
+  const id = 'a'.repeat(70)
+  expect(branchLabel({ title: 'Login copy', externalId: id })).toBe(`queue-${id}`)
+})
+
+test.todo('BUG: a step blocked with questions loses them when a parallel step is interrupted as the run blocks', () => {
+  const asked = attempt({ nodeId: 'plan-a', number: 2, endedAt: 9, result: { outcome: 'blocked', summary: 'Need info', evidence: ['Which page?'] } })
+  const sibling = attempt({ nodeId: 'plan-b', number: 1, endedAt: 10, interrupted: true, result: { outcome: 'blocked', summary: 'Interrupted before it finished', evidence: [] } })
+  expect(questionsOf(run('blocked', [sibling, asked]))).toEqual(['Which page?'])
+})
+
+test.todo('BUG: a join conflict the runner blocked on is asked of the requester as questions', () => {
+  const join = attempt({ nodeId: 'join', number: 3, jobId: null, endedAt: 9, result: { outcome: 'blocked', summary: 'Paths could not be joined: a.ts', evidence: ['Joined: p1', 'Conflicts in p2: a.ts'] } })
+  expect(questionsOf(run('blocked', [join]))).toEqual([])
+})
