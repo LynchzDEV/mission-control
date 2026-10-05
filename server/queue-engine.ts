@@ -1,4 +1,4 @@
-import { copyFile, mkdir } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, realpath } from 'node:fs/promises'
 import { basename, join, resolve, sep } from 'node:path'
 
 import { SESSION_CONTEXT_DIR, type TaskContext } from './plugins/context-files'
@@ -97,27 +97,38 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
   return { fail, settle, startNext }
 }
 
+async function insideFile(realBase: string, candidate: string): Promise<string> {
+  if (!(await lstat(candidate)).isFile()) throw new Error(`not a regular file: ${candidate}`)
+  const real = await realpath(candidate)
+  if (!real.startsWith(realBase + sep)) throw new Error(`outside the plugin folder: ${candidate}`)
+  return real
+}
+
 async function importImages(root: string, replies: SourceReply[], folder: string): Promise<string[]> {
-  const base = resolve(root)
+  const realBase = realpath(root)
+  realBase.catch(() => undefined)
   const copied: string[] = []
   await mkdir(folder, { recursive: true, mode: 0o700 })
   for (const reply of replies) {
-    for (const image of reply.images) {
-      const from = resolve(base, image.path)
-      if (!from.startsWith(base + sep)) continue
-      const to = join(folder, `${reply.id}-${basename(image.name)}`.replace(/[^A-Za-z0-9._-]/g, '-'))
-      try { await copyFile(from, to); copied.push(to) } catch (error) { console.error('queue image copy failed', error) }
+    for (const [index, image] of reply.images.entries()) {
+      const to = join(folder, `${reply.id}-${index}-${basename(image.name)}`.replace(/[^A-Za-z0-9._-]/g, '-'))
+      try {
+        const base = await realBase
+        await copyFile(await insideFile(base, resolve(base, image.path)), to)
+        copied.push(to)
+      } catch (error) {
+        console.error('queue image skipped', error)
+      }
     }
   }
   return copied
 }
 
-function replyCheck(deps: QueueEngineDeps): (item: QueueItem) => Promise<boolean> {
+function replyCheck(deps: QueueEngineDeps): (item: QueueItem, worktree: string) => Promise<boolean> {
   const { store } = deps
   const replyFailures = new Map<string, number>()
 
-  async function resume(item: QueueItem, replies: SourceReply[], lastId: string | null): Promise<void> {
-    const worktree = item.worktree!
+  async function resume(item: QueueItem, worktree: string, replies: SourceReply[], lastId: string | null): Promise<void> {
     const folder = join(worktree, SESSION_CONTEXT_DIR, 'context', item.source)
     const images = await importImages(deps.pluginFiles(item.source), replies, folder)
     const path = await deps.writeContext(item.source, { name: `answers-${item.externalId}`, markdown: answersMarkdown(item.questions, replies, images) }, worktree)
@@ -125,17 +136,27 @@ function replyCheck(deps: QueueEngineDeps): (item: QueueItem) => Promise<boolean
     await store.toFront(item.id)
   }
 
-  return async function checkOne(item: QueueItem): Promise<boolean> {
+  async function read(item: QueueItem) {
     try {
-      const { replies, lastId } = await deps.source(item.source).replies({ id: item.externalId, sinceId: item.lastSeenId })
+      const result = await deps.source(item.source).replies({ id: item.externalId, sinceId: item.lastSeenId })
       replyFailures.delete(item.id)
-      if (replies.length === 0) return false
-      await resume(item, replies, lastId)
-      return true
+      return result
     } catch (error) {
       const failures = (replyFailures.get(item.id) ?? 0) + 1
       replyFailures.set(item.id, failures % MAX_REPLY_FAILURES)
       if (failures === MAX_REPLY_FAILURES) deps.needsYou(store.get(item.id) ?? item, `Could not read replies: ${message(error)}`)
+      return null
+    }
+  }
+
+  return async function checkOne(item: QueueItem, worktree: string): Promise<boolean> {
+    const result = await read(item)
+    if (result === null || result.replies.length === 0) return false
+    try {
+      await resume(item, worktree, result.replies, result.lastId)
+      return true
+    } catch (error) {
+      console.error('queue resume failed', error)
       return false
     }
   }
@@ -169,9 +190,9 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
 
   const checkOne = replyCheck(deps)
   const checkReplies = (): Promise<{ checked: number; resumed: number }> => serial(async () => {
-    const waiting = store.list().filter(item => item.state === 'waiting-info' && item.worktree !== null)
+    const waiting = store.list().flatMap(item => item.state === 'waiting-info' && item.worktree !== null ? [{ item, worktree: item.worktree }] : [])
     let resumed = 0
-    for (const item of waiting) if (await checkOne(item)) resumed += 1
+    for (const { item, worktree } of waiting) if (await checkOne(item, worktree)) resumed += 1
     await startNext()
     return { checked: waiting.length, resumed }
   })

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -12,7 +12,7 @@ let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'mc-queue-replies-')) })
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
-async function parked(replies: () => Promise<SourceReplies>) {
+async function parked(replies: () => Promise<SourceReplies>, overrides: Partial<QueueEngineDeps> = {}) {
   const store = createQueueStore(join(dir, 'queue.json'))
   const runs = new Map<string, RunView>()
   const alerts: string[] = []
@@ -32,7 +32,16 @@ async function parked(replies: () => Promise<SourceReplies>) {
   const engine = createQueueEngine(deps)
   const item = await engine.add({ source: 'clickup-board', externalId: '1', repo: '/repo' })
   await engine.onRunSettled({ id: 'run-1', status: 'blocked', error: null, attempts: [{ nodeId: 'plan', number: 1, jobId: 'j', status: 'settled', prompt: '', startedAt: 1, endedAt: 2, result: { outcome: 'blocked', summary: 's', evidence: ['Which page?'] }, checks: [], output: '', workspace: null, tokenId: 't', pathId: 'main', from: [] }] })
+  Object.assign(deps, overrides)
   return { engine, store, item, alerts, requests, files }
+}
+
+function silencedErrors() {
+  return spyOn(console, 'error').mockImplementation(() => {})
+}
+
+async function contextFiles(worktree: string): Promise<string[]> {
+  return (await readdir(join(worktree, '.mission-control', 'context', 'clickup-board'))).sort()
 }
 
 test('no replies keeps the item waiting', async () => {
@@ -48,6 +57,19 @@ test('a reply writes the answers, puts the item first and rebuilds it with the a
   expect(item).toMatchObject({ state: 'building', questions: [], lastSeenId: 'r1', runIds: ['run-1', 'run-2'] })
   expect(await readFile(item.answerPaths[0]!, 'utf8')).toContain('The login page')
   expect(h.requests[1]).toContain(`The requester answered your earlier questions: read ${item.answerPaths[0]}`)
+  expect(await readFile(item.answerPaths[0]!, 'utf8')).toContain('- Which page?')
+})
+
+test('a reply puts the parked item in front of items already queued', async () => {
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'The login page', images: [] }], lastId: 'r1' }))
+  const building = await h.engine.add({ source: 'clickup-board', externalId: '2', repo: '/repo' })
+  const waiting = await h.engine.add({ source: 'clickup-board', externalId: '3', repo: '/repo' })
+  await h.store.move(h.item.id, 2)
+  expect(h.store.list().map(item => item.id)).toEqual([building.id, waiting.id, h.item.id])
+  await h.engine.checkReplies()
+  expect(h.store.list().map(item => item.id)).toEqual([h.item.id, building.id, waiting.id])
+  expect(h.store.get(h.item.id)!.state).toBe('queued')
+  expect(h.store.get(waiting.id)!.state).toBe('queued')
 })
 
 test('reply images are copied into the worktree context folder and listed', async () => {
@@ -56,7 +78,7 @@ test('reply images are copied into the worktree context folder and listed', asyn
   await writeFile(join(h.files, 'replies', 'shot.png'), 'png-bytes')
   await h.engine.checkReplies()
   const item = h.store.get(h.item.id)!
-  const copied = join(item.worktree!, '.mission-control', 'context', 'clickup-board', 'r1-shot.png')
+  const copied = join(item.worktree!, '.mission-control', 'context', 'clickup-board', 'r1-0-shot.png')
   expect(await readFile(copied, 'utf8')).toBe('png-bytes')
   expect(await readFile(item.answerPaths[0]!, 'utf8')).toContain(`- ${copied}`)
 })
@@ -64,14 +86,83 @@ test('reply images are copied into the worktree context folder and listed', asyn
 test('images outside the plugin data folder are skipped', async () => {
   const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [{ name: 'key', path: '../../../secret' }] }], lastId: 'r1' }))
   await writeFile(join(dir, 'secret'), 'do not copy')
-  await h.engine.checkReplies()
+  const errors = silencedErrors()
+  try {
+    await h.engine.checkReplies()
+    expect(errors).toHaveBeenCalledTimes(1)
+  } finally {
+    errors.mockRestore()
+  }
   const item = h.store.get(h.item.id)!
-  await expect(stat(join(item.worktree!, '.mission-control', 'context', 'clickup-board', 'r1-key'))).rejects.toThrow()
+  await expect(stat(join(item.worktree!, '.mission-control', 'context', 'clickup-board', 'r1-0-key'))).rejects.toThrow()
   expect(await readFile(item.answerPaths[0]!, 'utf8')).not.toContain('## Images')
 })
 
+test('a link in the plugin folder pointing outside it is never followed', async () => {
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [{ name: 'id_rsa', path: 'x' }, { name: 'ok.png', path: 'ok.png' }] }], lastId: 'r1' }))
+  await mkdir(h.files, { recursive: true })
+  await writeFile(join(dir, 'secret'), 'do not copy')
+  await symlink(join(dir, 'secret'), join(h.files, 'x'))
+  await writeFile(join(h.files, 'ok.png'), 'png-bytes')
+  const errors = silencedErrors()
+  try {
+    await h.engine.checkReplies()
+    expect(errors).toHaveBeenCalledTimes(1)
+  } finally {
+    errors.mockRestore()
+  }
+  const item = h.store.get(h.item.id)!
+  expect(await contextFiles(item.worktree!)).toEqual(['answers-1.md', 'item-1.md', 'r1-1-ok.png'])
+  const answers = await readFile(item.answerPaths[0]!, 'utf8')
+  expect(answers).not.toContain('id_rsa')
+  expect(answers).toContain('r1-1-ok.png')
+})
+
+test('a link pointing at another file inside the plugin folder is not copied either', async () => {
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [{ name: 'alias.png', path: 'alias.png' }] }], lastId: 'r1' }))
+  await mkdir(h.files, { recursive: true })
+  await writeFile(join(h.files, 'real.png'), 'png-bytes')
+  await symlink(join(h.files, 'real.png'), join(h.files, 'alias.png'))
+  const errors = silencedErrors()
+  try {
+    await h.engine.checkReplies()
+    expect(errors).toHaveBeenCalledTimes(1)
+  } finally {
+    errors.mockRestore()
+  }
+  const item = h.store.get(h.item.id)!
+  expect(await contextFiles(item.worktree!)).toEqual(['answers-1.md', 'item-1.md'])
+  expect(await readFile(item.answerPaths[0]!, 'utf8')).not.toContain('## Images')
+})
+
+test('two images with the same name in one reply are both kept', async () => {
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [{ name: 'shot.png', path: 'a/shot.png' }, { name: 'shot.png', path: 'b/shot.png' }] }], lastId: 'r1' }))
+  await mkdir(join(h.files, 'a'), { recursive: true })
+  await mkdir(join(h.files, 'b'), { recursive: true })
+  await writeFile(join(h.files, 'a', 'shot.png'), 'first')
+  await writeFile(join(h.files, 'b', 'shot.png'), 'second')
+  await h.engine.checkReplies()
+  const folder = join(h.store.get(h.item.id)!.worktree!, '.mission-control', 'context', 'clickup-board')
+  expect(await readFile(join(folder, 'r1-0-shot.png'), 'utf8')).toBe('first')
+  expect(await readFile(join(folder, 'r1-1-shot.png'), 'utf8')).toBe('second')
+})
+
+test('a local failure while resuming keeps the item waiting and is not blamed on the source', async () => {
+  const failingWrite: QueueEngineDeps['writeContext'] = async () => { throw new Error('disk full') }
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [] }], lastId: 'r1' }), { writeContext: failingWrite })
+  const errors = silencedErrors()
+  try {
+    for (let i = 0; i < 3; i += 1) expect(await h.engine.checkReplies()).toEqual({ checked: 1, resumed: 0 })
+    expect(errors.mock.calls.map(call => call[0])).toEqual(['queue resume failed', 'queue resume failed', 'queue resume failed'])
+  } finally {
+    errors.mockRestore()
+  }
+  expect(h.store.get(h.item.id)).toMatchObject({ state: 'waiting-info', lastSeenId: 'c1', questions: ['Which page?'], answerPaths: [] })
+  expect(h.alerts).toEqual([])
+})
+
 test('a missing reply image is logged and left out of the answers', async () => {
-  const errors = spyOn(console, 'error').mockImplementation(() => {})
+  const errors = silencedErrors()
   try {
     const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [{ name: 'gone.png', path: 'replies/gone.png' }] }], lastId: 'r1' }))
     expect(await h.engine.checkReplies()).toEqual({ checked: 1, resumed: 1 })
