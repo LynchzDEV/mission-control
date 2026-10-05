@@ -138,6 +138,15 @@ test('a known source shows its icon and name, linking only http links', () => {
   expect(noIcon?.textContent).toBe('Jira board')
 })
 
+test('a disabled plugin gets the generic badge, not its icon', () => {
+  const offWithIcon = [...plugins, { id: 'off-icon', name: 'Off icon board', icon: 'icon.svg', enabled: false }]
+  const view = queue.renderQueue([item({ id: 'o1', source: 'off-icon' })], context({ plugins: offWithIcon }))
+  const badge = view.querySelector('.q-src') as HTMLElement
+  expect(badge.querySelector('img')).toBeNull()
+  expect(badge.querySelector('.mk-logo use')?.getAttribute('href')).toBe('#auto-icon')
+  expect(badge.textContent).toBe('Off icon board')
+})
+
 test('only queued rows are draggable', () => {
   const view = queue.renderQueue(all, context())
   expect(rows(view).filter(row => row.getAttribute('draggable') === 'true').map(row => row.dataset.id)).toEqual(['q1', 'q2'])

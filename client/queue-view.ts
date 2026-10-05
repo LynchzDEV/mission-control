@@ -100,7 +100,7 @@ function sourceBadge(item: QueueItemView, plugins: readonly QueuePlugin[]): HTML
   const plugin = plugins.find(entry => entry.id === item.source)
   const parts: Child[] = []
   if (plugin !== undefined) {
-    const logo = plugin.icon === undefined ? icon('auto-icon') : el('img', { src: `/api/plugins/${encodeURIComponent(plugin.id)}/icon`, alt: '' })
+    const logo = plugin.icon === undefined || !plugin.enabled ? icon('auto-icon') : el('img', { src: `/api/plugins/${encodeURIComponent(plugin.id)}/icon`, alt: '' })
     parts.push(el('span', { class: 'mk-logo', style: '--s:16px' }, logo))
   }
   parts.push(plugin?.name ?? item.source)
