@@ -61,7 +61,7 @@ async function addItem(engine: QueueEngineRoutes, body: unknown, set: Status) {
 }
 
 const removeExplanation = (error: unknown): string => (message(error) === 'It is building now' ? 'Stop its run in Studio first' : NO_ITEM)
-const moveExplanation = (): string => NO_ITEM
+const moveExplanation = (error: unknown): string => (refusalStatus(error) === 409 ? message(error) : NO_ITEM)
 
 export function queueRoutes(store: QueueStore, engine: QueueEngineRoutes, tree: () => Promise<QueueTree> = () => queueTree(store.list())): Elysia {
   return new Elysia()

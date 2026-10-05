@@ -256,6 +256,18 @@ test('remove deletes an item that is not building and refuses an unknown id', as
   } finally { quiet.mockRestore() }
 })
 
+test('move refuses an item that is not queued', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  const id = h.store.list()[0]!.id
+  const quiet = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await expect(h.engine.move(id, 0)).rejects.toThrow('It is building now')
+    await h.engine.onRunSettled(h.settle('run-1', { status: 'failed', error: 'boom' }))
+    await expect(h.engine.move(id, 0)).rejects.toThrow('It is failed now')
+  } finally { quiet.mockRestore() }
+})
+
 test('adding an item already in the queue is refused in any state', async () => {
   const h = harness()
   await h.engine.add(add)

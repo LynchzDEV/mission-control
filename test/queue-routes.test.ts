@@ -97,6 +97,15 @@ test('delete and move go through the engine so they wait for a build in progress
   expect(items.get(a.id)!.state).toBe('queued')
 })
 
+test('move refuses an item that is not queued with 409 and says why', async () => {
+  const items = store()
+  const a = await items.add(newItem, 'end')
+  const app = new Elysia().use(queueRoutes(items, engine(items, { move: async () => { throw new Error('It is building now') } })))
+  const refused = await post(app, `/api/queue/${a.id}/move`, { to: 0 })
+  expect(refused.status).toBe(409)
+  expect((await refused.json()).error).toBe('It is building now')
+})
+
 test('check returns the engine counts', async () => {
   const items = store()
   expect(await (await post(new Elysia().use(queueRoutes(items, engine(items))), '/api/queue/check')).json()).toEqual({ checked: 2, resumed: 1 })

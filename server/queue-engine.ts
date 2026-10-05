@@ -239,7 +239,8 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
   })
 
   const move = (id: string, to: number): Promise<void> => serial(async () => {
-    found(store, id)
+    const item = found(store, id)
+    if (item.state !== 'queued') throw new Error(`It is ${item.state} now`)
     await store.move(id, to)
   })
 
