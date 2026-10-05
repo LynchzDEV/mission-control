@@ -1,0 +1,69 @@
+import { join } from 'node:path'
+
+import { SESSION_CONTEXT_DIR } from './plugins/context-files'
+import type { QueueEngineDeps } from './queue-engine'
+import { importImages } from './queue-files'
+import { answersMarkdown } from './queue-prompts'
+import type { SourceReplies, SourceReply } from './queue-source'
+import type { QueueItem } from './queue-store'
+
+const MAX_REPLY_FAILURES = 3
+
+export const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
+function failureCounter(deps: QueueEngineDeps, reason: string) {
+  const counts = new Map<string, number>()
+  return {
+    clear: (id: string) => { counts.delete(id) },
+    record(item: QueueItem, error: unknown): void {
+      const failures = (counts.get(item.id) ?? 0) + 1
+      counts.set(item.id, failures % MAX_REPLY_FAILURES)
+      if (failures === MAX_REPLY_FAILURES) deps.needsYou(deps.store.get(item.id) ?? item, `${reason}: ${message(error)}`)
+    },
+  }
+}
+
+export type ReplyCheck = {
+  read(item: QueueItem): Promise<SourceReplies | null>
+  apply(item: QueueItem, worktree: string, result: SourceReplies): Promise<boolean>
+}
+
+export function replyCheck(deps: QueueEngineDeps): ReplyCheck {
+  const { store } = deps
+  const readFailures = failureCounter(deps, 'Could not read replies')
+  const saveFailures = failureCounter(deps, 'Could not save the replies')
+
+  async function resume(item: QueueItem, worktree: string, replies: SourceReply[], lastId: string | null): Promise<void> {
+    const folder = join(worktree, SESSION_CONTEXT_DIR, 'context', item.source)
+    const images = await importImages(deps.pluginFiles(item.source), replies, folder)
+    const path = await deps.writeContext(item.source, { name: `answers-${item.externalId}`, markdown: answersMarkdown(item.questions, replies, images) }, worktree)
+    await store.update(item.id, { state: 'queued', answerPaths: [...item.answerPaths, path], questions: [], lastSeenId: lastId ?? item.lastSeenId })
+    await store.toFront(item.id)
+  }
+
+  async function read(item: QueueItem): Promise<SourceReplies | null> {
+    try {
+      const result = await deps.source(item.source).replies({ id: item.externalId, sinceId: item.lastSeenId })
+      readFailures.clear(item.id)
+      return result
+    } catch (error) {
+      readFailures.record(item, error)
+      return null
+    }
+  }
+
+  async function apply(item: QueueItem, worktree: string, result: SourceReplies): Promise<boolean> {
+    if (result.replies.length === 0) return false
+    try {
+      await resume(item, worktree, result.replies, result.lastId)
+      saveFailures.clear(item.id)
+      return true
+    } catch (error) {
+      console.error('queue resume failed', error)
+      saveFailures.record(item, error)
+      return false
+    }
+  }
+
+  return { read, apply }
+}
