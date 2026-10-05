@@ -30,6 +30,22 @@ export function splitPlan(dragged: string, shown: string[], zone: 'right' | 'bot
   return { id: dragged, direction: zone === 'right' ? 'right' : 'below' }
 }
 
+export type Box = { left: number; top: number; right: number; bottom: number }
+export type DividerPair = { before: number; after: number; axis: 'width' | 'height' } | null
+
+export function dividerPair(divider: Box, panes: Box[]): DividerPair {
+  const sideBySide = divider.bottom - divider.top > divider.right - divider.left
+  const alongside = (pane: Box) => sideBySide ? pane.top < divider.bottom && pane.bottom > divider.top : pane.left < divider.right && pane.right > divider.left
+  const nearest = (gap: (pane: Box) => number) => panes
+    .map((pane, index) => ({ index, gap: gap(pane) }))
+    .filter(({ index, gap }) => gap >= 0 && alongside(panes[index]))
+    .sort((a, b) => a.gap - b.gap)[0]?.index
+  const before = nearest(pane => sideBySide ? divider.left - pane.right : divider.top - pane.bottom)
+  const after = nearest(pane => sideBySide ? pane.left - divider.right : pane.top - divider.bottom)
+  if (before === undefined || after === undefined) return null
+  return { before, after, axis: sideBySide ? 'width' : 'height' }
+}
+
 export function renameValue(current: string, typed: string): string | null {
   const next = typed.trim().slice(0, 60)
   return next === '' || next === current ? null : next

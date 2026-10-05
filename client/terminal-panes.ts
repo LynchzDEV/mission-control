@@ -1,6 +1,7 @@
 import type { DockviewApi, GroupPanelPartInitParameters, IContentRenderer, ITabRenderer, TabPartInitParameters } from 'dockview-core'
 import { createDockview, themeLight } from 'dockview-core/dist/dockview-core.js'
 import { MORPH_MS, settleIn } from './morph'
+import { dividerPair } from './terminal-state'
 
 function withPaneMotion(root: Element | null, change: () => void): void {
   root?.classList.add('panes-morph')
@@ -76,6 +77,19 @@ export function createPanes(root: HTMLElement): Panes {
   paintSingle()
   const layout = (): void => { if (root.clientWidth > 0 && root.clientHeight > 0) api.layout(root.clientWidth, root.clientHeight) }
   new ResizeObserver(layout).observe(root)
+  root.addEventListener('dblclick', (event) => {
+    const divider = (event.target as Element).closest('.dv-sash')
+    if (!divider) return
+    const groups = api.groups
+    const pair = dividerPair(divider.getBoundingClientRect(), groups.map(group => group.element.getBoundingClientRect()))
+    if (!pair) return
+    const target = groups[pair.before].api
+    const half = Math.round((target[pair.axis] + groups[pair.after].api[pair.axis]) / 2)
+    const resize = (size: number) => target.setSize(pair.axis === 'width' ? { width: size } : { height: size })
+    resize(half)
+    // dockview's setSize includes this pane's share of the gap; api.width/height leave it out
+    resize(half + half - target[pair.axis])
+  })
   layout()
   const params = (host: HTMLElement, header: PaneHeader): PaneParams => ({ host, header })
   const add = (id: string, host: HTMLElement, header: PaneHeader, position?: { referencePanel: string; direction: PaneDirection | 'within' }) => {

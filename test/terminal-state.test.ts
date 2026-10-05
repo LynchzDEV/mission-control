@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { dragKind, dropCopy, findCount, findKeys, latestLine, sessionSlot, terminalKeys, nextActive, renameValue, restoreTarget, sessionState, splitPlan, statusPill } from '../client/terminal-state'
+import { dragKind, dropCopy, findCount, findKeys, latestLine, sessionSlot, terminalKeys, nextActive, renameValue, restoreTarget, sessionState, splitPlan, dividerPair, statusPill } from '../client/terminal-state'
 
 describe('sessionState', () => {
   test('working within 5 s of output, idle after, ended wins', () => {
@@ -38,6 +38,23 @@ describe('splitPlan', () => {
     expect(splitPlan('b', ['a'], 'bottom')).toEqual({ id: 'b', direction: 'below' })
     expect(splitPlan('a', ['a'], 'right')).toBeNull()
     expect(splitPlan('b', ['a'], null)).toBeNull()
+  })
+})
+
+describe('dividerPair', () => {
+  const box = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom })
+  test('a side-by-side divider pairs the panes left and right of it', () => {
+    expect(dividerPair(box(400, 0, 404, 800), [box(0, 0, 395, 800), box(409, 0, 1000, 800)])).toEqual({ before: 0, after: 1, axis: 'width' })
+  })
+  test('a stacked divider pairs the panes above and below it', () => {
+    expect(dividerPair(box(0, 300, 1000, 304), [box(0, 309, 1000, 800), box(0, 0, 1000, 295)])).toEqual({ before: 1, after: 0, axis: 'height' })
+  })
+  test('only panes alongside the divider count, the nearest on each side wins', () => {
+    const panes = [box(0, 0, 195, 800), box(205, 0, 395, 395), box(205, 405, 395, 800), box(409, 0, 1000, 800)]
+    expect(dividerPair(box(400, 0, 404, 395), panes)).toEqual({ before: 1, after: 3, axis: 'width' })
+  })
+  test('null when a side has no pane', () => {
+    expect(dividerPair(box(400, 0, 404, 800), [box(0, 0, 395, 800)])).toBeNull()
   })
 })
 
