@@ -281,6 +281,9 @@ test('a wildcard network permission reads as any address ending in that domain',
   const dialog = byId('marketplace').querySelector('.mk-dialog') as HTMLElement
   expect(dialog.textContent).toContain('Reach any address ending in .clickup-attachments.com')
   expect(dialog.textContent).not.toContain('*.clickup-attachments.com')
+  const wildcardLine = [...dialog.querySelectorAll('li')].find(line => line.textContent?.includes('.clickup-attachments.com'))
+  expect(wildcardLine?.textContent).toContain('Any site under this domain.')
+  expect(wildcardLine?.textContent).not.toContain('Nothing else on the internet.')
   buttonNamed('Cancel', dialog).click()
   await flush()
 })

@@ -85,7 +85,7 @@ function permList(permissions: PluginPermissions, heading: string): HTMLElement 
   const lines: Array<{ iconId: string; text: string; code?: string; note: string }> = []
   for (const host of permissions.network ?? []) {
     const wildcard = host.startsWith('*.')
-    lines.push({ iconId: 'mk-globe', text: wildcard ? 'Reach any address ending in' : 'Reach', code: wildcard ? host.slice(1) : host, note: 'Nothing else on the internet.' })
+    lines.push({ iconId: 'mk-globe', text: wildcard ? 'Reach any address ending in' : 'Reach', code: wildcard ? host.slice(1) : host, note: wildcard ? 'Any site under this domain.' : 'Nothing else on the internet.' })
   }
   const kinds = permissions.sessions ?? []
   if (kinds.length > 0) {
