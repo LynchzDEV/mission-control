@@ -1,4 +1,5 @@
 import type { TaskContext } from './plugins/context-files'
+import { dropAnswerBackups, restoreAnswers } from './queue-answers'
 import { branchLabel, questionsOf, runRequest, SETTLED, type RunView } from './queue-prompts'
 import { message, replyCheck } from './queue-replies'
 import type { QueueSource } from './queue-source'
@@ -18,6 +19,7 @@ export type QueueEngineDeps = {
   isWorktree?(repo: string, worktree: string): Promise<boolean>
   writeContext(pluginId: string, context: TaskContext, cwd: string): Promise<string>
   pluginFiles(pluginId: string): string
+  backupDir(itemId: string): string
   needsYou(item: QueueItem, reason: string): void
   now?: () => number
 }
@@ -125,10 +127,19 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
     return deps.writeContext(item.source, { name: `item-${item.externalId}`, markdown: detail.contextMarkdown }, worktree)
   }
 
+  async function answersOf(item: QueueItem): Promise<string[]> {
+    const { kept, dropped } = await restoreAnswers(deps.backupDir(item.id), item.answerPaths)
+    if (dropped.length === 0) return kept
+    console.warn(`Queue item ${item.id} lost answers with no backup, dropped: ${dropped.join(', ')}`)
+    await store.update(item.id, { answerPaths: kept })
+    return kept
+  }
+
   async function build(item: QueueItem): Promise<void> {
     const worktree = item.worktree === null ? (await deps.prepareWorktree(item.repo, branchLabel(item))).worktree : await restore({ ...item, worktree: item.worktree })
     const contextPath = await contextIn(item, worktree)
-    const ready = { ...item, worktree, contextPath }
+    const answerPaths = await answersOf(item)
+    const ready = { ...item, worktree, contextPath, answerPaths }
     const run = await deps.runner.start({ cwd: worktree, request: runRequest(ready), label: item.title.slice(0, MAX_RUN_LABEL), ...(item.flowId ? { workflowId: item.flowId } : {}) }, { startedByUser: true })
     await store.update(item.id, { state: 'building', worktree, contextPath, currentRunId: run.id, runIds: [...item.runIds, run.id], error: null })
     const now = deps.runner.get(run.id)
@@ -188,6 +199,7 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
   const remove = (id: string): Promise<void> => serial(async () => {
     if (found(store, id).state === 'building') throw stateRefusal('building')
     await store.remove(id)
+    await dropAnswerBackups(deps.backupDir(id)).catch(error => console.error('queue answer backups not removed', error))
   })
 
   const move = (id: string, to: number): Promise<void> => serial(async () => {

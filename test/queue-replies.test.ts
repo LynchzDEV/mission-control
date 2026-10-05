@@ -27,6 +27,7 @@ async function parked(replies: () => Promise<SourceReplies>, overrides: Partial<
     prepareWorktree: async (_repo, label) => { const worktree = join(dir, 'wt', label); await mkdir(worktree, { recursive: true }); return { worktree } },
     writeContext: async (pluginId, context, cwd) => { const folder = join(cwd, '.mission-control', 'queue', pluginId); await mkdir(folder, { recursive: true }); const path = join(folder, `${context.name}.md`); await writeFile(path, context.markdown); return path },
     pluginFiles: () => files,
+    backupDir: itemId => join(dir, 'queue-files', itemId),
     needsYou: (_item, reason) => { alerts.push(reason) },
   }
   const engine = createQueueEngine(deps)

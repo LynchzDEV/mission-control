@@ -21,6 +21,7 @@ function engineWith(over: Partial<QueueEngineDeps>) {
     prepareWorktree: async () => ({ worktree: dir }),
     writeContext: async () => join(dir, 'context.md'),
     pluginFiles: () => dir,
+    backupDir: itemId => join(dir, 'queue-files', itemId),
     needsYou: () => {},
     ...over,
   }

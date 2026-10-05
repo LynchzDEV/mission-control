@@ -20,6 +20,7 @@ function engineAt(clock: { now: number }) {
     prepareWorktree: async () => ({ worktree: dir }),
     writeContext: async () => join(dir, 'context.md'),
     pluginFiles: () => dir,
+    backupDir: itemId => join(dir, 'queue-files', itemId),
     needsYou: () => {},
     now: () => clock.now,
   }

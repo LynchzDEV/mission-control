@@ -223,6 +223,7 @@ export async function createApp(): Promise<Elysia> {
     isWorktree: (repo, worktree) => isWorktreeOf(repo, worktree),
     writeContext: (pluginId, context, cwd) => writeQueueContext(pluginId, context, cwd),
     pluginFiles: pluginId => join(configDir(), 'plugin-data', pluginId, 'files'),
+    backupDir: itemId => join(configDir(), 'queue-files', itemId),
     needsYou: (item, reason) => { void raiseQueueAlert(attention, item, reason).catch(error => console.error('Queue alert failed', error)) },
   })
   watchQueueAlerts(queueStore, attention)

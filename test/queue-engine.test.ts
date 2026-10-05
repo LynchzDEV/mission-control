@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -38,6 +38,7 @@ function harness(over: Partial<QueueEngineDeps> = {}, sourceOver: Partial<QueueS
     prepareWorktree: async (repo, label) => ({ worktree: join(repo, '.worktree', label) }),
     writeContext: async (pluginId, context, cwd) => join(cwd, '.mission-control', 'queue', pluginId, `${context.name}.md`),
     pluginFiles: pluginId => join(dir, 'plugin-data', pluginId, 'files'),
+    backupDir: itemId => join(dir, 'queue-files', itemId),
     needsYou: (item, reason) => { alerts.push({ title: item.title, reason, state: item.state }) },
     ...over,
   }
@@ -290,10 +291,12 @@ test('requeue rebuilds a waiting item on the same worktree with its answers', as
   await h.engine.add(add)
   await h.engine.onRunSettled(h.settle('run-1', { status: 'blocked', attempts: [blockedWith(['Which page?'])] }))
   const parked = h.store.list()[0]!
-  await h.store.update(parked.id, { answerPaths: ['/answers-1.md'] })
+  const answers = join(dir, 'answers-1.md')
+  await writeFile(answers, '# answers')
+  await h.store.update(parked.id, { answerPaths: [answers] })
   const again = await h.engine.requeue(parked.id)
   expect(again).toMatchObject({ state: 'building', worktree: parked.worktree, questions: [], runIds: ['run-1', 'run-2'] })
-  expect(h.started[1]).toMatchObject({ cwd: parked.worktree, request: expect.stringContaining('read /answers-1.md') })
+  expect(h.started[1]).toMatchObject({ cwd: parked.worktree, request: expect.stringContaining(`read ${answers}`) })
 })
 
 const retried = (run: RunView, change: Partial<RunView>): RunView => ({ ...run, ...change, attempts: [...run.attempts, blockedWith([]), ...(change.attempts ?? [])] })

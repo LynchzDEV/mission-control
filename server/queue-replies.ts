@@ -1,3 +1,4 @@
+import { backUpAnswers } from './queue-answers'
 import type { QueueEngineDeps } from './queue-engine'
 import { importImages, queueFolder } from './queue-files'
 import { answersMarkdown } from './queue-prompts'
@@ -35,7 +36,9 @@ export function replyCheck(deps: QueueEngineDeps, fail: (item: QueueItem, reason
   async function resume(item: QueueItem, stored: string, replies: SourceReply[], lastId: string | null): Promise<void> {
     const worktree = await restore({ repo: item.repo, worktree: stored })
     const images = await importImages(deps.pluginFiles(item.source), replies, queueFolder(worktree, item.source))
-    const path = await deps.writeContext(item.source, { name: `answers-${item.externalId}`, markdown: answersMarkdown(item.questions, replies, images) }, worktree)
+    const markdown = answersMarkdown(item.questions, replies, images)
+    const path = await deps.writeContext(item.source, { name: `answers-${item.externalId}`, markdown }, worktree)
+    await backUpAnswers(deps.backupDir(item.id), path, markdown)
     await store.update(item.id, { state: 'queued', worktree, answerPaths: [...item.answerPaths, path], questions: [], lastSeenId: lastId ?? item.lastSeenId })
     await store.toFront(item.id)
   }

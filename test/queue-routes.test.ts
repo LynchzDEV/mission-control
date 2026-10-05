@@ -238,6 +238,7 @@ function realEngine(items: ReturnType<typeof store>) {
     prepareWorktree: async (_repo, label) => ({ worktree: join(repo, '.worktree', label) }),
     writeContext: async (_pluginId, context, cwd) => join(cwd, `${context.name}.md`),
     pluginFiles: () => repo,
+    backupDir: itemId => join(repo, 'queue-files', itemId),
     needsYou: () => {},
   })
 }
