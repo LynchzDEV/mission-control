@@ -98,6 +98,24 @@ test('an interrupted run fails the item instead of asking its leftover evidence'
   expect(h.store.list()[0]).toMatchObject({ state: 'failed', error: 'Interrupted transition or acceptance check' })
 })
 
+test('a join conflict fails the item with the conflict as its reason instead of asking', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  const join = blockedWith(['Joined: p1', 'Conflicts in p2: a.ts'], { nodeId: 'join', jobId: null, endedAt: 9 })
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'blocked', error: 'Paths could not be joined: a.ts', attempts: [join] }))
+  expect(h.posted).toEqual([])
+  expect(h.store.list()[0]).toMatchObject({ state: 'failed', error: 'Paths could not be joined: a.ts', questions: [] })
+})
+
+test('a parallel step interrupted as the run blocks does not hide the questions of the blocked step', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  const sibling = blockedWith([], { nodeId: 'plan-b', interrupted: true, endedAt: 10 })
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'blocked', attempts: [blockedWith(['Which page?'], { nodeId: 'plan-a', number: 2, endedAt: 9 }), sibling] }))
+  expect(h.posted).toEqual([{ id: '1', kind: 'ask', lines: ['Which page?'] }])
+  expect(h.store.list()[0]).toMatchObject({ state: 'waiting-info', questions: ['Which page?'] })
+})
+
 test('a stopped run whose last step asked questions still fails rather than asks', async () => {
   const h = harness()
   await h.engine.add(add)
