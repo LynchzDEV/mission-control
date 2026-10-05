@@ -493,6 +493,35 @@ folder, else the current one; the AI is
 .BR \-\-engine ,
 else the plan role. Also
 .BR \-\-model " and " \-\-message .
+.SH QUEUE
+The build queue builds source items (such as ClickUp tasks) in order. An item
+that needs answers waits and resumes when the source replies.
+.TP
+.B mctl queue list
+Items in build order: id, state, source, title, and the error or open
+questions.
+.TP
+.BI "mctl queue add " "source externalId" " \fR[\fB\-\-repo\fR \fIDIR\fR] [\fB\-\-flow\fR \fIID\fR] [\fB\-\-next\fR]"
+Add an item. It is built in
+.B \-\-repo
+(default: the current folder) with the saved flow
+.BR \-\-flow ;
+.B \-\-next
+puts it first.
+.TP
+.BI "mctl queue move " "id to"
+Move an item to position
+.I to
+(0 is first).
+.TP
+.BI "mctl queue requeue " id
+Put a failed or ready item back in line.
+.TP
+.BI "mctl queue remove " id
+Remove an item that is not building.
+.TP
+.B mctl queue check
+Check sources for replies now instead of waiting for the next check.
 .SH JSON OUTPUT
 With
 .BR \-\-json ,

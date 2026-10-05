@@ -10,6 +10,7 @@ import { UsageError, type Command, type Context, type OptionSpec, type OptionVal
 import { clickupCommands } from './commands/clickup'
 import { jobCommands } from './commands/jobs'
 import { pluginCommands } from './commands/plugins'
+import { queueCommands } from './commands/queue'
 import { studioCommands } from './commands/studio'
 import { systemCommands } from './commands/system'
 
@@ -27,7 +28,7 @@ export type MainDeps = {
   pollMs?: number
 }
 
-export const COMMANDS: Command[] = [...systemCommands, ...jobCommands, ...studioCommands, ...pluginCommands, ...clickupCommands]
+export const COMMANDS: Command[] = [...systemCommands, ...jobCommands, ...studioCommands, ...pluginCommands, ...clickupCommands, ...queueCommands]
 
 const GLOBAL_OPTIONS: Record<string, OptionSpec> = {
   url: { type: 'string', description: `Mission Control URL (default: $MC_URL, then ${DEFAULT_URL})`, placeholder: 'URL' },
