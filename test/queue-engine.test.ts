@@ -198,3 +198,88 @@ test('recover leaves an item whose run is still running', async () => {
   expect(h.store.list()[0]).toMatchObject({ state: 'building', currentRunId: 'run-1' })
   expect(h.started).toHaveLength(1)
 })
+
+function heldRunner(h: ReturnType<typeof harness>) {
+  let release!: () => void
+  let entered!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const inStart = new Promise<void>(resolve => { entered = resolve })
+  const runner: QueueRunner = {
+    start: async () => { entered(); await gate; h.runs.set('run-held', { id: 'run-held', status: 'running', error: null, attempts: [] }); return { id: 'run-held' } },
+    get: id => h.runs.get(id),
+  }
+  return { runner, release, inStart }
+}
+
+test('remove waits for a build in progress and then refuses the building item', async () => {
+  const h = harness()
+  const held = heldRunner(h)
+  const engine = harness({ runner: held.runner, store: h.store }).engine
+  const adding = engine.add(add)
+  await held.inStart
+  const id = h.store.list()[0]!.id
+  const quiet = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    const removing = engine.remove(id)
+    held.release()
+    await adding
+    await expect(removing).rejects.toThrow('It is building now')
+  } finally { quiet.mockRestore() }
+  expect(h.store.get(id)).toMatchObject({ state: 'building', currentRunId: 'run-held', runIds: ['run-held'] })
+})
+
+test('move waits for a build in progress and never starts a second build', async () => {
+  const h = harness()
+  const held = heldRunner(h)
+  const engine = harness({ runner: held.runner, store: h.store }).engine
+  const adding = engine.add(add)
+  await held.inStart
+  await h.store.add({ source: 'clickup-board', externalId: '2', title: 'Task 2', url: 'u', repo: '/repo', flowId: null }, 'end')
+  const id = h.store.list()[1]!.id
+  const moving = engine.move(id, 0)
+  held.release()
+  await Promise.all([adding, moving])
+  expect(states(h.store.list())).toEqual(['2:queued', '1:building'])
+})
+
+test('remove deletes an item that is not building and refuses an unknown id', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'failed', error: 'boom' }))
+  const id = h.store.list()[0]!.id
+  await h.engine.remove(id)
+  expect(h.store.list()).toEqual([])
+  const quiet = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await expect(h.engine.remove(id)).rejects.toThrow(`No queue item ${id}`)
+    await expect(h.engine.move(id, 0)).rejects.toThrow(`No queue item ${id}`)
+  } finally { quiet.mockRestore() }
+})
+
+test('adding an item already in the queue is refused in any state', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'failed', error: 'boom' }))
+  await expect(h.engine.add({ ...add, repo: '/other' })).rejects.toThrow('Already in the queue')
+  await h.engine.add({ ...add, source: 'other-board' })
+  expect(h.store.list()).toHaveLength(2)
+})
+
+test('two adds of the same item at once keep only one', async () => {
+  const h = harness()
+  const results = await Promise.allSettled([h.engine.add(add), h.engine.add(add)])
+  expect(results.map(result => result.status).sort()).toEqual(['fulfilled', 'rejected'])
+  expect(h.store.list()).toHaveLength(1)
+  expect(h.started).toHaveLength(1)
+})
+
+test('requeue rebuilds a waiting item on the same worktree with its answers', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'blocked', attempts: [blockedWith(['Which page?'])] }))
+  const parked = h.store.list()[0]!
+  await h.store.update(parked.id, { answerPaths: ['/answers-1.md'] })
+  const again = await h.engine.requeue(parked.id)
+  expect(again).toMatchObject({ state: 'building', worktree: parked.worktree, questions: [], runIds: ['run-1', 'run-2'] })
+  expect(h.started[1]).toMatchObject({ cwd: parked.worktree, request: expect.stringContaining('read /answers-1.md') })
+})

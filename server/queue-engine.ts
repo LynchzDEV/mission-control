@@ -30,11 +30,13 @@ export type QueueEngine = {
   onRunSettled(run: RunView): Promise<void>
   recover(): Promise<void>
   requeue(id: string): Promise<QueueItem>
+  remove(id: string): Promise<void>
+  move(id: string, to: number): Promise<void>
   checkReplies(): Promise<{ checked: number; resumed: number }>
 }
 
 const MAX_RUN_LABEL = 120
-const REQUEUEABLE: ReadonlySet<QueueItem['state']> = new Set(['failed', 'ready'])
+const REQUEUEABLE: ReadonlySet<QueueItem['state']> = new Set(['failed', 'ready', 'waiting-info'])
 const MAX_REPLY_FAILURES = 3
 const MAX_IMAGE_BYTES = 3_932_160
 
@@ -208,8 +210,14 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     return result
   }
 
+  const refuseDuplicate = (input: AddInput): void => {
+    if (store.list().some(item => item.source === input.source && item.externalId === input.externalId)) throw new Error('Already in the queue')
+  }
+
   async function add(input: AddInput): Promise<QueueItem> {
+    refuseDuplicate(input)
     const detail = await deps.source(input.source).item({ id: input.externalId })
+    refuseDuplicate(input)
     const item = await store.add({ source: input.source, externalId: input.externalId, title: detail.title, url: detail.url, repo: input.repo, flowId: input.flowId ?? null }, input.position ?? 'end')
     await serial(startNext)
     return store.get(item.id) ?? item
@@ -218,10 +226,20 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
   const requeue = (id: string): Promise<QueueItem> => serial(async () => {
     const item = found(store, id)
     if (!REQUEUEABLE.has(item.state)) throw new Error(`It is ${item.state} now`)
-    await store.update(id, { state: 'queued', error: null, currentRunId: null })
+    await store.update(id, { state: 'queued', error: null, currentRunId: null, questions: [] })
     await store.move(id, store.list().length)
     await startNext()
     return found(store, id)
+  })
+
+  const remove = (id: string): Promise<void> => serial(async () => {
+    if (found(store, id).state === 'building') throw new Error('It is building now')
+    await store.remove(id)
+  })
+
+  const move = (id: string, to: number): Promise<void> => serial(async () => {
+    found(store, id)
+    await store.move(id, to)
   })
 
   const checkOne = replyCheck(deps)
@@ -247,6 +265,8 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
   return {
     add,
     requeue,
+    remove,
+    move,
     recover,
     kick: () => serial(startNext),
     onRunSettled: run => serial(async () => { await settle(run); await startNext() }),
