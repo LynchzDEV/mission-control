@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
-import { link, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { chmod, link, lstat, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -311,4 +311,36 @@ test('replies read against a cursor that moved meanwhile are discarded', async (
   slow.release()
   expect(await checking).toEqual({ checked: 1, resumed: 0 })
   expect(h.store.get(h.item.id)).toMatchObject({ state: 'waiting-info', answerPaths: [], lastSeenId: 'r9' })
+})
+
+test('a link planted at the copy target name is never followed and the image is skipped', async () => {
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [{ name: 'shot.png', path: 'shot.png' }] }], lastId: 'r1' }))
+  await mkdir(h.files, { recursive: true })
+  await writeFile(join(h.files, 'shot.png'), 'png-bytes')
+  await writeFile(join(dir, 'victim'), 'original')
+  await chmod(join(dir, 'victim'), 0o644)
+  const folder = join(h.store.get(h.item.id)!.worktree!, '.mission-control', 'context', 'clickup-board')
+  await symlink(join(dir, 'victim'), join(folder, 'r1-0-shot.png'))
+  const errors = silencedErrors()
+  try {
+    await h.engine.checkReplies()
+    expect(errors).toHaveBeenCalledTimes(1)
+  } finally {
+    errors.mockRestore()
+  }
+  expect(await readFile(join(dir, 'victim'), 'utf8')).toBe('original')
+  expect((await stat(join(dir, 'victim'))).mode & 0o777).toBe(0o644)
+  expect((await lstat(join(folder, 'r1-0-shot.png'))).isSymbolicLink()).toBe(true)
+  expect(await readFile(h.store.get(h.item.id)!.answerPaths[0]!, 'utf8')).not.toContain('## Images')
+})
+
+test('a regular file already at the copy target is replaced with a private copy', async () => {
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [{ name: 'shot.png', path: 'shot.png' }] }], lastId: 'r1' }))
+  await mkdir(h.files, { recursive: true })
+  await writeFile(join(h.files, 'shot.png'), 'png-bytes')
+  const folder = join(h.store.get(h.item.id)!.worktree!, '.mission-control', 'context', 'clickup-board')
+  await writeFile(join(folder, 'r1-0-shot.png'), 'stale', { mode: 0o644 })
+  await h.engine.checkReplies()
+  expect(await readFile(join(folder, 'r1-0-shot.png'), 'utf8')).toBe('png-bytes')
+  expect((await stat(join(folder, 'r1-0-shot.png'))).mode & 0o777).toBe(0o600)
 })

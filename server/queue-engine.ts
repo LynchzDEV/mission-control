@@ -1,5 +1,5 @@
 import { constants } from 'node:fs'
-import { chmod, lstat, mkdir, open, realpath, writeFile, type FileHandle } from 'node:fs/promises'
+import { lstat, mkdir, open, realpath, unlink, type FileHandle } from 'node:fs/promises'
 import { basename, join, resolve, sep } from 'node:path'
 
 import { SESSION_CONTEXT_DIR, type TaskContext } from './plugins/context-files'
@@ -153,6 +153,26 @@ async function readInsideFile(realBase: string, candidate: string): Promise<Buff
   }
 }
 
+async function clearTarget(to: string): Promise<void> {
+  const existing = await lstat(to).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  })
+  if (existing === null) return
+  if (!existing.isFile()) throw new Error(`not a regular file at the copy target: ${to}`)
+  await unlink(to)
+}
+
+async function writePrivate(to: string, bytes: Buffer): Promise<void> {
+  await clearTarget(to)
+  const handle = await open(to, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
+  try {
+    await handle.writeFile(bytes)
+  } finally {
+    await handle.close()
+  }
+}
+
 async function importImages(root: string, replies: SourceReply[], folder: string): Promise<string[]> {
   const realBase = realpath(root)
   realBase.catch(() => undefined)
@@ -163,8 +183,7 @@ async function importImages(root: string, replies: SourceReply[], folder: string
       const to = join(folder, `${reply.id}-${index}-${basename(image.name)}`.replace(/[^A-Za-z0-9._-]/g, '-'))
       try {
         const base = await realBase
-        await writeFile(to, await readInsideFile(base, resolve(base, image.path)), { mode: 0o600 })
-        await chmod(to, 0o600)
+        await writePrivate(to, await readInsideFile(base, resolve(base, image.path)))
         copied.push(to)
       } catch (error) {
         console.error('queue image skipped', error)
