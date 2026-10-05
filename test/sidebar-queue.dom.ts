@@ -26,7 +26,7 @@ class FakeSource {
   send(items: QueueItem[]): void { this.onmessage?.({ data: JSON.stringify({ items }) }) }
 }
 
-const plugins = [
+let plugins: Array<Record<string, unknown>> = [
   { id: 'clickup-board', name: 'ClickUp board', enabled: true, screen: 'src/screen.ts', icon: 'icon.svg' },
   { id: 'hello-board', name: 'Hello board', enabled: true, screen: 'src/screen.ts' },
 ]
@@ -200,5 +200,48 @@ test('a malformed message keeps the last good rows, is not passed on, and the st
   expect(passedOn).toHaveLength(before)
   expect(groups()).toHaveLength(1)
   expect(FakeSource.opened).toHaveLength(1)
+  expect(logged).toEqual([])
+})
+
+test('an empty queue still shows a Queue 0 row under a plugin that declares queueSource', async () => {
+  plugins = [
+    { id: 'clickup-board', name: 'ClickUp board', enabled: true, screen: 'src/screen.ts', icon: 'icon.svg', queueSource: true },
+    { id: 'hello-board', name: 'Hello board', enabled: true, screen: 'src/screen.ts' },
+  ]
+  stream().send([])
+  dispatchEvent(new Event('quiet:plugins-changed'))
+  await flush()
+  doc.getElementById('sb-shell')!.classList.remove('collapsed')
+  expect(groups()).toHaveLength(1)
+  const group = groups()[0]!
+  expect((group.previousElementSibling?.querySelector('[data-kind="plugin"]') as HTMLElement).dataset.key).toBe('plugin:clickup-board')
+  expect(group.querySelector('.sb-row[data-kind="queue"] .q-sb-n')?.textContent).toBe('0')
+  expect(group.querySelectorAll('[data-kind="queue-item"]')).toHaveLength(0)
+})
+
+test('the empty Queue 0 row opens the Queue screen', () => {
+  shown.length = 0
+  focused.length = 0
+  groups()[0]!.querySelector<HTMLElement>('.sb-row[data-kind="queue"]')!.click()
+  expect(shown).toEqual(['queue'])
+  expect(focused).toEqual([])
+})
+
+test('a queueSource plugin with items lists them under its Queue row as before', async () => {
+  stream().send([item({ id: 'c1' })])
+  await flush()
+  expect(groups()).toHaveLength(1)
+  expect(groups()[0]!.querySelector('.q-sb-n')?.textContent).toBe('1')
+  expect(groups()[0]!.querySelectorAll('[data-kind="queue-item"]')).toHaveLength(1)
+  stream().send([])
+  await flush()
+})
+
+test('an empty queue shows no row under a plugin without queueSource', async () => {
+  plugins = plugins.map(plugin => ({ ...plugin, queueSource: false }))
+  dispatchEvent(new Event('quiet:plugins-changed'))
+  await flush()
+  expect(list().querySelector('[data-kind="plugin"]')).not.toBeNull()
+  expect(groups()).toHaveLength(0)
   expect(logged).toEqual([])
 })
