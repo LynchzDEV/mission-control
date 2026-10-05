@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { link, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -147,18 +147,76 @@ test('two images with the same name in one reply are both kept', async () => {
   expect(await readFile(join(folder, 'r1-1-shot.png'), 'utf8')).toBe('second')
 })
 
-test('a local failure while resuming keeps the item waiting and is not blamed on the source', async () => {
+test('a local failure while resuming keeps the item waiting and asks for you after three failures', async () => {
   const failingWrite: QueueEngineDeps['writeContext'] = async () => { throw new Error('disk full') }
   const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [] }], lastId: 'r1' }), { writeContext: failingWrite })
   const errors = silencedErrors()
   try {
-    for (let i = 0; i < 3; i += 1) expect(await h.engine.checkReplies()).toEqual({ checked: 1, resumed: 0 })
+    for (let i = 0; i < 2; i += 1) expect(await h.engine.checkReplies()).toEqual({ checked: 1, resumed: 0 })
+    expect(h.alerts).toEqual([])
+    await h.engine.checkReplies()
     expect(errors.mock.calls.map(call => call[0])).toEqual(['queue resume failed', 'queue resume failed', 'queue resume failed'])
   } finally {
     errors.mockRestore()
   }
   expect(h.store.get(h.item.id)).toMatchObject({ state: 'waiting-info', lastSeenId: 'c1', questions: ['Which page?'], answerPaths: [] })
-  expect(h.alerts).toEqual([])
+  expect(h.alerts).toEqual(['Could not save the replies: disk full'])
+})
+
+test('the resume failure count resets after the alert', async () => {
+  const failingWrite: QueueEngineDeps['writeContext'] = async () => { throw new Error('disk full') }
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [] }], lastId: 'r1' }), { writeContext: failingWrite })
+  const errors = silencedErrors()
+  try {
+    for (let i = 0; i < 5; i += 1) await h.engine.checkReplies()
+  } finally {
+    errors.mockRestore()
+  }
+  expect(h.alerts).toEqual(['Could not save the replies: disk full'])
+})
+
+test('a hard link to a file outside the plugin folder is not copied', async () => {
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [{ name: 'hard.png', path: 'hard.png' }] }], lastId: 'r1' }))
+  await mkdir(h.files, { recursive: true })
+  await writeFile(join(dir, 'secret'), 'do not copy')
+  await link(join(dir, 'secret'), join(h.files, 'hard.png'))
+  const errors = silencedErrors()
+  try {
+    await h.engine.checkReplies()
+    expect(errors).toHaveBeenCalledTimes(1)
+  } finally {
+    errors.mockRestore()
+  }
+  const item = h.store.get(h.item.id)!
+  expect(await contextFiles(item.worktree!)).toEqual(['answers-1.md', 'item-1.md'])
+  expect(await readFile(item.answerPaths[0]!, 'utf8')).not.toContain('## Images')
+})
+
+test('an image over the size cap is not copied', async () => {
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [{ name: 'big.png', path: 'big.png' }, { name: 'edge.png', path: 'edge.png' }] }], lastId: 'r1' }))
+  await mkdir(h.files, { recursive: true })
+  await writeFile(join(h.files, 'big.png'), Buffer.alloc(3_932_161, 1))
+  await writeFile(join(h.files, 'edge.png'), Buffer.alloc(3_932_160, 2))
+  const errors = silencedErrors()
+  try {
+    await h.engine.checkReplies()
+    expect(errors).toHaveBeenCalledTimes(1)
+  } finally {
+    errors.mockRestore()
+  }
+  const item = h.store.get(h.item.id)!
+  expect(await contextFiles(item.worktree!)).toEqual(['answers-1.md', 'item-1.md', 'r1-1-edge.png'])
+  expect((await stat(join(item.worktree!, '.mission-control', 'context', 'clickup-board', 'r1-1-edge.png'))).size).toBe(3_932_160)
+})
+
+test('a normal image is copied byte for byte', async () => {
+  const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x0a, 0x0d])
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [{ name: 'shot.png', path: 'shot.png' }] }], lastId: 'r1' }))
+  await mkdir(h.files, { recursive: true })
+  await writeFile(join(h.files, 'shot.png'), bytes)
+  await h.engine.checkReplies()
+  const copied = await readFile(join(h.store.get(h.item.id)!.worktree!, '.mission-control', 'context', 'clickup-board', 'r1-0-shot.png'))
+  expect(copied.equals(bytes)).toBe(true)
 })
 
 test('a missing reply image is logged and left out of the answers', async () => {

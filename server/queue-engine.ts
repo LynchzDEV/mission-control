@@ -1,4 +1,5 @@
-import { copyFile, lstat, mkdir, realpath } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { lstat, mkdir, open, realpath, writeFile } from 'node:fs/promises'
 import { basename, join, resolve, sep } from 'node:path'
 
 import { SESSION_CONTEXT_DIR, type TaskContext } from './plugins/context-files'
@@ -35,6 +36,7 @@ export type QueueEngine = {
 const MAX_RUN_LABEL = 120
 const REQUEUEABLE: ReadonlySet<QueueItem['state']> = new Set(['failed', 'ready'])
 const MAX_REPLY_FAILURES = 3
+const MAX_IMAGE_BYTES = 3_932_160
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
@@ -97,11 +99,22 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
   return { fail, settle, startNext }
 }
 
-async function insideFile(realBase: string, candidate: string): Promise<string> {
-  if (!(await lstat(candidate)).isFile()) throw new Error(`not a regular file: ${candidate}`)
-  const real = await realpath(candidate)
-  if (!real.startsWith(realBase + sep)) throw new Error(`outside the plugin folder: ${candidate}`)
-  return real
+async function readInsideFile(realBase: string, candidate: string): Promise<Buffer> {
+  const handle = await open(candidate, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  try {
+    const opened = await handle.stat()
+    if (!opened.isFile() || opened.nlink !== 1) throw new Error(`not a single-link regular file: ${candidate}`)
+    if (opened.size > MAX_IMAGE_BYTES) throw new Error(`image over ${MAX_IMAGE_BYTES} bytes: ${candidate}`)
+    const real = await realpath(candidate)
+    if (!real.startsWith(realBase + sep)) throw new Error(`outside the plugin folder: ${candidate}`)
+    const named = await lstat(real)
+    if (!named.isFile() || named.dev !== opened.dev || named.ino !== opened.ino) throw new Error(`changed while checking: ${candidate}`)
+    const bytes = await handle.readFile()
+    if (bytes.length > MAX_IMAGE_BYTES) throw new Error(`image over ${MAX_IMAGE_BYTES} bytes: ${candidate}`)
+    return bytes
+  } finally {
+    await handle.close()
+  }
 }
 
 async function importImages(root: string, replies: SourceReply[], folder: string): Promise<string[]> {
@@ -114,7 +127,7 @@ async function importImages(root: string, replies: SourceReply[], folder: string
       const to = join(folder, `${reply.id}-${index}-${basename(image.name)}`.replace(/[^A-Za-z0-9._-]/g, '-'))
       try {
         const base = await realBase
-        await copyFile(await insideFile(base, resolve(base, image.path)), to)
+        await writeFile(to, await readInsideFile(base, resolve(base, image.path)))
         copied.push(to)
       } catch (error) {
         console.error('queue image skipped', error)
@@ -124,9 +137,22 @@ async function importImages(root: string, replies: SourceReply[], folder: string
   return copied
 }
 
+function failureCounter(deps: QueueEngineDeps, reason: string) {
+  const counts = new Map<string, number>()
+  return {
+    clear: (id: string) => { counts.delete(id) },
+    record(item: QueueItem, error: unknown): void {
+      const failures = (counts.get(item.id) ?? 0) + 1
+      counts.set(item.id, failures % MAX_REPLY_FAILURES)
+      if (failures === MAX_REPLY_FAILURES) deps.needsYou(deps.store.get(item.id) ?? item, `${reason}: ${message(error)}`)
+    },
+  }
+}
+
 function replyCheck(deps: QueueEngineDeps): (item: QueueItem, worktree: string) => Promise<boolean> {
   const { store } = deps
-  const replyFailures = new Map<string, number>()
+  const readFailures = failureCounter(deps, 'Could not read replies')
+  const saveFailures = failureCounter(deps, 'Could not save the replies')
 
   async function resume(item: QueueItem, worktree: string, replies: SourceReply[], lastId: string | null): Promise<void> {
     const folder = join(worktree, SESSION_CONTEXT_DIR, 'context', item.source)
@@ -139,12 +165,10 @@ function replyCheck(deps: QueueEngineDeps): (item: QueueItem, worktree: string) 
   async function read(item: QueueItem) {
     try {
       const result = await deps.source(item.source).replies({ id: item.externalId, sinceId: item.lastSeenId })
-      replyFailures.delete(item.id)
+      readFailures.clear(item.id)
       return result
     } catch (error) {
-      const failures = (replyFailures.get(item.id) ?? 0) + 1
-      replyFailures.set(item.id, failures % MAX_REPLY_FAILURES)
-      if (failures === MAX_REPLY_FAILURES) deps.needsYou(store.get(item.id) ?? item, `Could not read replies: ${message(error)}`)
+      readFailures.record(item, error)
       return null
     }
   }
@@ -154,9 +178,11 @@ function replyCheck(deps: QueueEngineDeps): (item: QueueItem, worktree: string) 
     if (result === null || result.replies.length === 0) return false
     try {
       await resume(item, worktree, result.replies, result.lastId)
+      saveFailures.clear(item.id)
       return true
     } catch (error) {
       console.error('queue resume failed', error)
+      saveFailures.record(item, error)
       return false
     }
   }
