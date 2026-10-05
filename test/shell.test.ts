@@ -119,6 +119,15 @@ describe('quiet shell', () => {
   })
 })
 
+describe('queue screen', () => {
+  test('/ has the Queue screen, its island and its icons', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    expect(markup).toContain('<section id="queue" class="studio" aria-label="Queue" hidden></section>')
+    expect(markup).toContain('<script src="/js/queue.js" type="module" defer></script>')
+    for (const symbol of ['q-grip', 'q-queue', 'q-clock']) expect(markup).toContain(`<symbol id="${symbol}"`)
+  })
+})
+
 describe('attention delivery', () => {
   test('/ links the Mission Control favicon and the attention island', async () => {
     const markup = await (await app.handle(new Request('http://localhost/'))).text()

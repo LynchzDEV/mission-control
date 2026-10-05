@@ -44,6 +44,9 @@ const BODY = `
     <symbol id="mk-chat" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3h0A1.5 1.5 0 0 1 4 11.5z"/></symbol>
     <symbol id="mk-link" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8.5 11.5a3 3 0 0 0 4.2 0l2.6-2.6a3 3 0 0 0-4.2-4.2l-1 1"/><path d="M11.5 8.5a3 3 0 0 0-4.2 0l-2.6 2.6a3 3 0 0 0 4.2 4.2l1-1"/></symbol>
     <symbol id="mk-refresh" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 9A5.5 5.5 0 0 0 5.4 6.5M4.5 11a5.5 5.5 0 0 0 10.1 2.5"/><path d="M5 3.5v3h3M15 16.5v-3h-3"/></symbol>
+    <symbol id="q-grip" viewBox="0 0 20 20" fill="currentColor" stroke="none"><circle cx="7.5" cy="5" r="1.3"/><circle cx="12.5" cy="5" r="1.3"/><circle cx="7.5" cy="10" r="1.3"/><circle cx="12.5" cy="10" r="1.3"/><circle cx="7.5" cy="15" r="1.3"/><circle cx="12.5" cy="15" r="1.3"/></symbol>
+    <symbol id="q-queue" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="13" height="4" rx="1.3"/><path d="M3.5 11h13M3.5 14.5h9"/></symbol>
+    <symbol id="q-clock" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="6.5"/><path d="M10 6.5V10l2.3 1.4"/></symbol>
   </svg>
   <canvas id="backdrop" class="backdrop" aria-hidden="true"></canvas>
   <div class="sb-shell collapsed" id="sb-shell">
@@ -128,6 +131,7 @@ const BODY = `
       </section>
       <section id="plugin" class="studio" aria-label="Plugin" hidden></section>
       <section id="marketplace" class="studio" aria-label="Marketplace" hidden></section>
+      <section id="queue" class="studio" aria-label="Queue" hidden></section>
     </div>
 
     <div class="composer-area content-width">
@@ -238,6 +242,7 @@ export function ShellPage(props: ShellProps): string {
   <script src="/js/access.js" type="module" defer></script>
   <script src="/js/attention.js" type="module" defer></script>
   <script src="/js/plugins.js" type="module" defer></script>
+  <script src="/js/queue.js" type="module" defer></script>
 </head>
 <body>${BODY}</body>
 </html>`

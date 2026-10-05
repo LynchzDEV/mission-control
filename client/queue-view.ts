@@ -1,0 +1,203 @@
+export type QueueState = 'queued' | 'building' | 'waiting-info' | 'ready' | 'failed'
+
+export type QueueItemView = {
+  id: string; source: string; externalId: string; title: string; url: string; flowId: string | null
+  state: QueueState; runIds: string[]; questions: string[]; error: string | null; updatedAt: number
+}
+
+export type QueuePlugin = { id: string; name: string; icon?: string; enabled: boolean }
+export type QueueFlow = { id: string; name: string }
+export type QueueContext = { plugins: QueuePlugin[]; flows: QueueFlow[]; now: number; checkedAt: number | null; openIds: ReadonlySet<string> }
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+const LINE = 'Items from your sources, built one at a time. Nothing reaches the remote until you land it.'
+const STATES: readonly QueueState[] = ['building', 'queued', 'waiting-info', 'ready', 'failed']
+const PILL: Record<QueueState, { s: string; label: string; count: string; icon?: string }> = {
+  building: { s: 'running', label: 'Building', count: 'building' },
+  queued: { s: 'queued', label: 'Queued', count: 'queued' },
+  'waiting-info': { s: 'waiting', label: 'Waiting info', count: 'waiting', icon: 'q-clock' },
+  ready: { s: 'done', label: 'Ready', count: 'ready' },
+  failed: { s: 'failed', label: 'Failed', count: 'failed' },
+}
+
+export type Child = Node | string
+export type Attrs = Record<string, string | boolean>
+
+export function el(tag: string, attrs: Attrs = {}, ...children: Child[]): HTMLElement {
+  const node = document.createElement(tag)
+  for (const [name, value] of Object.entries(attrs)) {
+    if (value === false) continue
+    node.setAttribute(name, value === true ? '' : value)
+  }
+  node.append(...children)
+  return node
+}
+
+export function icon(id: string): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('aria-hidden', 'true')
+  const use = document.createElementNS(SVG_NS, 'use')
+  use.setAttribute('href', `#${id}`)
+  svg.append(use)
+  return svg
+}
+
+const button = (label: string, className: string, attrs: Attrs = {}, iconId?: string): HTMLElement =>
+  el('button', { type: 'button', class: className, ...attrs }, ...(iconId ? [icon(iconId)] : []), label)
+
+export function ordinal(n: number): string {
+  const tens = n % 100
+  const suffix = tens >= 11 && tens <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th'
+  return `${n}${suffix}`
+}
+
+export function ageText(at: number, now: number): string {
+  const minutes = Math.floor(Math.max(0, now - at) / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`
+}
+
+export function isWebLink(url: string): boolean {
+  return /^https?:\/\//i.test(url)
+}
+
+export function lineText(items: readonly QueueItemView[], queuedIndex: number): string {
+  if (queuedIndex === 0) return 'Next up'
+  return `${ordinal(queuedIndex + 1 + (items.some(item => item.state === 'building') ? 1 : 0))} in line`
+}
+
+function pill(state: QueueState): HTMLElement {
+  const { s, label, icon: iconId } = PILL[state]
+  return el('span', { class: 'pill-state', 'data-s': s }, ...(iconId ? [icon(iconId)] : []), label)
+}
+
+function heading(context: QueueContext): HTMLElement {
+  const checked = context.checkedAt === null ? 'Not checked yet' : `Checked ${ageText(context.checkedAt, context.now)}`
+  return el('header', { class: 'studio-heading' },
+    el('div', {}, el('h1', {}, 'Queue'), el('p', { class: 'muted' }, LINE)),
+    el('nav', { 'aria-label': 'Queue actions' }, el('span', { class: 'muted q-checked' }, checked), button('Check replies', 'connection-button q-btn', { 'data-act': 'check' }, 'mk-refresh')))
+}
+
+const addButton = (): HTMLElement => button('Add item', 'connection-button q-btn', { 'data-act': 'add' }, 'plus-icon')
+
+function summary(items: readonly QueueItemView[]): HTMLElement {
+  const counts = STATES.map(state => [state, items.filter(item => item.state === state).length] as const).filter(([, count]) => count > 0)
+  const layout = el('nav', { class: 'mk-seg q-layout', 'aria-label': 'Layout' },
+    button('List', '', { 'data-layout': 'list', 'aria-pressed': 'true' }),
+    button('Git tree', '', { 'data-layout': 'tree', 'aria-pressed': 'false', disabled: true }))
+  return el('div', { class: 'q-bar' },
+    ...counts.map(([state, count]) => el('span', { class: 'pill-state', 'data-s': PILL[state].s }, `${count} ${PILL[state].count}`)),
+    el('span', { class: 'sp' }), el('span', { class: 'muted' }, 'One builds at a time'), layout, addButton())
+}
+
+function sourceBadge(item: QueueItemView, plugins: readonly QueuePlugin[]): HTMLElement {
+  const plugin = plugins.find(entry => entry.id === item.source)
+  const parts: Child[] = []
+  if (plugin !== undefined) {
+    const logo = plugin.icon === undefined ? icon('auto-icon') : el('img', { src: `/api/plugins/${encodeURIComponent(plugin.id)}/icon`, alt: '' })
+    parts.push(el('span', { class: 'mk-logo', style: '--s:16px' }, logo))
+  }
+  parts.push(plugin?.name ?? item.source)
+  if (!isWebLink(item.url)) return el('span', { class: 'q-src', title: item.externalId }, ...parts)
+  return el('a', { class: 'q-src', href: item.url, target: '_blank', rel: 'noopener noreferrer', title: `Open ${item.externalId} in ${plugin?.name ?? item.source}` }, ...parts, icon('open-icon'))
+}
+
+function flowName(item: QueueItemView, flows: readonly QueueFlow[]): string {
+  if (item.flowId === null) return 'Default flow'
+  return flows.find(flow => flow.id === item.flowId)?.name ?? item.flowId
+}
+
+function progressText(item: QueueItemView, items: readonly QueueItemView[], now: number): string {
+  if (item.state === 'building') return 'Building'
+  if (item.state === 'queued') return lineText(items, items.filter(entry => entry.state === 'queued').indexOf(item))
+  if (item.state === 'waiting-info') {
+    const count = item.questions.length
+    return `Asked ${count} question${count === 1 ? '' : 's'} · ${ageText(item.updatedAt, now)}`
+  }
+  if (item.state === 'ready') return `Built · ${ageText(item.updatedAt, now)}`
+  return item.error ?? 'Failed'
+}
+
+function actions(item: QueueItemView, now: number): HTMLElement {
+  const id = { 'data-id': item.id }
+  const openRun = item.runIds.length > 0
+  const parts: HTMLElement[] = []
+  if (item.state === 'building') parts.push(el('span', { class: 'muted q-time' }, `started ${ageText(item.updatedAt, now)}`))
+  if (item.state === 'queued') parts.push(button('Remove', 'text-button q-remove', { ...id, 'data-act': 'remove' }))
+  if (item.state === 'waiting-info') parts.push(button('Requeue', 'text-button', { ...id, 'data-act': 'requeue' }))
+  if (item.state === 'ready') {
+    parts.push(button('Requeue', 'text-button', { ...id, 'data-act': 'requeue' }))
+    if (openRun) parts.push(button('Open run', 'connection-button primary', { ...id, 'data-act': 'open-run' }, 'flow-icon'))
+  }
+  if (item.state === 'failed') {
+    parts.push(button('Requeue', 'connection-button', { ...id, 'data-act': 'requeue' }, 'mk-refresh'))
+    if (openRun) parts.push(button('Open run', 'connection-button', { ...id, 'data-act': 'open-run' }, 'flow-icon'))
+  }
+  return el('div', { class: 'q-acts' }, ...parts)
+}
+
+function questionsThread(item: QueueItemView, now: number): HTMLElement {
+  const asked = item.questions.map(question => el('div', { class: 'q-msg' },
+    el('span', { class: 'mk-logo', style: '--s:28px' }, icon('spark-icon')),
+    el('div', { class: 'q-msg-meta' }, el('strong', {}, 'Mission Control'), el('span', {}, `asked on the source · ${ageText(item.updatedAt, now)}`)),
+    el('div', { class: 'q-bubble' }, el('p', {}, question))))
+  const foot = el('div', { class: 'q-thread-foot' }, el('span', {}, 'Answer on the source, then Check replies picks it up and the build goes on.'))
+  return el('div', { class: 'q-thread' }, ...asked, foot)
+}
+
+function row(item: QueueItemView, items: readonly QueueItemView[], context: QueueContext): HTMLElement {
+  const movable = item.state === 'queued'
+  const openable = item.state === 'waiting-info' && item.questions.length > 0
+  const open = openable && context.openIds.has(item.id)
+  const meta = el('div', { class: 'q-meta' },
+    sourceBadge(item, context.plugins),
+    el('span', {}, icon('flow-icon'), flowName(item, context.flows)),
+    el('span', {}, progressText(item, items, context.now)))
+  return el('article', { class: 'q-row', 'data-id': item.id, 'data-state': item.state, 'data-movable': movable, draggable: movable ? 'true' : false, 'data-openable': openable, 'data-open': open },
+    el('span', { class: 'q-grip', title: movable ? 'Drag to reorder' : false }, icon('q-grip')),
+    pill(item.state),
+    el('div', { class: 'q-main' }, el('strong', {}, item.title), meta),
+    actions(item, context.now),
+    ...(open ? [questionsThread(item, context.now)] : []))
+}
+
+function emptyState(): HTMLElement {
+  const way = (iconId: string, title: string, note: Child, end: HTMLElement): HTMLElement => el('div', { class: 'q-way' },
+    el('span', { class: 'mk-logo q-ico', style: '--s:34px' }, icon(iconId)), el('span', {}, el('strong', {}, title), el('small', {}, note)), end)
+  return el('div', { class: 'mk-empty q-empty' },
+    el('span', { class: 'mk-logo', style: '--s:52px' }, icon('q-queue')),
+    el('h2', {}, 'Nothing in the queue'),
+    el('p', { class: 'muted' }, 'Items come from a source plugin. Add one and Mission Control plans it, builds it, and asks the requester when it needs them.'),
+    el('div', { class: 'q-empty-ways' },
+      way('store-icon', 'From a source plugin', 'Paste a task link from an enabled source plugin.', button('Add item', 'connection-button', { 'data-act': 'add' })),
+      way('terminal-icon', 'From the terminal', el('code', { class: 'q-code' }, 'mctl queue add <source> <id> --repo <dir>'), el('span'))))
+}
+
+export function renderQueue(items: readonly QueueItemView[], context: QueueContext): HTMLElement {
+  if (items.length === 0) {
+    return el('div', { class: 'q-screen' }, heading(context), el('div', { class: 'q-bar' }, el('span', { class: 'sp' }), addButton()), emptyState())
+  }
+  const hint = el('button', { type: 'button', class: 'connection-add q-hint', 'data-act': 'add' }, icon('plus-icon'), 'Add an item from a source plugin, or run ', el('code', {}, 'mctl queue add'))
+  return el('div', { class: 'q-screen' }, heading(context), summary(items), el('div', { class: 'q-list' }, ...items.map(item => row(item, items, context))), hint)
+}
+
+const isText = (value: unknown): value is string => typeof value === 'string'
+const isTexts = (value: unknown): value is string[] => Array.isArray(value) && value.every(isText)
+
+function readItem(value: unknown): QueueItemView | null {
+  if (typeof value !== 'object' || value === null) return null
+  const entry = value as Record<string, unknown>
+  const { id, source, externalId, title, url, flowId, state, runIds, questions, error, updatedAt } = entry
+  if (![id, source, externalId, title, url].every(isText) || !STATES.includes(state as QueueState)) return null
+  if (!isTexts(runIds) || !isTexts(questions) || typeof updatedAt !== 'number') return null
+  return {
+    id: id as string, source: source as string, externalId: externalId as string, title: title as string, url: url as string,
+    flowId: isText(flowId) ? flowId : null, state: state as QueueState, runIds, questions, error: isText(error) ? error : null, updatedAt,
+  }
+}
+
+export function readQueueItems(value: unknown): QueueItemView[] {
+  return Array.isArray(value) ? value.map(readItem).filter((item): item is QueueItemView => item !== null) : []
+}
