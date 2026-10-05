@@ -196,7 +196,10 @@ function start(section: HTMLElement): void {
     applyFocus()
   })
   addEventListener('quiet:screen', (event) => { if ((event as CustomEvent<string>).detail === 'queue') void loadContext() })
-  setInterval(() => { if (!section.hidden && dragId === null) paint() }, REFRESH_MS)
+  const ageRefresh = setInterval(() => {
+    if (!section.isConnected) { clearInterval(ageRefresh); return }
+    if (!section.hidden && dragId === null) paint()
+  }, REFRESH_MS)
 
   function showItems(next: QueueItemView[]): void {
     items = next

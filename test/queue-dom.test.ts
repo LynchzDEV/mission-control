@@ -84,6 +84,7 @@ beforeEach(async () => {
 })
 
 afterAll(() => {
+  section().remove()
   globalThis.fetch = realFetch
   for (const key of ['window', 'document', 'EventSource', 'localStorage', 'Element', 'HTMLElement', 'location']) Reflect.deleteProperty(globalThis, key)
   window.close()

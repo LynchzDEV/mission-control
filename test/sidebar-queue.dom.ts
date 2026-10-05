@@ -36,6 +36,9 @@ const logged: unknown[] = []
 const passedOn: unknown[] = []
 let releaseList: (items: QueueItem[]) => void = () => {}
 const listReply = new Promise<Response>(resolve => { releaseList = items => resolve(Response.json({ items })) })
+const ageTicks: Array<{ id: number; run: () => void }> = []
+const clearedTicks: unknown[] = []
+const AGE_REFRESH_MS = 30_000
 const flush = async (times = 3): Promise<void> => { for (let index = 0; index < times; index++) await new Promise(resolve => setTimeout(resolve, 0)) }
 
 const NOW = Date.now()
@@ -70,7 +73,18 @@ beforeAll(async () => {
   addEventListener('quiet:show', (event) => { shown.push((event as CustomEvent).detail); doc.getElementById('queue')!.hidden = (event as CustomEvent).detail !== 'queue' })
   addEventListener('quiet:queue-focus', (event) => focused.push((event as CustomEvent).detail))
   addEventListener('quiet:queue-items', (event) => passedOn.push((event as CustomEvent).detail))
+  const realSetInterval = globalThis.setInterval
+  const realClearInterval = globalThis.clearInterval
+  Object.assign(globalThis, {
+    setInterval: (run: () => void, ms: number) => {
+      if (ms !== AGE_REFRESH_MS) return realSetInterval(run, ms)
+      ageTicks.push({ id: 1000 + ageTicks.length, run })
+      return 1000 + ageTicks.length - 1
+    },
+    clearInterval: (id: Parameters<typeof clearInterval>[0]) => { clearedTicks.push(id); realClearInterval(id) },
+  })
   await import('../client/queue')
+  globalThis.setInterval = realSetInterval
   await import('../client/sidebar')
   await flush()
 })
@@ -254,5 +268,15 @@ test('an empty queue shows no row under a plugin without queueSource', async () 
   await flush()
   expect(list().querySelector('[data-kind="plugin"]')).not.toBeNull()
   expect(groups()).toHaveLength(0)
+  expect(logged).toEqual([])
+})
+
+test('the age refresh does nothing and stops once the Queue screen is gone from the page', () => {
+  expect(ageTicks).toHaveLength(1)
+  const tick = ageTicks[0]!
+  doc.getElementById('queue')!.remove()
+  Reflect.deleteProperty(globalThis, 'document')
+  expect(() => tick.run()).not.toThrow()
+  expect(clearedTicks).toContain(tick.id)
   expect(logged).toEqual([])
 })
