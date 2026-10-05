@@ -2,7 +2,7 @@ import { Elysia } from 'elysia'
 import { z } from 'zod'
 
 import { requireLocal } from '../auth'
-import { QueueRefusal, type QueueEngine } from '../queue-engine'
+import { QueueRefusal, SourceFailure, type QueueEngine } from '../queue-engine'
 import type { QueueStore } from '../queue-store'
 import { queueTree, type QueueTree } from '../queue-tree'
 import { eventStreamResponse, type RunEvents } from '../run-events'
@@ -47,8 +47,9 @@ async function addItem(engine: QueueEngineRoutes, body: unknown, set: Status) {
   try {
     return await refusing(set, async () => ({ item: await engine.add({ ...parsed.data, repo: repo.path }) }))
   } catch (error) {
+    if (!(error instanceof SourceFailure)) throw error
     set.status = 502
-    return { error: message(error) }
+    return { error: error.message }
   }
 }
 

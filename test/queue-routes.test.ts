@@ -5,13 +5,14 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Elysia } from 'elysia'
 
-import { QueueRefusal, type QueueEngine } from '../server/queue-engine'
+import { QueueRefusal, SourceFailure, type QueueEngine } from '../server/queue-engine'
 import { createQueueStore } from '../server/queue-store'
 import { queueRoutes } from '../server/routes/queue'
 
 const store = () => createQueueStore(join(mkdtempSync(join(tmpdir(), 'mc-queue-routes-')), 'queue.json'))
-const call = (app: Elysia, path: string, init: RequestInit = {}) => app.handle(new Request(`http://127.0.0.1:7777${path}`, { ...init, headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' } }))
-const post = (app: Elysia, path: string, body: unknown = {}) => call(app, path, { method: 'POST', body: JSON.stringify(body) })
+type App = { handle(request: Request): Promise<Response> }
+const call = (app: App, path: string, init: RequestInit = {}) => app.handle(new Request(`http://127.0.0.1:7777${path}`, { ...init, headers: { host: '127.0.0.1:7777', 'content-type': 'application/json' } }))
+const post = (app: App, path: string, body: unknown = {}) => call(app, path, { method: 'POST', body: JSON.stringify(body) })
 const newItem = { source: 'clickup-board', externalId: '1', title: 'Task 1', url: 'u', repo: '/repo', flowId: null }
 
 let repo: string
@@ -54,7 +55,7 @@ test('GET lists items; POST adds through the engine', async () => {
 
 test('POST rejects a bad body and reports a source failure as 502', async () => {
   const items = store()
-  const app = new Elysia().use(queueRoutes(items, engine(items, { add: async () => { throw new Error('clickup-board is not installed') } })))
+  const app = new Elysia().use(queueRoutes(items, engine(items, { add: async () => { throw new SourceFailure('clickup-board is not installed') } })))
   expect((await post(app, '/api/queue', { source: '', externalId: '1', repo: '/repo' })).status).toBe(400)
   expect((await post(app, '/api/queue', { source: 'x', externalId: '1', repo: '/repo', position: 'top' })).status).toBe(400)
   const failed = await post(app, '/api/queue', { source: 'clickup-board', externalId: '1', repo })
@@ -171,7 +172,7 @@ test('GET tree returns what the tree source builds', async () => {
 test('POST reports a source error that reads like a refusal as 502', async () => {
   const items = store()
   for (const text of ['It is broken', 'No queue item here', 'Already in the queue']) {
-    const app = new Elysia().use(queueRoutes(items, engine(items, { add: async () => { throw new Error(text) } })))
+    const app = new Elysia().use(queueRoutes(items, engine(items, { add: async () => { throw new SourceFailure(text) } })))
     const failed = await post(app, '/api/queue', { source: 'clickup-board', externalId: '1', repo })
     expect(failed.status).toBe(502)
     expect((await failed.json()).error).toBe(text)
@@ -218,4 +219,11 @@ test('the stream sends checkedAt and sends again when a check finishes with no i
   aborting.abort()
   await reader.cancel()
   expect(listeners.size).toBe(0)
+})
+
+test('POST maps an unexpected local failure to 500, not a source error', async () => {
+  const items = store()
+  const app = new Elysia().use(queueRoutes(items, engine(items, { add: async () => { throw new Error('disk full') } })))
+  const failed = await post(app, '/api/queue', { source: 'clickup-board', externalId: '1', repo })
+  expect(failed.status).toBe(500)
 })

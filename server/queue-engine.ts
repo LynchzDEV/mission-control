@@ -53,6 +53,21 @@ export class QueueRefusal extends Error {
   }
 }
 
+export class SourceFailure extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SourceFailure'
+  }
+}
+
+async function fromSource<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work()
+  } catch (error) {
+    throw new SourceFailure(message(error))
+  }
+}
+
 const stateRefusal = (state: QueueItem['state']): QueueRefusal => new QueueRefusal(`It is ${state} now`, 409)
 
 function found(store: QueueStore, id: string): QueueItem {
@@ -269,7 +284,7 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
 
   async function add(input: AddInput): Promise<QueueItem> {
     refuseDuplicate(input)
-    const detail = await deps.source(input.source).item({ id: input.externalId })
+    const detail = await fromSource(() => deps.source(input.source).item({ id: input.externalId }))
     refuseDuplicate(input)
     const item = await store.add({ source: input.source, externalId: input.externalId, title: detail.title, url: detail.url, repo: input.repo, flowId: input.flowId ?? null }, input.position ?? 'end')
     await serial(startNext)
