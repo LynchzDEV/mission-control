@@ -5,7 +5,7 @@ export type QueueItemView = {
   state: QueueState; runIds: string[]; questions: string[]; error: string | null; updatedAt: number
 }
 
-export type QueuePlugin = { id: string; name: string; icon?: string; enabled: boolean }
+export type QueuePlugin = { id: string; name: string; icon?: string; enabled: boolean; queueSource?: true }
 export type QueueFlow = { id: string; name: string }
 export type QueueLayout = 'list' | 'tree'
 export type QueueContext = {

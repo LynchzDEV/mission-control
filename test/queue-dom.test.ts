@@ -305,6 +305,38 @@ test('the Add form refuses a link with no id before posting', async () => {
   dialog().close()
 })
 
+async function addSourcesWith(pluginList: Array<Record<string, unknown>>): Promise<string[]> {
+  replies.set('GET /api/plugins', () => Response.json({ plugins: pluginList }))
+  dispatchEvent(new CustomEvent('quiet:screen', { detail: 'queue' }))
+  await flush()
+  click(buttonNamed('Add item', section()))
+  await flush()
+  const sources = [...field<HTMLSelectElement>('source').options].map(option => option.value)
+  dialog().close()
+  replies.delete('GET /api/plugins')
+  dispatchEvent(new CustomEvent('quiet:screen', { detail: 'queue' }))
+  await flush()
+  return sources
+}
+
+test('the Add form offers only enabled queue-source plugins when any declares queueSource', async () => {
+  const sources = await addSourcesWith([
+    { id: 'clickup-board', name: 'ClickUp board', enabled: true, queueSource: true },
+    { id: 'jira-board', name: 'Jira board', enabled: true },
+    { id: 'off-board', name: 'Off board', enabled: false, queueSource: true },
+  ])
+  expect(sources).toEqual(['clickup-board'])
+})
+
+test('the Add form falls back to every enabled plugin when no enabled plugin declares queueSource', async () => {
+  const sources = await addSourcesWith([
+    { id: 'clickup-board', name: 'ClickUp board', enabled: true },
+    { id: 'jira-board', name: 'Jira board', enabled: true, queueSource: false },
+    { id: 'off-board', name: 'Off board', enabled: false, queueSource: true },
+  ])
+  expect(sources).toEqual(['clickup-board', 'jira-board'])
+})
+
 const treeCalls = () => calls.filter(call => call.url === '/api/queue/tree')
 const tree = { repos: [{ repo: '/Users/me/api', base: { branch: 'main', commits: [{ sha: '4f2a9c1', subject: 'kood: timeout copy' }] }, lanes: [{ itemId: 'r1', branch: 'queue/invoice-pdf-footer', worktree: '/Users/me/api/.worktree/queue-invoice-pdf-footer', forkSha: '4f2a9c1', commits: [{ sha: '3be81f0', subject: 'fix round 1: footer' }] }] }] }
 

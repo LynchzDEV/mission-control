@@ -55,6 +55,7 @@ function readPlugins(value: unknown): QueuePlugin[] {
     name: typeof entry.name === 'string' && entry.name !== '' ? entry.name : String(entry.id),
     enabled: entry.enabled === true,
     ...(typeof entry.icon === 'string' ? { icon: entry.icon } : {}),
+    ...(entry.queueSource === true ? { queueSource: true as const } : {}),
   }))
 }
 

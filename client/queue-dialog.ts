@@ -29,6 +29,12 @@ function option(value: string, label: string): HTMLOptionElement {
   return node
 }
 
+function sourceChoices(plugins: readonly QueuePlugin[]): QueuePlugin[] {
+  const enabled = plugins.filter(plugin => plugin.enabled)
+  const declared = enabled.filter(plugin => plugin.queueSource === true)
+  return declared.length > 0 ? declared : enabled
+}
+
 function positionNote(position: Position, items: readonly QueueItemView[]): string {
   const queued = items.filter(item => item.state === 'queued').length
   const place = position === 'next' ? 'Next up' : lineText(items, queued)
@@ -98,7 +104,7 @@ export function createAddDialog(source: () => AddDialogSource, toast: (text: str
   return {
     open(): void {
       const { plugins, flows } = source()
-      const enabled = plugins.filter(plugin => plugin.enabled)
+      const enabled = sourceChoices(plugins)
       const chosen = sourceSelect.value
       sourceSelect.replaceChildren(...enabled.map(plugin => option(plugin.id, plugin.name)))
       if (enabled.some(plugin => plugin.id === chosen)) sourceSelect.value = chosen
