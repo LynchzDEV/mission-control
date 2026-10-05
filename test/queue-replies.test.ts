@@ -31,7 +31,9 @@ async function parked(replies: () => Promise<SourceReplies>, overrides: Partial<
   }
   const engine = createQueueEngine(deps)
   const item = await engine.add({ source: 'clickup-board', externalId: '1', repo: '/repo' })
-  await engine.onRunSettled({ id: 'run-1', status: 'blocked', error: null, attempts: [{ nodeId: 'plan', number: 1, jobId: 'j', status: 'settled', prompt: '', startedAt: 1, endedAt: 2, result: { outcome: 'blocked', summary: 's', evidence: ['Which page?'] }, checks: [], output: '', workspace: null, tokenId: 't', pathId: 'main', from: [] }] })
+  const blocked: RunView = { id: 'run-1', status: 'blocked', error: null, attempts: [{ nodeId: 'plan', number: 1, jobId: 'j', status: 'settled', prompt: '', startedAt: 1, endedAt: 2, result: { outcome: 'blocked', summary: 's', evidence: ['Which page?'] }, checks: [], output: '', workspace: null, tokenId: 't', pathId: 'main', from: [] }] }
+  runs.set(blocked.id, blocked)
+  await engine.onRunSettled(blocked)
   Object.assign(deps, overrides)
   return { engine, store, item, alerts, requests, files }
 }
@@ -254,4 +256,59 @@ test('the failure count resets after an alert and after a good read', async () =
   await h.engine.checkReplies()
   await h.engine.checkReplies()
   expect(h.alerts).toHaveLength(1)
+})
+
+function slowReplies(result: SourceReplies) {
+  let release!: () => void
+  let entered!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const reading = new Promise<void>(resolve => { entered = resolve })
+  let calls = 0
+  const replies = async (): Promise<SourceReplies> => {
+    calls += 1
+    if (calls === 1) return { replies: [], lastId: null }
+    entered()
+    await gate
+    return result
+  }
+  return { replies, release, reading }
+}
+
+const settledWithin = (work: Promise<unknown>): Promise<string> => Promise.race([work.then(() => 'settled'), Bun.sleep(200).then(() => 'stuck')])
+
+test('a slow source does not hold up adds and settles while replies are read', async () => {
+  const slow = slowReplies({ replies: [{ id: 'r1', author: 'Ploy', text: 'The login page', images: [] }], lastId: 'r1' })
+  const h = await parked(slow.replies)
+  await h.engine.checkReplies()
+  const checking = h.engine.checkReplies()
+  await slow.reading
+  expect(await settledWithin(h.engine.add({ source: 'clickup-board', externalId: '2', repo: '/repo' }))).toBe('settled')
+  expect(await settledWithin(h.engine.onRunSettled({ id: 'run-2', status: 'failed', error: 'boom', attempts: [] }))).toBe('settled')
+  slow.release()
+  expect(await checking).toEqual({ checked: 1, resumed: 1 })
+  expect(h.store.get(h.item.id)).toMatchObject({ state: 'building', lastSeenId: 'r1' })
+})
+
+test('replies read for an item that was requeued meanwhile are discarded', async () => {
+  const slow = slowReplies({ replies: [{ id: 'r1', author: 'Ploy', text: 'The login page', images: [] }], lastId: 'r1' })
+  const h = await parked(slow.replies)
+  await h.engine.checkReplies()
+  const checking = h.engine.checkReplies()
+  await slow.reading
+  await h.engine.requeue(h.item.id)
+  slow.release()
+  expect(await checking).toEqual({ checked: 1, resumed: 0 })
+  expect(h.store.get(h.item.id)).toMatchObject({ state: 'building', answerPaths: [], lastSeenId: 'c1', runIds: ['run-1', 'run-2'] })
+})
+
+test('replies read against a cursor that moved meanwhile are discarded', async () => {
+  const slow = slowReplies({ replies: [{ id: 'r1', author: 'Ploy', text: 'old', images: [] }], lastId: 'r1' })
+  const h = await parked(slow.replies)
+  await h.engine.checkReplies()
+  const checking = h.engine.checkReplies()
+  await slow.reading
+  await h.store.update(h.item.id, { lastSeenId: 'r9' })
+  slow.release()
+  expect(await checking).toEqual({ checked: 1, resumed: 0 })
+  expect(h.store.get(h.item.id)).toMatchObject({ state: 'waiting-info', answerPaths: [], lastSeenId: 'r9' })
 })

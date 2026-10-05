@@ -4,7 +4,7 @@ import { basename, join, resolve, sep } from 'node:path'
 
 import { SESSION_CONTEXT_DIR, type TaskContext } from './plugins/context-files'
 import { answersMarkdown, branchLabel, questionsOf, runRequest, SETTLED, type RunView } from './queue-prompts'
-import type { QueueSource, SourceReply } from './queue-source'
+import type { QueueSource, SourceReplies, SourceReply } from './queue-source'
 import type { QueueItem, QueueStore } from './queue-store'
 
 export type QueueRunner = {
@@ -177,7 +177,12 @@ function failureCounter(deps: QueueEngineDeps, reason: string) {
   }
 }
 
-function replyCheck(deps: QueueEngineDeps): (item: QueueItem, worktree: string) => Promise<boolean> {
+type ReplyCheck = {
+  read(item: QueueItem): Promise<SourceReplies | null>
+  apply(item: QueueItem, worktree: string, result: SourceReplies): Promise<boolean>
+}
+
+function replyCheck(deps: QueueEngineDeps): ReplyCheck {
   const { store } = deps
   const readFailures = failureCounter(deps, 'Could not read replies')
   const saveFailures = failureCounter(deps, 'Could not save the replies')
@@ -190,7 +195,7 @@ function replyCheck(deps: QueueEngineDeps): (item: QueueItem, worktree: string) 
     await store.toFront(item.id)
   }
 
-  async function read(item: QueueItem) {
+  async function read(item: QueueItem): Promise<SourceReplies | null> {
     try {
       const result = await deps.source(item.source).replies({ id: item.externalId, sinceId: item.lastSeenId })
       readFailures.clear(item.id)
@@ -201,9 +206,8 @@ function replyCheck(deps: QueueEngineDeps): (item: QueueItem, worktree: string) 
     }
   }
 
-  return async function checkOne(item: QueueItem, worktree: string): Promise<boolean> {
-    const result = await read(item)
-    if (result === null || result.replies.length === 0) return false
+  async function apply(item: QueueItem, worktree: string, result: SourceReplies): Promise<boolean> {
+    if (result.replies.length === 0) return false
     try {
       await resume(item, worktree, result.replies, result.lastId)
       saveFailures.clear(item.id)
@@ -214,6 +218,8 @@ function replyCheck(deps: QueueEngineDeps): (item: QueueItem, worktree: string) 
       return false
     }
   }
+
+  return { read, apply }
 }
 
 export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
@@ -266,14 +272,27 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     await store.move(id, to)
   })
 
-  const checkOne = replyCheck(deps)
-  const checkReplies = (): Promise<{ checked: number; resumed: number }> => serial(async () => {
-    const waiting = store.list().flatMap(item => item.state === 'waiting-info' && item.worktree !== null ? [{ item, worktree: item.worktree }] : [])
-    let resumed = 0
-    for (const { item, worktree } of waiting) if (await checkOne(item, worktree)) resumed += 1
-    await startNext()
-    return { checked: waiting.length, resumed }
-  })
+  const replies = replyCheck(deps)
+  const stillWaiting = (read: QueueItem): { item: QueueItem; worktree: string } | undefined => {
+    const item = store.get(read.id)
+    if (item?.state !== 'waiting-info' || item.lastSeenId !== read.lastSeenId || item.worktree === null) return undefined
+    return { item, worktree: item.worktree }
+  }
+
+  const checkReplies = async (): Promise<{ checked: number; resumed: number }> => {
+    const waiting = store.list().filter(item => item.state === 'waiting-info' && item.worktree !== null)
+    const reads = await Promise.allSettled(waiting.map(item => replies.read(item)))
+    return serial(async () => {
+      let resumed = 0
+      for (const [index, read] of reads.entries()) {
+        const current = stillWaiting(waiting[index]!)
+        if (read.status !== 'fulfilled' || read.value === null || current === undefined) continue
+        if (await replies.apply(current.item, current.worktree, read.value)) resumed += 1
+      }
+      await startNext()
+      return { checked: waiting.length, resumed }
+    })
+  }
 
   async function recover(): Promise<void> {
     await serial(async () => {
