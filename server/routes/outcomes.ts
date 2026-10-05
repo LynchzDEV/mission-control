@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia'
 
+import { requireLocal } from '../auth'
 import type { OutcomeLedger } from '../outcomes'
 
 export const DEFAULT_OUTCOME_LIMIT = 200
@@ -19,7 +20,7 @@ export function outcomeQuery(query: Record<string, string | undefined>): Outcome
 }
 
 export function outcomesRoutes(ledger: OutcomeLedger) {
-  return new Elysia().get('/api/outcomes', async ({ query, set }) => {
+  return new Elysia().onBeforeHandle(requireLocal).get('/api/outcomes', async ({ query, set }) => {
     const parsed = outcomeQuery(query as Record<string, string | undefined>)
     if ('error' in parsed) {
       set.status = 400

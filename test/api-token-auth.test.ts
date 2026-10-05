@@ -127,3 +127,11 @@ test('dispatch tokens can read and report an In Session step', () => {
 test('dispatch tokens cannot remind a session; only the drawer can', () => {
   expect(allowToken('/api/studio/runs/x/steps/plan/remind', 'POST')).toBe(false)
 })
+
+test('a valid token is refused when the request came through a proxy', async () => {
+  for (const proxyHeader of [{ 'x-forwarded-for': '100.64.0.2' }, { 'tailscale-user-login': 'someone@example.com' }]) {
+    const headers = { authorization: `Bearer ${apiToken}`, ...proxyHeader }
+    expect((await app.handle(new Request(`${NON_LOCAL}/api/jobs`, { headers }))).status).toBe(403)
+    expect((await app.handle(new Request('http://localhost/api/studio/runs', { headers }))).status).toBe(403)
+  }
+})

@@ -58,6 +58,15 @@ function viaProxy(port: number, path: string, init: { method?: string; headers?:
 }
 
 const navigation = { 'sec-fetch-site': 'none', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' }
+const TAILSCALED = { 'x-forwarded-for': '100.64.0.2', 'x-forwarded-proto': 'https' }
+
+function throughTailscale(port: number, path: string, host: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<Response> {
+  return fetch(`http://127.0.0.1:${port}${path}`, {
+    method: init.method ?? 'GET',
+    headers: { ...TAILSCALED, 'x-forwarded-host': host, host, ...init.headers },
+    body: init.body,
+  })
+}
 
 describe('Tailscale access through the real app', () => {
   test('an allowed user gets the page, API reads and same-origin writes', async () => {
@@ -129,6 +138,63 @@ describe('Tailscale access through the real app', () => {
   })
 })
 
+describe('a tailnet client spoofing a local Host through tailscale serve', () => {
+  test('Host: localhost without Origin is refused on the page, API reads and API writes', async () => {
+    const server = listen(await createApp())
+    try {
+      for (const host of ['localhost', `127.0.0.1:${server.port}`]) {
+        expect((await throughTailscale(server.port, '/', host)).status).toBe(403)
+        expect((await throughTailscale(server.port, '/', host, { headers: navigation })).status).toBe(403)
+        expect((await throughTailscale(server.port, '/api/roles', host)).status).toBe(403)
+        expect((await throughTailscale(server.port, '/api/outcomes?terminal=t1', host)).status).toBe(403)
+        const write = await throughTailscale(server.port, '/api/roles', host, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+        expect(write.status).toBe(403)
+      }
+    } finally {
+      server.stop()
+    }
+  })
+
+  test('the allowed host with the allowed login gets the page, reads and same-origin writes', async () => {
+    const server = listen(await createApp())
+    try {
+      const login = { 'tailscale-user-login': USER }
+      expect((await throughTailscale(server.port, '/', HOST, { headers: { ...login, ...navigation } })).status).toBe(200)
+      const roles = await throughTailscale(server.port, '/api/roles', HOST, { headers: login })
+      expect(roles.status).toBe(200)
+      const saved = await throughTailscale(server.port, '/api/roles', HOST, {
+        method: 'POST',
+        headers: { ...login, origin: ORIGIN, 'content-type': 'application/json' },
+        body: JSON.stringify(await roles.json()),
+      })
+      expect(saved.status).toBe(200)
+    } finally {
+      server.stop()
+    }
+  })
+
+  test('the allowed host with a wrong or missing login is refused', async () => {
+    const server = listen(await createApp())
+    try {
+      expect((await throughTailscale(server.port, '/api/roles', HOST, { headers: { 'tailscale-user-login': 'someone@example.com' } })).status).toBe(403)
+      expect((await throughTailscale(server.port, '/api/roles', HOST)).status).toBe(403)
+      expect((await throughTailscale(server.port, '/', HOST, { headers: navigation })).status).toBe(403)
+    } finally {
+      server.stop()
+    }
+  })
+
+  test('a plain localhost request is unchanged', async () => {
+    const server = listen(await createApp())
+    try {
+      const local = await fetch(`http://127.0.0.1:${server.port}/api/roles`, { headers: { host: 'localhost' } })
+      expect(local.status).toBe(200)
+    } finally {
+      server.stop()
+    }
+  })
+})
+
 describe('terminal socket over Tailscale', () => {
   function openSocket(port: number, headers: Record<string, string>): { opened: Promise<void>; closed: Promise<number>; close(): void } {
     const socket = new WebSocket(`ws://127.0.0.1:${port}/ws/terminal/missing`, { headers } as unknown as string[])
@@ -160,6 +226,40 @@ describe('terminal socket over Tailscale', () => {
       await expect(wrongUser.opened).rejects.toBeDefined()
       const foreign = openSocket(server.port, { host: HOST, origin: 'https://evil.example', 'tailscale-user-login': USER })
       await expect(foreign.opened).rejects.toBeDefined()
+    } finally {
+      server.stop()
+    }
+  })
+
+  test('refuses a proxied Host: localhost, with or without a matching Origin', async () => {
+    const server = listen(new Elysia().use(terminalsRoutes(registry)))
+    try {
+      const spoofed = openSocket(server.port, { ...TAILSCALED, host: 'localhost', origin: 'http://localhost' })
+      await expect(spoofed.opened).rejects.toBeDefined()
+      const bare = openSocket(server.port, { ...TAILSCALED, host: 'localhost' })
+      await expect(bare.opened).rejects.toBeDefined()
+    } finally {
+      server.stop()
+    }
+  })
+
+  test('lets the allowed login through when tailscaled forwards it', async () => {
+    const server = listen(new Elysia().use(terminalsRoutes(registry)))
+    try {
+      const probe = openSocket(server.port, { ...TAILSCALED, 'x-forwarded-host': HOST, host: HOST, origin: ORIGIN, 'tailscale-user-login': USER })
+      await probe.opened
+      expect(await probe.closed).toBe(CLOSE_TERMINAL_NOT_FOUND)
+    } finally {
+      server.stop()
+    }
+  })
+
+  test('a plain localhost socket still opens', async () => {
+    const server = listen(new Elysia().use(terminalsRoutes(registry)))
+    try {
+      const probe = openSocket(server.port, { host: 'localhost', origin: 'http://localhost' })
+      await probe.opened
+      expect(await probe.closed).toBe(CLOSE_TERMINAL_NOT_FOUND)
     } finally {
       server.stop()
     }

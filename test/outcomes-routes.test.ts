@@ -87,4 +87,9 @@ describe('GET /api/outcomes', () => {
     expect((await get('?terminal=t9')).status).toBe(404)
     expect((await get('?after=1')).status).toBe(400)
   })
+  test('refuses a foreign host, a cross-site read and a proxied localhost request', async () => {
+    expect((await app.handle(new Request('http://rebind.example/api/outcomes?terminal=t1'))).status).toBe(403)
+    expect((await app.handle(new Request('http://localhost/api/outcomes?terminal=t1', { headers: { 'sec-fetch-site': 'cross-site' } }))).status).toBe(403)
+    expect((await app.handle(new Request('http://localhost/api/outcomes?terminal=t1', { headers: { 'x-forwarded-for': '100.64.0.2' } }))).status).toBe(403)
+  })
 })

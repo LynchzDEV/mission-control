@@ -1,6 +1,8 @@
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
 const DATA_PATH_PREFIXES = ['/api/', '/ws/']
 const TAILSCALE_HOST_PATTERN = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$/
+const FORWARDING_HEADERS = ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'forwarded']
+const TAILSCALE_HEADER_PREFIX = 'tailscale-'
 const LOOPBACK_PEER_PATTERN = /^(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|::1|::ffff:127\.\d{1,3}\.\d{1,3}\.\d{1,3})$/
 
 export type PeerServer = { requestIP(request: Request): { address: string } | null }
@@ -34,6 +36,11 @@ function allowedRemoteUser(request: Request): boolean {
   const login = request.headers.get('tailscale-user-login')?.trim().toLowerCase()
   if (login === undefined || login === '') return false
   return listFromEnv(process.env.MISSION_CONTROL_ALLOWED_USERS).includes(login)
+}
+
+export function proxied(request: Request): boolean {
+  if (FORWARDING_HEADERS.some(name => request.headers.has(name))) return true
+  return [...request.headers.keys()].some(name => name.startsWith(TAILSCALE_HEADER_PREFIX))
 }
 
 function remoteRequestAllowed(request: Request, name: string, peer: string | null | undefined): boolean {
@@ -79,7 +86,8 @@ export function localRequestAllowed(request: Request, peer?: string | null): boo
   const host = requestHost(request)
   const name = hostname(host)
   if (name === null) return false
-  if (!LOCAL_HOSTS.has(name) && !remoteRequestAllowed(request, name, peer)) return false
+  const hostAllowed = proxied(request) ? remoteRequestAllowed(request, name, peer) : LOCAL_HOSTS.has(name)
+  if (!hostAllowed) return false
   const origin = request.headers.get('origin')
   if (origin !== null && origin !== 'null' && originHost(origin) !== host) return false
   const site = request.headers.get('sec-fetch-site')
@@ -89,5 +97,5 @@ export function localRequestAllowed(request: Request, peer?: string | null): boo
 
 export function localHostRequest(request: Request): boolean {
   const name = hostname(requestHost(request))
-  return name !== null && LOCAL_HOSTS.has(name)
+  return name !== null && LOCAL_HOSTS.has(name) && !proxied(request)
 }

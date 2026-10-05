@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 
 import { requireLocal } from '../server/auth'
-import { allowedRemoteHosts, localRequestAllowed, remoteAccessEnabled } from '../server/local-access'
+import { allowedRemoteHosts, localHostRequest, localRequestAllowed, proxied, remoteAccessEnabled } from '../server/local-access'
 
 const HOST = 'lynchzpc-wsl.tail1234.ts.net'
 const USER = 'lynchz@example.com'
@@ -150,5 +150,62 @@ describe('requireLocal for an allowed Tailscale host', () => {
       expect(await requireLocal({ request: remote(), set, ...context })).toEqual({ error: 'local access only' })
       expect(set.status).toBe(403)
     }
+  })
+})
+
+describe('a request that came through a proxy', () => {
+  const FORWARDED = { 'x-forwarded-for': '100.64.0.2', 'x-forwarded-host': HOST, 'x-forwarded-proto': 'https' }
+
+  function at(host: string, headers: Record<string, string> = {}, path = '/api/jobs', method = 'GET'): Request {
+    return new Request(`http://127.0.0.1:7777${path}`, { method, headers: { host, ...headers } })
+  }
+
+  test('is recognised by any forwarding or Tailscale header', () => {
+    for (const header of ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'forwarded', 'tailscale-user-login', 'Tailscale-Headers-Info']) {
+      expect(proxied(at('localhost', { [header]: 'x' }))).toBe(true)
+    }
+    expect(proxied(at('localhost', { 'sec-fetch-site': 'same-origin' }))).toBe(false)
+  })
+
+  test('X-Forwarded-For alone is enough to refuse Host: localhost', () => {
+    expect(localRequestAllowed(at('localhost', { 'x-forwarded-for': '100.64.0.2' }), '127.0.0.1')).toBe(false)
+  })
+
+  test('never passes as local, whatever local name it claims', () => {
+    for (const host of ['localhost', 'localhost:7777', '127.0.0.1', '127.0.0.1:7777', '[::1]', '[::1]:7777']) {
+      expect(localRequestAllowed(at(host, FORWARDED), '127.0.0.1')).toBe(false)
+      expect(localRequestAllowed(at(host, FORWARDED, '/'), '127.0.0.1')).toBe(false)
+      expect(localRequestAllowed(at(host, { ...FORWARDED, origin: `http://${host}` }, '/api/jobs', 'POST'), '127.0.0.1')).toBe(false)
+    }
+  })
+
+  test('is refused on the local name even with an allowed login', () => {
+    expect(localRequestAllowed(at('localhost', { ...FORWARDED, 'tailscale-user-login': USER }), '127.0.0.1')).toBe(false)
+  })
+
+  test('passes on an allowed host with an allowed login', () => {
+    const allowed = { ...FORWARDED, 'tailscale-user-login': USER }
+    expect(localRequestAllowed(at(HOST, allowed), '127.0.0.1')).toBe(true)
+    expect(localRequestAllowed(at(HOST, { ...allowed, origin: `https://${HOST}` }, '/api/jobs', 'POST'), '127.0.0.1')).toBe(true)
+    expect(localRequestAllowed(at(HOST, { ...FORWARDED, 'tailscale-user-login': 'someone@example.com' }), '127.0.0.1')).toBe(false)
+    expect(localRequestAllowed(at(HOST, FORWARDED), '127.0.0.1')).toBe(false)
+  })
+
+  test('is refused as a local host for plugin frame assets', () => {
+    expect(localHostRequest(at('localhost'))).toBe(true)
+    expect(localHostRequest(at('localhost', { 'x-forwarded-for': '100.64.0.2' }))).toBe(false)
+    expect(localHostRequest(at('127.0.0.1:7777', FORWARDED))).toBe(false)
+  })
+
+  test('a Tailscale-User-Login header alone marks Host: localhost as proxied, which refuses it', () => {
+    expect(localRequestAllowed(at('localhost', { 'tailscale-user-login': USER }), '127.0.0.1')).toBe(false)
+    expect(localRequestAllowed(at('localhost'), '127.0.0.1')).toBe(true)
+  })
+
+  test('requireLocal refuses a proxied localhost request with the usual 403', async () => {
+    const set: { status?: number | string } = {}
+    const server = { requestIP: () => ({ address: '127.0.0.1' }) }
+    expect(await requireLocal({ request: at('localhost', FORWARDED), set, server })).toEqual({ error: 'local access only' })
+    expect(set.status).toBe(403)
   })
 })
