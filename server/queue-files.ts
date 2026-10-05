@@ -80,7 +80,15 @@ const queueRoot = (worktree: string): string => join(worktree, SESSION_CONTEXT_D
 export const queueFolder = (worktree: string, source: string): string => join(queueRoot(worktree), source)
 
 async function refuseLinkedFolder(path: string): Promise<void> {
-  if (!(await lstat(path)).isDirectory()) throw new Error(`not a private folder: ${path}`)
+  const found = await lstat(path).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  })
+  if (found !== null && !found.isDirectory()) throw new Error(`not a private folder: ${path}`)
+}
+
+export async function refuseLinkedQueueFolders(worktree: string, source: string): Promise<void> {
+  for (const path of [join(worktree, SESSION_CONTEXT_DIR), queueRoot(worktree), queueFolder(worktree, source)]) await refuseLinkedFolder(path)
 }
 
 export async function writeQueueContext(source: string, context: TaskContext, worktree: string, now = new Date()): Promise<string> {
@@ -88,7 +96,7 @@ export async function writeQueueContext(source: string, context: TaskContext, wo
   if (bytes > MAX_CONTEXT_BYTES) throw new ContextTooLarge(bytes)
   const folder = queueFolder(worktree, source)
   await mkdir(folder, { recursive: true, mode: 0o700 })
-  for (const path of [join(worktree, SESSION_CONTEXT_DIR), queueRoot(worktree), folder]) await refuseLinkedFolder(path)
+  await refuseLinkedQueueFolders(worktree, source)
   for (const path of [queueRoot(worktree), folder]) await chmod(path, 0o700)
   await excludeFromGit(worktree)
   const path = join(folder, `${stamp(now)}-${safeContextName(context.name)}`)

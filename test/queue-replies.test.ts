@@ -359,3 +359,23 @@ test('a reply waits while the last run is live again in Studio and applies once 
   expect(await h.engine.checkReplies()).toEqual({ checked: 1, resumed: 1 })
   expect(h.store.get(h.item.id)).toMatchObject({ state: 'building', lastSeenId: 'r1' })
 })
+
+test('a queue folder planted as a link to outside the worktree gets no image copies and fails the resume', async () => {
+  const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [{ name: 'shot.png', path: 'shot.png' }] }], lastId: 'r1' }))
+  await mkdir(h.files, { recursive: true })
+  await writeFile(join(h.files, 'shot.png'), 'png-bytes')
+  const outside = join(dir, 'outside')
+  await mkdir(outside)
+  const queue = join(h.store.get(h.item.id)!.worktree!, '.mission-control', 'queue')
+  await rm(queue, { recursive: true, force: true })
+  await symlink(outside, queue)
+  const errors = silencedErrors()
+  try {
+    expect(await h.engine.checkReplies()).toEqual({ checked: 1, resumed: 0 })
+    expect(errors.mock.calls.map(call => call[0])).toEqual(['queue resume failed'])
+  } finally {
+    errors.mockRestore()
+  }
+  expect(await readdir(outside)).toEqual([])
+  expect(h.store.get(h.item.id)).toMatchObject({ state: 'waiting-info', answerPaths: [] })
+})

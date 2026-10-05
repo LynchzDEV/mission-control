@@ -1,6 +1,6 @@
 import { backUpAnswers } from './queue-answers'
 import type { QueueEngineDeps } from './queue-engine'
-import { importImages, queueFolder } from './queue-files'
+import { importImages, queueFolder, refuseLinkedQueueFolders } from './queue-files'
 import { answersMarkdown } from './queue-prompts'
 import type { SourceReplies, SourceReply } from './queue-source'
 import type { QueueItem } from './queue-store'
@@ -35,6 +35,7 @@ export function replyCheck(deps: QueueEngineDeps, fail: (item: QueueItem, reason
 
   async function resume(item: QueueItem, stored: string, replies: SourceReply[], lastId: string | null): Promise<void> {
     const worktree = await restore({ repo: item.repo, worktree: stored })
+    await refuseLinkedQueueFolders(worktree, item.source)
     const images = await importImages(deps.pluginFiles(item.source), replies, queueFolder(worktree, item.source))
     const markdown = answersMarkdown(item.questions, replies, images)
     const path = await deps.writeContext(item.source, { name: `answers-${item.externalId}`, markdown }, worktree)
