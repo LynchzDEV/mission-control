@@ -31,9 +31,9 @@ The project must live in your Ubuntu home folder (`~/mission-control`, which is 
 
 What the setup does (safe to run again any time):
 
-- Installs system tools with `sudo` (it asks for your Ubuntu password): git, curl, unzip, lsof, ripgrep, and the compiler bits one terminal library needs.
+- Installs system tools with `sudo` (it asks for your Ubuntu password): git, curl, unzip, lsof, ripgrep, Node.js (the Codex tool runs on it), and the compiler bits one terminal library needs.
 - Installs or upgrades **Bun** to 1.2.23 or newer.
-- Installs the **Claude** and **Codex** command-line tools if they are missing. It does not sign you in.
+- Installs the **Claude** and **Codex** command-line tools if they are missing, and checks that `codex --version` runs. It does not sign you in.
 - With `--with-plugins`: installs bubblewrap and socat for the plugin sandbox, and turns off an Ubuntu 24.04 setting that blocks it (see step 9).
 - Installs the app's own packages (`bun install`).
 
@@ -69,7 +69,12 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\install-autostart.ps1
 Start-ScheduledTask -TaskName 'Mission Control'
 ```
 
-It creates a task named "Mission Control" that runs `wsl.exe -d Ubuntu-24.04 -- bash -lc "cd ~/mission-control && bun start"` at sign-in. Other distro or folder: add `-Distro <name>` or `-RepoPath <path>`. Remove it with `-Remove`.
+It creates a task named "Mission Control" that runs at sign-in **hidden** (no window to close by accident): `conhost.exe --headless wsl.exe -d Ubuntu-24.04 -- bash -lc "cd ~/'mission-control' && bun start >> ~/mission-control.log 2>&1"`. If it stops unexpectedly, Windows retries up to 3 times, one minute apart. It also runs on battery. Other distro or folder: add `-Distro <name>` or `-RepoPath <path>`.
+
+- **See what it is doing**: in Ubuntu, `tail -f ~/mission-control.log`.
+- **Stop / start**: in PowerShell, `Stop-ScheduledTask -TaskName 'Mission Control'` and `Start-ScheduledTask -TaskName 'Mission Control'`. If the cockpit still answers after stopping, run `wsl --shutdown`.
+- **Remove**: run the same script with `-Remove`.
+- **If the hidden mode does not work on your PC** (some Windows 10 builds handle `conhost --headless` badly: nothing starts, or a window shows anyway): re-run the script with `-ShowWindow`. A console window then opens at sign-in. Minimize it, do not close it, because closing it stops Mission Control.
 
 Running the task when Mission Control is already up does no harm: a second copy sees the first one and exits.
 
@@ -82,26 +87,29 @@ In Ubuntu:
 ```sh
 cd ~/mission-control
 git pull
-bun install
+mkdir -p /tmp/nodeshim && ln -sf ~/.bun/bin/bun /tmp/nodeshim/node && PATH=/tmp/nodeshim:$PATH ~/.bun/bin/bun install && rm -r /tmp/nodeshim
 ```
 
-Then restart: stop the running copy (Ctrl+C in its window, or `wsl --shutdown` from PowerShell if the autostart task started it) and start it again (`bun start`, or `Start-ScheduledTask -TaskName 'Mission Control'`).
+The long line is `bun install` with Bun standing in for Node.js, because the Node.js that Ubuntu ships cannot build one of the app's packages (see Troubleshooting).
+
+Then restart: stop the running copy (Ctrl+C in its window, or `Stop-ScheduledTask -TaskName 'Mission Control'` from PowerShell if the autostart task started it) and start it again (`bun start`, or `Start-ScheduledTask -TaskName 'Mission Control'`).
 
 ## 9. Use it from another device (phone, laptop)
 
 Mission Control only answers requests from the PC itself. That is on purpose, and the safe way around it is an encrypted tunnel over [Tailscale](https://tailscale.com) (a private network between your own devices):
 
-1. Install Tailscale on the Windows PC and on the other device, signed in to the same account.
-2. Give the other device a way to SSH into the PC. Either:
-   - install Tailscale inside Ubuntu too and run `sudo tailscale up --ssh` there, or
-   - turn on Windows' **OpenSSH Server** (Settings → System → Optional features).
-3. On the other device, open the tunnel and keep it open:
+Pick **one** of these two setups. Either way, install Tailscale on the other device too, signed in to the same account.
 
-   ```sh
-   ssh -N -L 7777:127.0.0.1:7777 <user>@<pc-tailnet-name>
-   ```
+- **A. Tailscale on Windows, SSH into Windows.** Install Tailscale on Windows and turn on Windows' **OpenSSH Server** (Settings → System → Optional features). The SSH target is the Windows PC's tailnet name, and the SSH session lands in Windows, which forwards the tunnel to `localhost:7777`; Windows then passes it on to WSL like your browser does (step 6). To get a Linux shell from that SSH session, type `wsl`.
+- **B. Tailscale inside Ubuntu.** In Ubuntu, install Tailscale and run `sudo tailscale up --ssh`. Ubuntu then shows up as its **own device** in your tailnet, separate from the Windows PC (often named after the PC). The SSH target is that Ubuntu device's name, and your user is your Ubuntu user name. Windows' OpenSSH is not used.
 
-4. On that device, open [http://localhost:7777](http://localhost:7777).
+On the other device, open the tunnel and keep it open:
+
+```sh
+ssh -N -L 7777:127.0.0.1:7777 <user>@<tailnet-device-name>
+```
+
+Then open [http://localhost:7777](http://localhost:7777) on that device. Mission Control itself still only listens on `127.0.0.1`; the tunnel is what carries your requests to it.
 
 > **Never** use `tailscale funnel`, port forwarding on your router, or a firewall rule that opens port 7777 to your network. Mission Control can run commands on your PC; anyone who can reach it can too.
 
@@ -109,9 +117,12 @@ Mission Control only answers requests from the PC itself. That is on purpose, an
 
 | What you see | What to do |
 |---|---|
-| `http://localhost:7777` does not load in Windows, but `curl http://127.0.0.1:7777/api/health` inside Ubuntu answers | Turn on mirrored networking: create or edit `%UserProfile%\.wslconfig` with the two lines `[wsl2]` and `networkingMode=mirrored`, run `wsl --shutdown` in PowerShell, then start Mission Control again. |
+| `http://localhost:7777` does not load in Windows, but `curl http://127.0.0.1:7777/api/health` inside Ubuntu answers | Turn on mirrored networking (needs Windows 11 22H2 or newer; on older Windows, run `wsl --shutdown` and start Mission Control again instead): create or edit `%UserProfile%\.wslconfig` with the two lines `[wsl2]` and `networkingMode=mirrored`, run `wsl --shutdown` in PowerShell, then start Mission Control again. |
 | `cwd must be under $HOME` | The project or a repo you opened is outside your Ubuntu home (often under `/mnt/c`). Clone it into `~` inside Ubuntu instead. |
 | An isolated plugin (for example the ClickUp board) fails to start | Run `~/mission-control/scripts/wsl/setup.sh --with-plugins`. It installs bubblewrap and socat and sets `kernel.apparmor_restrict_unprivileged_userns=0` (saved in `/etc/sysctl.d/60-mission-control-userns.conf`). Ubuntu 24.04 blocks the plugin sandbox without it; this is the setting the sandbox library's own README asks for. Delete that file to undo. |
 | `another instance is running, refusing to double-bind` | Mission Control is already running (often the autostart task). Just open the browser. To restart it, stop the old copy first. |
 | `bun: command not found` after setup | Close and reopen the Ubuntu window, or run `source ~/.profile`. |
 | Jobs fail right away with a GLM or Codex error | Finish step 4 for that AI, or give its role to another AI in Studio → Manage AIs. |
+| `codex` says `/usr/bin/env: 'node': No such file or directory` | Codex needs Node.js. In Ubuntu: `sudo apt-get install -y nodejs`, then `codex --version`. |
+| `bun install` fails with `install script from "node-pty" exited with 1` | Run it with Bun standing in for Node.js: `cd ~/mission-control && mkdir -p /tmp/nodeshim && ln -sf ~/.bun/bin/bun /tmp/nodeshim/node && PATH=/tmp/nodeshim:$PATH ~/.bun/bin/bun install && rm -r /tmp/nodeshim` |
+| `WslRegisterDistribution failed with error: 0x80370102`, or a message that virtualization is not enabled | Turn on hardware virtualization in your PC's BIOS/UEFI settings (called SVM or AMD-V on AMD, VT-x or Intel Virtualization Technology on Intel), save, reboot, and run step 2 again. |
