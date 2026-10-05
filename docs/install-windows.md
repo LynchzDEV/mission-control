@@ -69,7 +69,7 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\install-autostart.ps1
 Start-ScheduledTask -TaskName 'Mission Control'
 ```
 
-It creates a task named "Mission Control" that runs at sign-in **hidden** (no window to close by accident): `conhost.exe --headless wsl.exe -d Ubuntu-24.04 -- bash -lc "cd ~/'mission-control' && bun start >> ~/mission-control.log 2>&1"`. If it stops unexpectedly, Windows retries up to 3 times, one minute apart. It also runs on battery. Other distro or folder: add `-Distro <name>` or `-RepoPath <path>`.
+It creates a task named "Mission Control" that runs at sign-in **hidden** (no window to close by accident): `conhost.exe --headless wsl.exe -d Ubuntu-24.04 -- bash -lc "{ cd ~/'mission-control' && bun start; } >> ~/mission-control.log 2>&1"`. The task is set to retry up to 3 times, one minute apart, but Windows may not retry when Mission Control itself exits with an error — check `~/mission-control.log` and run `Start-ScheduledTask -TaskName 'Mission Control'` if it is down. It also runs on battery. Other distro or folder: add `-Distro <name>` or `-RepoPath <path>`.
 
 - **See what it is doing**: in Ubuntu, `tail -f ~/mission-control.log`.
 - **Stop / start**: in PowerShell, `Stop-ScheduledTask -TaskName 'Mission Control'` and `Start-ScheduledTask -TaskName 'Mission Control'`. If the cockpit still answers after stopping, run `wsl --shutdown`.

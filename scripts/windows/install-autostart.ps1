@@ -12,8 +12,8 @@ $TaskName = 'Mission Control'
 $LogPath = '~/mission-control.log'
 
 function ConvertTo-BashPath([string]$Path) {
-    if ($Path -match '["$`\\]') {
-        throw "RepoPath '$Path' contains a character this task cannot pass through safely (`", `$, backtick or backslash)."
+    if ($Path -match '["$`\\%]') {
+        throw "RepoPath '$Path' contains a character this task cannot pass through safely (`", `$, backtick, backslash or %)."
     }
     $quote = { param($text) "'" + ($text -replace "'", "'\''") + "'" }
     if ($Path -eq '~') { return '~' }
@@ -37,7 +37,7 @@ if ($installed -notcontains $Distro) {
 }
 
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-$bashCommand = "cd $(ConvertTo-BashPath $RepoPath) && bun start >> $LogPath 2>&1"
+$bashCommand = "{ cd $(ConvertTo-BashPath $RepoPath) && bun start; } >> $LogPath 2>&1"
 $wslArguments = "-d $Distro -- bash -lc `"$bashCommand`""
 if ($ShowWindow) {
     $action = New-ScheduledTaskAction -Execute 'wsl.exe' -Argument $wslArguments
