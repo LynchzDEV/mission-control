@@ -37,6 +37,7 @@ export type QueueEngine = {
 
 const MAX_RUN_LABEL = 120
 const REQUEUEABLE: ReadonlySet<QueueItem['state']> = new Set(['failed', 'ready', 'waiting-info'])
+const RETRIED_FROM = REQUEUEABLE
 const MAX_REPLY_FAILURES = 3
 const MAX_IMAGE_BYTES = 3_932_160
 
@@ -62,14 +63,18 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
     deps.needsYou(failed, reason)
   }
 
-  async function settle(run: RunView): Promise<void> {
-    const item = store.list().find(entry => entry.state === 'building' && entry.currentRunId === run.id)
-    if (item === undefined || !SETTLED.has(run.status)) return
-    if (run.status === 'done') {
-      const ready = await store.update(item.id, { state: 'ready', currentRunId: null, error: null })
-      deps.needsYou(ready, 'Built and ready for review')
-      return
-    }
+  const applied = new Map<string, string>()
+  const fingerprint = (run: RunView): string => JSON.stringify([run.status, run.error, run.attempts.length, run.attempts.at(-1)?.endedAt ?? null])
+
+  function settling(run: RunView): QueueItem | undefined {
+    const items = store.list()
+    const building = items.find(entry => entry.state === 'building' && entry.currentRunId === run.id)
+    if (building !== undefined) return building
+    if (applied.get(run.id) === fingerprint(run)) return undefined
+    return items.find(entry => RETRIED_FROM.has(entry.state) && entry.runIds.at(-1) === run.id)
+  }
+
+  async function askOrFail(item: QueueItem, run: RunView): Promise<void> {
     const questions = questionsOf(run)
     if (questions.length === 0) return fail(item, run.error ?? `Run ${run.status}`)
     try {
@@ -78,6 +83,16 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
     } catch (error) {
       await fail(item, `Could not post the questions: ${message(error)}`)
     }
+  }
+
+  async function settle(run: RunView): Promise<void> {
+    if (!SETTLED.has(run.status)) return
+    const item = settling(run)
+    if (item === undefined) return
+    applied.set(run.id, fingerprint(run))
+    if (run.status !== 'done') return askOrFail(item, run)
+    const ready = await store.update(item.id, { state: 'ready', currentRunId: null, error: null })
+    deps.needsYou(ready, 'Built and ready for review')
   }
 
   async function build(item: QueueItem): Promise<void> {
@@ -224,9 +239,16 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     return store.get(item.id) ?? item
   }
 
+  const runningInStudio = (item: QueueItem): boolean => {
+    const lastRunId = item.runIds.at(-1)
+    const run = lastRunId === undefined ? undefined : deps.runner.get(lastRunId)
+    return run !== undefined && !SETTLED.has(run.status)
+  }
+
   const requeue = (id: string): Promise<QueueItem> => serial(async () => {
     const item = found(store, id)
     if (!REQUEUEABLE.has(item.state)) throw new Error(`It is ${item.state} now`)
+    if (runningInStudio(item)) throw new Error('It is running in Studio now')
     await store.update(id, { state: 'queued', error: null, currentRunId: null, questions: [] })
     await store.move(id, store.list().length)
     await startNext()

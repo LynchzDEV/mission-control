@@ -295,3 +295,59 @@ test('requeue rebuilds a waiting item on the same worktree with its answers', as
   expect(again).toMatchObject({ state: 'building', worktree: parked.worktree, questions: [], runIds: ['run-1', 'run-2'] })
   expect(h.started[1]).toMatchObject({ cwd: parked.worktree, request: expect.stringContaining('read /answers-1.md') })
 })
+
+const retried = (run: RunView, change: Partial<RunView>): RunView => ({ ...run, ...change, attempts: [...run.attempts, blockedWith([]), ...(change.attempts ?? [])] })
+
+test('a run retried in Studio that passes makes the failed item ready and tells you', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  const failed = h.settle('run-1', { status: 'failed', error: 'boom' })
+  await h.engine.onRunSettled(failed)
+  await h.engine.onRunSettled(h.settle('run-1', retried(failed, { status: 'done', error: null })))
+  expect(h.store.list()[0]).toMatchObject({ state: 'ready', error: null, currentRunId: null })
+  expect(h.alerts.at(-1)).toEqual({ title: 'Task 1', reason: 'Built and ready for review', state: 'ready' })
+})
+
+test('a run retried in Studio that is blocked with questions posts them and parks the item', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  const failed = h.settle('run-1', { status: 'failed', error: 'boom' })
+  await h.engine.onRunSettled(failed)
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'blocked', error: null, attempts: [blockedWith(['Which page?'])] }))
+  expect(h.posted).toEqual([{ id: '1', kind: 'ask', lines: ['Which page?'] }])
+  expect(h.store.list()[0]).toMatchObject({ state: 'waiting-info', questions: ['Which page?'], lastSeenId: 'c1' })
+})
+
+test('a run retried in Studio that fails again fails the item with the new reason', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  const failed = h.settle('run-1', { status: 'failed', error: 'boom' })
+  await h.engine.onRunSettled(failed)
+  await h.engine.onRunSettled(h.settle('run-1', retried(failed, { status: 'failed', error: 'boom again' })))
+  expect(h.store.list()[0]).toMatchObject({ state: 'failed', error: 'boom again' })
+  expect(h.alerts.map(alert => alert.reason)).toEqual(['boom', 'boom again'])
+})
+
+test('a settled run that is not the item\'s last run, or an item queued again, is left alone', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  const first = h.settle('run-1', { status: 'failed', error: 'boom' })
+  await h.engine.onRunSettled(first)
+  await h.engine.requeue(h.store.list()[0]!.id)
+  await h.engine.onRunSettled(h.settle('run-2', { status: 'failed', error: 'second' }))
+  await h.engine.onRunSettled(retried(first, { status: 'done', error: null }))
+  expect(h.store.list()[0]).toMatchObject({ state: 'failed', error: 'second' })
+})
+
+test('requeue refuses while the item\'s last run is running again in Studio', async () => {
+  const h = harness()
+  await h.engine.add(add)
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'failed', error: 'boom' }))
+  h.settle('run-1', { status: 'running', error: null })
+  const quiet = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await expect(h.engine.requeue(h.store.list()[0]!.id)).rejects.toThrow('It is running in Studio now')
+  } finally { quiet.mockRestore() }
+  expect(h.store.list()[0]).toMatchObject({ state: 'failed', runIds: ['run-1'] })
+  expect(h.started).toHaveLength(1)
+})
