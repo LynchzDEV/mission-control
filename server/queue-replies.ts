@@ -44,6 +44,7 @@ export function replyCheck(deps: QueueEngineDeps): ReplyCheck {
   async function read(item: QueueItem): Promise<SourceReplies | null> {
     try {
       const result = await deps.source(item.source).replies({ id: item.externalId, sinceId: item.lastSeenId })
+      if (result.replies.length > 0 && result.lastId === null) throw new Error(`${item.source} returned replies without a lastId`)
       readFailures.clear(item.id)
       return result
     } catch (error) {

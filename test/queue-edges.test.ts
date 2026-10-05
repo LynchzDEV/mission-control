@@ -272,12 +272,14 @@ test('a malformed-reply failure from the source keeps the item waiting with its 
   expect(h.alerts.filter(alert => alert.reason.startsWith('Could not read replies'))).toEqual([{ title: 'Task 1', reason: 'Could not read replies: clickup-board returned an unexpected source.replies result', state: 'waiting-info' }])
 })
 
-test.todo('BUG: a reply returned with lastId null leaves the cursor behind, so the same reply is applied again', async () => {
+test('replies without a cursor count as a failed read and are never applied', async () => {
   const h = harness()
   const parked = await parkedItem(h)
   h.answer(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'The login page', images: [] }], lastId: null }))
-  await h.engine.checkReplies()
-  expect(h.store.get(parked.id)!.lastSeenId).toBe('r1')
+  for (let i = 0; i < 3; i += 1) expect(await h.engine.checkReplies()).toEqual({ checked: 1, resumed: 0 })
+  expect(h.store.get(parked.id)).toMatchObject({ state: 'waiting-info', lastSeenId: 'c1', answerPaths: [] })
+  expect(h.started).toHaveLength(1)
+  expect(h.alerts.filter(alert => alert.reason.startsWith('Could not read replies'))).toEqual([{ title: 'Task 1', reason: 'Could not read replies: clickup-board returned replies without a lastId', state: 'waiting-info' }])
 })
 
 test.todo('BUG: a reply for an item whose worktree was deleted by hand starts a run in a recreated folder that is not a worktree', async () => {

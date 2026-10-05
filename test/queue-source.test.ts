@@ -43,6 +43,16 @@ test('a malformed plugin answer is rejected, not trusted', async () => {
   await expect(pluginSource('clickup-board', d).item({ id: '1' })).rejects.toThrow('clickup-board returned an unexpected source.item result')
 })
 
+test('replies without a lastId are rejected with the reason', async () => {
+  const { deps: d } = deps(() => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [] }], lastId: null }))
+  await expect(pluginSource('clickup-board', d).replies({ id: '1', sinceId: 'c9' })).rejects.toThrow('clickup-board returned an unexpected source.replies result: lastId is required when there are replies')
+})
+
+test('no replies and no lastId is a valid answer', async () => {
+  const { deps: d } = deps(() => ({ replies: [], lastId: null }))
+  expect(await pluginSource('clickup-board', d).replies({ id: '1', sinceId: 'c9' })).toEqual({ replies: [], lastId: null })
+})
+
 test('missing, disabled, unstartable or failing plugins throw readable errors', async () => {
   await expect(pluginSource('clickup-board', deps(() => ({}), { installed: null }).deps).item({ id: '1' })).rejects.toThrow('clickup-board is not installed')
   await expect(pluginSource('clickup-board', deps(() => ({}), { installed: { enabled: false } }).deps).item({ id: '1' })).rejects.toThrow('clickup-board is turned off')

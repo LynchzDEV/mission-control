@@ -26,7 +26,12 @@ const imageSchema = z.object({ name: z.string().min(1).max(200), path: z.string(
 const repliesSchema = z.object({
   replies: z.array(z.object({ id: z.string().min(1).max(200), author: z.string().max(200), text, images: z.array(imageSchema).max(8) })).max(100),
   lastId: z.string().min(1).max(200).nullable(),
-})
+}).refine(result => result.replies.length === 0 || result.lastId !== null, { message: 'lastId is required when there are replies' })
+
+const ruleBroken = (error: z.ZodError): string => {
+  const custom = error.issues.find(issue => issue.code === 'custom')
+  return custom === undefined ? '' : `: ${custom.message}`
+}
 
 export function pluginSource(pluginId: string, deps: SourceDeps): QueueSource {
   async function call<T>(method: string, params: unknown, schema: z.ZodType<T>): Promise<T> {
@@ -38,7 +43,7 @@ export function pluginSource(pluginId: string, deps: SourceDeps): QueueSource {
     const outcome = await runtime.runtime.call(method, params)
     if (!outcome.ok) throw new Error(outcome.error)
     const parsed = schema.safeParse(outcome.result)
-    if (!parsed.success) throw new Error(`${pluginId} returned an unexpected ${method} result`)
+    if (!parsed.success) throw new Error(`${pluginId} returned an unexpected ${method} result${ruleBroken(parsed.error)}`)
     return parsed.data
   }
   return {
