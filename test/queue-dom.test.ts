@@ -8,13 +8,11 @@ const doc = window.document
 const section = () => doc.getElementById('queue') as HTMLElement
 
 class FakeSource {
-  static last: FakeSource
-  onmessage: ((event: { data: string }) => void) | null = null
-  onerror: (() => void) | null = null
-  constructor(readonly url: string) { FakeSource.last = this }
+  static opened: string[] = []
+  constructor(readonly url: string) { FakeSource.opened.push(url) }
   close() {}
-  send(items: QueueItem[]) { this.onmessage?.({ data: JSON.stringify({ items }) }) }
 }
+const send = (items: QueueItem[]) => { dispatchEvent(new CustomEvent('quiet:queue-items', { detail: items })) }
 
 type Call = { method: string; url: string; body: unknown }
 const calls: Call[] = []
@@ -43,6 +41,8 @@ const flows = [{ id: 'plan-only', name: 'Plan only' }, { id: 'default', name: 'D
 const context = (patch: Record<string, unknown> = {}) => ({ plugins, flows, now: NOW, checkedAt: null, openIds: new Set<string>(), ...patch })
 
 let queue: typeof import('../client/queue')
+let firstIds: string[] = []
+let firstCalls: string[] = []
 
 const rows = (root: ParentNode = section()) => [...root.querySelectorAll<HTMLElement>('.q-row')]
 const rowOf = (id: string) => rows().find(row => row.dataset.id === id) as HTMLElement
@@ -61,6 +61,7 @@ beforeAll(async () => {
     calls.push(call)
     const reply = replies.get(`${call.method} ${call.url}`)
     if (reply) return reply()
+    if (call.url === '/api/queue') return Response.json({ items: [queuedA, queuedB] })
     if (call.url === '/api/plugins') return Response.json({ plugins })
     if (call.url === '/api/studio/workflows') return Response.json({ workflows: flows, selected: flows[1] })
     return Response.json({ ok: true })
@@ -69,10 +70,12 @@ beforeAll(async () => {
   addEventListener('quiet:studio-run', (event) => studioRuns.push((event as CustomEvent).detail))
   queue = await import('../client/queue')
   await flush()
+  firstIds = rows().map(row => row.dataset.id ?? '')
+  firstCalls = calls.map(entry => `${entry.method} ${entry.url}`)
 })
 
 beforeEach(async () => {
-  FakeSource.last.send(all)
+  send(all)
   await flush()
   calls.length = 0
   toasts.length = 0
@@ -166,8 +169,18 @@ test('each state offers its own actions', () => {
   expect(buttonNamed('List', view).getAttribute('aria-pressed')).toBe('true')
 })
 
-test('the live stream fills the screen', () => {
-  expect(FakeSource.last.url).toBe('/api/queue/stream')
+test('the screen opens no stream of its own and starts from one GET of the list', () => {
+  expect(FakeSource.opened).toEqual([])
+  expect(firstCalls.filter(entry => entry.endsWith('/api/queue'))).toEqual(['GET /api/queue'])
+  expect(firstIds).toEqual(['q1', 'q2'])
+})
+
+test('queue items passed on by the sidebar fill the screen', async () => {
+  send([waiting, queuedA])
+  await flush()
+  expect(rows().map(row => row.dataset.id)).toEqual(['w1', 'q1'])
+  send(all)
+  await flush()
   expect(rows().map(row => row.dataset.id)).toEqual(all.map(entry => entry.id))
 })
 
@@ -305,14 +318,14 @@ test('Git tree shows the branches, follows the stream and is remembered', async 
   expect(section().querySelector('.q-list')).toBeNull()
   expect([...section().querySelectorAll('.q-tree-tip .q-ref')].map(ref => ref.textContent)).toEqual(['queue/invoice-pdf-footer'])
   expect(treeCalls()).toHaveLength(1)
-  FakeSource.last.send(all)
+  send(all)
   await flush()
   expect(treeCalls()).toHaveLength(2)
   click(buttonNamed('List', section()))
   await flush()
   expect(window.localStorage.getItem('mc.queue.layout')).toBe('list')
   expect(rows().map(row => row.dataset.id)).toEqual(all.map(entry => entry.id))
-  FakeSource.last.send(all)
+  send(all)
   await flush()
   expect(treeCalls()).toHaveLength(2)
 })
@@ -330,7 +343,7 @@ test('a git tree that cannot load says so in place', async () => {
 test('a stream update during a drag waits for the drag to end', async () => {
   const dragged = rowOf('q2')
   drag('dragstart', dragged)
-  FakeSource.last.send([...all, item({ id: 'q3', title: 'New queued item' })])
+  send([...all, item({ id: 'q3', title: 'New queued item' })])
   await flush()
   expect(rowOf('q2')).toBe(dragged)
   expect(rowOf('q3')).toBeUndefined()

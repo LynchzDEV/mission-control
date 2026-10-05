@@ -495,6 +495,7 @@ if (typeof document !== 'undefined') {
   queueStream.onmessage = (event: MessageEvent) => {
     try { queueItems = readQueueItems(readRecord(JSON.parse(String(event.data))).items) } catch { return }
     paint(historyItems)
+    dispatchEvent(new CustomEvent('quiet:queue-items', { detail: queueItems }))
   }
   addEventListener('quiet:plugins-changed', () => void loadPlugins())
 }

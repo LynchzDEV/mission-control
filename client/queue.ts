@@ -197,17 +197,23 @@ function start(section: HTMLElement): void {
   addEventListener('quiet:screen', (event) => { if ((event as CustomEvent<string>).detail === 'queue') void loadContext() })
   setInterval(() => { if (!section.hidden && dragId === null) paint() }, REFRESH_MS)
 
-  section.replaceChildren(statusLine('Loading the queue…'))
-  const stream = new EventSource('/api/queue/stream')
-  stream.onmessage = (event: MessageEvent) => {
-    try {
-      items = readQueueItems(readRecord(JSON.parse(String(event.data))).items)
-    } catch { return }
+  function showItems(next: QueueItemView[]): void {
+    items = next
     loaded = true
     paint()
     if (layout === 'tree') void loadTree()
   }
-  stream.onerror = () => { if (!loaded) section.replaceChildren(statusLine('Could not load the queue. Mission Control keeps trying.')) }
+
+  async function loadItems(): Promise<void> {
+    const result = await getJson('/api/queue')
+    if (loaded) return
+    if (result.ok) showItems(readQueueItems(result.data.items))
+    else section.replaceChildren(statusLine('Could not load the queue. Mission Control keeps trying.'))
+  }
+
+  section.replaceChildren(statusLine('Loading the queue…'))
+  addEventListener('quiet:queue-items', (event) => showItems(readQueueItems((event as CustomEvent<unknown>).detail)))
+  void loadItems()
   void loadContext()
 }
 

@@ -9,6 +9,7 @@ const markup = `<div class="sb-shell" id="sb-shell">
     <nav id="sidebar-mini" class="sb-mini-list"></nav>
   </aside>
   <section id="conversation" hidden></section>
+  <section id="queue" hidden></section>
 </div>`
 
 const virtualConsole = new VirtualConsole()
@@ -32,6 +33,9 @@ const plugins = [
 const shown: unknown[] = []
 const focused: unknown[] = []
 const logged: unknown[] = []
+const passedOn: unknown[] = []
+let releaseList: (items: QueueItem[]) => void = () => {}
+const listReply = new Promise<Response>(resolve => { releaseList = items => resolve(Response.json({ items })) })
 const flush = async (times = 3): Promise<void> => { for (let index = 0; index < times; index++) await new Promise(resolve => setTimeout(resolve, 0)) }
 
 const NOW = Date.now()
@@ -58,16 +62,19 @@ beforeAll(async () => {
   globalThis.fetch = (async (url: string) => {
     if (String(url) === '/api/plugins') return Response.json({ plugins })
     if (String(url) === '/api/history') return Response.json({ items: [] })
+    if (String(url) === '/api/queue') return listReply
     return Response.json({})
   }) as typeof fetch
   for (const method of ['log', 'warn', 'error'] as const) console[method] = (...args: unknown[]) => { logged.push(args) }
-  addEventListener('quiet:show', (event) => shown.push((event as CustomEvent).detail))
+  addEventListener('quiet:show', (event) => { shown.push((event as CustomEvent).detail); doc.getElementById('queue')!.hidden = (event as CustomEvent).detail !== 'queue' })
   addEventListener('quiet:queue-focus', (event) => focused.push((event as CustomEvent).detail))
+  addEventListener('quiet:queue-items', (event) => passedOn.push((event as CustomEvent).detail))
+  await import('../client/queue')
   await import('../client/sidebar')
   await flush()
 })
 
-test('the sidebar opens one queue stream', () => {
+test('the sidebar and the Queue screen share one queue stream', () => {
   expect(FakeSource.opened.map(source => source.url)).toEqual(['/api/queue/stream'])
 })
 
@@ -83,9 +90,17 @@ test('a stream error shows no group and logs nothing', async () => {
   expect(logged).toEqual([])
 })
 
-test('items sit in a group right under the plugin they came from', async () => {
+test('each stream message is passed on to the Queue screen, and a late first list does not undo it', async () => {
   stream().send([building, queued, waiting, ready, failed])
   await flush()
+  expect(passedOn.map(items => (items as QueueItem[]).map(entry => entry.id))).toEqual([['b1', 'q1', 'w1', 'r1', 'f1']])
+  releaseList([])
+  await flush()
+  const screenIds = [...doc.querySelectorAll<HTMLElement>('#queue .q-row')].map(row => row.dataset.id)
+  expect(screenIds).toEqual(['b1', 'q1', 'w1', 'r1', 'f1'])
+})
+
+test('items sit in a group right under the plugin they came from', async () => {
   expect(groups()).toHaveLength(1)
   const group = groups()[0]!
   expect((group.previousElementSibling?.querySelector('[data-kind="plugin"]') as HTMLElement).dataset.key).toBe('plugin:clickup-board')
@@ -178,9 +193,11 @@ test('the collapsed rail gets no queue rows', async () => {
   expect(mini.querySelector('.q-dot, [data-kind="queue"], [data-kind="queue-item"]')).toBeNull()
 })
 
-test('a malformed message keeps the last good rows and the stream stays the only one', async () => {
+test('a malformed message keeps the last good rows, is not passed on, and the stream stays the only one', async () => {
+  const before = passedOn.length
   stream().onmessage?.({ data: 'not json' })
   await flush()
+  expect(passedOn).toHaveLength(before)
   expect(groups()).toHaveLength(1)
   expect(FakeSource.opened).toHaveLength(1)
   expect(logged).toEqual([])
