@@ -86,7 +86,7 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
   const { store } = deps
 
   async function fail(item: QueueItem, reason: string): Promise<void> {
-    const failed = await store.update(item.id, { state: 'failed', error: reason, currentRunId: null })
+    const failed = await store.update(item.id, { state: 'failed', error: reason, currentRunId: null, questions: [] })
     deps.needsYou(failed, reason)
   }
 
@@ -118,7 +118,7 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
     if (item === undefined) return
     applied.set(run.id, fingerprint(run))
     if (run.status !== 'done') return askOrFail(item, run)
-    const ready = await store.update(item.id, { state: 'ready', currentRunId: null, error: null })
+    const ready = await store.update(item.id, { state: 'ready', currentRunId: null, error: null, questions: [] })
     deps.needsYou(ready, 'Built and ready for review')
   }
 

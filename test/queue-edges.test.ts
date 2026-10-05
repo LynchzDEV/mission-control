@@ -196,7 +196,7 @@ test('a Studio retry of a waiting item\'s run that passes makes it ready and tel
   expect(h.alerts.at(-1)).toEqual({ title: 'Task 1', reason: 'Built and ready for review', state: 'ready' })
 })
 
-test.todo('BUG: questions stay on an item made ready by a Studio retry, so mctl queue list still shows them', async () => {
+test('a Studio retry that makes a waiting item ready clears its questions', async () => {
   const h = harness()
   const parked = await parkedItem(h)
   const blocked = h.runs.get('run-1')!
@@ -209,7 +209,7 @@ test('a Studio retry of a waiting item\'s run that fails fails it and stops read
   const parked = await parkedItem(h)
   const blocked = h.runs.get('run-1')!
   await h.engine.onRunSettled(h.settle('run-1', { status: 'failed', error: 'boom', attempts: [...blocked.attempts, blockedWith([], { number: 2, endedAt: 3 })] }))
-  expect(h.store.get(parked.id)).toMatchObject({ state: 'failed', error: 'boom' })
+  expect(h.store.get(parked.id)).toMatchObject({ state: 'failed', error: 'boom', questions: [] })
   expect(await h.engine.checkReplies()).toEqual({ checked: 0, resumed: 0 })
 })
 
