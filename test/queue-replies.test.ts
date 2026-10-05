@@ -80,6 +80,7 @@ test('reply images are copied into the worktree context folder and listed', asyn
   const item = h.store.get(h.item.id)!
   const copied = join(item.worktree!, '.mission-control', 'context', 'clickup-board', 'r1-0-shot.png')
   expect(await readFile(copied, 'utf8')).toBe('png-bytes')
+  expect((await stat(copied)).mode & 0o777).toBe(0o600)
   expect(await readFile(item.answerPaths[0]!, 'utf8')).toContain(`- ${copied}`)
 })
 

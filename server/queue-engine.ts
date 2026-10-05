@@ -1,5 +1,5 @@
 import { constants } from 'node:fs'
-import { lstat, mkdir, open, realpath, writeFile, type FileHandle } from 'node:fs/promises'
+import { chmod, lstat, mkdir, open, realpath, writeFile, type FileHandle } from 'node:fs/promises'
 import { basename, join, resolve, sep } from 'node:path'
 
 import { SESSION_CONTEXT_DIR, type TaskContext } from './plugins/context-files'
@@ -139,7 +139,8 @@ async function importImages(root: string, replies: SourceReply[], folder: string
       const to = join(folder, `${reply.id}-${index}-${basename(image.name)}`.replace(/[^A-Za-z0-9._-]/g, '-'))
       try {
         const base = await realBase
-        await writeFile(to, await readInsideFile(base, resolve(base, image.path)))
+        await writeFile(to, await readInsideFile(base, resolve(base, image.path)), { mode: 0o600 })
+        await chmod(to, 0o600)
         copied.push(to)
       } catch (error) {
         console.error('queue image skipped', error)
