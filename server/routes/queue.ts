@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { requireLocal } from '../auth'
 import type { QueueEngine } from '../queue-engine'
 import type { QueueStore } from '../queue-store'
+import { queueTree, type QueueTree } from '../queue-tree'
 import { eventStreamResponse } from '../run-events'
 import { validateWorkspaceCwd } from '../workspace'
 
@@ -62,10 +63,11 @@ async function addItem(engine: QueueEngineRoutes, body: unknown, set: Status) {
 const removeExplanation = (error: unknown): string => (message(error) === 'It is building now' ? 'Stop its run in Studio first' : NO_ITEM)
 const moveExplanation = (): string => NO_ITEM
 
-export function queueRoutes(store: QueueStore, engine: QueueEngineRoutes): Elysia {
+export function queueRoutes(store: QueueStore, engine: QueueEngineRoutes, tree: () => Promise<QueueTree> = () => queueTree(store.list())): Elysia {
   return new Elysia()
     .onBeforeHandle(requireLocal)
     .get('/api/queue', () => ({ items: store.list() }))
+    .get('/api/queue/tree', () => tree())
     .get('/api/queue/stream', ({ request }) => eventStreamResponse(store, () => ({ items: store.list() }), request.signal))
     .post('/api/queue', ({ body, set }) => addItem(engine, body, set))
     .post('/api/queue/check', () => engine.checkReplies())

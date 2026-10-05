@@ -145,3 +145,12 @@ test('a request from another site is refused', async () => {
   const response = await app.handle(new Request('http://127.0.0.1:7777/api/queue', { headers: { host: 'evil.example' } }))
   expect(response.status).toBe(403)
 })
+
+test('GET tree returns what the tree source builds', async () => {
+  const items = store()
+  const tree = { repos: [{ repo: '/repo', base: { branch: 'main', commits: [{ sha: 'abc1234', subject: 'Base' }] }, lanes: [] }] }
+  const app = new Elysia().use(queueRoutes(items, engine(items), async () => tree))
+  const response = await call(app, '/api/queue/tree')
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual(tree)
+})
