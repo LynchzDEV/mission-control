@@ -1,8 +1,5 @@
-import { join } from 'node:path'
-
-import { SESSION_CONTEXT_DIR } from './plugins/context-files'
 import type { QueueEngineDeps } from './queue-engine'
-import { importImages } from './queue-files'
+import { importImages, queueFolder } from './queue-files'
 import { answersMarkdown } from './queue-prompts'
 import type { SourceReplies, SourceReply } from './queue-source'
 import type { QueueItem } from './queue-store'
@@ -34,8 +31,7 @@ export function replyCheck(deps: QueueEngineDeps): ReplyCheck {
   const saveFailures = failureCounter(deps, 'Could not save the replies')
 
   async function resume(item: QueueItem, worktree: string, replies: SourceReply[], lastId: string | null): Promise<void> {
-    const folder = join(worktree, SESSION_CONTEXT_DIR, 'context', item.source)
-    const images = await importImages(deps.pluginFiles(item.source), replies, folder)
+    const images = await importImages(deps.pluginFiles(item.source), replies, queueFolder(worktree, item.source))
     const path = await deps.writeContext(item.source, { name: `answers-${item.externalId}`, markdown: answersMarkdown(item.questions, replies, images) }, worktree)
     await store.update(item.id, { state: 'queued', answerPaths: [...item.answerPaths, path], questions: [], lastSeenId: lastId ?? item.lastSeenId })
     await store.toFront(item.id)

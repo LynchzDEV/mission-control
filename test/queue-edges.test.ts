@@ -6,6 +6,7 @@ import { join } from 'node:path'
 
 import { writeContextFile } from '../server/plugins/context-files'
 import { createQueueEngine, QueueRefusal, type QueueEngineDeps, type QueueRunner } from '../server/queue-engine'
+import { writeQueueContext } from '../server/queue-files'
 import type { RunView } from '../server/queue-prompts'
 import type { QueueSource, SourceReplies } from '../server/queue-source'
 import { createQueueStore, type QueueItem } from '../server/queue-store'
@@ -50,7 +51,7 @@ function harness(over: Partial<QueueEngineDeps> = {}, sourceOver: Partial<QueueS
       await writeFile(join(worktree, '.git'), 'gitdir: elsewhere')
       return { worktree }
     },
-    writeContext: async (pluginId, context, cwd) => { const folder = join(cwd, '.mission-control', 'context', pluginId); await mkdir(folder, { recursive: true }); const path = join(folder, `${context.name}.md`); await writeFile(path, context.markdown); return path },
+    writeContext: async (pluginId, context, cwd) => { const folder = join(cwd, '.mission-control', 'queue', pluginId); await mkdir(folder, { recursive: true }); const path = join(folder, `${context.name}.md`); await writeFile(path, context.markdown); return path },
     pluginFiles: pluginId => join(dir, 'plugin-data', pluginId, 'files'),
     needsYou: (item, reason) => { alerts.push({ title: item.title, reason, state: item.state }) },
     ...over,
@@ -260,7 +261,7 @@ test('a reply image given as an absolute path outside the plugin folder is skipp
     expect(errors).toHaveBeenCalledTimes(1)
   } finally { errors.mockRestore() }
   const worktree = h.store.get(parked.id)!.worktree!
-  expect(existsSync(join(worktree, '.mission-control', 'context', 'clickup-board', 'r1-0-shot.png'))).toBe(false)
+  expect(existsSync(join(worktree, '.mission-control', 'queue', 'clickup-board', 'r1-0-shot.png'))).toBe(false)
 })
 
 test('a malformed-reply failure from the source keeps the item waiting with its cursor', async () => {
@@ -308,15 +309,16 @@ test('two items with the same title and id from different sources get their own 
   expect(h.store.get(second.id)!.worktree).not.toBe(h.store.get(first.id)!.worktree)
 })
 
-test.todo('BUG: answers written 30 days after the first build sweep away the context file the next run is told to read', async () => {
-  const clock = { now: new Date() }
-  const h = harness({ writeContext: (pluginId, context, cwd) => writeContextFile(pluginId, context, clock.now, cwd) })
+test('a context sweep 30 days after the first build leaves the files the next run is told to read', async () => {
+  const h = harness({ writeContext: (pluginId, context, cwd) => writeQueueContext(pluginId, context, cwd) })
   const parked = await parkedItem(h)
-  clock.now = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000)
+  await writeContextFile('clickup-board', { name: 'session', markdown: '# s' }, new Date(Date.now() + 31 * 24 * 60 * 60 * 1000), parked.worktree!)
   h.answer(async () => reply('r1', 'The login page'))
   await h.engine.checkReplies()
+  const resumed = h.store.get(parked.id)!
   expect(h.started[1]!.request).toContain(parked.contextPath!)
   expect(existsSync(parked.contextPath!)).toBe(true)
+  expect(existsSync(resumed.answerPaths[0]!)).toBe(true)
 })
 
 test('restart: a queued item is built by recover', async () => {

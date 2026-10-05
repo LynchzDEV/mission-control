@@ -36,7 +36,7 @@ function harness(over: Partial<QueueEngineDeps> = {}, sourceOver: Partial<QueueS
     store, runner,
     source: () => source,
     prepareWorktree: async (repo, label) => ({ worktree: join(repo, '.worktree', label) }),
-    writeContext: async (pluginId, context, cwd) => join(cwd, '.mission-control', 'context', pluginId, `${context.name}.md`),
+    writeContext: async (pluginId, context, cwd) => join(cwd, '.mission-control', 'queue', pluginId, `${context.name}.md`),
     pluginFiles: pluginId => join(dir, 'plugin-data', pluginId, 'files'),
     needsYou: (item, reason) => { alerts.push({ title: item.title, reason, state: item.state }) },
     ...over,
@@ -54,7 +54,7 @@ test('adding an item fetches its title and starts building it in its own worktre
   expect(item.title).toBe('Task 1')
   const built = h.store.get(item.id)!
   expect(built).toMatchObject({ state: 'building', currentRunId: 'run-1', runIds: ['run-1'], worktree: '/repo/.worktree/queue-task-1-1-a8c0' })
-  expect(built.contextPath).toBe('/repo/.worktree/queue-task-1-1-a8c0/.mission-control/context/clickup-board/item-1.md')
+  expect(built.contextPath).toBe('/repo/.worktree/queue-task-1-1-a8c0/.mission-control/queue/clickup-board/item-1.md')
   expect(h.started).toEqual([{ cwd: '/repo/.worktree/queue-task-1-1-a8c0', request: expect.stringContaining('Work on "Task 1"'), label: 'Task 1', workflowId: 'wf-1' }])
 })
 

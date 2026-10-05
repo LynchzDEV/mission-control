@@ -1,7 +1,8 @@
 import { constants } from 'node:fs'
-import { lstat, mkdir, open, realpath, unlink, type FileHandle } from 'node:fs/promises'
+import { chmod, lstat, mkdir, open, realpath, unlink, type FileHandle } from 'node:fs/promises'
 import { basename, join, resolve, sep } from 'node:path'
 
+import { ContextTooLarge, excludeFromGit, MAX_CONTEXT_BYTES, safeContextName, SESSION_CONTEXT_DIR, stamp, type TaskContext } from './plugins/context-files'
 import type { SourceReply } from './queue-source'
 
 const MAX_IMAGE_BYTES = 3_932_160
@@ -72,4 +73,25 @@ export async function importImages(root: string, replies: SourceReply[], folder:
     }
   }
   return copied
+}
+
+const queueRoot = (worktree: string): string => join(worktree, SESSION_CONTEXT_DIR, 'queue')
+
+export const queueFolder = (worktree: string, source: string): string => join(queueRoot(worktree), source)
+
+async function refuseLinkedFolder(path: string): Promise<void> {
+  if (!(await lstat(path)).isDirectory()) throw new Error(`not a private folder: ${path}`)
+}
+
+export async function writeQueueContext(source: string, context: TaskContext, worktree: string, now = new Date()): Promise<string> {
+  const bytes = Buffer.byteLength(context.markdown)
+  if (bytes > MAX_CONTEXT_BYTES) throw new ContextTooLarge(bytes)
+  const folder = queueFolder(worktree, source)
+  await mkdir(folder, { recursive: true, mode: 0o700 })
+  for (const path of [join(worktree, SESSION_CONTEXT_DIR), queueRoot(worktree), folder]) await refuseLinkedFolder(path)
+  for (const path of [queueRoot(worktree), folder]) await chmod(path, 0o700)
+  await excludeFromGit(worktree)
+  const path = join(folder, `${stamp(now)}-${safeContextName(context.name)}`)
+  await writePrivate(path, Buffer.from(context.markdown))
+  return path
 }

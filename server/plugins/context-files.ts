@@ -18,7 +18,7 @@ export const SESSION_CONTEXT_DIR = '.mission-control'
 
 const contextRoot = (cwd?: string): string => cwd === undefined ? join(configDir(), 'context') : join(cwd, SESSION_CONTEXT_DIR, 'context')
 
-async function excludeFromGit(cwd: string): Promise<void> {
+export async function excludeFromGit(cwd: string): Promise<void> {
   const commonDir = await git(cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir').catch(() => '')
   if (commonDir.trim() === '') return
   const exclude = join(commonDir.trim(), 'info', 'exclude')
@@ -34,7 +34,7 @@ export function safeContextName(name: string): string {
   return base.endsWith('.md') ? base : `${base}.md`
 }
 
-function stamp(now: Date): string {
+export function stamp(now: Date): string {
   const pad = (value: number) => String(value).padStart(2, '0')
   return `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}-${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}`
 }
