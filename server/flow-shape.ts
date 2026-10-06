@@ -78,16 +78,17 @@ export function checkShape(value: unknown, workflow: Workflow): string[] {
   return validateWorkflow(shapeGraph(workflow, shape))
 }
 
-function pathInstructions(shape: FlowShape, path: FlowShape['paths'][number], step: FlowShape['paths'][number]['steps'][number]): string {
-  return `${step.instructions}\n\nShared contract (do not change it): ${shape.contract}\nOnly change these files: ${path.files.join(', ')}\nThis folder is a fresh copy of the repository; install dependencies first if the step needs them.`
+function pathInstructions(shape: FlowShape, path: FlowShape['paths'][number], step: FlowShape['paths'][number]['steps'][number], repos?: readonly string[]): string {
+  const copy = repos === undefined ? 'This folder is a fresh copy of the repository' : `This folder holds a fresh copy of each repo (${repos.join(', ')}) side by side`
+  return `${step.instructions}\n\nShared contract (do not change it): ${shape.contract}\nOnly change these files: ${path.files.join(', ')}\n${copy}; install dependencies first if the step needs them.`
 }
 
-export function shapeGraph(workflow: Workflow, shape: FlowShape): Workflow {
+export function shapeGraph(workflow: Workflow, shape: FlowShape, repos?: readonly string[]): Workflow {
   const target = shapeTarget(workflow)
   if (!target) throw new Error('This flow cannot take a shape')
   const stepId = (path: FlowShape['paths'][number], index: number) => `path-${path.id}-${index + 1}`
   const pathNodes: WorkflowNode[] = shape.paths.flatMap(path => path.steps.map((step, index) => nodeSchema.parse({
-    id: stepId(path, index), title: step.title, kind: index === 0 ? 'implement' : 'task', agent: { role: 'execute' }, instructions: pathInstructions(shape, path, step),
+    id: stepId(path, index), title: step.title, kind: index === 0 ? 'implement' : 'task', agent: { role: 'execute' }, instructions: pathInstructions(shape, path, step, repos),
   })))
   const join = nodeSchema.parse({ id: JOIN_ID, title: 'Join paths', kind: 'join', instructions: 'Join the parallel paths.' })
   const nodes = workflow.nodes.map(node => node.id === target.execute ? { ...node, title: 'Fix review notes', instructions: FIX_INSTRUCTIONS } : node)

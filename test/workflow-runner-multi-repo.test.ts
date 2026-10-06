@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, setDefaultTimeout, test } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -10,6 +10,8 @@ import { prepareRepoWorkspace } from '../server/repo-workspace'
 import { createWorkflowRunner, type WorkflowRun, type WorkflowRunner } from '../server/workflow-runner'
 import { createWorkflowStore, defaultWorkflow, type Workflow } from '../server/workflows'
 import { git, repoAt } from './support/git-repos'
+
+setDefaultTimeout(30_000)
 
 let dir: string, parent: string, workspace: string, manager: JobManager, runner: WorkflowRunner
 const passing = (text = '') => JSON.stringify({ type: 'result', result: `${text}MC_RESULT ${JSON.stringify({ outcome: 'pass', summary: 'Completed fixture', evidence: ['fixture assertion'] })}` })
@@ -62,6 +64,9 @@ function forked(steps: { a?: Partial<Step>; b?: Partial<Step> } = {}): Workflow 
     ],
     edges: [pass('plan', 'verify'), pass('verify', 'split'), pass('split', 'a'), pass('split', 'b'), pass('a', 'join'), pass('b', 'join'), pass('join', 'review')],
   } as unknown as Workflow
+}
+async function jobsStopped(): Promise<void> {
+  for (let i = 0; i < 400 && manager.listJobs().some(job => job.status === 'running'); i++) await Bun.sleep(20)
 }
 const joins = (run: WorkflowRun) => run.attempts.filter(attempt => attempt.nodeId === 'join')
 const flowBranches = (repo: string) => git(join(parent, repo), 'branch', '--list', 'flow-*')
@@ -156,6 +161,7 @@ test('a split whose prefixed files overlap, lack a repo or name an unknown repo 
     build(planner(shapeOf(paths)))
     const started = await runner.start({ cwd: workspace, request: 'Split it', label: 'shape', graph: straight() })
     const done = await finished(started.id)
+    await jobsStopped()
     expect(done.status).toBe('done')
     expect(nodeIds(done)).toEqual(['plan', 'verify-plan', 'execute', 'review'])
     expect(done.attempts[0]!.result!.evidence).toContain(reason)
@@ -171,4 +177,99 @@ test('a split path that needs a repo with no copy yet gets the copy before the f
   expect(await readFile(join(workspace, 'c', 'jobs.txt'), 'utf8')).toBe('x\n')
   expect(JSON.parse(await readFile(join(workspace, '.mission-control', 'repos.json'), 'utf8'))).toEqual({ repos: ['a', 'b', 'c'] })
   expect(await readdir(join(parent, '.worktree'))).toEqual(['queue-split-1-a8c0'])
+})
+
+test('a path whose second repo conflicts joins none of its repos, and the evidence says so', async () => {
+  build()
+  const started = await runner.start({ cwd: workspace, request: 'Clash', label: 'split', graph: forked({ a: { checks: writes('b/same.txt', 'a') }, b: { checks: [{ command: '/bin/sh', args: ['-c', 'echo new > a/new.txt; echo b > b/same.txt'] }] } }) }, { startedByUser: true })
+  const blocked = await finished(started.id)
+  const aPath = blocked.attempts.find(attempt => attempt.nodeId === 'a')!.pathId
+  const bPath = blocked.attempts.find(attempt => attempt.nodeId === 'b')!.pathId
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.error).toBe('Paths could not be joined: b/same.txt')
+  expect(existsSync(join(workspace, 'a', 'new.txt'))).toBe(false)
+  expect(blocked.sections[0]!.joined).toEqual([aPath])
+  expect(blocked.sections[0]!.joinedRepos?.[bPath] ?? []).toEqual([])
+  expect(joins(blocked).at(-1)!.result!.evidence).toEqual([`Joined: ${aPath}`, `Conflicts in ${bPath}: b/same.txt`])
+})
+
+test('a path workspace deleted after one of its steps finished blocks the run instead of losing that work', async () => {
+  const slow: EngineResolver = ({ prompt }) => ({ cmd: '/bin/sh', args: ['-c', `${prompt.includes('SLOW') ? 'sleep 0.8; ' : ''}echo '${passing()}'`], env: {} })
+  build(slow)
+  const pass = (source: string, target: string) => ({ source, target, outcome: 'pass' as const })
+  const graph = {
+    ...defaultWorkflow(), id: 'forked2', name: 'Forked2', entry: 'plan',
+    nodes: [
+      { id: 'plan', title: 'Plan', kind: 'plan', agent: { role: 'plan' }, instructions: 'Plan the work' },
+      { id: 'verify', title: 'Verify', kind: 'verify-plan', agent: { role: 'review' }, instructions: 'Verify the plan' },
+      { id: 'split', title: 'Split', instructions: 'Split the work' },
+      { id: 'a', title: 'Write A', instructions: 'Write A', checks: writes('a/one.txt', 'one') },
+      { id: 'a2', title: 'Check A', instructions: 'Check A SLOW' },
+      { id: 'b', title: 'B', instructions: 'Write B SLOW', checks: writes('b/two.txt', 'two') },
+      { id: 'join', title: 'Join', kind: 'join', instructions: 'Join the paths' },
+      { id: 'review', title: 'Review', instructions: 'Review the result' },
+    ],
+    edges: [pass('plan', 'verify'), pass('verify', 'split'), pass('split', 'a'), pass('split', 'b'), pass('a', 'a2'), pass('a2', 'join'), pass('b', 'join'), pass('join', 'review')],
+  } as unknown as Workflow
+  const started = await runner.start({ cwd: workspace, request: 'Write both', label: 'split', graph }, { startedByUser: true })
+  const working = await until(started.id, run => run.tokens.some(token => token.nodeId === 'a2' && token.state === 'working'))
+  const aPath = working.tokens.find(token => token.nodeId === 'a2')!.pathId
+  const doomed = working.sections[0]!.paths.find(path => path.pathId === aPath)!.dir
+  await runner.stop(started.id)
+  await jobsStopped()
+  await rm(doomed, { recursive: true, force: true })
+  await runner.retry(started.id)
+  const blocked = await finished(started.id)
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.error).toBe(`The path workspace ${doomed} was deleted after Write A finished; its work is gone. Start the run again.`)
+  expect(existsSync(doomed)).toBe(false)
+})
+
+test('a split inside a path forks from the path workspace and both levels join back per repo', async () => {
+  build()
+  const pass = (source: string, target: string) => ({ source, target, outcome: 'pass' as const })
+  const graph = {
+    ...defaultWorkflow(), id: 'nested', name: 'Nested', entry: 'plan',
+    nodes: [
+      { id: 'plan', title: 'Plan', kind: 'plan', agent: { role: 'plan' }, instructions: 'Plan the work' },
+      { id: 'verify', title: 'Verify', kind: 'verify-plan', agent: { role: 'review' }, instructions: 'Verify the plan' },
+      { id: 'split', title: 'Split', instructions: 'Split the work' },
+      { id: 'top', title: 'Top', instructions: 'Write top', checks: writes('a/top.txt', 'top') },
+      { id: 'inner', title: 'Inner split', instructions: 'Split again' },
+      { id: 'i1', title: 'I1', instructions: 'Write i1', checks: writes('a/i1.txt', 'i1') },
+      { id: 'i2', title: 'I2', instructions: 'Write i2', checks: writes('b/i2.txt', 'i2') },
+      { id: 'ijoin', title: 'Inner join', kind: 'join', instructions: 'Join inner' },
+      { id: 'join', title: 'Join', kind: 'join', instructions: 'Join the paths' },
+      { id: 'review', title: 'Review', instructions: 'Review the result' },
+    ],
+    edges: [pass('plan', 'verify'), pass('verify', 'split'), pass('split', 'top'), pass('split', 'inner'), pass('inner', 'i1'), pass('inner', 'i2'), pass('i1', 'ijoin'), pass('i2', 'ijoin'), pass('ijoin', 'join'), pass('top', 'join'), pass('join', 'review')],
+  } as unknown as Workflow
+  const started = await runner.start({ cwd: workspace, request: 'Nested', label: 'nested', graph }, { startedByUser: true })
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  for (const [file, text] of [['a/top.txt', 'top'], ['a/i1.txt', 'i1'], ['b/i2.txt', 'i2']] as const) expect(await readFile(join(workspace, file), 'utf8')).toBe(`${text}\n`)
+  const innerCwds = manager.listJobs().filter(job => ['i1', 'i2'].includes(job.workflowNodeId ?? '')).map(job => job.cwd)
+  for (const cwd of innerCwds) expect(cwd).toMatch(new RegExp(`/\\.worktree/flow-${started.id.slice(0, 8)}-a\\d+-2\\.a\\d+-\\d$`))
+  expect(await readdir(join(parent, '.worktree'))).toEqual(['queue-split-1-a8c0'])
+  for (const repo of ['a', 'b']) expect(flowBranches(repo)).toBe('')
+})
+
+test('a split that would need more than 8 repos stays straight and says why', async () => {
+  for (const name of ['d', 'e', 'f', 'g', 'h', 'i']) await repoAt(join(parent, name))
+  const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'].map(name => `${name}/x.txt`)
+  build(planner(shapeOf([{ id: 'one', files: files.slice(0, 5) }, { id: 'two', files: files.slice(5) }])))
+  const started = await runner.start({ cwd: workspace, request: 'Split it', label: 'shape', graph: straight() })
+  const done = await finished(started.id)
+  expect(nodeIds(done)).toEqual(['plan', 'verify-plan', 'execute', 'review'])
+  expect(done.attempts[0]!.result!.evidence).toContain('Flow shape ignored: MC_SHAPE needs more than 8 repos')
+})
+
+test('a split path is told it holds a copy of each repo side by side', async () => {
+  const prompts: string[] = []
+  build(planner(shapeOf([{ id: 'api', files: ['a/api.txt'] }, { id: 'web', files: ['b/web.txt'] }]), prompts))
+  const started = await runner.start({ cwd: workspace, request: 'Split it', label: 'shape', graph: straight() })
+  expect((await finished(started.id)).status).toBe('done')
+  const pathPrompt = prompts.find(prompt => prompt.includes('Only change these files: a/api.txt'))!
+  expect(pathPrompt).toContain('This folder holds a fresh copy of each repo (a, b) side by side')
+  expect(pathPrompt).not.toContain('fresh copy of the repository')
 })

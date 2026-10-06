@@ -53,8 +53,8 @@ export async function commitRepoPath(dir: string, repos: readonly string[], mess
   for (const name of repos) await commitPath(join(dir, name), message)
 }
 
-export async function joinRepoPath(parentWorkspace: string, dir: string, name: string, snapshot: string): Promise<RepoJoin> {
+export async function joinRepoPath(parentWorkspace: string, dir: string, name: string, snapshot: string, checkOnly = false): Promise<RepoJoin> {
   const head = await gitTimed(join(dir, name), GIT_TIMEOUT, ['rev-parse', 'HEAD'])
-  const applied = await applyPath(join(parentWorkspace, name), snapshot, head)
+  const applied = await applyPath(join(parentWorkspace, name), snapshot, head, { checkOnly })
   return applied.applied ? { applied: true, files: applied.files } : { applied: false, conflicts: applied.conflicts.map(file => `${name}/${file}`) }
 }

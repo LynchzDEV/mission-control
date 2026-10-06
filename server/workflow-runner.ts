@@ -17,7 +17,7 @@ import { threadRootOf } from './threads'
 import { configDir, mcUrl, readConfig, readSecrets } from './secrets'
 import { commitRepoPath, joinRepoPath, shapeRepoNames, shapeRepoProblems, shapeRulesFor, snapshotRepos, workspaceFolder } from './repo-paths'
 import { MAX_QUEUE_REPOS } from './repo-names'
-import { preparePathWorkspace, prepareRepoWorkspace, removePathWorkspace, restorePathWorkspace, workspaceRepos } from './repo-workspace'
+import { pathWorkspaceIntact, preparePathWorkspace, prepareRepoWorkspace, removePathWorkspace, restorePathWorkspace, workspaceRepos } from './repo-workspace'
 import { validateWorkspaceCwd } from './workspace'
 import { checkShape, readShape, shapeGraph, shapeNotes, shapeTarget, type FlowShape } from './flow-shape'
 import { atomicJson, composeWorkflowPrompt, draftRevision, forkSections, identifier, passTargets, sessionRules, type Outcome, type PolicyRevision, type WorkflowNode, type WorkflowRevision, type WorkflowStore } from './workflows'
@@ -665,11 +665,18 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     }
     return undefined
   }
+  function finishedOnPath(run: WorkflowRun, pathId: string): WorkflowAttempt | undefined {
+    return run.attempts.filter(attempt => (attempt.pathId === pathId || attempt.pathId.startsWith(`${pathId}.`)) && attempt.status === 'settled' && !attempt.interrupted && attempt.result !== null).at(-1)
+  }
   async function restorePath(run: WorkflowRun, token: WorkflowToken): Promise<string | null> {
     const found = sectionOf(run, token.pathId)
     if (!found?.section.repoSnapshots || !found.section.folder) return null
+    const repos = Object.keys(found.section.repoSnapshots)
+    if (await pathWorkspaceIntact(found.path.dir, repos)) return null
+    const done = finishedOnPath(run, found.path.pathId)
+    if (done) return `The path workspace ${found.path.dir} was deleted after ${run.workflow.nodes.find(node => node.id === done.nodeId)?.title ?? done.nodeId} finished; its work is gone. Start the run again.`
     try {
-      await restorePathWorkspace(found.section.folder, Object.keys(found.section.repoSnapshots), found.path.branch)
+      await restorePathWorkspace(found.section.folder, repos, found.path.branch, found.section.repoSnapshots)
       return null
     } catch (error) {
       return `The path workspace ${found.path.dir} could not be restored: ${error instanceof Error ? error.message : String(error)}`
@@ -704,8 +711,14 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   }
   type Joining = { counts: string[]; conflict: { pathId: string; files: string[] } | null }
   async function joinRepoPathInto(run: WorkflowRun, section: OpenSection, path: PlannedPath): Promise<{ files: number } | { conflicts: string[] }> {
-    for (const [name, snapshot] of Object.entries(section.repoSnapshots!)) {
-      if (section.joinedRepos?.[path.pathId]?.includes(name)) continue
+    const pending = Object.entries(section.repoSnapshots!).filter(([name]) => !section.joinedRepos?.[path.pathId]?.includes(name))
+    const conflicts: string[] = []
+    for (const [name, snapshot] of pending) {
+      const checked = await joinRepoPath(section.parentWorkspace, path.dir, name, snapshot, true)
+      if (!checked.applied) conflicts.push(...checked.conflicts)
+    }
+    if (conflicts.length > 0) return { conflicts }
+    for (const [name, snapshot] of pending) {
       const joined = await joinRepoPath(section.parentWorkspace, path.dir, name, snapshot)
       if (!joined.applied) return { conflicts: joined.conflicts }
       section.joinedRepos = { ...section.joinedRepos, [path.pathId]: [...(section.joinedRepos?.[path.pathId] ?? []), name] }
@@ -805,7 +818,8 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     if (!plan?.shape) return
     const target = shapeTarget(run.workflow)!
     const reason = `Plan splits the work into ${plan.shape.paths.length} parallel paths: ${plan.shape.paths.map(path => path.title).join(', ')}`
-    const graph = shapeGraph(run.workflow, plan.shape)
+    const repos = await workspaceRepos(run.cwd)
+    const graph = shapeGraph(run.workflow, plan.shape, repos === null ? undefined : [...new Set([...repos, ...shapeRepoNames(plan.shape)])])
     const inherited = Object.fromEntries(graph.nodes.filter(node => node.kind !== 'join').map(node => [node.id, run.agents[node.id] ?? run.agents[target.execute]!]))
     try {
       const version = await versionFor(run, { graph, reason }, null, inherited)

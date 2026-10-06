@@ -98,7 +98,7 @@ export async function changedFileCount(cwd: string, from: string, to: string): P
   return names ? names.split('\n').length : 0
 }
 
-export async function applyPath(parent: string, snapshot: string, head: string): Promise<{ applied: boolean; files: number; conflicts: string[] }> {
+export async function applyPath(parent: string, snapshot: string, head: string, options: { checkOnly?: boolean } = {}): Promise<{ applied: boolean; files: number; conflicts: string[] }> {
   const top = await gitTimed(parent, GIT_TIMEOUT, ['rev-parse', '--show-toplevel'])
   const files = await changedFileCount(top, snapshot, head)
   if (!files) return { applied: true, files, conflicts: [] }
@@ -114,7 +114,7 @@ export async function applyPath(parent: string, snapshot: string, head: string):
       if (!conflicts.length) throw error
       return { applied: false, files, conflicts }
     }
-    await gitTimed(top, 0, [...APPLY_ARGS, file])
+    if (!options.checkOnly) await gitTimed(top, 0, [...APPLY_ARGS, file])
     return { applied: true, files, conflicts: [] }
   })
 }
