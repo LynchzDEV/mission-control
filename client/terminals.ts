@@ -2,10 +2,11 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { ClipboardAddon } from '@xterm/addon-clipboard'
 import { errorText, getJson, pathsFromUriList, postJson, providerName, readArray, readRecord, shellQuote, uploadDrop } from './shared'
 import { launchChoice, readRecentDirectories, restoreRequested } from './shell-launch'
 import { launchWorkflowOptions, launchWorkflowRequest } from './workflow-options'
-import { dragKind, dropCopy, findCount, findKeys, restoreTarget, nextActive, sessionSlot, sessionState, splitPlan, statusPill, terminalKeys, type Session, type TerminalKey, type SessionState } from './terminal-state'
+import { writeOnlyClipboard, dragKind, dropCopy, findCount, findKeys, restoreTarget, nextActive, sessionSlot, sessionState, splitPlan, statusPill, terminalKeys, type Session, type TerminalKey, type SessionState } from './terminal-state'
 import { createPanes, type PaneHeader } from './terminal-panes'
 import { createOutcomeStrip } from './outcome-strip'
 import type { ResumeRequest } from './chat-view'
@@ -79,6 +80,7 @@ export class TerminalView {
     this.terminal.loadAddon(this.fit)
     this.terminal.loadAddon(this.search)
     this.terminal.loadAddon(new WebLinksAddon())
+    this.terminal.loadAddon(new ClipboardAddon(undefined, writeOnlyClipboard(navigator.clipboard)))
     this.terminal.attachCustomKeyEventHandler(event => {
       if (sessionSlot(event) !== null) return false
       const find = findKeys(event, false, MAC) === 'open'

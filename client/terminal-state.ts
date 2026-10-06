@@ -1,5 +1,14 @@
+import type { IClipboardProvider } from '@xterm/addon-clipboard'
+
 export type Session = { id: string; engine: string; cwd: string; title: string; model?: string | null; sessionId?: string | null }
 export type SessionState = 'working' | 'idle' | 'ended'
+
+export function writeOnlyClipboard(clipboard: { writeText(text: string): Promise<void> } | undefined): IClipboardProvider {
+  return {
+    readText: () => '',
+    writeText: async (_selection, text) => { await clipboard?.writeText(text).catch(() => undefined) },
+  }
+}
 
 export const WORKING_WINDOW_MS = 5000
 const MAX_LINE = 80

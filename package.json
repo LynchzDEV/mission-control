@@ -19,6 +19,7 @@
     "@elysiajs/cookie": "^0.8.0",
     "@elysiajs/html": "^1.4.2",
     "@elysiajs/static": "^1.4.10",
+    "@xterm/addon-clipboard": "^0.2.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-web-links": "^0.12.0",
