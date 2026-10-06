@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { segment } from '../client'
 import { arg, emit, expandHome, flag, records, stringOpt, UsageError, type Command, type Context } from '../command'
 import { cell, table } from '../format'
+import { repoNamesProblem } from '../../server/repo-names'
 
 type Json = Record<string, unknown>
 
@@ -24,9 +25,21 @@ function listText(value: unknown): string {
     { header: 'STATE', value: (item) => cell(item.state) },
     { header: 'SOURCE', value: (item) => cell(item.source) },
     { header: 'TITLE', value: (item) => cell(item.title) },
+    { header: 'REPOS', value: (item) => cell(reposText(item)) },
     { header: 'ERROR/QUESTIONS', value: (item) => cell(note(item)) },
   ])
 }
+
+function reposOption(ctx: Context): string[] | undefined {
+  const given = stringOpt(ctx, 'repos')
+  if (given === undefined) return undefined
+  const repos = given.split(',').map(name => name.trim()).filter(name => name !== '')
+  const problem = repoNamesProblem(repos)
+  if (problem !== null) throw new UsageError(problem)
+  return repos
+}
+
+const reposText = (item: Json): string => (Array.isArray(item.repos) && item.repos.length > 0 ? item.repos.map(String).join(', ') : '-')
 
 function position(ctx: Context): number {
   const text = arg(ctx, 'to')
@@ -36,10 +49,12 @@ function position(ctx: Context): number {
 
 function addBody(ctx: Context): Json {
   const flowId = stringOpt(ctx, 'flow')
+  const repos = reposOption(ctx)
   return {
     source: arg(ctx, 'source'),
     externalId: arg(ctx, 'externalId'),
     repo: resolve(ctx.cwd, expandHome(stringOpt(ctx, 'repo') ?? ctx.cwd)),
+    ...(repos === undefined ? {} : { repos }),
     ...(flowId === undefined ? {} : { flowId }),
     position: flag(ctx, 'next') ? 'next' : 'end',
   }
@@ -55,7 +70,8 @@ export const queueCommands: Command[] = [
     path: ['queue', 'add'],
     args: ['source', 'externalId'],
     options: {
-      repo: { type: 'string', description: 'repo the item is built in (default: current directory)', placeholder: 'DIR' },
+      repo: { type: 'string', description: 'repo, or folder of repos, the item is built in (default: current directory)', placeholder: 'DIR' },
+      repos: { type: 'string', description: 'repos inside --repo this item touches, comma separated', placeholder: 'A,B' },
       flow: { type: 'string', description: 'saved flow id', placeholder: 'ID' },
       next: { type: 'boolean', description: 'put it first' },
     },

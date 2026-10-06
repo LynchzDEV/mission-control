@@ -146,3 +146,46 @@ describe('mctl queue', () => {
     expect(h.out()).toContain('Put a failed, ready or waiting item back in line')
   })
 })
+
+describe('mctl queue with several repos', () => {
+  test('add --repos sends the trimmed repo names with the folder', async () => {
+    const h = harness(() => Response.json({ item: { id: 'a1', title: 'Login copy' } }))
+    expect(await main(['queue', 'add', 'clickup-board', '86d3j4f8q', '--repo', '/home/me/klangtech', '--repos', 'api, backoffice'], h.deps)).toBe(0)
+    expect(h.calls[0]?.body).toEqual({ source: 'clickup-board', externalId: '86d3j4f8q', repo: '/home/me/klangtech', repos: ['api', 'backoffice'], position: 'end' })
+  })
+
+  test('add --repos refuses a bad list before calling the server', async () => {
+    const nine = Array.from({ length: 9 }, (_, index) => `r${index}`).join(',')
+    const cases: Array<[string, string]> = [
+      ['', 'Tick at least one repo this ticket touches'],
+      [' , ', 'Tick at least one repo this ticket touches'],
+      ['../x', 'Not a repo name: ../x'],
+      ['api,.git', 'Not a repo name: .git'],
+      ['api,api', 'api is ticked twice'],
+      [nine, 'Pick at most 8 repos for one item'],
+    ]
+    for (const [given, error] of cases) {
+      const h = harness()
+      expect(await main(['queue', 'add', 'clickup-board', '1', '--repo', '/k', '--repos', given], h.deps)).toBe(2)
+      expect(h.err()).toContain(`mctl: ${error}`)
+      expect(h.calls).toEqual([])
+    }
+  })
+
+  test('add without --repos sends no repos key', async () => {
+    const h = harness(() => Response.json({ item: { id: 'a1', title: 'x' } }))
+    expect(await main(['queue', 'add', 'clickup-board', '1', '--repo', '/k'], h.deps)).toBe(0)
+    expect(h.calls[0]?.body !== undefined && 'repos' in h.calls[0].body).toBe(false)
+  })
+
+  test('list shows the repos of a multi-repo item and a dash for others', async () => {
+    const h = harness(() => Response.json({ items: [
+      { id: 'm1', state: 'queued', source: 'clickup-board', title: 'Login', repo: '/home/me/klangtech', repos: ['api', 'backoffice'], questions: [], error: null },
+      { id: 's1', state: 'queued', source: 'clickup-board', title: 'Copy', repo: '/home/me/api', questions: [], error: null },
+    ] }))
+    expect(await main(['queue', 'list'], h.deps)).toBe(0)
+    expect(h.out()).toContain('REPOS')
+    expect(h.out()).toContain('api, backoffice')
+    expect(h.out().split('\n').find(line => line.includes('s1'))).toContain('-')
+  })
+})
