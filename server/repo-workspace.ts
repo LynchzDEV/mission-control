@@ -33,6 +33,13 @@ async function isTrustedChild(folder: string, workspace: string, name: string): 
   return await isPlainDir(child) && await isWorktreeOf(join(folder, name), child)
 }
 
+type WorkspaceOwner = (realPath: string) => boolean | Promise<boolean>
+let ownsWorkspace: WorkspaceOwner = () => false
+
+export function registerQueueWorkspaces(owner: WorkspaceOwner): void {
+  ownsWorkspace = owner
+}
+
 export async function workspaceRepos(dir: string): Promise<string[] | null> {
   try {
     const real = await realpath(dir)
@@ -42,6 +49,7 @@ export async function workspaceRepos(dir: string): Promise<string[] | null> {
     if (!record.isFile() || record.size > MAX_RECORD_BYTES) return null
     const { repos } = JSON.parse(await readFile(recordPath(real), 'utf8')) as { repos?: unknown }
     if (!isRepoList(repos)) return null
+    if (repos.length === 0) return (await ownsWorkspace(real)) ? repos : null
     const folder = dirname(dirname(real))
     return (await Promise.all(repos.map(name => isTrustedChild(folder, real, name)))).every(Boolean) ? repos : null
   } catch {

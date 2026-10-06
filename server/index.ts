@@ -40,7 +40,7 @@ import { pluginSource } from './queue-source'
 import { createQueueStore, queuePath } from './queue-store'
 import { queueRoutes } from './routes/queue'
 import { queueTree } from './queue-tree'
-import { prepareRepoWorkspace } from './repo-workspace'
+import { prepareRepoWorkspace, registerQueueWorkspaces } from './repo-workspace'
 import { terminalsRoutes } from './routes/terminals'
 import { outcomesRoutes } from './routes/outcomes'
 import { attentionRoutes } from './routes/attention'
@@ -216,6 +216,7 @@ export async function createApp(): Promise<Elysia> {
   const workflowBuilder = createWorkflowBuilder({ manager: jobManager, resolver: realEngineResolver, store: workflowStore })
   await workflowRunner.recover()
   const queueStore = createQueueStore(queuePath())
+  registerQueueWorkspaces(path => queueStore.list().some(item => item.repos !== undefined && item.worktree === path))
   queueEngine = createQueueEngine({
     store: queueStore,
     runner: workflowRunner,
