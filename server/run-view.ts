@@ -2,7 +2,7 @@ import type { JobRecord } from './jobs'
 import type { ApprovalVia, ResolvedAgent, RunOrigin, RunVersion, TokenState, WorkflowRun } from './workflow-runner'
 import { forkSections, type ForkSection, type WorkflowNode, type WorkflowRevision } from './workflows'
 
-export type Scope = { chat?: string; terminal?: string }
+export type Scope = { chat?: string; terminal?: string; run?: string }
 export type RunStepView = { id: string; title: string; kind: string; engine: string }
 export type RunAttemptView = { nodeId: string; number: number; jobId: string | null; status: string; outcome: 'pass' | 'fail' | 'blocked' | null; summary: string | null; startedAt: number; endedAt: number | null; pathId: string; from: number[]; subAgents: number; inSession: boolean }
 export type RunTokenView = { nodeId: string; pathId: string; state: TokenState; from: number[] }
@@ -96,7 +96,7 @@ function inScope(item: { chatId?: string; terminalId?: string | null }, scope: S
 export function scopeSnapshot(runs: WorkflowRun[], jobs: JobRecord[], scope: Scope): ScopeSnapshot {
   const jobsById = new Map(jobs.map(job => [job.id, job]))
   return {
-    runs: runs.filter(run => inScope(run, scope)).sort((a, b) => b.createdAt - a.createdAt).map(run => runView(run, jobsById)),
+    runs: runs.filter(run => inScope(run, scope) || (!!scope.run && run.id === scope.run)).sort((a, b) => b.createdAt - a.createdAt).map(run => runView(run, jobsById)),
     jobs: jobs.filter(job => inScope(job, scope) && !job.workflowRunId && job.purpose !== 'chat').sort((a, b) => b.startedAt - a.startedAt)
       .map(job => ({ id: job.id, label: job.label, engine: job.engine, status: job.status, startedAt: job.startedAt, endedAt: job.endedAt ?? null })),
   }

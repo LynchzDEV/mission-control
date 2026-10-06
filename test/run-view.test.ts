@@ -177,3 +177,9 @@ test('a loop around a whole section re-opens it: after the split runs again the 
   expect(reopened.state).toBe('open')
   expect(reopened.paths.map(path => path.pathId)).toEqual(['a9-1', 'a9-2'])
 })
+
+test('run scope picks only that run, wherever it was started, and no quick jobs', () => {
+  const snapshot = scopeSnapshot([run({ id: 'queue-run', terminalId: undefined }), run({ id: 'other' })], [job({ id: 'quick', terminalId: 't1' }), job({ id: 'step', workflowRunId: 'queue-run' })], { run: 'queue-run' })
+  expect(snapshot.runs.map(view => view.id)).toEqual(['queue-run'])
+  expect(snapshot.jobs).toEqual([])
+})

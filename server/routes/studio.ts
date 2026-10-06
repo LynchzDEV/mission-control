@@ -108,7 +108,7 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
     })
     .get('/api/studio/events', ({ query, request }) => {
       if (!events || !jobs) throw new Error('Live updates unavailable')
-      const scope = { chat: query.chat || undefined, terminal: query.terminal || undefined }
+      const scope = { chat: query.chat || undefined, terminal: query.terminal || undefined, run: query.run || undefined }
       return eventStreamResponse(events, () => scopeSnapshot(runner.list(), jobs(), scope), request.signal)
     })
     .get('/api/studio/runs', ({ query }) => ({ runs: runner.list()
