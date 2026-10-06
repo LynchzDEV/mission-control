@@ -77,6 +77,9 @@ One item builds at a time. Parked items do not hold the slot.
 
 - The run request lists the real repos at `<folder>/<name>` as READ-ONLY (read and plan only) and says work happens only in `<workspace>/<name>`. To get a copy the agent ends the step `MC_RESULT blocked` with one evidence item `repo: <name>` per repo; other evidence items stay questions.
 - A blocked run with repo requests: each name is checked like an add (plus the build-time checks), added to `repos` and its worktree made. Repo requests only → back to the front of the queue for a new run on the same workspace, nothing posted. With questions too → repos added and the questions posted/parked as before. An unknown name, asking only for repos it already has, a 4th repo-only rerun, or more than 8 repos fails the item with a plain reason. `repo:` lines never reach the source.
+- Asks are read leniently (any case, backticks, quotes, bullets, `repo: a, b`). A single-repo item that only asks for repos fails with a plain reason. A folder that can no longer be listed, or has no repos left, fails the item before a run starts.
+- Real repos are read-only by instruction. Each run fingerprints them (HEAD + `git status`) at start and settle; a change does not fail the item (the user may be working there) but is recorded on the item, shown on its row and raised as an alert.
+- An empty `repos.json` only marks a workspace that a queue item owns (its stored worktree); the item's workspace is stored before its run starts.
 
 - `GET /api/queue/folder?path=` → `{ path, isRepo, repos }`. A child counts only if it is a real directory (symlinks refused), does not start with a dot, and is its own git top level.
 - `POST /api/queue` takes optional `repos: string[]` (may be empty); a folder of repos without `repos` is stored with `repos: []`. Names are re-checked against the listing at add time. Item keeps `repo` = folder and gains `repos`; old `queue.json` loads unchanged.
