@@ -18,6 +18,7 @@ function flowJob(job: JsonRecord): FlowJob | null {
 
 async function readRunNames(runId: string): Promise<RunNames> {
   const result = await getJson(`/api/studio/runs/${encodeURIComponent(runId)}`)
+  if (!result.ok) runNames.delete(runId)
   const nodes = readArray(readRecord(result.data.workflow).nodes)
   return { label: result.ok ? text(result.data.label) : null, steps: new Map(nodes.flatMap(node => (text(node.id) && text(node.title) ? [[String(node.id), String(node.title)] as const] : []))) }
 }
@@ -66,6 +67,7 @@ export async function refreshFlowAgents(): Promise<void> {
   const result = await getJson('/api/jobs')
   if (!result.ok) return
   const running = readArray(result.data.jobs).map(flowJob).filter((job): job is FlowJob => job !== null)
+  for (const runId of [...runNames.keys()]) if (!running.some(job => job.runId === runId)) runNames.delete(runId)
   const rows = await Promise.all(running.map(async job => row(job, await namesOf(job.runId))))
   list.replaceChildren(...rows)
   section.hidden = rows.length === 0

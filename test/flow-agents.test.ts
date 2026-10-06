@@ -8,6 +8,7 @@ type Job = Record<string, unknown>
 let jobs: Job[] = []
 const fetched: string[] = []
 const runs: Record<string, unknown> = {
+  'run-r': { id: 'run-r', label: 'Tax ID on invoices', workflow: { nodes: [{ id: 'review', title: 'Review' }] } },
   'run-q': { id: 'run-q', label: 'Invoice PDF footer', workflow: { nodes: [{ id: 'plan', title: 'Plan' }, { id: 'execute', title: 'Execute' }] } },
 }
 const realFetch = globalThis.fetch
@@ -57,12 +58,24 @@ test('clicking a flow step, or pressing Enter on it, opens it in the live flow v
   expect(watched).toEqual([{ runId: 'run-q', jobId: 'j-exec' }, { runId: 'run-q', jobId: 'j-exec' }])
 })
 
-test('a run it cannot read still lists the step by its id, and it asks for each run only once', async () => {
-  jobs = [job({ id: 'j-x', workflowRunId: 'run-gone', workflowNodeId: 'review' })]
+test('a run it cannot read lists the step by its id and is asked again next time; a run it read is asked once', async () => {
+  jobs = [job({ id: 'j-x', workflowRunId: 'run-gone', workflowNodeId: 'review' }), job({ id: 'j-r', workflowRunId: 'run-r', workflowNodeId: 'review' })]
   await refreshFlowAgents()
   await refreshFlowAgents()
   expect(items()[0]!.querySelector('.ag-tick')?.textContent).toBe('review')
-  expect(fetched.filter(url => url === '/api/studio/runs/run-gone')).toHaveLength(1)
+  expect(items()[1]!.querySelector('.ag-tick')?.textContent).toBe('Review')
+  expect(fetched.filter(url => url === '/api/studio/runs/run-gone')).toHaveLength(2)
+  expect(fetched.filter(url => url === '/api/studio/runs/run-r')).toHaveLength(1)
+})
+
+test('a run that stops running is forgotten, so its names are read again if it runs later', async () => {
+  jobs = [job({ id: 'j-exec', workflowRunId: 'run-q', workflowNodeId: 'execute' })]
+  await refreshFlowAgents()
+  jobs = []
+  await refreshFlowAgents()
+  jobs = [job({ id: 'j-exec2', workflowRunId: 'run-q', workflowNodeId: 'plan' })]
+  await refreshFlowAgents()
+  expect(fetched.filter(url => url === '/api/studio/runs/run-q')).toHaveLength(2)
 })
 
 test('with no flow running the section hides and the empty note comes back', async () => {
