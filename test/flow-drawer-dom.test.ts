@@ -666,7 +666,7 @@ const shown = (id: string): boolean => !document.getElementById(id)!.hidden
 const settle = async (): Promise<void> => { await Bun.sleep(0); await Bun.sleep(0) }
 const blockedRun = (id: string, createdAt: number, patch: Partial<RunView> = {}): RunView => ({ ...twoSteps(id), createdAt, status: 'blocked', error: 'Build reached its 5-visit limit', tokens: [], ...patch })
 
-test('two live flows open on All flows: one row each, the menu on All flows, and no single-flow controls', () => {
+test('two live flows open on All flows: one row each, the menu on All flows, a running count, and no single-flow controls', () => {
   const stream = freshScope()
   stream.send({ runs: [{ ...twoSteps('L2'), createdAt: 70 }, { ...twoSteps('L1'), createdAt: 60, label: 'Older flow' }], jobs: [] })
   expect(shown('flow-rows')).toBe(true)
@@ -677,7 +677,7 @@ test('two live flows open on All flows: one row each, the menu on All flows, and
   expect(menu().value).toBe('all')
   expect(menu().options[0]!.textContent).toBe('All flows · 2 live')
   expect(document.getElementById('flow-meta')!.textContent).toBe('')
-  expect(document.getElementById('flow-pills')!.children).toHaveLength(0)
+  expect([...document.getElementById('flow-pills')!.children].map(pill => pill.textContent)).toEqual(['2 running'])
   const row = rowFor('L1')
   expect(row.querySelector('.flow-row-open')!.textContent).toBe('Older flow')
   expect(row.querySelector('.flow-mark')!.getAttribute('data-state')).toBe('active')

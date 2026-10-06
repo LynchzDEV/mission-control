@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ALL_FLOWS, bannerFor, collapseSections, drawerView, edgesFor, elapsed, metaFor, needsYou, pickRun, pillsFor, rowDetail, rowRuns, runMenu, stepsFor } from '../client/flow-drawer'
+import { ALL_FLOWS, allFlowsPills, bannerFor, collapseSections, drawerView, edgesFor, elapsed, metaFor, needsYou, pickRun, pillsFor, rowDetail, rowRuns, runMenu, stepsFor } from '../client/flow-drawer'
 import { STEP_H, STEP_W, layoutRun, type GraphEdge, type GraphStep } from '../client/flow-graph'
 import { forkSections, workflowSchema } from '../server/workflows'
 import type { RunView } from '../server/run-view'
@@ -164,6 +164,11 @@ const runIds = (runs: RunView[]): string[] => runs.map(run => run.id)
 test('rows hold live runs and runs that need you, those that need you first, newest first within each', () => {
   expect(runIds(rowRuns(Object.values(flows)))).toEqual(['broke', 'stuck', 'fresh', 'asking', 'old'])
   expect(rowRuns([flows.done, flows.waved, flows.stopped])).toEqual([])
+})
+
+test('the All flows header counts blocked, failed and live rows; a dismissed run is not counted', () => {
+  expect(allFlowsPills(rowRuns(Object.values(flows)))).toEqual([['needs', 1, 'blocked'], ['needs', 1, 'failed'], ['running', 3, 'running']])
+  expect(allFlowsPills(rowRuns([flows.old, flows.fresh, flows.waved]))).toEqual([['running', 2, 'running']])
 })
 
 test('All flows is the default once two runs are live or need you, and a picked run shows alone', () => {

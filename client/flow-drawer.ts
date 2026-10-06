@@ -330,6 +330,14 @@ export function needsYou(run: RunView): boolean {
 
 const byNewest = (a: RunView, b: RunView): number => b.createdAt - a.createdAt
 
+export type PillCount = readonly [state: string, count: number, word: string]
+
+export function allFlowsPills(rows: RunView[]): PillCount[] {
+  const count = (status: string): number => rows.filter(run => needsYou(run) && run.status === status).length
+  return ([['needs', count('blocked'), 'blocked'], ['needs', count('failed'), 'failed'], ['running', rows.filter(isLive).length, 'running']] as const)
+    .filter(([, total]) => total > 0)
+}
+
 export function rowRuns(runs: RunView[]): RunView[] {
   const shown = runs.filter(run => isLive(run) || needsYou(run)).sort(byNewest)
   return [...shown.filter(needsYou), ...shown.filter(run => !needsYou(run))]
@@ -594,7 +602,8 @@ function mountFlowDrawer(): void {
     if (!runsSelect.hidden) paintMenu(view)
     back.hidden = !run || rowRuns(snapshot.runs).length < 2
     const counts = run ? pillsFor(run) : { running: 0, done: 0, waiting: 0 }
-    pills.replaceChildren(...([['running', counts.running, 'running'], ['done', counts.done, 'done'], ['queued', counts.waiting, 'waiting']] as const)
+    const shown: PillCount[] = view.kind === 'all' ? allFlowsPills(view.runs) : [['running', counts.running, 'running'], ['done', counts.done, 'done'], ['queued', counts.waiting, 'waiting']]
+    pills.replaceChildren(...shown
       .filter(([, count]) => count > 0)
       .map(([state, count, word]) => { const pill = make('span', `${count} ${word}`, 'pill-state'); pill.dataset.s = state; return pill }))
     paintPause(run)
