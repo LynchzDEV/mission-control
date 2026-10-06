@@ -12,6 +12,8 @@ const BODY = `
     <symbol id="sidebar-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M8 4v12"/></symbol>
     <symbol id="history-icon" viewBox="0 0 20 20"><path d="M3 7a7 7 0 1 1-1 5M3 3v4h4M10 6v4l3 2"/></symbol>
     <symbol id="arrow-icon" viewBox="0 0 20 20"><path d="M10 16V4M5 9l5-5 5 5"/></symbol>
+    <symbol id="pause-icon" viewBox="0 0 20 20"><path d="M7.5 5v10M12.5 5v10"/></symbol>
+    <symbol id="play-icon" viewBox="0 0 20 20"><path d="M7 5.2v9.6a.6.6 0 0 0 .9.5l7.4-4.8a.6.6 0 0 0 0-1L7.9 4.7a.6.6 0 0 0-.9.5Z"/></symbol>
     <symbol id="stop-icon" viewBox="0 0 20 20"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5" fill="currentColor" stroke="none"/></symbol>
     <symbol id="bell-icon" viewBox="0 0 20 20"><path d="M5.5 13.5V9a4.5 4.5 0 0 1 9 0v4.5l1.5 1.5h-12z"/><path d="M8.5 17a1.6 1.6 0 0 0 3 0"/></symbol>
     <symbol id="agents-icon" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M11 4v12M6 8h2M6 11h2"/></symbol>
@@ -93,11 +95,12 @@ const BODY = `
     <section id="flow" class="inline-flow" aria-labelledby="flow-title" aria-hidden="true" inert>
       <div class="flow-inner"><div class="flow-card">
         <header class="flow-head">
-          <div class="flow-title"><h2 id="flow-title">Session flow</h2><select id="flow-runs" class="flow-runs" aria-label="Flows in this session" hidden></select><small id="flow-meta" class="flow-meta"></small></div>
+          <div class="flow-title"><h2 id="flow-title">Session flow</h2><button id="flow-back" class="text-button flow-back" type="button" hidden><svg aria-hidden="true"><use href="#back-icon"/></svg>All flows</button><select id="flow-runs" class="flow-runs" aria-label="Flows in this session" hidden></select><small id="flow-meta" class="flow-meta"></small></div>
           <div id="flow-pills" class="flow-pills"></div>
-          <div class="flow-actions"><button id="flow-save" class="pill flow-sm" type="button" hidden>Save as workflow</button><button id="flow-pause" class="pill flow-sm" type="button" hidden>Pause</button><button id="flow-stop" class="pill flow-sm flow-confirm" type="button" aria-label="Stop" hidden><span>Stop</span><span>Stop flow</span></button><button id="flow-studio" class="pill flow-sm" type="button" aria-label="Open in Studio" hidden><span class="flow-wide">Open in</span>Studio</button><button id="close-flow" class="round" aria-label="Collapse flow"><svg><use href="#close-icon"/></svg></button></div>
+          <div class="flow-actions"><button id="flow-save" class="pill flow-sm" type="button" hidden>Save as workflow</button><button id="flow-pause" class="round flow-icon-button" type="button" aria-label="Pause" title="Pause" hidden><svg aria-hidden="true"><use href="#pause-icon"/></svg></button><button id="flow-stop" class="round flow-icon-button flow-stop flow-confirm" type="button" aria-label="Stop" title="Stop" hidden><svg aria-hidden="true"><use href="#stop-icon"/></svg></button><span class="term-bar-sep flow-sep" hidden></span><button id="close-flow" class="round" aria-label="Collapse flow"><svg><use href="#close-icon"/></svg></button></div>
         </header>
         <div id="flow-banner" class="flow-banner" role="status" hidden><span class="flow-mark"></span><p></p><div class="flow-banner-actions"></div></div>
+        <ol id="flow-rows" class="flow-rows" hidden></ol>
         <div id="flow-stage" class="flow-stage" role="group" tabindex="0" aria-label="Flow graph. Arrow keys pan, plus and minus zoom, 0 fits" hidden><div id="flow-canvas" class="flow-canvas"></div><div class="flow-zoom" hidden><button class="flow-zoom-button" type="button" data-zoom="out" aria-label="Zoom out">&minus;</button><button class="flow-zoom-button" type="button" data-zoom="in" aria-label="Zoom in">+</button><button class="flow-zoom-button" type="button" data-zoom="fit">Fit</button><button class="flow-zoom-button" type="button" data-zoom="follow" aria-pressed="true">Follow</button></div></div>
         <div id="flow-term" class="term-host flow-term" role="region" aria-label="Step output" hidden></div>
         <div id="flow-quick" class="flow-quick" hidden><p class="muted">No flow for this work. The agents run directly.</p><ol id="flow-quick-list"></ol></div>

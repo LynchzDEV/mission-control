@@ -41,13 +41,26 @@ describe('quiet shell', () => {
     expect(markup).toContain('class="sb-shell collapsed"')
   })
 
-  test('on a narrow screen the flow header Studio pill reads Studio and its actions wrap under the title', async () => {
+  test('the flow header has a back link before the menu, Pause and Stop as icon buttons, a divider, and no Studio button', async () => {
     const markup = await (await app.handle(new Request('http://localhost/'))).text()
-    expect(markup).toContain('<button id="flow-studio" class="pill flow-sm" type="button" aria-label="Open in Studio" hidden><span class="flow-wide">Open in</span>Studio</button>')
+    expect(markup).not.toContain('id="flow-studio"')
+    expect(markup).toContain('<button id="flow-back" class="text-button flow-back" type="button" hidden><svg aria-hidden="true"><use href="#back-icon"/></svg>All flows</button><select id="flow-runs"')
+    expect(markup).toContain('<button id="flow-save" class="pill flow-sm" type="button" hidden>Save as workflow</button><button id="flow-pause" class="round flow-icon-button" type="button" aria-label="Pause" title="Pause" hidden><svg aria-hidden="true"><use href="#pause-icon"/></svg></button><button id="flow-stop" class="round flow-icon-button flow-stop flow-confirm" type="button" aria-label="Stop" title="Stop" hidden><svg aria-hidden="true"><use href="#stop-icon"/></svg></button><span class="term-bar-sep flow-sep" hidden></span><button id="close-flow"')
+    for (const symbol of ['pause-icon', 'play-icon', 'chevron-icon', 'back-icon']) expect(markup).toContain(`<symbol id="${symbol}"`)
+  })
+
+  test('the All flows list sits between the banner and the graph', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    const at = (marker: string): number => markup.indexOf(marker)
+    expect(at('<ol id="flow-rows" class="flow-rows" hidden></ol>')).toBeGreaterThan(at('id="flow-banner"'))
+    expect(at('id="flow-rows"')).toBeLessThan(at('id="flow-stage"'))
+  })
+
+  test('on a narrow screen the flow actions wrap under the title and a row keeps its graph beside the name', async () => {
     const quiet = await Bun.file(join(import.meta.dir, '../public/quiet.css')).text()
     const narrow = [...quiet.matchAll(/@media \(max-width: 600px\) \{([^@]*)\n\}/g)].map(match => match[1]).join('\n')
-    expect(narrow).toContain('.flow-wide { display: none; }')
     expect(narrow).toContain('.flow-actions { flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-end; }')
+    expect(narrow).toContain('.flow-row { grid-template-columns: minmax(0, 40%) minmax(0, 1fr) 16px; gap: 10px; }')
   })
 
   test('neumo-ui loads once, layered beneath quiet.css', async () => {

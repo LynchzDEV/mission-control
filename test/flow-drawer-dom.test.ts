@@ -2,9 +2,9 @@ import { afterAll, expect, test } from 'bun:test'
 import { JSDOM } from 'jsdom'
 import type { RunView, ScopeSnapshot } from '../server/run-view'
 
-const markup = `<section id="flow" data-open="true"><h2 id="flow-title"></h2><select id="flow-runs" hidden></select><small id="flow-meta"></small><div id="flow-pills"></div>
-<div class="flow-actions"><button id="flow-save" type="button" hidden>Save as workflow</button><button id="flow-pause" type="button" hidden>Pause</button><button id="flow-stop" class="flow-confirm" type="button" aria-label="Stop" hidden><span>Stop</span><span>Stop flow</span></button><button id="flow-studio" type="button" hidden>Open in Studio</button></div>
-<div id="flow-banner" hidden><span class="flow-mark"></span><p></p><div class="flow-banner-actions"></div></div>
+const markup = `<section id="flow" data-open="true"><div class="flow-title"><h2 id="flow-title"></h2><button id="flow-back" type="button" hidden>All flows</button><select id="flow-runs" hidden></select><small id="flow-meta"></small></div><div id="flow-pills"></div>
+<div class="flow-actions"><button id="flow-save" type="button" hidden>Save as workflow</button><button id="flow-pause" type="button" aria-label="Pause" title="Pause" hidden><svg><use href="#pause-icon"/></svg></button><button id="flow-stop" class="flow-confirm" type="button" aria-label="Stop" title="Stop" hidden><svg><use href="#stop-icon"/></svg></button><span class="flow-sep" hidden></span></div>
+<div id="flow-banner" hidden><span class="flow-mark"></span><p></p><div class="flow-banner-actions"></div></div><ol id="flow-rows" hidden></ol>
 <div id="flow-stage" hidden><div id="flow-canvas" class="flow-canvas"></div><div class="flow-zoom" hidden><button type="button" data-zoom="out" aria-label="Zoom out">−</button><button type="button" data-zoom="in" aria-label="Zoom in">+</button><button type="button" data-zoom="fit">Fit</button><button type="button" data-zoom="follow" aria-pressed="true">Follow</button></div></div><div id="flow-quick" hidden><ol id="flow-quick-list"></ol></div><div id="flow-term" hidden></div><p id="flow-empty"></p></section>`
 const { window } = new JSDOM(`<body>${markup}</body>`, { url: 'http://127.0.0.1:7777/' })
 const streams: FakeSource[] = []
@@ -40,7 +40,7 @@ const run = (id: string, createdAt: number): RunView => ({
   nodes: [{ id: 'plan', title: 'Plan', kind: 'plan', engine: 'claude' }], edges: [],
   attempts: [{ nodeId: 'plan', number: 0, jobId: 'j', status: 'running', outcome: null, summary: null, startedAt: 0, endedAt: null }],
   createdAt, updatedAt: createdAt, proposal: null, latestChange: null,
-  tokens: [{ nodeId: 'plan', pathId: 'main', state: 'working', from: [] }], sections: [], keptBranches: [],
+  tokens: [{ nodeId: 'plan', pathId: 'main', state: 'working', from: [] }], sections: [], keptBranches: [], dismissed: false,
 })
 
 test('a confirmed Stop goes to the flow that was showing when it was armed', async () => {
@@ -53,7 +53,7 @@ test('a confirmed Stop goes to the flow that was showing when it was armed', asy
   const stop = document.getElementById('flow-stop') as HTMLButtonElement
   expect(stop.hidden).toBe(false)
   stop.click()
-  stream.send({ runs: [run('B', 2), run('A', 1)], jobs: [] })
+  stream.send({ runs: [{ ...run('B', 2), status: 'done' }, run('A', 1)], jobs: [] })
   expect(document.getElementById('flow-runs')!.hidden).toBe(false)
   stop.click()
   await Bun.sleep(0)
@@ -353,19 +353,6 @@ test('a collapsed section is a button that says it is collapsed', () => {
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })
 
-test('Open in Studio sends the showing run to Studio', () => {
-  stageSize.width = 1000
-  const runs: string[] = []
-  addEventListener('quiet:studio-run', (event) => runs.push((event as CustomEvent<{ runId: string }>).detail.runId))
-  const stream = openStream()
-  stream.send({ runs: [twoSteps('S1')], jobs: [] })
-  const studio = document.getElementById('flow-studio') as HTMLButtonElement
-  expect(studio.hidden).toBe(false)
-  studio.click()
-  expect(runs).toEqual(['S1'])
-  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
-})
-
 test('a step whose job is gone says so on its own line and leaves the approval banner alone', () => {
   stageSize.width = 1000
   const stream = openStream()
@@ -660,5 +647,184 @@ test('closing the drawer stops the step terminal and gives the drawer back to th
   const jobs = opened()
   tap(card('plan')!)
   expect(jobs).toEqual(['job-plan'])
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+let scopeCount = 0
+const freshScope = (): FakeSource => {
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+  dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: { id: `rows-${++scopeCount}`, cwd: '/x' } }))
+  return openStream()
+}
+const rowsList = (): HTMLElement => document.getElementById('flow-rows')!
+const rowFor = (id: string): HTMLElement => rowsList().querySelector<HTMLElement>(`.flow-row[data-run="${id}"]`)!
+const rowOrder = (): string[] => [...rowsList().querySelectorAll<HTMLElement>('.flow-row')].map(row => row.dataset.run ?? '')
+const menu = (): HTMLSelectElement => document.getElementById('flow-runs') as HTMLSelectElement
+const back = (): HTMLButtonElement => document.getElementById('flow-back') as HTMLButtonElement
+const sep = (): HTMLElement => document.querySelector<HTMLElement>('.flow-sep')!
+const shown = (id: string): boolean => !document.getElementById(id)!.hidden
+const settle = async (): Promise<void> => { await Bun.sleep(0); await Bun.sleep(0) }
+const blockedRun = (id: string, createdAt: number, patch: Partial<RunView> = {}): RunView => ({ ...twoSteps(id), createdAt, status: 'blocked', error: 'Build reached its 5-visit limit', tokens: [], ...patch })
+
+test('two live flows open on All flows: one row each, the menu on All flows, and no single-flow controls', () => {
+  const stream = freshScope()
+  stream.send({ runs: [{ ...twoSteps('L2'), createdAt: 70 }, { ...twoSteps('L1'), createdAt: 60, label: 'Older flow' }], jobs: [] })
+  expect(shown('flow-rows')).toBe(true)
+  expect(['flow-stage', 'flow-quick', 'flow-empty', 'flow-banner', 'flow-term', 'flow-pause', 'flow-stop', 'flow-back', 'flow-title'].filter(shown)).toEqual([])
+  expect(sep().hidden).toBe(true)
+  expect(rowOrder()).toEqual(['L2', 'L1'])
+  expect(menu().hidden).toBe(false)
+  expect(menu().value).toBe('all')
+  expect(menu().options[0]!.textContent).toBe('All flows · 2 live')
+  expect(document.getElementById('flow-meta')!.textContent).toBe('')
+  expect(document.getElementById('flow-pills')!.children).toHaveLength(0)
+  const row = rowFor('L1')
+  expect(row.querySelector('.flow-row-open')!.textContent).toBe('Older flow')
+  expect(row.querySelector('.flow-mark')!.getAttribute('data-state')).toBe('active')
+  expect(row.querySelector('.flow-meta')!.textContent).toMatch(/^Build · /)
+  expect(row.querySelector('.flow-meta')!.getAttribute('data-since')).toBe('1000')
+  expect(row.querySelector('.flow-canvas')!.hasAttribute('inert')).toBe(true)
+  expect(row.querySelector('.flow-canvas .flow-run')).not.toBeNull()
+  expect(row.querySelector('.flow-row-chevron use')!.getAttribute('href')).toBe('#chevron-icon')
+  expect(row.querySelectorAll('button')).toHaveLength(1)
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('the ticker counts up a row status and leaves the graph cards in the row alone', async () => {
+  const stream = freshScope()
+  stream.send({ runs: [{ ...twoSteps('T2'), createdAt: 70 }, { ...twoSteps('T1'), createdAt: 60 }], jobs: [] })
+  const card = rowFor('T1').querySelector<HTMLElement>('.flow-step[data-step="build"] small')!
+  const before = card.textContent
+  Object.defineProperty(window.document, 'hidden', { configurable: true, get: () => false })
+  await Bun.sleep(1100)
+  Reflect.deleteProperty(window.document, 'hidden')
+  expect(rowFor('T1').querySelector('.flow-row-text .flow-meta')!.textContent).toMatch(/^Build · \d/)
+  expect(card.textContent).toBe(before)
+  expect(card.textContent).not.toContain('undefined')
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('one live flow shows that flow alone, with no All flows option and no back link', () => {
+  const stream = freshScope()
+  stream.send({ runs: [twoSteps('O1'), { ...twoSteps('O0'), status: 'done', createdAt: 10 }], jobs: [] })
+  expect(shown('flow-rows')).toBe(false)
+  expect(shown('flow-stage')).toBe(true)
+  expect(back().hidden).toBe(true)
+  expect([...menu().options].map(option => option.value)).toEqual(['O1', 'O0'])
+  expect(menu().querySelector('optgroup')!.label).toBe('Finished')
+  expect(menu().value).toBe('O1')
+  expect(rowsList().children).toHaveLength(0)
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('a blocked flow sorts first with its reason in red, Retry as the one filled button and Dismiss beside it', () => {
+  const stream = freshScope()
+  stream.send({ runs: [{ ...twoSteps('N2'), createdAt: 90 }, blockedRun('N1', 50)], jobs: [] })
+  expect(rowOrder()).toEqual(['N1', 'N2'])
+  const row = rowFor('N1')
+  expect(row.querySelector('.flow-mark')!.getAttribute('data-state')).toBe('failed')
+  const reason = row.querySelector('.flow-meta')!
+  expect(reason.textContent).toBe('Blocked: Build reached its 5-visit limit')
+  expect(reason.classList.contains('flow-row-problem')).toBe(true)
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>('.flow-row-acts button')]
+  expect(buttons.map(button => [button.textContent, button.className])).toEqual([['Retry', 'pill flow-sm flow-primary'], ['Dismiss', 'text-button']])
+  expect(rowsList().querySelectorAll('.flow-primary')).toHaveLength(1)
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('clicking a row opens that flow with a back link, and the back link returns to All flows', () => {
+  const stream = freshScope()
+  const runs = [{ ...twoSteps('C2'), createdAt: 90 }, { ...twoSteps('C1'), createdAt: 80, label: 'Second flow' }]
+  stream.send({ runs, jobs: [] })
+  rowFor('C1').click()
+  expect(shown('flow-rows')).toBe(false)
+  expect(shown('flow-stage')).toBe(true)
+  expect(menu().value).toBe('C1')
+  expect(back().hidden).toBe(false)
+  expect(shown('flow-pause') && shown('flow-stop')).toBe(true)
+  expect(sep().hidden).toBe(false)
+  expect(rowsList().children).toHaveLength(0)
+  stream.send({ runs: runs.map(item => ({ ...item, updatedAt: 99 })), jobs: [] })
+  expect(menu().value).toBe('C1')
+  back().click()
+  expect(shown('flow-rows')).toBe(true)
+  expect(menu().value).toBe('all')
+  rowFor('C2').querySelector<HTMLButtonElement>('.flow-row-open')!.click()
+  expect(menu().value).toBe('C2')
+  menu().value = 'all'
+  menu().dispatchEvent(new window.Event('change'))
+  expect(shown('flow-rows')).toBe(true)
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('Retry on a row posts retry and leaves the row list showing', async () => {
+  sent.length = 0
+  const stream = freshScope()
+  stream.send({ runs: [{ ...twoSteps('R2'), createdAt: 90 }, blockedRun('R1', 50)], jobs: [] })
+  const retry = rowFor('R1').querySelector<HTMLButtonElement>('.flow-primary')!
+  retry.click()
+  expect(retry.disabled).toBe(true)
+  await settle()
+  expect(sent).toEqual([{ url: '/api/studio/runs/R1/retry', method: 'POST', body: {} }])
+  expect(shown('flow-rows')).toBe(true)
+  expect(menu().value).toBe('all')
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('Dismiss on a row posts dismiss; a refusal says why and frees the button', async () => {
+  sent.length = 0
+  const stream = freshScope()
+  stream.send({ runs: [{ ...twoSteps('D2'), createdAt: 90 }, blockedRun('D1', 50)], jobs: [] })
+  respond = () => json(409, { error: 'Only failed or blocked runs can be dismissed' })
+  const dismiss = rowFor('D1').querySelector<HTMLButtonElement>('.text-button')!
+  dismiss.click()
+  await settle()
+  expect(sent).toEqual([{ url: '/api/studio/runs/D1/dismiss', method: 'POST', body: {} }])
+  expect(bannerText()).toBe('Could not dismiss: Only failed or blocked runs can be dismissed')
+  expect(shown('flow-banner')).toBe(true)
+  expect(shown('flow-rows')).toBe(true)
+  expect(dismiss.disabled).toBe(false)
+  respond = ok
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('a dismissed failed flow leaves the rows and shows only under Finished in the menu', () => {
+  const stream = freshScope()
+  stream.send({ runs: [{ ...twoSteps('F3'), createdAt: 90 }, { ...twoSteps('F2'), createdAt: 80 }, blockedRun('F1', 50, { status: 'failed', dismissed: true })], jobs: [] })
+  expect(rowOrder()).toEqual(['F3', 'F2'])
+  const finished = menu().querySelector('optgroup')!
+  expect([...finished.querySelectorAll('option')].map(option => [option.value, option.textContent])).toEqual([['F1', 'Flow F1 · failed']])
+  expect([...menu().options].filter(option => option.value === 'F1')).toHaveLength(1)
+  expect(menu().options[0]!.textContent).toBe('All flows · 2 live')
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('the pause button turns into Resume while the flow is paused, and posts the matching action', async () => {
+  sent.length = 0
+  const stream = freshScope()
+  const pause = document.getElementById('flow-pause') as HTMLButtonElement
+  stream.send({ runs: [twoSteps('P1')], jobs: [] })
+  expect([pause.getAttribute('aria-label'), pause.title, pause.querySelector('use')!.getAttribute('href')]).toEqual(['Pause', 'Pause', '#pause-icon'])
+  stream.send({ runs: [{ ...twoSteps('P1'), status: 'paused' }], jobs: [] })
+  expect([pause.getAttribute('aria-label'), pause.title, pause.querySelector('use')!.getAttribute('href')]).toEqual(['Resume', 'Resume', '#play-icon'])
+  pause.click()
+  await settle()
+  expect(sent).toEqual([{ url: '/api/studio/runs/P1/resume', method: 'POST', body: {} }])
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('the Stop icon asks for a second click before it stops the flow', async () => {
+  sent.length = 0
+  const stream = freshScope()
+  const stop = document.getElementById('flow-stop') as HTMLButtonElement
+  stream.send({ runs: [twoSteps('S9')], jobs: [] })
+  stop.click()
+  await settle()
+  expect(sent).toEqual([])
+  expect(stop.dataset.armed).toBe('true')
+  expect(stop.getAttribute('aria-label')).toBe('Stop flow: click again to confirm')
+  stop.click()
+  await settle()
+  expect(sent).toEqual([{ url: '/api/studio/runs/S9/stop', method: 'POST', body: {} }])
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })

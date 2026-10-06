@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { bannerFor, collapseSections, edgesFor, elapsed, metaFor, pickRun, pillsFor, stepsFor } from '../client/flow-drawer'
+import { ALL_FLOWS, bannerFor, collapseSections, drawerView, edgesFor, elapsed, metaFor, needsYou, pickRun, pillsFor, rowDetail, rowRuns, runMenu, stepsFor } from '../client/flow-drawer'
 import { STEP_H, STEP_W, layoutRun, type GraphEdge, type GraphStep } from '../client/flow-graph'
 import { forkSections, workflowSchema } from '../server/workflows'
 import type { RunView } from '../server/run-view'
@@ -19,7 +19,7 @@ const base: RunView = {
     { nodeId: 'build', number: 3, jobId: 'd', status: 'running', outcome: null, summary: null, startedAt: 260_000, endedAt: null },
   ],
   createdAt: 0, updatedAt: 260_000, proposal: null, latestChange: null,
-  tokens: [{ nodeId: 'build', pathId: 'main', state: 'working', from: [2] }], sections: [], keptBranches: [],
+  tokens: [{ nodeId: 'build', pathId: 'main', state: 'working', from: [2] }], sections: [], keptBranches: [], dismissed: false,
 }
 
 test('elapsed reads like a person would say it', () => {
@@ -140,6 +140,63 @@ test('pickRun keeps a run the user picked, else follows the newest live run, els
   expect(pickRun([live, newerLive], null)!.id).toBe('newer')
   expect(pickRun([blocked, done], null)!.id).toBe('done')
   expect(pickRun([], null)).toBeNull()
+})
+
+test('a run needs you while it is blocked or failed and not dismissed', () => {
+  expect(needsYou({ ...base, status: 'blocked' })).toBe(true)
+  expect(needsYou({ ...base, status: 'failed' })).toBe(true)
+  expect(needsYou({ ...base, status: 'failed', dismissed: true })).toBe(false)
+  for (const status of ['running', 'paused', 'awaiting-approval', 'done', 'stopped']) expect(needsYou({ ...base, status })).toBe(false)
+})
+
+const flows = {
+  old: { ...base, id: 'old', status: 'running', createdAt: 1 },
+  fresh: { ...base, id: 'fresh', status: 'paused', createdAt: 9 },
+  stuck: { ...base, id: 'stuck', status: 'blocked', error: 'Fix reached its visit limit', createdAt: 2 },
+  broke: { ...base, id: 'broke', status: 'failed', createdAt: 5 },
+  asking: { ...base, id: 'asking', status: 'awaiting-approval', createdAt: 7 },
+  done: { ...base, id: 'done', status: 'done', createdAt: 8 },
+  stopped: { ...base, id: 'stopped', status: 'stopped', createdAt: 6 },
+  waved: { ...base, id: 'waved', status: 'failed', dismissed: true, createdAt: 10 },
+} satisfies Record<string, RunView>
+const runIds = (runs: RunView[]): string[] => runs.map(run => run.id)
+
+test('rows hold live runs and runs that need you, those that need you first, newest first within each', () => {
+  expect(runIds(rowRuns(Object.values(flows)))).toEqual(['broke', 'stuck', 'fresh', 'asking', 'old'])
+  expect(rowRuns([flows.done, flows.waved, flows.stopped])).toEqual([])
+})
+
+test('All flows is the default once two runs are live or need you, and a picked run shows alone', () => {
+  const two = [flows.old, flows.stuck, flows.done]
+  expect(drawerView(two, null)).toEqual({ kind: 'all', runs: [flows.stuck, flows.old] })
+  expect(drawerView(two, ALL_FLOWS)).toEqual({ kind: 'all', runs: [flows.stuck, flows.old] })
+  expect(drawerView(two, 'done')).toEqual({ kind: 'one', run: flows.done })
+  expect(drawerView(two, 'old')).toEqual({ kind: 'one', run: flows.old })
+  expect(drawerView([flows.old, flows.done], null)).toEqual({ kind: 'one', run: flows.old })
+  expect(drawerView([flows.old, flows.done], ALL_FLOWS)).toEqual({ kind: 'one', run: flows.old })
+  expect(drawerView([flows.done, flows.waved], 'gone')).toEqual({ kind: 'one', run: flows.waved })
+  expect(drawerView([], null)).toEqual({ kind: 'none' })
+})
+
+test('the menu offers All flows with the row count, then each row run, then the finished runs', () => {
+  expect(runMenu(Object.values(flows))).toEqual({
+    all: { value: ALL_FLOWS, label: 'All flows · 5 live' },
+    live: ['broke', 'stuck', 'fresh', 'asking', 'old'].map(id => ({ value: id, label: `Add export · ${flows[id as keyof typeof flows].status}` })),
+    finished: [{ value: 'waved', label: 'Add export · failed' }, { value: 'done', label: 'Add export · done' }, { value: 'stopped', label: 'Add export · stopped' }],
+  })
+  expect(runMenu([flows.old, flows.done])).toEqual({ all: null, live: [{ value: 'old', label: 'Add export · running' }], finished: [{ value: 'done', label: 'Add export · done' }] })
+})
+
+test('a row says what is stuck, what is working and for how long, or that the run waits', () => {
+  expect(rowDetail({ ...flows.stuck }, 0)).toEqual({ text: 'Blocked: Fix reached its visit limit', problem: true })
+  expect(rowDetail({ ...flows.broke, error: null }, 0)).toEqual({ text: 'Failed', problem: true })
+  expect(rowDetail(base, 308_000)).toEqual({ text: 'Build API · 48s', problem: false, label: 'Build API', since: 260_000 })
+  expect(rowDetail(flows.fresh, 308_000)).toEqual({ text: 'Paused', problem: false })
+  expect(rowDetail(flows.asking, 308_000)).toEqual({ text: 'Waiting for approval', problem: false })
+  const between: RunView = { ...base, attempts: base.attempts.slice(0, 3), currentNodeId: 'fix' }
+  expect(rowDetail(between, 308_000)).toEqual({ text: 'Fix notes', problem: false })
+  const parallel: RunView = { ...base, attempts: [...base.attempts, { ...base.attempts[3]!, nodeId: 'fix', number: 4, startedAt: 290_000 }] }
+  expect(rowDetail(parallel, 308_000)).toEqual({ text: 'Build API + Fix notes · 48s', problem: false, label: 'Build API + Fix notes', since: 260_000 })
 })
 
 const change = { number: 2, revision: 'v2', reason: 'The export needs a new column.', size: 'big' as const, state: 'pending' as const, approvedVia: null, relayedBy: null, at: 0 }

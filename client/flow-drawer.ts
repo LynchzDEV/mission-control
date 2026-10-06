@@ -5,7 +5,7 @@ import { mountViewport } from './flow-viewport'
 import { rollText } from './morph'
 import { errorText, postJson, providerName, type ApiResult, type JsonRecord } from './shared'
 
-type RunAction = 'approve' | 'reject' | 'retry' | 'stop' | 'pause' | 'resume'
+type RunAction = 'approve' | 'reject' | 'retry' | 'dismiss' | 'stop' | 'pause' | 'resume'
 type BannerAction = 'approve' | 'reject' | 'retry' | 'stop' | 'keep' | 'approval-on' | 'remind'
 type Banner = { tone: 'ask' | 'problem' | 'notice' | null; text: string; actions: BannerAction[] }
 type Edge = RunView['edges'][number]
@@ -13,6 +13,12 @@ type StepStatus = { state: StepState; detail: string; since?: number }
 type Section = RunView['sections'][number]
 type Composed = { steps: GraphStep[]; edges: GraphEdge[]; bands: Section[] }
 type Point = { x: number; y: number }
+type MenuEntry = { value: string; label: string }
+export type DrawerView = { kind: 'all'; runs: RunView[] } | { kind: 'one'; run: RunView } | { kind: 'none' }
+export type RunMenu = { all: MenuEntry | null; live: MenuEntry[]; finished: MenuEntry[] }
+export type RowDetail = { text: string; problem: boolean; label?: string; since?: number }
+
+export const ALL_FLOWS = 'all'
 
 const LIVE = new Set(['awaiting-approval', 'running', 'paused'])
 const SUMMARY_CHARS = 60
@@ -21,6 +27,10 @@ const EMPTY_TITLE = 'Session flow'
 const MISSING_JOB = "That step’s job is no longer available."
 const NOTICE_MS = 4000
 const NO_BANNER: Banner = { tone: null, text: '', actions: [] }
+const SVG_NS = 'http://www.w3.org/2000/svg'
+const ROW_INSET_X = 24
+const ROW_INSET_Y = 12
+const ROW_CONTROLS = ['flow-row-open', 'flow-primary', 'text-button']
 
 const isLive = (run: RunView): boolean => LIVE.has(run.status)
 const pad = (value: number): string => String(value).padStart(2, '0')
@@ -275,6 +285,11 @@ function waitingInSession(run: RunView): RunView['nodes'][number] | undefined {
   return waiting && run.nodes.find(node => node.id === waiting.nodeId)
 }
 
+function problemText(run: RunView): string {
+  const word = run.status === 'blocked' ? 'Blocked' : 'Failed'
+  return run.error ? `${word}: ${run.error}` : word
+}
+
 export function bannerFor(run: RunView): Banner {
   const by = providerName(run.origin.by)
   if (run.status === 'awaiting-approval' && run.versions.some(version => version.state === 'pending')) {
@@ -282,10 +297,7 @@ export function bannerFor(run: RunView): Banner {
     return { tone: 'ask', text: `${asked} Nothing runs until you approve, or say "go" to ${by}.`, actions: ['reject', 'approve'] }
   }
   if (run.proposal) return { tone: 'ask', text: `${by} wants to change the flow. ${run.proposal.reason}`, actions: ['keep', 'approve'] }
-  if (run.status === 'blocked' || run.status === 'failed') {
-    const word = run.status === 'blocked' ? 'Blocked' : 'Failed'
-    return { tone: 'problem', text: run.error ? `${word}: ${run.error}` : word, actions: ['retry'] }
-  }
+  if (run.status === 'blocked' || run.status === 'failed') return { tone: 'problem', text: problemText(run), actions: ['retry'] }
   const inSession = waitingInSession(run)
   if (inSession) return { tone: 'notice', text: `${inSession.title} is being done In Session by ${providerName(inSession.engine)}. Talk to it here; the flow continues when it reports the step.`, actions: ['remind'] }
   const change = run.latestChange
@@ -312,6 +324,49 @@ export function pickRun(runs: RunView[], pinned: string | null): RunView | null 
   return newestFirst.find(isLive) ?? newestFirst[0] ?? null
 }
 
+export function needsYou(run: RunView): boolean {
+  return (run.status === 'blocked' || run.status === 'failed') && !run.dismissed
+}
+
+const byNewest = (a: RunView, b: RunView): number => b.createdAt - a.createdAt
+
+export function rowRuns(runs: RunView[]): RunView[] {
+  const shown = runs.filter(run => isLive(run) || needsYou(run)).sort(byNewest)
+  return [...shown.filter(needsYou), ...shown.filter(run => !needsYou(run))]
+}
+
+export function drawerView(runs: RunView[], selected: string | null): DrawerView {
+  const picked = runs.find(run => run.id === selected)
+  if (picked) return { kind: 'one', run: picked }
+  const rows = rowRuns(runs)
+  if ((selected === null || selected === ALL_FLOWS) && rows.length > 1) return { kind: 'all', runs: rows }
+  const run = pickRun(runs, selected)
+  return run ? { kind: 'one', run } : { kind: 'none' }
+}
+
+const menuEntry = (run: RunView): MenuEntry => ({ value: run.id, label: `${run.label} · ${run.status}` })
+
+export function runMenu(runs: RunView[]): RunMenu {
+  const rows = rowRuns(runs)
+  const inRows = new Set(rows.map(run => run.id))
+  return {
+    all: rows.length > 1 ? { value: ALL_FLOWS, label: `All flows · ${rows.length} live` } : null,
+    live: rows.map(menuEntry),
+    finished: runs.filter(run => !inRows.has(run.id)).sort(byNewest).map(menuEntry),
+  }
+}
+
+export function rowDetail(run: RunView, now: number): RowDetail {
+  if (needsYou(run)) return { text: problemText(run), problem: true }
+  if (run.status === 'paused') return { text: 'Paused', problem: false }
+  if (run.status === 'awaiting-approval') return { text: 'Waiting for approval', problem: false }
+  const working = inOrder(run).filter(attempt => attempt.status !== 'settled')
+  if (!working.length) return { text: titleOf(run, run.currentNodeId), problem: false }
+  const label = [...new Set(working.map(attempt => titleOf(run, attempt.nodeId)))].join(' + ')
+  const since = Math.min(...working.map(attempt => attempt.startedAt))
+  return { text: `${label} · ${elapsed(now - since)}`, problem: false, label, since }
+}
+
 function motionAllowed(): boolean {
   try { return localStorage.getItem('mc.motion.paused') !== 'true' } catch { return true }
 }
@@ -321,7 +376,8 @@ function mountFlowDrawer(): void {
   const title = $('flow-title'), meta = $('flow-meta'), pills = $('flow-pills'), runsSelect = $('flow-runs') as HTMLSelectElement
   const pause = $('flow-pause') as HTMLButtonElement, stop = $('flow-stop') as HTMLButtonElement, save = $('flow-save') as HTMLButtonElement
   const banner = $('flow-banner'), stage = $('flow-stage'), canvas = $('flow-canvas'), quick = $('flow-quick'), quickList = $('flow-quick-list'), empty = $('flow-empty')
-  const studio = $('flow-studio') as HTMLButtonElement
+  const back = $('flow-back') as HTMLButtonElement, rowsList = $('flow-rows')
+  const divider = pause.parentElement?.querySelector<HTMLElement>('.flow-sep') ?? null
   const term = document.getElementById('flow-term')
   const viewport = mountViewport(stage, canvas, { animate: motionAllowed })
   const notice = document.createElement('p')
@@ -512,23 +568,115 @@ function mountFlowDrawer(): void {
     actions.querySelectorAll<HTMLButtonElement>('.flow-confirm').forEach(button => confirmButton(button, button.lastElementChild!.textContent ?? '', () => void act(button.dataset.action as RunAction, run?.id)))
   }
 
-  function paintHeader(run: RunView | null, heading: string): void {
+  function paintMenu(view: DrawerView): void {
+    const menu = runMenu(snapshot.runs)
+    const option = (entry: MenuEntry): HTMLOptionElement => new Option(entry.label, entry.value)
+    const finished = document.createElement('optgroup')
+    finished.label = 'Finished'
+    finished.append(...menu.finished.map(option))
+    runsSelect.replaceChildren(...[menu.all, ...menu.live].filter(entry => entry !== null).map(option), ...(menu.finished.length ? [finished] : []))
+    runsSelect.value = view.kind === 'one' ? view.run.id : ALL_FLOWS
+  }
+
+  function paintPause(run: RunView | null): void {
+    pause.hidden = run?.status !== 'running' && run?.status !== 'paused'
+    const word = run?.status === 'paused' ? 'Resume' : 'Pause'
+    pause.setAttribute('aria-label', word)
+    pause.title = word
+    pause.querySelector('use')?.setAttribute('href', word === 'Resume' ? '#play-icon' : '#pause-icon')
+  }
+
+  function paintHeader(view: DrawerView, heading: string): void {
+    const run = view.kind === 'one' ? view.run : null
     rollText(title, heading)
-    runsSelect.hidden = snapshot.runs.length < 2 || !run
+    runsSelect.hidden = snapshot.runs.length < 2 || view.kind === 'none'
     title.hidden = !runsSelect.hidden
-    if (!runsSelect.hidden) {
-      runsSelect.replaceChildren(...snapshot.runs.map(item => new Option(`${item.label} · ${item.status}`, item.id)))
-      runsSelect.value = run!.id
-    }
+    if (!runsSelect.hidden) paintMenu(view)
+    back.hidden = !run || rowRuns(snapshot.runs).length < 2
     const counts = run ? pillsFor(run) : { running: 0, done: 0, waiting: 0 }
     pills.replaceChildren(...([['running', counts.running, 'running'], ['done', counts.done, 'done'], ['queued', counts.waiting, 'waiting']] as const)
       .filter(([, count]) => count > 0)
       .map(([state, count, word]) => { const pill = make('span', `${count} ${word}`, 'pill-state'); pill.dataset.s = state; return pill }))
-    pause.hidden = run?.status !== 'running' && run?.status !== 'paused'
-    pause.textContent = run?.status === 'paused' ? 'Resume' : 'Pause'
+    paintPause(run)
     stop.hidden = !run || !isLive(run)
-    studio.hidden = !run
+    if (divider) divider.hidden = pause.hidden && stop.hidden
     paintSave(run)
+  }
+
+  function chevron(): SVGSVGElement {
+    const svg = document.createElementNS(SVG_NS, 'svg')
+    svg.setAttribute('class', 'flow-row-chevron')
+    svg.setAttribute('aria-hidden', 'true')
+    const use = document.createElementNS(SVG_NS, 'use')
+    use.setAttribute('href', '#chevron-icon')
+    svg.append(use)
+    return svg
+  }
+
+  function rowActions(run: RunView): HTMLElement {
+    const actions = make('div', '', 'flow-row-acts')
+    const button = (text: string, className: string, action: RunAction): HTMLButtonElement => {
+      const element = make('button', text, className) as HTMLButtonElement
+      element.type = 'button'
+      element.onclick = (event) => { event.stopPropagation(); void whileBusy(element, () => act(action, run.id)) }
+      return element
+    }
+    actions.append(button('Retry', 'pill flow-sm flow-primary', 'retry'), button('Dismiss', 'text-button', 'dismiss'))
+    return actions
+  }
+
+  function flowRow(run: RunView, now: number): HTMLElement {
+    const detail = rowDetail(run, now)
+    const row = make('li', '', 'flow-row')
+    row.dataset.run = run.id
+    const name = make('button', run.label, 'flow-row-open') as HTMLButtonElement
+    name.type = 'button'
+    const heading = make('div', '', 'flow-row-name')
+    heading.append(mark(detail.problem ? 'failed' : 'active'), name)
+    const status = make('small', detail.text, detail.problem ? 'flow-meta flow-row-problem' : 'flow-meta')
+    if (detail.since !== undefined) { status.dataset.since = String(detail.since); status.dataset.label = detail.label ?? '' }
+    const text = make('div', '', 'flow-row-text')
+    text.append(heading, status, ...(detail.problem ? [rowActions(run)] : []))
+    const rowCanvas = make('div', '', 'flow-canvas')
+    rowCanvas.setAttribute('inert', '')
+    const rowStage = make('div', '', 'flow-stage')
+    rowStage.append(rowCanvas)
+    const composed = compose(run, now)
+    renderRunGraph(rowCanvas, composed.steps, composed.edges, run.entry, { animate: false, sections: composed.bands, runId: run.id })
+    row.append(text, rowStage, chevron())
+    return row
+  }
+
+  function fitRow(rowStage: HTMLElement): void {
+    const rowCanvas = rowStage.firstElementChild as HTMLElement | null
+    const graph = rowCanvas?.firstElementChild as HTMLElement | null
+    const width = parseFloat(graph?.style.width ?? ''), height = parseFloat(graph?.style.height ?? '')
+    if (!rowCanvas || !width || !height || !rowStage.clientWidth || !rowStage.clientHeight) return
+    const scale = Math.min((rowStage.clientHeight - ROW_INSET_Y) / height, (rowStage.clientWidth - ROW_INSET_X) / width, 1)
+    const x = (rowStage.clientWidth - width * scale) / 2, y = (rowStage.clientHeight - height * scale) / 2
+    rowCanvas.style.transform = `translate(${x}px, ${y}px) scale(${scale})`
+  }
+
+  function focusedRowControl(): { runId: string; control: string } | null {
+    const focused = document.activeElement
+    const runId = focused instanceof HTMLElement && rowsList.contains(focused) ? focused.closest<HTMLElement>('.flow-row')?.dataset.run : undefined
+    const control = ROW_CONTROLS.find(name => focused instanceof HTMLElement && focused.classList.contains(name))
+    return runId && control ? { runId, control } : null
+  }
+
+  function paintRows(runs: RunView[]): void {
+    const focused = focusedRowControl()
+    const scroll = rowsList.scrollTop
+    const now = Date.now()
+    rowsList.replaceChildren(...runs.map(run => flowRow(run, now)))
+    rowsList.querySelectorAll<HTMLElement>('.flow-stage').forEach(fitRow)
+    rowsList.scrollTop = scroll
+    if (focused) [...rowsList.querySelectorAll<HTMLElement>('.flow-row')].find(row => row.dataset.run === focused.runId)?.querySelector<HTMLElement>(`.${focused.control}`)?.focus({ preventScroll: true })
+  }
+
+  function openRun(runId: string): void {
+    selected = runId
+    paint()
   }
 
   function paintSave(run: RunView | null): void {
@@ -556,14 +704,25 @@ function mountFlowDrawer(): void {
   }
 
   function paint(keep?: { id: string; before: Point }): void {
-    const run = pickRun(snapshot.runs, selected)
+    const view = drawerView(snapshot.runs, selected)
+    const run = view.kind === 'one' ? view.run : null
+    const all = view.kind === 'all'
     current = run
     stage.hidden = !run
-    quick.hidden = !!run || !snapshot.jobs.length
-    empty.hidden = !!run || !!snapshot.jobs.length
+    rowsList.hidden = !all
+    quick.hidden = !!run || all || !snapshot.jobs.length
+    empty.hidden = !!run || all || !!snapshot.jobs.length
     paintBanner(run)
+    if (view.kind === 'all') {
+      paintHeader(view, EMPTY_TITLE)
+      meta.replaceChildren()
+      paintRows(view.runs)
+      paintWatch(null)
+      return
+    }
+    rowsList.replaceChildren()
     if (run) {
-      paintHeader(run, run.label)
+      paintHeader(view, run.label)
       meta.replaceChildren(...(run.origin.by === 'you' ? [] : [logo(run.origin.by, '')]), metaFor(run))
       const composed = compose(run, Date.now())
       const focused = document.activeElement instanceof HTMLElement && canvas.contains(document.activeElement) ? document.activeElement.closest<HTMLElement>('.flow-step')?.dataset.step : undefined
@@ -577,7 +736,7 @@ function mountFlowDrawer(): void {
     }
     paintWatch(null)
     const newest = snapshot.jobs[0]
-    paintHeader(null, newest?.label ?? EMPTY_TITLE)
+    paintHeader(view, newest?.label ?? EMPTY_TITLE)
     meta.replaceChildren(newest ? 'Quick work · no flow needed' : '')
     const now = Date.now()
     quickList.replaceChildren(...snapshot.jobs.map(job => quickRow(job, now)))
@@ -634,6 +793,10 @@ function mountFlowDrawer(): void {
   function tick(): void {
     if (document.hidden) return
     const now = Date.now()
+    if (!rowsList.hidden) {
+      rowsList.querySelectorAll<HTMLElement>('.flow-row-text [data-since]').forEach(status => { status.textContent = `${status.dataset.label} · ${elapsed(now - Number(status.dataset.since))}` })
+      return
+    }
     if (current) {
       const steps = new Map(compose(current, now).steps.map(step => [step.id, step]))
       canvas.querySelectorAll<HTMLElement>('.flow-step').forEach(card => {
@@ -717,7 +880,14 @@ function mountFlowDrawer(): void {
     event.preventDefault()
     activateStep(card.dataset.step)
   })
-  studio.onclick = () => { if (current) dispatchEvent(new CustomEvent('quiet:studio-run', { detail: { runId: current.id } })) }
+  rowsList.addEventListener('click', (event) => {
+    const target = event.target as Element
+    if (target.closest('.flow-row-acts button')) return
+    const runId = target.closest<HTMLElement>('.flow-row')?.dataset.run
+    if (runId) openRun(runId)
+  })
+  back.onclick = () => openRun(ALL_FLOWS)
+  addEventListener('resize', () => rowsList.querySelectorAll<HTMLElement>('.flow-stage').forEach(fitRow))
   addEventListener('quiet:agent-open-missing', () => showNotice(MISSING_JOB))
   runsSelect.onchange = () => { selected = runsSelect.value; paint() }
   pause.onclick = () => void act(current?.status === 'paused' ? 'resume' : 'pause', current?.id)
