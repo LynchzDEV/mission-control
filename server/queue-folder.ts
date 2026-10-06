@@ -2,7 +2,7 @@ import { readdir, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import { isPlainRepoName, MAX_QUEUE_REPOS } from './repo-workspace'
+import { isPlainRepoName, MAX_QUEUE_REPOS, repoNamesProblem } from './repo-names'
 import { validateWorkspaceCwd } from './workspace'
 
 export { MAX_QUEUE_REPOS }
@@ -33,15 +33,6 @@ export async function listFolderRepos(folder: string, home: string = homedir()):
   return { ok: true, path: checked.path, isRepo: false, repos: found.filter((name): name is string => name !== null).sort() }
 }
 
-function namesProblem(repos: readonly string[]): string | null {
-  if (repos.length === 0) return 'Tick at least one repo this ticket touches'
-  if (repos.length > MAX_QUEUE_REPOS) return `Pick at most ${MAX_QUEUE_REPOS} repos for one item`
-  const bad = repos.find(name => !isPlainRepoName(name))
-  if (bad !== undefined) return `Not a repo name: ${bad}`
-  const twice = repos.find((name, index) => repos.indexOf(name) !== index)
-  return twice === undefined ? null : `${twice} is ticked twice`
-}
-
 const missingText = (missing: readonly string[]): string =>
   missing.length === 1 ? `${missing[0]} is not a repo in this folder` : `${missing.join(', ')} are not repos in this folder`
 
@@ -50,7 +41,7 @@ export async function resolveQueueFolder(folder: string, repos: readonly string[
     const checked = await validateWorkspaceCwd(folder, home, { requireGit: true })
     return checked.ok ? { ok: true, path: checked.path } : checked
   }
-  const problem = namesProblem(repos)
+  const problem = repoNamesProblem(repos)
   if (problem !== null) return { ok: false, error: problem }
   const listing = await listFolderRepos(folder, home)
   if (!listing.ok) return listing

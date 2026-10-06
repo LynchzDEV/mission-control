@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import { isRepoList } from './repo-workspace'
+import { isRepoList } from './repo-names'
 import type { RunEvents } from './run-events'
 import { configDir } from './secrets'
 import { atomicJson } from './workflows'

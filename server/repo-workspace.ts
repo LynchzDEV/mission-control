@@ -4,19 +4,11 @@ import { join } from 'node:path'
 import { git, isWorktreeOf, prepareWorktree, worktreeBranch } from './job-worktrees'
 import { SESSION_CONTEXT_DIR } from './plugins/context-files'
 import { writePrivate } from './queue-files'
+import { isRepoList } from './repo-names'
 
-export const MAX_QUEUE_REPOS = 8
 const REPOS_RECORD = 'repos.json'
 const MAX_RECORD_BYTES = 8192
 const BAR_WIDTH = 40
-
-export const isPlainRepoName = (name: string): boolean =>
-  name.length > 0 && name.length <= 255 && !name.startsWith('.') && !/[/\\\0]/.test(name) && !name.includes('..')
-
-export function isRepoList(value: unknown): value is string[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_QUEUE_REPOS) return false
-  return value.every(name => typeof name === 'string' && isPlainRepoName(name)) && new Set(value).size === value.length
-}
 
 const recordPath = (workspace: string): string => join(workspace, SESSION_CONTEXT_DIR, REPOS_RECORD)
 
