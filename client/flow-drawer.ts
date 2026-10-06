@@ -585,7 +585,7 @@ function mountFlowDrawer(): void {
 
   function watchedAttempt(run: RunView): RunAttemptView | undefined {
     const attempts = inOrder(run)
-    if (pickedJob !== null) return attempts.find(attempt => attempt.jobId === pickedJob)
+    if (pickedJob !== null) return attempts.find(attempt => attempt.jobId === pickedJob || attempt.nudgedFrom === pickedJob)
     if (pickedStep !== null) return attempts.filter(attempt => attempt.nodeId === pickedStep).at(-1)
     return attempts.filter(attempt => attempt.status !== 'settled').at(-1) ?? attempts.at(-1)
   }

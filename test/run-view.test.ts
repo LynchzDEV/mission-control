@@ -183,3 +183,8 @@ test('run scope picks only that run, wherever it was started, and no quick jobs'
   expect(snapshot.runs.map(view => view.id)).toEqual(['queue-run'])
   expect(snapshot.jobs).toEqual([])
 })
+
+test('a resumed step names the job it was resumed from so a picked first job still finds it', () => {
+  const view = runView(run({ attempts: [{ nodeId: 'execute', number: 0, jobId: 'j2', status: 'running', prompt: 'p', startedAt: 1, endedAt: null, result: null, checks: [], output: '', workspace: null, tokenId: 'tok-1', pathId: 'main', from: [], nudgedFrom: 'j1' }] }))
+  expect(view.attempts[0]).toMatchObject({ jobId: 'j2', nudgedFrom: 'j1' })
+})

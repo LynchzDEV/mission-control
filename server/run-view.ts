@@ -4,7 +4,7 @@ import { forkSections, type ForkSection, type WorkflowNode, type WorkflowRevisio
 
 export type Scope = { chat?: string; terminal?: string; run?: string }
 export type RunStepView = { id: string; title: string; kind: string; engine: string }
-export type RunAttemptView = { nodeId: string; number: number; jobId: string | null; status: string; outcome: 'pass' | 'fail' | 'blocked' | null; summary: string | null; startedAt: number; endedAt: number | null; pathId: string; from: number[]; subAgents: number; inSession: boolean }
+export type RunAttemptView = { nodeId: string; number: number; jobId: string | null; status: string; outcome: 'pass' | 'fail' | 'blocked' | null; summary: string | null; startedAt: number; endedAt: number | null; pathId: string; from: number[]; subAgents: number; inSession: boolean; nudgedFrom?: string }
 export type RunTokenView = { nodeId: string; pathId: string; state: TokenState; from: number[] }
 export type RunSectionPathView = { nodes: string[]; title: string; firstNodeId: string; pathId: string | null; branch: string | null }
 export type RunSectionView = { fork: string; join: string; state: 'waiting' | 'open' | 'joined' | 'conflict'; joined: string[]; paths: RunSectionPathView[] }
@@ -81,7 +81,7 @@ export function runView(run: WorkflowRun, jobsById: ReadonlyMap<string, JobRecor
     entry: run.workflow.entry, currentNodeId: run.currentNodeId, origin: run.origin,
     versions: run.versions.map(versionView),
     nodes: stepViews(run.workflow, run.agents), edges: edgeViews(run.workflow),
-    attempts: run.attempts.map(attempt => ({ nodeId: attempt.nodeId, number: attempt.number, jobId: attempt.jobId, status: attempt.status, outcome: attempt.result?.outcome ?? null, summary: attempt.result?.summary ?? null, startedAt: attempt.startedAt, endedAt: attempt.endedAt, pathId: attempt.pathId ?? 'main', from: attempt.from ?? (attempt.number ? [attempt.number - 1] : []), subAgents: (attempt.jobId ? jobsById.get(attempt.jobId)?.subAgents : undefined) ?? 0, inSession: attempt.inSession === true })),
+    attempts: run.attempts.map(attempt => ({ nodeId: attempt.nodeId, number: attempt.number, jobId: attempt.jobId, status: attempt.status, outcome: attempt.result?.outcome ?? null, summary: attempt.result?.summary ?? null, startedAt: attempt.startedAt, endedAt: attempt.endedAt, pathId: attempt.pathId ?? 'main', from: attempt.from ?? (attempt.number ? [attempt.number - 1] : []), subAgents: (attempt.jobId ? jobsById.get(attempt.jobId)?.subAgents : undefined) ?? 0, inSession: attempt.inSession === true, ...(attempt.nudgedFrom ? { nudgedFrom: attempt.nudgedFrom } : {}) })),
     createdAt: run.createdAt, updatedAt: run.updatedAt, proposal: proposalView(run), latestChange: latestChangeView(run),
     tokens: run.tokens.map(token => ({ nodeId: token.nodeId, pathId: token.pathId, state: token.state, from: token.from })),
     sections: forkSections(run.workflow).map(section => sectionView(run, section)),

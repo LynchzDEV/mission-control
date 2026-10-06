@@ -594,6 +594,17 @@ test('watching with a job named shows that job first', () => {
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })
 
+test('a watched job that was resumed after ending without MC_RESULT follows to the resumed job', () => {
+  stageSize.width = 1000
+  const shown = watchedJobs()
+  const stream = watchRun({ runId: 'W5', jobId: 'job-build' })
+  const base = twoSteps('W5')
+  const resumed = { ...base, attempts: base.attempts.map(attempt => attempt.nodeId === 'build' ? { ...attempt, jobId: 'job-build-resumed', nudgedFrom: 'job-build' } : attempt) }
+  stream.send({ runs: [resumed], jobs: [] })
+  expect(shown.at(-1)).toEqual({ jobId: 'job-build-resumed', title: 'Build', engine: 'codex' })
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
 test('going back to a session flow hides the terminal pane and steps open the agent again', () => {
   stageSize.width = 1000
   const stream = watchRun({ runId: 'W4' })
