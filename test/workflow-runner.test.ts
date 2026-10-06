@@ -1621,3 +1621,104 @@ test('a session change that adds commands waits for approval even with approval 
   const fromOwner = await runner.propose(started.id, { graph: { ...withCommand(), nodes: withCommand().nodes.map(node => node.id === 'plan' ? { ...node, agent: { role: 'plan' as const } } : node) }, reason: 'Run the tests' }, { via: 'drawer' })
   expect(fromOwner.versions.at(-1)).toMatchObject({ number: 3, state: 'approved', approvedVia: 'auto' })
 })
+
+const STEP_SESSION = 'step-session'
+const sessionLine = JSON.stringify({ type: 'system', subtype: 'init', session_id: STEP_SESSION })
+const waitingLine = JSON.stringify({ type: 'result', result: 'Waiting for the completion notification, then I will report with MC_RESULT' })
+const lines = (...output: string[]) => ({ cmd: '/usr/bin/printf', args: [`${output.map(() => '%s\n').join('')}`, ...output], env: {} })
+type StepCall = { prompt: string; resumeSessionId?: string; step?: boolean }
+function backgroundWaiter(resumed: (calls: StepCall[]) => ReturnType<EngineResolver>, first: () => ReturnType<EngineResolver> = () => lines(sessionLine, waitingLine)): { resolver: EngineResolver; calls: StepCall[] } {
+  const calls: StepCall[] = []
+  const resolver: EngineResolver = ({ prompt, resumeSessionId, step }) => {
+    calls.push({ prompt, resumeSessionId, step })
+    return resumeSessionId === undefined ? first() : resumed(calls)
+  }
+  return { resolver, calls }
+}
+async function singleStep(store: Awaited<ReturnType<typeof build>>, engine = 'claude', id = `single-${engine}`) {
+  return store.save({ ...defaultWorkflow(), id, entry: 'build', nodes: [{ id: 'build', title: 'Build', instructions: 'Run the suite', agent: { role: 'execute', engine }, maxVisits: 1 }], edges: [] })
+}
+
+test('a step that ends its turn waiting on background work is resumed once and the resumed result settles the step', async () => {
+  const { resolver: waiter, calls } = backgroundWaiter(() => lines(sessionLine, report()))
+  const store = build(waiter)
+  const graph = await singleStep(store)
+  const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge' })
+  const done = await finished(run.id)
+  expect(done.status).toBe('done')
+  expect(done.attempts).toHaveLength(1)
+  expect(done.attempts[0]!.result?.outcome).toBe('pass')
+  const [first, resumed] = manager.listJobs().sort((a, b) => a.startedAt - b.startedAt)
+  expect(manager.listJobs()).toHaveLength(2)
+  expect(calls[1]).toMatchObject({ resumeSessionId: STEP_SESSION, step: true })
+  expect(calls[1]!.prompt).toContain('Your last turn ended without the MC_RESULT line')
+  expect(done.attempts[0]).toMatchObject({ jobId: resumed!.id, nudgedFrom: first!.id })
+  expect(resumed).toMatchObject({ workflowRunId: run.id, workflowNodeId: 'build', workflowAttempt: 0 })
+})
+
+test('a step that ends twice without MC_RESULT blocks with its last words and is not nudged again', async () => {
+  const { resolver: waiter } = backgroundWaiter(() => lines(sessionLine, JSON.stringify({ type: 'result', result: 'Still waiting on the suite in the background' })))
+  const store = build(waiter)
+  const graph = await singleStep(store)
+  const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge-twice' })
+  const done = await finished(run.id)
+  expect(done.status).toBe('blocked')
+  expect(done.attempts).toHaveLength(1)
+  expect(done.attempts[0]!.result?.summary).toBe('Agent ended twice without MC_RESULT; last words: Still waiting on the suite in the background')
+  expect(manager.listJobs()).toHaveLength(2)
+})
+
+test('blocked or failed results, process failures, missing sessions and codex steps are never nudged', async () => {
+  const cases: Array<[string, () => ReturnType<EngineResolver>, string]> = [
+    ['blocked', () => lines(sessionLine, report('blocked')), 'claude'],
+    ['fail', () => lines(sessionLine, report('fail')), 'claude'],
+    ['process failure', () => ({ cmd: '/bin/sh', args: ['-c', `echo '${sessionLine}'; exit 3`], env: {} }), 'claude'],
+    ['no session', () => lines(waitingLine), 'claude'],
+    ['codex', () => lines(sessionLine, waitingLine), 'codex'],
+  ]
+  for (const [label, first, engine] of cases) {
+    const { resolver: waiter, calls } = backgroundWaiter(() => lines(sessionLine, report()), first)
+    const store = build(waiter)
+    const graph = await singleStep(store, engine, label.replace(/ /g, '-'))
+    const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label })
+    const done = await finished(run.id)
+    expect({ label, resumed: calls.filter(call => call.resumeSessionId !== undefined).length, nudged: done.attempts[0]!.nudgedFrom }).toEqual({ label, resumed: 0, nudged: undefined })
+    expect(done.status).not.toBe('done')
+  }
+})
+
+test('a restart while the resumed job runs adopts it instead of the first job and settles the step once', async () => {
+  const { resolver: waiter, calls } = backgroundWaiter(() => ({ cmd: process.execPath, args: ['-e', `console.log(${JSON.stringify(sessionLine)}); setTimeout(() => console.log(${JSON.stringify(report())}), 300)`], env: {} }))
+  const store = build(waiter)
+  const graph = await singleStep(store)
+  const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge-restart' })
+  await until(run.id, current => current.attempts[0]?.nudgedFrom !== undefined && current.attempts[0]?.jobId !== current.attempts[0]?.nudgedFrom)
+  runner = createWorkflowRunner({ manager, resolver: waiter, store, base: dir })
+  await runner.recover()
+  const done = await finished(run.id)
+  expect(done.status).toBe('done')
+  expect(done.attempts).toHaveLength(1)
+  expect(manager.listJobs()).toHaveLength(2)
+  expect(calls).toHaveLength(2)
+})
+
+test('a restart after the nudge was recorded but before its job launched still resumes the session once', async () => {
+  const { resolver: waiter, calls } = backgroundWaiter(() => lines(sessionLine, report()))
+  const store = build(waiter)
+  const graph = await singleStep(store)
+  const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge-crash' })
+  expect((await finished(run.id)).status).toBe('done')
+  const [first, resumed] = manager.listJobs().sort((a, b) => a.startedAt - b.startedAt)
+  const saved = JSON.parse(await Bun.file(join(dir, 'workflow-runs', `${run.id}.json`)).text()) as WorkflowRun
+  Object.assign(saved, { status: 'running', error: null })
+  Object.assign(saved.attempts[0]!, { status: 'running', jobId: first!.id, result: null, endedAt: null })
+  Object.assign(saved.tokens[0]!, { state: 'working', attempt: 0 })
+  await writeFile(join(dir, 'workflow-runs', `${run.id}.json`), JSON.stringify(saved))
+  const listed = manager.listJobs()
+  spyOn(manager, 'listJobs').mockImplementation(() => listed.filter(job => job.id !== resumed!.id))
+  runner = createWorkflowRunner({ manager, resolver: waiter, store, base: dir })
+  await runner.recover()
+  const again = await finished(run.id)
+  expect(again.status).toBe('done')
+  expect(calls.filter(call => call.resumeSessionId === STEP_SESSION)).toHaveLength(2)
+})

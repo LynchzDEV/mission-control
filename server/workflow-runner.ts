@@ -5,12 +5,12 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join, resolve, sep } from 'node:path'
 import { z } from 'zod'
-import { parseThread } from './activity'
+import { parseSessionId, parseThread } from './activity'
 import { BUILTIN_AGENTS, createConnectionStore, modelFamily, SESSION_ENGINE, type AgentConnection } from './agent-connections'
 import { modelDiscovery } from './model-discovery'
 import { resolveBinary } from './engines'
 import { addPathWorktree, applyPath, changedFileCount, commitPath, git, gitTimed, removePathWorktree, snapshotCommit } from './job-worktrees'
-import { type JobManager, type JobRecord, readLogFile, redactSecrets } from './jobs'
+import { type CreateJobParams, type JobManager, type JobRecord, readLogFile, redactSecrets } from './jobs'
 import type { EngineResolver } from './jobs-engine-iface'
 import type { TerminalRegistry } from './terminals'
 import { threadRootOf } from './threads'
@@ -39,7 +39,7 @@ export type WorkflowAttempt = {
   tokenId: string; pathId: string; from: number[];
   inSession?: true; sessionNotifiedAt?: number | null; workspaceSnapshot?: WorkspaceState;
   reportedBy?: { via: ApprovalContext['via']; id: string; at: number }; interrupted?: true;
-  shape?: FlowShape;
+  shape?: FlowShape; nudgedFrom?: string;
 }
 export type TokenState = 'ready' | 'working' | 'settled' | 'waiting'
 export type WorkflowToken = { id: string; nodeId: string; pathId: string; workspace: string; state: TokenState; attempt: number | null; from: number[] }
@@ -202,6 +202,9 @@ function detached(node: WorkflowNode): WorkflowNode {
 }
 
 const ENTER_DELAY_MS = 150
+export const NUDGE_PROMPT = 'Your last turn ended without the MC_RESULT line. Anything you left running in the background was stopped when your turn ended. Re-run what you need in the foreground, then end with exactly one MC_RESULT line.'
+const NUDGEABLE_ENGINES: ReadonlySet<string> = new Set(['claude', 'glm'])
+const LAST_WORDS_CHARS = 200
 const oneLine = (text: string) => text.replace(/[\x00-\x1f\x7f]+/g, ' ')
 const sessionClosed = (title: string) => `The session that owned ${title} closed; Retry runs it as an agent`
 
@@ -421,13 +424,31 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     Object.assign(token, { state: 'working', attempt: attempt.number })
     await persist(run)
     if (agent.inSession) { deps.onSessionStep?.(structuredClone(run)); return }
-    const chat = run.chatId ? { chatId: run.chatId, ...(run.chatTurn ? { chatTurn: run.chatTurn } : {}), reason: `Studio · ${run.workflow.name} · ${node.title}` } : {}
-    const result = await deps.manager.createJob({ engine: agent.engine, model: agent.model ?? undefined, connection: agent.connection, cwd: token.workspace, ...(token.workspace === run.cwd ? {} : { baseRepo: run.cwd }), label: run.chatId ? node.title : run.label, prompt, ...chat, coreRules: node.kind === 'implement' ? `${run.policy.coreRules}\n\n${run.policy.implementationRules}` : run.policy.coreRules, mcpServers: node.mcpServers, workflowRunId: run.id, workflowNodeId: node.id, workflowAttempt: attempt.number, terminalId: run.terminalId }, deps.resolver)
+    const result = await deps.manager.createJob(stepJob(run, node, attempt, token, prompt), deps.resolver)
     if (!result.ok) return block(run, result.error)
     attempt.jobId = result.job.id; attempt.status = 'running'
     await persist(run)
-    const job = deps.manager.getJob(result.job.id)
+    settleIfFinished(run, result.job.id)
+  }
+  function stepJob(run: WorkflowRun, node: WorkflowNode, attempt: WorkflowAttempt, token: WorkflowToken, prompt: string): CreateJobParams {
+    const agent = run.agents[node.id]!
+    const chat = run.chatId ? { chatId: run.chatId, ...(run.chatTurn ? { chatTurn: run.chatTurn } : {}), reason: `Studio · ${run.workflow.name} · ${node.title}` } : {}
+    return { engine: agent.engine, model: agent.model ?? undefined, connection: agent.connection, cwd: token.workspace, ...(token.workspace === run.cwd ? {} : { baseRepo: run.cwd }), label: run.chatId ? node.title : run.label, prompt, ...chat, coreRules: node.kind === 'implement' ? `${run.policy.coreRules}\n\n${run.policy.implementationRules}` : run.policy.coreRules, mcpServers: node.mcpServers, workflowRunId: run.id, workflowNodeId: node.id, workflowAttempt: attempt.number, terminalId: run.terminalId }
+  }
+  function settleIfFinished(run: WorkflowRun, id: string): void {
+    const job = deps.manager.getJob(id)
     if (job && job.status !== 'running') queueMicrotask(() => { void onJobSettled(job).catch(error => block(run, String(error))) })
+  }
+  async function nudge(run: WorkflowRun, attempt: WorkflowAttempt, token: WorkflowToken, record: JobRecord, sessionId: string): Promise<Checking | null> {
+    attempt.nudgedFrom = record.id
+    await persist(run)
+    const node = run.workflow.nodes.find(node => node.id === attempt.nodeId)!
+    const created = await deps.manager.createJob({ ...stepJob(run, node, attempt, token, NUDGE_PROMPT), resumeSessionId: sessionId }, deps.resolver)
+    if (!created.ok) return accept(run, attempt, token, { outcome: 'blocked', summary: `Agent ended without MC_RESULT and could not be resumed: ${created.error}`, evidence: [] })
+    attempt.jobId = created.job.id
+    await persist(run)
+    settleIfFinished(run, created.job.id)
+    return null
   }
   function chatDefaultFor(input: z.infer<typeof startSchema>): ChatDefault | undefined {
     if (!input.chat) {
@@ -517,6 +538,10 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const messages = parseThread(log)
     attempt.output = (messages.findLast(event => event.kind === 'result')?.detail ?? messages.filter(event => event.kind === 'text').map(event => event.detail).join('\n')).slice(-64000)
     let result = readNodeResult(log)
+    const nudged = attempt.nudgedFrom !== undefined && attempt.nudgedFrom !== record.id
+    const sessionId = deps.manager.getJob(record.id)?.sessionId ?? parseSessionId(log)
+    if (record.status === 'done' && !result && !nudged && sessionId && NUDGEABLE_ENGINES.has(record.engine)) return nudge(run, attempt, token, record, sessionId)
+    if (record.status === 'done' && !result && nudged) result = { outcome: 'blocked', summary: `Agent ended twice without MC_RESULT; last words: ${attempt.output.slice(-LAST_WORDS_CHARS).trim()}`, evidence: [] }
     if (record.status !== 'done' && result?.outcome !== 'fail' && result?.outcome !== 'blocked') result = { outcome: 'blocked', summary: `Agent process failed (${record.exitCode ?? 'unknown exit'})`, evidence: [] }
     if (!result || (result.outcome === 'pass' && !result.evidence.length)) result = { outcome: 'blocked', summary: 'Agent did not provide a valid MC_RESULT with evidence', evidence: [] }
     if (result.outcome === 'pass' && kindOf(run, attempt) === 'plan') {
@@ -999,7 +1024,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       const waiting = unsettled.filter(attempt => attempt.inSession && attempt.status === 'running')
       const orphaned = sessionOf(run) ? undefined : waiting[0]
       if (orphaned) { await block(run, sessionClosed(run.workflow.nodes.find(node => node.id === orphaned.nodeId)?.title ?? orphaned.nodeId)); continue }
-      const adopted = unsettled.filter(attempt => !waiting.includes(attempt)).map(attempt => ({ attempt, job: deps.manager.listJobs().find(job => job.workflowRunId === run.id && job.workflowAttempt === attempt.number) }))
+      const adopted = unsettled.filter(attempt => !waiting.includes(attempt)).map(attempt => ({ attempt, job: attemptJob(run, attempt) }))
       const broken = adopted.find(({ attempt, job }) => !job || attempt.status === 'checking')
       if ((!adopted.length && !waiting.length) || broken) { await block(run, `Interrupted transition or acceptance check; inspect evidence${broken?.attempt.checkPid ? ` and process ${broken.attempt.checkPid}` : ''} before retrying`); continue }
       for (const { attempt, job } of adopted) {
@@ -1010,6 +1035,10 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       await persist(run)
       for (const { job } of adopted) if (job!.status !== 'running') await onJobSettled(job!)
     }
+  }
+  function attemptJob(run: WorkflowRun, attempt: WorkflowAttempt): JobRecord | undefined {
+    const jobs = deps.manager.listJobs().filter(job => job.workflowRunId === run.id && job.workflowAttempt === attempt.number)
+    return (attempt.nudgedFrom ? jobs.find(job => job.id !== attempt.nudgedFrom) : undefined) ?? jobs.find(job => job.id === attempt.jobId) ?? jobs[0]
   }
   function owned(run: WorkflowRun, context: ApprovalContext): void {
     if (context.via !== 'conversation') return
