@@ -47,6 +47,8 @@ Close and reopen the Ubuntu window first so the new tools are found. Then:
 2. **Codex**: run `codex login`. Do this before the first job, because Codex reviews every change by default.
 3. **GLM**: GLM runs the build jobs by default. After the first start (step 5), open Studio → Manage AIs → GLM and paste your z.ai base URL and token. No z.ai account? In Studio, give the build and review roles to AIs you do have.
 
+By default GLM and Codex sessions started by Mission Control use a slim profile without your skills, plugins, MCP servers or CLAUDE.md. To give them your full `~/.claude` and `~/.codex` setup, add `export MISSION_CONTROL_FULL_AGENT_SETUP=1` to `~/.profile` and restart Mission Control. It costs more tokens per turn.
+
 ## 5. First start
 
 ```sh

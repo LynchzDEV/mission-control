@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { EngineName } from './engines'
 import { flowDesignRules } from './flow-design'
 import { configDir } from './secrets'
-import { WORKER_CLAUDE_SETTINGS } from './worker-profile'
+import { WORKER_CLAUDE_SETTINGS, fullAgentSetup } from './worker-profile'
 
 export const CHAT_RULES = `# Mission Control chat
 You are the system chat of Mission Control, talking with its owner. Answer directly, like a colleague. No plan step unless asked.
@@ -80,6 +80,7 @@ export async function ensureChatProfile(opts: { configDir?: string } = {}): Prom
 }
 
 export function chatEnv(engine: EngineName, dirs: { claude: string; codex: string }): Record<string, string> {
+  if (fullAgentSetup()) return {}
   if (engine === 'glm') return { CLAUDE_CONFIG_DIR: dirs.claude }
   if (engine === 'codex') return { CODEX_HOME: dirs.codex }
   return {}

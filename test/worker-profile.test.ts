@@ -11,6 +11,7 @@ import {
   workerEnv,
   workerProfileDirs,
 } from '../server/worker-profile'
+import { chatEnv } from '../server/chat-profile'
 
 let dir: string
 let sourceAuth: string
@@ -102,5 +103,22 @@ describe('workerEnv', () => {
 
   test('claude keeps the user profile', () => {
     expect(workerEnv('claude', dirs)).toEqual({})
+  })
+
+  test('with the full agent setup switch on, every engine keeps the user profile', () => {
+    const saved = process.env.MISSION_CONTROL_FULL_AGENT_SETUP
+    process.env.MISSION_CONTROL_FULL_AGENT_SETUP = '1'
+    try {
+      expect(workerEnv('glm', dirs)).toEqual({})
+      expect(workerEnv('codex', dirs)).toEqual({})
+      expect(chatEnv('glm', dirs)).toEqual({})
+      expect(chatEnv('codex', dirs)).toEqual({})
+      process.env.MISSION_CONTROL_FULL_AGENT_SETUP = '0'
+      expect(workerEnv('glm', dirs)).toEqual({ CLAUDE_CONFIG_DIR: dirs.claude })
+      expect(chatEnv('codex', dirs)).toEqual({ CODEX_HOME: dirs.codex })
+    } finally {
+      if (saved === undefined) delete process.env.MISSION_CONTROL_FULL_AGENT_SETUP
+      else process.env.MISSION_CONTROL_FULL_AGENT_SETUP = saved
+    }
   })
 })

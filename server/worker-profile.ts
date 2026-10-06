@@ -57,7 +57,12 @@ export async function ensureWorkerProfiles(
   return dirs
 }
 
+export function fullAgentSetup(): boolean {
+  return process.env.MISSION_CONTROL_FULL_AGENT_SETUP === '1'
+}
+
 export function workerEnv(engine: EngineName, dirs: { claude: string; codex: string }): Record<string, string> {
+  if (fullAgentSetup()) return {}
   if (engine === 'glm') return { CLAUDE_CONFIG_DIR: dirs.claude }
   if (engine === 'codex') return { CODEX_HOME: dirs.codex }
   return {}
