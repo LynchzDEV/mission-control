@@ -102,6 +102,12 @@ describe('terminalKeys', () => {
     expect(terminalKeys(key('ArrowLeft', { metaKey: true }))).toBe('line-start')
     expect(terminalKeys(key('ArrowRight', { metaKey: true }))).toBe('line-end')
   })
+  test('Ctrl+Enter reaches the app as its own key instead of a plain Enter', () => {
+    expect(terminalKeys(key('Enter', { ctrlKey: true }))).toBe('send-now')
+    expect(terminalKeys(key('Enter', { ctrlKey: true, shiftKey: true }))).toBeNull()
+    expect(terminalKeys(key('Enter', { ctrlKey: true, metaKey: true }))).toBeNull()
+    expect(terminalKeys(key('Enter', { ctrlKey: true, altKey: true }))).toBeNull()
+  })
   test('plain keys, Ctrl and Option combos, and ⌘C / ⌘V stay with the shell and the browser', () => {
     expect(terminalKeys(key('Enter'))).toBeNull()
     expect(terminalKeys(key('Enter', { shiftKey: true, metaKey: true }))).toBeNull()

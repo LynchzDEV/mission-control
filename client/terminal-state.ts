@@ -79,12 +79,13 @@ export function findKeys(event: { key: string; metaKey: boolean; ctrlKey: boolea
 }
 
 type KeyEvent = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }
-export type TerminalKey = 'newline' | 'clear' | 'kill-line' | 'line-start' | 'line-end' | null
+export type TerminalKey = 'newline' | 'send-now' | 'clear' | 'kill-line' | 'line-start' | 'line-end' | null
 const COMMAND_KEYS: Record<string, TerminalKey> = { k: 'clear', Backspace: 'kill-line', ArrowLeft: 'line-start', ArrowRight: 'line-end' }
 
 export function terminalKeys(event: KeyEvent): TerminalKey {
   const onlyShift = event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey
-  if (event.key === 'Enter') return onlyShift ? 'newline' : null
+  const onlyCtrl = event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey
+  if (event.key === 'Enter') return onlyShift ? 'newline' : onlyCtrl ? 'send-now' : null
   if (!event.metaKey || event.ctrlKey || event.altKey) return null
   return COMMAND_KEYS[event.key] ?? null
 }

@@ -45,7 +45,7 @@ const findBar = barTemplate.querySelector('#find') as HTMLElement
 findBar.remove()
 const findPart = (id: string): HTMLElement => findBar.querySelector(`#${id}`) as HTMLElement
 const findInput = findPart('find-input') as HTMLInputElement
-const TERMINAL_BYTES: Record<Exclude<TerminalKey, 'clear' | null>, string> = { newline: '\x1b\r', 'kill-line': '\x15', 'line-start': '\x01', 'line-end': '\x05' }
+const TERMINAL_BYTES: Record<Exclude<TerminalKey, 'clear' | null>, string> = { newline: '\x1b\r', 'send-now': '\x1b[13;5u', 'kill-line': '\x15', 'line-start': '\x01', 'line-end': '\x05' }
 
 const stored = (key: string): string | null => { try { return localStorage.getItem(key) } catch { return null } }
 const store = (key: string, value: string | null): void => { try { if (value) localStorage.setItem(key, value); else localStorage.removeItem(key) } catch {} }
