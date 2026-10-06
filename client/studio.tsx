@@ -293,7 +293,7 @@ function Studio() {
             <p className="muted">{label({ agent: { role: 'execute', engine: run.agents[attempt.nodeId]?.engine } })}{run.agents[attempt.nodeId]?.model ? ` · ${run.agents[attempt.nodeId]?.model}` : ''}</p>
             {attempt.result && <><p>{attempt.result.summary}</p>{attempt.result.evidence.length > 0 && <ul>{attempt.result.evidence.map((evidence, index) => <li key={index}>{evidence}</li>)}</ul>}</>}
             {attempt.checks.map((check, index) => <details key={index}><summary>{check.command} {check.args.join(' ')} · {check.exitCode === 0 ? 'Passed' : 'Failed'}</summary><pre className="studio-output">{check.output}</pre></details>)}
-            {attempt.jobId && <p><a className="text-button" href={`/api/jobs/${attempt.jobId}/log`} target="_blank" rel="noreferrer">Open job log</a></p>}
+            {attempt.jobId && <p><button type="button" className="text-button" onClick={() => dispatchEvent(new CustomEvent('quiet:flow-watch', { detail: { runId: run.id, jobId: attempt.jobId } }))}><Icon id="terminal-icon" />Show this step’s output</button></p>}
             <details><summary>Instructions used for this step</summary><pre className="studio-output">{attempt.prompt}</pre></details>
           </li>)}</ol>
           <details><summary>Versions used for this run</summary><p className="muted">Workflow {run.workflow.revision} · Core prompt {run.policy.revision}</p></details>
