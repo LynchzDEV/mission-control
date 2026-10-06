@@ -103,6 +103,8 @@ One item builds at a time. Parked items do not hold the slot.
 **Phase 3 — land**
 - 6-concern report produced by code (today prose in `skills/mc-dispatch/SKILL.md:268-333`); Land button flow; `landed` post + status mirror.
 - Multi-repo items: land acts per changed repo (a repo with no commits or changes vs its trunk is skipped). Rebase each onto its own remote trunk and push it; one 6-concern report for the item with a section per repo. A failed push does not undo the others: record a per-repo outcome (pushed / failed + why) and let a retry act on the failed repos only.
+- Known gap (L4): a single-repo job's diff stat (`git diff --stat HEAD`) ignores new untracked files, so a job that only adds files skips auto-review; multi-repo stats list them. Align both before land relies on "changed".
+- Known gap (L6): files an agent writes at a multi-repo workspace root, outside every child repo, are in no diff, fingerprint or commit; land must surface or refuse them.
 
 **Phase 4 — host it** (separate decision).
 
