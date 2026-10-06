@@ -1,36 +1,32 @@
-import { readdir, realpath } from 'node:fs/promises'
+import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import { isPlainRepoName, MAX_QUEUE_REPOS, repoNamesProblem } from './repo-names'
+import { mapLimited, PROBE_CONCURRENCY, probeRepo, type RepoProbe } from './repo-probe'
 import { validateWorkspaceCwd } from './workspace'
 
 export { MAX_QUEUE_REPOS }
 
-export type FolderListing = { ok: true; path: string; isRepo: boolean; repos: string[] } | { ok: false; error: string }
+export type FolderListing = { ok: true; path: string; isRepo: boolean; repos: string[]; skipped: number } | { ok: false; error: string }
 export type ResolvedFolder = { ok: true; path: string; repos?: string[] } | { ok: false; error: string }
 
-async function gitOutput(cwd: string, args: string[]): Promise<string | null> {
-  const proc = Bun.spawn(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'ignore' })
-  const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
-  return code === 0 ? out.trim() : null
+async function insideGit(dir: string): Promise<boolean> {
+  const proc = Bun.spawn(['git', '-C', dir, 'rev-parse', '--git-dir'], { stdout: 'ignore', stderr: 'ignore' })
+  return (await proc.exited) === 0
 }
 
-async function isRepoRoot(dir: string): Promise<boolean> {
-  const top = await gitOutput(dir, ['rev-parse', '--show-toplevel'])
-  if (top === null) return false
-  const [realTop, realDir] = await Promise.all([realpath(top).catch(() => null), realpath(dir).catch(() => null)])
-  return realTop !== null && realTop === realDir
-}
+export type ListingOptions = { timeoutMs?: number; probe?: RepoProbe }
 
-export async function listFolderRepos(folder: string, home: string = homedir()): Promise<FolderListing> {
+export async function listFolderRepos(folder: string, home: string = homedir(), options: ListingOptions = {}): Promise<FolderListing> {
   const checked = await validateWorkspaceCwd(folder, home, { requireGit: false })
   if (!checked.ok) return checked
-  if (await gitOutput(checked.path, ['rev-parse', '--git-dir']) !== null) return { ok: true, path: checked.path, isRepo: true, repos: [] }
+  if (await insideGit(checked.path)) return { ok: true, path: checked.path, isRepo: true, repos: [], skipped: 0 }
   const entries = await readdir(checked.path, { withFileTypes: true }).catch(() => [])
   const names = entries.filter(entry => entry.isDirectory() && isPlainRepoName(entry.name)).map(entry => entry.name)
-  const found = await Promise.all(names.map(async name => (await isRepoRoot(join(checked.path, name)) ? name : null)))
-  return { ok: true, path: checked.path, isRepo: false, repos: found.filter((name): name is string => name !== null).sort() }
+  const results = await mapLimited(names, PROBE_CONCURRENCY, name => probeRepo(join(checked.path, name), options.timeoutMs, options.probe))
+  const repos = names.filter((_, index) => results[index] === 'repo').sort()
+  return { ok: true, path: checked.path, isRepo: false, repos, skipped: results.filter(result => result === 'timeout').length }
 }
 
 const missingText = (missing: readonly string[]): string =>

@@ -60,7 +60,7 @@ async function folderRepos(path: unknown, set: Status) {
   if (typeof path !== 'string' || path === '' || path.length > 2048) { set.status = 400; return { error: 'path is required' } }
   const listing = await listFolderRepos(path)
   if (!listing.ok) { set.status = 400; return { error: listing.error } }
-  return { path: listing.path, isRepo: listing.isRepo, repos: listing.repos }
+  return { path: listing.path, isRepo: listing.isRepo, repos: listing.repos, skipped: listing.skipped }
 }
 
 const isConflict = (error: unknown): boolean => error instanceof QueueRefusal && error.status === 409

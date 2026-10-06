@@ -49,12 +49,12 @@ function appWith(added: AddInput[]) {
 test('the folder check says a repo is a repo and lists nothing', async () => {
   const response = await folderOf(appWith([]), join(parent, 'api'))
   expect(response.status).toBe(200)
-  expect(await response.json()).toEqual({ path: join(parent, 'api'), isRepo: true, repos: [] })
+  expect(await response.json()).toEqual({ path: join(parent, 'api'), isRepo: true, repos: [], skipped: 0 })
 })
 
 test('the folder check lists the repos inside a parent folder', async () => {
-  expect(await (await folderOf(appWith([]), parent)).json()).toEqual({ path: parent, isRepo: false, repos: ['api', 'backoffice'] })
-  expect(await (await folderOf(appWith([]), join(parent, 'empty'))).json()).toEqual({ path: join(parent, 'empty'), isRepo: false, repos: [] })
+  expect(await (await folderOf(appWith([]), parent)).json()).toEqual({ path: parent, isRepo: false, repos: ['api', 'backoffice'], skipped: 0 })
+  expect(await (await folderOf(appWith([]), join(parent, 'empty'))).json()).toEqual({ path: join(parent, 'empty'), isRepo: false, repos: [], skipped: 0 })
 })
 
 test('the folder check refuses a missing path, a path outside home and no path', async () => {

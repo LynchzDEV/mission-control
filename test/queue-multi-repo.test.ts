@@ -2,12 +2,13 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { prepareWorktree } from '../server/job-worktrees'
 import { writeQueueContext } from '../server/queue-files'
 import { listFolderRepos, MAX_QUEUE_REPOS, resolveQueueFolder } from '../server/queue-folder'
 import { createQueueStore, type QueueItem } from '../server/queue-store'
+import { gitTopLevelProbe, type RepoProbe } from '../server/repo-probe'
 import { prepareRepoWorkspace } from '../server/repo-workspace'
 import { git, repoAt } from './support/git-repos'
 import { queueHarness } from './support/queue-harness'
@@ -29,7 +30,7 @@ const multi = { source: 'clickup-board', externalId: '7', repo: '' }
 
 test('a repo folder is a repo and lists no child repos', async () => {
   const repo = await repoAt(join(parent, 'solo'))
-  expect(await listFolderRepos(repo)).toEqual({ ok: true, path: repo, isRepo: true, repos: [] })
+  expect(await listFolderRepos(repo)).toEqual({ ok: true, path: repo, isRepo: true, repos: [], skipped: 0 })
 })
 
 test('a parent folder lists its direct child repos by name, sorted, and nothing else', async () => {
@@ -40,11 +41,11 @@ test('a parent folder lists its direct child repos by name, sorted, and nothing 
   const elsewhere = await repoAt(join(scratch, 'elsewhere'))
   await symlink(elsewhere, join(parent, 'linked-out'))
   await symlink(join(parent, 'a'), join(parent, 'linked-in'))
-  expect(await listFolderRepos(parent)).toEqual({ ok: true, path: parent, isRepo: false, repos: ['a', 'b'] })
+  expect(await listFolderRepos(parent)).toEqual({ ok: true, path: parent, isRepo: false, repos: ['a', 'b'], skipped: 0 })
 })
 
 test('an empty folder is not a repo and has no repos inside', async () => {
-  expect(await listFolderRepos(parent)).toEqual({ ok: true, path: parent, isRepo: false, repos: [] })
+  expect(await listFolderRepos(parent)).toEqual({ ok: true, path: parent, isRepo: false, repos: [], skipped: 0 })
 })
 
 test('a folder outside home or missing is refused with the workspace errors', async () => {
@@ -55,9 +56,25 @@ test('a folder outside home or missing is refused with the workspace errors', as
 test('a child that is a folder inside another repo does not count as a repo', async () => {
   const outer = await repoAt(join(parent, 'outer'))
   await mkdir(join(outer, 'sub'))
-  expect(await listFolderRepos(outer)).toMatchObject({ isRepo: true, repos: [] })
+  expect(await listFolderRepos(outer)).toMatchObject({ isRepo: true, repos: [], skipped: 0 })
   const listed = await listFolderRepos(parent)
   expect(listed).toMatchObject({ isRepo: false, repos: ['outer'] })
+})
+
+test('a child whose git check takes too long is left out and counted as skipped', async () => {
+  await twoRepos()
+  await repoAt(join(parent, 'slow'))
+  const probe: RepoProbe = (dir, signal) => (basename(dir) === 'slow' ? new Promise(resolve => { signal.addEventListener('abort', () => resolve(true)) }) : gitTopLevelProbe(dir, signal))
+  expect(await listFolderRepos(parent, undefined, { timeoutMs: 100, probe })).toEqual({ ok: true, path: parent, isRepo: false, repos: ['a', 'b'], skipped: 1 })
+})
+
+test('children are probed a few at a time', async () => {
+  for (let index = 0; index < 20; index++) await mkdir(join(parent, `d${index}`))
+  let running = 0
+  let most = 0
+  const probe: RepoProbe = async () => { running += 1; most = Math.max(most, running); await Bun.sleep(5); running -= 1; return false }
+  expect(await listFolderRepos(parent, undefined, { probe })).toMatchObject({ repos: [], skipped: 0 })
+  expect(most).toBe(8)
 })
 
 test('without repos a folder resolves exactly as the single-repo check did', async () => {
