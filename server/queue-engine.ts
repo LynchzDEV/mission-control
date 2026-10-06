@@ -1,7 +1,7 @@
 import type { TaskContext } from './plugins/context-files'
 import { dropAnswerBackups, restoreAnswers } from './queue-answers'
 import { questionsOf, repoRequestsOf, runRequest, SETTLED, type RunView } from './queue-prompts'
-import { grantRepos, movedRealRepos, movedText, realRepoStates, reposToOffer, SINGLE_REPO_ASK } from './queue-repo-asks'
+import { adoptionProblem, grantRepos, movedRealRepos, movedText, realRepoStates, reposToOffer, SINGLE_REPO_ASK } from './queue-repo-asks'
 import { refuseLinkedQueueFolders } from './queue-files'
 import { message, replyCheck } from './queue-replies'
 import type { QueueSource } from './queue-source'
@@ -130,11 +130,13 @@ function queueSteps(deps: QueueEngineDeps, onPreparing: (id: string | null) => v
     }
   }
 
-  async function withRecordedRepos(item: QueueItem): Promise<QueueItem> {
+  async function withRecordedRepos(item: QueueItem): Promise<QueueItem | { fail: string }> {
     if (item.repos === undefined || item.worktree === null) return item
     const recorded = await workspaceRepos(item.worktree)
-    if (recorded === null || recorded.every(name => item.repos!.includes(name))) return item
-    return store.update(item.id, { repos: [...new Set([...item.repos, ...recorded])] })
+    const added = (recorded ?? []).filter(name => !item.repos!.includes(name))
+    if (added.length === 0) return item
+    const problem = await adoptionProblem(item, added)
+    return problem === null ? store.update(item.id, { repos: [...item.repos, ...added] }) : { fail: problem }
   }
 
   async function noteMovedRealRepos(item: QueueItem): Promise<{ item: QueueItem; moved: string[] }> {
@@ -155,7 +157,9 @@ function queueSteps(deps: QueueEngineDeps, onPreparing: (id: string | null) => v
     const found = settling(run)
     if (found === undefined) return
     applied.set(run.id, fingerprint(run))
-    const { item, moved } = await noteMovedRealRepos(await withRecordedRepos(found))
+    const adopted = await withRecordedRepos(found)
+    if ('fail' in adopted) return fail(found, adopted.fail)
+    const { item, moved } = await noteMovedRealRepos(adopted)
     await settleState(item, run)
     if (moved.length > 0) deps.needsYou(store.get(item.id) ?? item, movedText(item, moved))
   }

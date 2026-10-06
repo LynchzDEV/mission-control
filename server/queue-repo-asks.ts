@@ -73,3 +73,9 @@ export async function movedRealRepos(item: QueueItem): Promise<string[]> {
 
 export const movedText = (item: QueueItem, moved: readonly string[]): string =>
   `${moved.join(', ')} in ${item.repo} changed while ${item.title} was building — check it wasn't the agent`
+
+export async function adoptionProblem(item: QueueItem, added: readonly string[]): Promise<string | null> {
+  const unknown = await unknownName(item.repo, added)
+  if (unknown !== undefined) return `The run recorded ${unknown}, which is not a repo in ${item.repo}`
+  return (item.repos ?? []).length + added.length > MAX_QUEUE_REPOS ? `The run added repos past the limit of ${MAX_QUEUE_REPOS}` : null
+}

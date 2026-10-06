@@ -57,7 +57,12 @@ const isMissingFile = (error: unknown): boolean => (error as NodeJS.ErrnoExcepti
 function load(path: string): QueueItem[] {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as { items?: unknown }
-    return Array.isArray(parsed.items) ? parsed.items.filter(isItem) : []
+    if (!Array.isArray(parsed.items)) return []
+    return parsed.items.filter((entry: unknown) => {
+      if (isItem(entry)) return true
+      console.error(`queue item ${String((entry as { id?: unknown } | null)?.id ?? '?')} in ${path} is not valid and was left out`)
+      return false
+    })
   } catch (error) {
     if (!isMissingFile(error)) console.error(`queue list unreadable, starting empty: ${path}`, error)
     return []

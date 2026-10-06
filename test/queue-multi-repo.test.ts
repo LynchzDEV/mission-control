@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
@@ -119,7 +119,10 @@ test('an old queue.json without repos loads and its items stay single-repo', asy
   const file = join(scratch, 'queue.json')
   const old = { id: 'i1', source: 'clickup-board', externalId: '1', title: 'T', url: 'u', repo: '/repo', flowId: null, state: 'ready', worktree: '/repo/.worktree/q', contextPath: null, answerPaths: [], runIds: ['r1'], currentRunId: null, questions: [], lastSeenId: null, error: null, createdAt: 1, updatedAt: 2 }
   await writeFile(file, JSON.stringify({ items: [old, { ...old, id: 'i2', externalId: '2', repos: ['../x'] }, { ...old, id: 'i3', externalId: '3', repos: ['a', 'b'] }] }))
+  const logged = spyOn(console, 'error').mockImplementation(() => {})
   const store = createQueueStore(file)
+  expect(logged.mock.calls.map(call => String(call[0]))).toEqual([`queue item i2 in ${file} is not valid and was left out`])
+  logged.mockRestore()
   expect(store.list().map(item => item.id)).toEqual(['i1', 'i3'])
   expect(store.get('i1')).toEqual(old as unknown as QueueItem)
   expect('repos' in store.get('i1')!).toBe(false)

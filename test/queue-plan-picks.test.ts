@@ -262,3 +262,26 @@ test('repos a run added to the workspace itself are picked up by the item when t
   await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))
   expect(h.store.get(item.id)).toMatchObject({ state: 'ready', repos: ['a', 'b'] })
 })
+
+test('a repo the run recorded that is not a real repo of the folder fails the item instead of being adopted', async () => {
+  await repos('a', 'b')
+  const evil = await repoAt(join(scratch, 'evil'))
+  await symlink(evil, join(parent, 's'))
+  const h = harness()
+  const item = await h.engine.add({ ...multi, repo: parent, repos: ['a'] })
+  git(join(parent, 's'), 'worktree', 'add', '-q', join(workspace(), 's'), '-b', 'evil')
+  await rm(join(workspace(), '.mission-control', 'repos.json'))
+  await writeFile(join(workspace(), '.mission-control', 'repos.json'), JSON.stringify({ repos: ['a', 's'] }))
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))
+  expect(h.store.get(item.id)).toMatchObject({ state: 'failed', repos: ['a'], error: `The run recorded s, which is not a repo in ${parent}` })
+})
+
+test('repos recorded by the run that would take the item past 8 fail it', async () => {
+  const names = Array.from({ length: 9 }, (_, index) => `r${index}`)
+  await repos(...names)
+  const h = harness()
+  const item = await h.engine.add({ ...multi, repo: parent, repos: ['r0'] })
+  await prepareRepoWorkspace(parent, names.slice(1), 'queue-task-7-7-a8c0')
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))
+  expect(h.store.get(item.id)).toMatchObject({ state: 'failed', repos: ['r0'], error: 'The run added repos past the limit of 8' })
+})
