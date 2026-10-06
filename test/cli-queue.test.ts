@@ -157,8 +157,6 @@ describe('mctl queue with several repos', () => {
   test('add --repos refuses a bad list before calling the server', async () => {
     const nine = Array.from({ length: 9 }, (_, index) => `r${index}`).join(',')
     const cases: Array<[string, string]> = [
-      ['', 'Tick at least one repo this ticket touches'],
-      [' , ', 'Tick at least one repo this ticket touches'],
       ['../x', 'Not a repo name: ../x'],
       ['api,.git', 'Not a repo name: .git'],
       ['api,api', 'api is ticked twice'],
@@ -172,6 +170,14 @@ describe('mctl queue with several repos', () => {
     }
   })
 
+  test('add --repos with nothing in it sends an empty list so the plan picks', async () => {
+    for (const given of ['', ' , ']) {
+      const h = harness(() => Response.json({ item: { id: 'a1', title: 'x' } }))
+      expect(await main(['queue', 'add', 'clickup-board', '1', '--repo', '/k', '--repos', given], h.deps)).toBe(0)
+      expect(h.calls[0]?.body?.repos).toEqual([])
+    }
+  })
+
   test('add without --repos sends no repos key', async () => {
     const h = harness(() => Response.json({ item: { id: 'a1', title: 'x' } }))
     expect(await main(['queue', 'add', 'clickup-board', '1', '--repo', '/k'], h.deps)).toBe(0)
@@ -182,10 +188,12 @@ describe('mctl queue with several repos', () => {
     const h = harness(() => Response.json({ items: [
       { id: 'm1', state: 'queued', source: 'clickup-board', title: 'Login', repo: '/home/me/klangtech', repos: ['api', 'backoffice'], questions: [], error: null },
       { id: 's1', state: 'queued', source: 'clickup-board', title: 'Copy', repo: '/home/me/api', questions: [], error: null },
+      { id: 'p1', state: 'queued', source: 'clickup-board', title: 'Pick', repo: '/home/me/klangtech', repos: [], questions: [], error: null },
     ] }))
     expect(await main(['queue', 'list'], h.deps)).toBe(0)
     expect(h.out()).toContain('REPOS')
     expect(h.out()).toContain('api, backoffice')
     expect(h.out().split('\n').find(line => line.includes('s1'))).toContain('-')
+    expect(h.out().split('\n').find(line => line.includes('p1'))).toContain('plan picks')
   })
 })

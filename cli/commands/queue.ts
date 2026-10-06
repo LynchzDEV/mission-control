@@ -39,7 +39,10 @@ function reposOption(ctx: Context): string[] | undefined {
   return repos
 }
 
-const reposText = (item: Json): string => (Array.isArray(item.repos) && item.repos.length > 0 ? item.repos.map(String).join(', ') : '-')
+function reposText(item: Json): string {
+  if (!Array.isArray(item.repos)) return '-'
+  return item.repos.length === 0 ? 'plan picks' : item.repos.map(String).join(', ')
+}
 
 function position(ctx: Context): number {
   const text = arg(ctx, 'to')
@@ -71,7 +74,7 @@ export const queueCommands: Command[] = [
     args: ['source', 'externalId'],
     options: {
       repo: { type: 'string', description: 'repo, or folder of repos, the item is built in (default: current directory)', placeholder: 'DIR' },
-      repos: { type: 'string', description: 'repos inside --repo this item touches, comma separated', placeholder: 'A,B' },
+      repos: { type: 'string', description: 'repos inside --repo this item touches, comma separated (default: the plan picks)', placeholder: 'A,B' },
       flow: { type: 'string', description: 'saved flow id', placeholder: 'ID' },
       next: { type: 'boolean', description: 'put it first' },
     },
