@@ -1,6 +1,7 @@
 import type { TaskContext } from './plugins/context-files'
 import { dropAnswerBackups, restoreAnswers } from './queue-answers'
-import { questionsOf, runRequest, SETTLED, type RunView } from './queue-prompts'
+import { questionsOf, repoRequestsOf, runRequest, SETTLED, type RunView } from './queue-prompts'
+import { availableRepos, grantRepos } from './queue-repo-asks'
 import { refuseLinkedQueueFolders } from './queue-files'
 import { message, replyCheck } from './queue-replies'
 import type { QueueSource } from './queue-source'
@@ -100,8 +101,21 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
     return items.find(entry => RETRIED_FROM.has(entry.state) && entry.runIds.at(-1) === run.id)
   }
 
-  async function askOrFail(item: QueueItem, run: RunView): Promise<void> {
+  async function rerunWithRepos(item: QueueItem, repos: string[]): Promise<void> {
+    await store.update(item.id, { state: 'queued', repos, repoReruns: (item.repoReruns ?? 0) + 1, currentRunId: null, questions: [], error: null })
+    await store.toFront(item.id)
+  }
+
+  async function askOrFail(settled: QueueItem, run: RunView): Promise<void> {
+    let item = settled
     const questions = questionsOf(run)
+    const asked = item.repos === undefined ? [] : repoRequestsOf(run)
+    if (asked.length > 0) {
+      const granted = await grantRepos(deps, item, asked, questions.length > 0)
+      if ('fail' in granted) return fail(item, granted.fail)
+      if (questions.length === 0) return rerunWithRepos(item, granted.repos)
+      item = await store.update(item.id, { repos: granted.repos })
+    }
     if (questions.length === 0) return fail(item, run.error ?? `Run ${run.status}`)
     try {
       const posted = await deps.source(item.source).post({ id: item.externalId, kind: 'ask', lines: questions })
@@ -144,7 +158,8 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
     const contextPath = await contextIn(item, worktree)
     const answerPaths = await answersOf(item)
     const ready = { ...item, worktree, contextPath, answerPaths }
-    const run = await deps.runner.start({ cwd: worktree, request: runRequest(ready), label: item.title.slice(0, MAX_RUN_LABEL), ...(item.flowId ? { workflowId: item.flowId } : {}) }, { startedByUser: true })
+    const available = item.repos === undefined ? [] : await availableRepos(item.repo)
+    const run = await deps.runner.start({ cwd: worktree, request: runRequest(ready, available), label: item.title.slice(0, MAX_RUN_LABEL), ...(item.flowId ? { workflowId: item.flowId } : {}) }, { startedByUser: true })
     await store.update(item.id, { state: 'building', worktree, contextPath, currentRunId: run.id, runIds: [...item.runIds, run.id], error: null })
     const now = deps.runner.get(run.id)
     if (now !== undefined && SETTLED.has(now.status)) await settle(now)
@@ -194,7 +209,7 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     const item = found(store, id)
     if (!REQUEUEABLE.has(item.state)) throw stateRefusal(item.state)
     if (runningInStudio(item)) throw new QueueRefusal('It is running in Studio now', 409)
-    await store.update(id, { state: 'queued', error: null, currentRunId: null, questions: [] })
+    await store.update(id, { state: 'queued', error: null, currentRunId: null, questions: [], repoReruns: item.repoReruns === undefined ? undefined : 0 })
     await store.move(id, store.list().length)
     await startNext()
     return found(store, id)

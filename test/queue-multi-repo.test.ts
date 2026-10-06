@@ -77,9 +77,12 @@ test('children are probed a few at a time', async () => {
   expect(most).toBe(8)
 })
 
-test('without repos a folder resolves exactly as the single-repo check did', async () => {
+test('without repos a repo resolves as before, a folder of repos becomes a plan-picks item, anything else keeps the old error', async () => {
   await twoRepos()
-  expect(await resolveQueueFolder(parent, undefined)).toEqual({ ok: false, error: 'cwd is not a git repository' })
+  await mkdir(join(parent, 'notes'))
+  expect(await resolveQueueFolder(parent, undefined)).toEqual({ ok: true, path: parent, repos: [] })
+  expect(await resolveQueueFolder(join(parent, 'notes'), undefined)).toEqual({ ok: false, error: 'cwd is not a git repository' })
+  expect(await resolveQueueFolder(join(parent, 'notes'), [])).toEqual({ ok: false, error: 'cwd is not a git repository' })
   expect(await resolveQueueFolder(join(parent, 'a'), undefined)).toEqual({ ok: true, path: join(parent, 'a') })
 })
 
@@ -87,7 +90,6 @@ test('ticked repos are checked before the item is added', async () => {
   await twoRepos()
   const nine = Array.from({ length: MAX_QUEUE_REPOS + 1 }, (_, index) => `r${index}`)
   const cases: Array<[string[], string]> = [
-    [[], 'Tick at least one repo this ticket touches'],
     [['zzz'], 'zzz is not a repo in this folder'],
     [['a', 'zzz', 'yyy'], 'zzz, yyy are not repos in this folder'],
     [['../x'], 'Not a repo name: ../x'],
@@ -98,6 +100,7 @@ test('ticked repos are checked before the item is added', async () => {
   ]
   for (const [repos, error] of cases) expect(await resolveQueueFolder(parent, repos)).toEqual({ ok: false, error })
   expect(await resolveQueueFolder(parent, ['b', 'a'])).toEqual({ ok: true, path: parent, repos: ['a', 'b'] })
+  expect(await resolveQueueFolder(parent, [])).toEqual({ ok: true, path: parent, repos: [] })
 })
 
 test('a ticked repo deleted between listing and add is refused', async () => {
@@ -132,7 +135,7 @@ test('a multi-repo item builds in one workspace with its context at the root, ou
   expect(built).toMatchObject({ state: 'building', repo: parent, repos: ['a', 'b'], worktree: workspace })
   expect(h.started[0]!.cwd).toBe(workspace)
   expect(built.contextPath!.startsWith(join(workspace, '.mission-control', 'queue', 'clickup-board') + '/')).toBe(true)
-  expect(h.started[0]!.request).toContain('a/, b/')
+  expect(h.started[0]!.request).toContain(`Copies ready now: ${join(workspace, 'a')}, ${join(workspace, 'b')}.`)
   for (const name of ['a', 'b']) expect(git(join(workspace, name), 'status', '--porcelain')).toBe('')
 })
 
