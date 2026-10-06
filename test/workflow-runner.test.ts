@@ -10,6 +10,8 @@ import * as worktrees from '../server/job-worktrees'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 import type { TerminalRecord } from '../server/terminals'
 import { mcUrl } from '../server/secrets'
+import { prepareRepoWorkspace } from '../server/repo-workspace'
+import { repoAt } from './support/git-repos'
 
 let dir: string, repo: string, manager: JobManager, runner: WorkflowRunner, settledRuns: WorkflowRun[]
 const report = (outcome = 'pass') => JSON.stringify({ type: 'result', result: `MC_RESULT ${JSON.stringify({ outcome, summary: 'Completed fixture', evidence: ['fixture assertion'] })}` })
@@ -1620,4 +1622,20 @@ test('a session change that adds commands waits for approval even with approval 
   await runner.reject(started.id, { via: 'drawer' })
   const fromOwner = await runner.propose(started.id, { graph: { ...withCommand(), nodes: withCommand().nodes.map(node => node.id === 'plan' ? { ...node, agent: { role: 'plan' as const } } : node) }, reason: 'Run the tests' }, { via: 'drawer' })
   expect(fromOwner.versions.at(-1)).toMatchObject({ number: 3, state: 'approved', approvedVia: 'auto' })
+})
+
+test('a fork in a multi-repo workspace blocks with a plain reason instead of forking', async () => {
+  await homeConfig()
+  build()
+  const parent = await mkdtemp(join(homedir(), 'mc-workflow-multi-'))
+  try {
+    for (const name of ['a', 'b']) await repoAt(join(parent, name))
+    const { worktree } = await prepareRepoWorkspace(parent, ['a', 'b'], 'queue-fork-1-a8c0')
+    const started = await runner.start({ cwd: worktree, request: 'Write both files', label: 'fork', graph: forked() }, { startedByUser: true })
+    const done = await finished(started.id)
+    expect(done).toMatchObject({ status: 'blocked', error: 'Parallel paths need a single git repo; this run spans several repos', sections: [] })
+    expect(done.attempts.map(attempt => attempt.nodeId)).toEqual(['plan', 'verify', 'split'])
+  } finally {
+    await rm(parent, { recursive: true, force: true })
+  }
 })
