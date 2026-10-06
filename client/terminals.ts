@@ -10,6 +10,7 @@ import { createPanes, type PaneHeader } from './terminal-panes'
 import { createOutcomeStrip } from './outcome-strip'
 import type { ResumeRequest } from './chat-view'
 import { morph, reveal, rollText } from './morph'
+import { TERMINAL_FONT, terminalTheme } from './terminal-theme'
 
 type Provider = { id: string; name: string; models: string[] }
 
@@ -28,11 +29,6 @@ const park = $('term-park')
 const dropStage = $('drop-stage')
 const panes = createPanes(stage)
 const views = new Map<string, TerminalView>()
-const TERMINAL_THEMES = {
-  light: { background: '#eaedf6', foreground: '#344155', cursor: '#8062bd', selectionBackground: '#b5a5d866' },
-  dark: { background: '#23262e', foreground: '#e4e8f0', cursor: '#a58be2', selectionBackground: '#a58be255' },
-}
-const terminalTheme = () => TERMINAL_THEMES[document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light']
 document.addEventListener('mc:theme', () => { for (const view of views.values()) view.terminal.options.theme = terminalTheme() })
 let sessions: Session[] = []
 let activeId: string | null = null
@@ -79,7 +75,7 @@ export class TerminalView {
     find.title = `Find · ${MAC ? '⌘F' : 'Ctrl+F'}`
     find.onclick = () => { if (activeId !== this.session.id) activate(this.session.id); openFind() }
     ;(this.bar.querySelector('.term-bar-status') as HTMLButtonElement).onclick = () => void reconnect(this.session.id)
-    this.terminal = new Terminal({ allowProposedApi: true, fontFamily: 'Menlo, monospace', fontSize: 13, cursorBlink: !matchMedia('(prefers-reduced-motion: reduce)').matches, scrollback: 10000, macOptionIsMeta: true, theme: terminalTheme() })
+    this.terminal = new Terminal({ allowProposedApi: true, ...TERMINAL_FONT, cursorBlink: !matchMedia('(prefers-reduced-motion: reduce)').matches, scrollback: 10000, macOptionIsMeta: true, theme: terminalTheme() })
     this.terminal.loadAddon(this.fit)
     this.terminal.loadAddon(this.search)
     this.terminal.loadAddon(new WebLinksAddon())
