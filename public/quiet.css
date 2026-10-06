@@ -1301,8 +1301,8 @@ a.pill:hover { color: var(--accent); }
 .pill-state svg { width: 12px; height: 12px; }
 .q-list { display: grid; gap: 10px; }
 .q-row { display: grid; grid-template-columns: 20px 152px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 11px 18px 11px 8px; border-radius: var(--r-md); corner-shape: var(--corner); background: var(--paper); box-shadow: var(--raised); }
-.q-row[data-openable] { cursor: pointer; }
-.q-row[data-openable]:hover, .q-row[data-open] { background: color-mix(in srgb, var(--hi) 22%, var(--paper)); }
+.q-row:is([data-openable], [data-watchable]) { cursor: pointer; }
+.q-row:is([data-openable], [data-watchable]):hover, .q-row[data-open] { background: color-mix(in srgb, var(--hi) 22%, var(--paper)); }
 .q-row[data-open] { cursor: default; }
 .q-row[data-drop] { outline: 2px dashed var(--accent); outline-offset: 2px; }
 .q-row[data-focus] { outline: 2px solid var(--accent); outline-offset: 3px; transition: outline-color .3s; }

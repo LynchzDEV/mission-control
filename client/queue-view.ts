@@ -3,8 +3,10 @@ export type QueueState = 'queued' | 'building' | 'waiting-info' | 'ready' | 'fai
 export type QueueItemView = {
   id: string; source: string; externalId: string; title: string; url: string; flowId: string | null
   state: QueueState; runIds: string[]; questions: string[]; error: string | null; updatedAt: number
-  repo?: string; repos?: string[]; realChanged?: string[]
+  repo?: string; repos?: string[]; realChanged?: string[]; currentRunId?: string; step?: QueueStepView
 }
+
+export type QueueStepView = { title: string; attempt: number; maxAttempts: number }
 
 export type QueuePlugin = { id: string; name: string; icon?: string; enabled: boolean; queueSource?: true }
 export type QueueFlow = { id: string; name: string }
@@ -114,8 +116,16 @@ export function flowName(item: Pick<QueueItemView, 'flowId'>, flows: readonly Qu
   return flows.find(flow => flow.id === item.flowId)?.name ?? item.flowId
 }
 
+export function watchRunId(item: Pick<QueueItemView, 'currentRunId' | 'runIds'>): string | undefined {
+  return item.currentRunId ?? item.runIds.at(-1)
+}
+
+export function stepText(step: QueueStepView): string {
+  return step.maxAttempts > 1 ? `${step.title} · attempt ${step.attempt} of ${step.maxAttempts}` : step.title
+}
+
 function progressText(item: QueueItemView, items: readonly QueueItemView[], now: number): string {
-  if (item.state === 'building') return 'Building'
+  if (item.state === 'building') return item.step === undefined ? 'Building' : stepText(item.step)
   if (item.state === 'queued') return lineText(items, items.filter(entry => entry.state === 'queued').indexOf(item))
   if (item.state === 'waiting-info') {
     const count = item.questions.length
@@ -129,7 +139,10 @@ function actions(item: QueueItemView, now: number): HTMLElement {
   const id = { 'data-id': item.id }
   const openRun = item.runIds.length > 0
   const parts: HTMLElement[] = []
-  if (item.state === 'building') parts.push(el('span', { class: 'muted q-time' }, `started ${ageText(item.updatedAt, now)}`))
+  if (item.state === 'building') {
+    parts.push(el('span', { class: 'muted q-time' }, `started ${ageText(item.updatedAt, now)}`))
+    if (watchRunId(item) !== undefined) parts.push(button('Watch', 'connection-button primary', { ...id, 'data-act': 'watch' }, 'eye-icon'))
+  }
   if (item.state === 'queued') parts.push(button('Remove', 'text-button q-remove', { ...id, 'data-act': 'remove' }))
   if (item.state === 'waiting-info') parts.push(button('Requeue', 'text-button', { ...id, 'data-act': 'requeue' }))
   if (item.state === 'ready') {
@@ -167,12 +180,13 @@ function row(item: QueueItemView, items: readonly QueueItemView[], context: Queu
   const movable = item.state === 'queued'
   const openable = item.state === 'waiting-info' && item.questions.length > 0
   const open = openable && context.openIds.has(item.id)
+  const watchable = !openable && watchRunId(item) !== undefined
   const meta = el('div', { class: 'q-meta' },
     sourceBadge(item, context.plugins),
     ...folderWithRepos(item),
     el('span', {}, icon('flow-icon'), flowName(item, context.flows)),
     el('span', {}, progressText(item, items, context.now)))
-  return el('article', { class: 'q-row', 'data-id': item.id, 'data-state': item.state, 'data-movable': movable, draggable: movable ? 'true' : false, 'data-openable': openable, 'data-open': open },
+  return el('article', { class: 'q-row', 'data-id': item.id, 'data-state': item.state, 'data-movable': movable, draggable: movable ? 'true' : false, 'data-openable': openable, 'data-open': open, 'data-watchable': watchable, tabindex: watchable ? '0' : false, title: watchable ? 'Watch this run' : false },
     el('span', { class: 'q-grip', title: movable ? 'Drag to reorder' : false }, icon('q-grip')),
     pill(item.state),
     el('div', { class: 'q-main' }, el('strong', {}, item.title), meta),
@@ -205,6 +219,13 @@ export function renderQueue(items: readonly QueueItemView[], context: QueueConte
 const isText = (value: unknown): value is string => typeof value === 'string'
 const isTexts = (value: unknown): value is string[] => Array.isArray(value) && value.every(isText)
 
+function readStep(value: unknown): { step: QueueStepView } | null {
+  if (typeof value !== 'object' || value === null) return null
+  const { title, attempt, maxAttempts } = value as Record<string, unknown>
+  if (!isText(title) || typeof attempt !== 'number' || typeof maxAttempts !== 'number') return null
+  return { step: { title, attempt, maxAttempts } }
+}
+
 function readItem(value: unknown): QueueItemView | null {
   if (typeof value !== 'object' || value === null) return null
   const entry = value as Record<string, unknown>
@@ -217,6 +238,8 @@ function readItem(value: unknown): QueueItemView | null {
     ...(isText(entry.repo) ? { repo: entry.repo } : {}),
     ...(isTexts(entry.repos) ? { repos: entry.repos } : {}),
     ...(isTexts(entry.realChanged) && entry.realChanged.length > 0 ? { realChanged: entry.realChanged } : {}),
+    ...(isText(entry.currentRunId) ? { currentRunId: entry.currentRunId } : {}),
+    ...(readStep(entry.step) ?? {}),
   }
 }
 

@@ -19,6 +19,7 @@ const calls: Call[] = []
 const replies = new Map<string, () => Response>()
 const toasts: string[] = []
 const studioRuns: unknown[] = []
+const watched: unknown[] = []
 const realFetch = globalThis.fetch
 const flush = async (times = 3) => { for (let index = 0; index < times; index++) await new Promise(resolve => setTimeout(resolve, 0)) }
 
@@ -68,6 +69,7 @@ beforeAll(async () => {
   }) as typeof fetch
   addEventListener('quiet:toast', (event) => toasts.push(String((event as CustomEvent).detail)))
   addEventListener('quiet:studio-run', (event) => studioRuns.push((event as CustomEvent).detail))
+  addEventListener('quiet:flow-watch', (event) => watched.push((event as CustomEvent).detail))
   queue = await import('../client/queue')
   await flush()
   firstIds = rows().map(row => row.dataset.id ?? '')
@@ -80,6 +82,7 @@ beforeEach(async () => {
   calls.length = 0
   toasts.length = 0
   studioRuns.length = 0
+  watched.length = 0
   replies.clear()
 })
 
@@ -160,7 +163,7 @@ test('only queued rows are draggable', () => {
 test('each state offers its own actions', () => {
   const view = queue.renderQueue(all, context())
   const actions = (id: string) => [...(rows(view).find(row => row.dataset.id === id)?.querySelectorAll('.q-acts button') ?? [])].map(button => button.textContent)
-  expect(actions('b1')).toEqual([])
+  expect(actions('b1')).toEqual(['Watch'])
   expect(actions('q1')).toEqual(['Remove'])
   expect(actions('w1')).toEqual(['Requeue'])
   expect(actions('r1')).toEqual(['Requeue', 'Open run'])
@@ -235,6 +238,51 @@ test('a refused action says why', async () => {
 test('Open run opens the latest run in Studio', () => {
   click(buttonNamed('Open run', rowOf('r1')))
   expect(studioRuns).toEqual([{ runId: 'r-ready' }])
+})
+
+test('Watch opens the building item\'s current run in the flow view', () => {
+  const watch = buttonNamed('Watch', rowOf('b1'))
+  expect(watch.classList.contains('primary')).toBe(true)
+  click(watch)
+  expect(watched).toEqual([{ runId: 'r-b1' }])
+  expect(studioRuns).toEqual([])
+})
+
+test('Watch falls back to the last run when the current run is not known yet', () => {
+  send([{ ...building, currentRunId: null, runIds: ['r-a', 'r-b'] }])
+  click(buttonNamed('Watch', rowOf('b1')))
+  expect(watched).toEqual([{ runId: 'r-b' }])
+})
+
+test('clicking a row with a run, or pressing Enter or Space on it, opens that run', () => {
+  click(rowOf('b1').querySelector('.q-main') as Element)
+  click(rowOf('r1').querySelector('.q-main') as Element)
+  rowOf('f1').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  rowOf('b1').dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))
+  expect(watched).toEqual([{ runId: 'r-b1' }, { runId: 'r-ready' }, { runId: 'r-failed' }, { runId: 'r-b1' }])
+})
+
+test('rows with a run are focusable and say what clicking does; rows without one are not', () => {
+  expect(rowOf('b1').getAttribute('tabindex')).toBe('0')
+  expect(rowOf('b1').getAttribute('title')).toBe('Watch this run')
+  expect(rowOf('q1').hasAttribute('tabindex')).toBe(false)
+  click(rowOf('q1').querySelector('.q-main') as Element)
+  rowOf('q1').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  expect(watched).toEqual([])
+})
+
+test('a key pressed on a button inside a row does not also open the run', () => {
+  buttonNamed('Requeue', rowOf('r1')).dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  expect(watched).toEqual([])
+})
+
+test('a building row shows its live step and attempt', () => {
+  const step = (title: string, attempt: number, maxAttempts: number) => ({ ...building, step: { title, attempt, maxAttempts } }) as unknown as QueueItem
+  const progress = (entry: QueueItem) => rows(queue.renderQueue(queue.readQueueItems([entry]), context()))[0]?.querySelector('.q-meta > span:last-child')?.textContent
+  expect(progress(step('Plan', 1, 3))).toBe('Plan · attempt 1 of 3')
+  expect(progress(step('Execute', 2, 4))).toBe('Execute · attempt 2 of 4')
+  expect(progress(step('Review', 1, 1))).toBe('Review')
+  expect(progress(building)).toBe('Building')
 })
 
 test('opening a waiting row shows its questions', () => {

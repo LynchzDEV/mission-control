@@ -1,11 +1,11 @@
 import type { QueueTree } from '../server/queue-tree'
 import { createAddDialog } from './queue-dialog'
 import { readQueueTree, renderTree } from './queue-tree'
-import { readQueueItems, renderQueue, type QueueFlow, type QueueItemView, type QueueLayout, type QueuePlugin } from './queue-view'
+import { readQueueItems, renderQueue, watchRunId, type QueueFlow, type QueueItemView, type QueueLayout, type QueuePlugin } from './queue-view'
 import { errorText, getJson, postJson, readArray, readRecord, type ApiResult } from './shared'
 
 export { parseItemRef } from './queue-dialog'
-export { renderQueue } from './queue-view'
+export { readQueueItems, renderQueue } from './queue-view'
 
 const REFRESH_MS = 30_000
 const FOCUS_MS = 1600
@@ -27,6 +27,10 @@ let treeRequest = 0
 const openIds = new Set<string>()
 
 const toast = (text: string): void => { dispatchEvent(new CustomEvent('quiet:toast', { detail: text })) }
+const watch = (item: QueueItemView | undefined): void => {
+  const runId = item === undefined ? undefined : watchRunId(item)
+  if (runId !== undefined) dispatchEvent(new CustomEvent('quiet:flow-watch', { detail: { runId } }))
+}
 
 function savedLayout(): QueueLayout {
   try { return localStorage.getItem(LAYOUT_KEY) === 'tree' ? 'tree' : 'list' } catch { return 'list' }
@@ -144,12 +148,21 @@ function start(section: HTMLElement): void {
     if (button && item && action === 'requeue') { void act(button, () => postJson(`/api/queue/${encodeURIComponent(item.id)}/requeue`, {}), `Requeued ${item.title}`); return }
     if (button && item && action === 'remove') { void act(button, () => deleteJson(`/api/queue/${encodeURIComponent(item.id)}`), `Removed ${item.title}`); return }
     if (button && item && action === 'open-run') { dispatchEvent(new CustomEvent('quiet:studio-run', { detail: { runId: item.runIds.at(-1) } })); return }
+    if (button && item && action === 'watch') { watch(item); return }
     if (target?.closest('a, button')) return
     const row = rowFor(target)
+    if (row?.hasAttribute('data-watchable') === true) { watch(itemFor(row.dataset.id)); return }
     if (row?.hasAttribute('data-openable') !== true || row.dataset.id === undefined) return
     if (openIds.has(row.dataset.id)) openIds.delete(row.dataset.id)
     else openIds.add(row.dataset.id)
     paint()
+  })
+
+  section.addEventListener('keydown', (event) => {
+    const row = event.target instanceof Element ? event.target : null
+    if (row?.hasAttribute('data-watchable') !== true || (event.key !== 'Enter' && event.key !== ' ')) return
+    event.preventDefault()
+    watch(itemFor((row as HTMLElement).dataset.id))
   })
 
   const dropTarget = (event: Event): HTMLElement | null => {
