@@ -1,6 +1,6 @@
 import { errorText, postJson, readRecord, type JsonRecord } from './shared'
 import { readRecentDirectories } from './shell-launch'
-import { createFolderPicker, NOT_A_REPO, plainFolderError, TICK_A_REPO, type FolderState } from './queue-repos'
+import { createFolderPicker, NOT_A_REPO, plainFolderError, type FolderState } from './queue-repos'
 import { el, icon, lineText, type QueueFlow, type QueueItemView, type QueuePlugin } from './queue-view'
 
 export type AddDialogSource = { plugins: QueuePlugin[]; flows: QueueFlow[]; items: QueueItemView[] }
@@ -89,8 +89,7 @@ export function createAddDialog(source: () => AddDialogSource, toast: (text: str
   async function explainRefusal(text: string, known: FolderState | null): Promise<void> {
     if (text !== NOT_A_REPO || known !== null) { showError(plainFolderError(text)); return }
     const state = await picker.check()
-    if (state?.kind === 'parent') showError(TICK_A_REPO)
-    else if (state?.kind !== 'none') showError(plainFolderError(text))
+    if (state?.kind !== 'none') showError(plainFolderError(text))
   }
 
   let adding = false
@@ -105,7 +104,6 @@ export function createAddDialog(source: () => AddDialogSource, toast: (text: str
     const known = picker.known()
     if (known?.kind === 'none') { showError(known.error); return }
     const repos = known?.kind === 'parent' ? picker.ticked() : undefined
-    if (repos !== undefined && repos.length === 0) { showError(TICK_A_REPO); return }
     const body: JsonRecord = { source: sourceSelect.value, externalId, repo, ...(repos === undefined ? {} : { repos }), ...(flowSelect.value === '' ? {} : { flowId: flowSelect.value }), position }
     showError('')
     submit.disabled = true

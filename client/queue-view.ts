@@ -155,9 +155,10 @@ function questionsThread(item: QueueItemView, now: number): HTMLElement {
 const folderName = (path: string): string => path.split('/').filter(part => part !== '').at(-1) ?? path
 
 function folderWithRepos(item: QueueItemView): HTMLElement[] {
-  if (item.repos === undefined || item.repos.length === 0) return []
+  if (item.repos === undefined) return []
   const folder = item.repo ?? ''
-  return [el('span', { class: 'q-folder', title: folder }, icon('folder-icon'), folderName(folder), ...item.repos.map(name => el('span', { class: 'q-chip' }, name)))]
+  const chips = item.repos.length === 0 ? [el('span', { class: 'q-chip q-chip-open' }, 'repos: plan picks')] : item.repos.map(name => el('span', { class: 'q-chip' }, name))
+  return [el('span', { class: 'q-folder', title: folder }, icon('folder-icon'), folderName(folder), ...chips)]
 }
 
 function row(item: QueueItemView, items: readonly QueueItemView[], context: QueueContext): HTMLElement {
@@ -212,7 +213,7 @@ function readItem(value: unknown): QueueItemView | null {
     id: id as string, source: source as string, externalId: externalId as string, title: title as string, url: url as string,
     flowId: isText(flowId) ? flowId : null, state: state as QueueState, runIds, questions, error: isText(error) ? error : null, updatedAt,
     ...(isText(entry.repo) ? { repo: entry.repo } : {}),
-    ...(isTexts(entry.repos) && entry.repos.length > 0 ? { repos: entry.repos } : {}),
+    ...(isTexts(entry.repos) ? { repos: entry.repos } : {}),
   }
 }
 

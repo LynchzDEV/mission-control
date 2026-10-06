@@ -84,12 +84,30 @@ test('checking a folder marks Add as waiting and says so until the answer arrive
   expect(alertText(dialog)).toBe('')
 })
 
-test('a parent folder offers its repos as checkboxes, none ticked, with clickable labels', async () => {
-  const dialog = open()
+const pickButton = (root: ParentNode) => root.querySelector('button.q-pick') as HTMLButtonElement
+
+async function parentFolder(dialog: HTMLDialogElement, repos: string[]) {
   typeFolder(dialog, '/Users/me/klangtech')
   await flush()
-  reply('/Users/me/klangtech', { path: '/Users/me/klangtech', isRepo: false, repos: ['api', 'backoffice', 'portal'] })
+  reply('/Users/me/klangtech', { path: '/Users/me/klangtech', isRepo: false, repos })
   await flush()
+}
+
+test('a folder of repos says the plan picks them and hides the checkbox list', async () => {
+  const dialog = open()
+  await parentFolder(dialog, ['api', 'backoffice', 'portal'])
+  expect((dialog.querySelector('.q-plan-picks') as HTMLElement).textContent).toBe('The plan picks the repos it needs from these 3.Pick them yourself')
+  expect(pickButton(dialog).getAttribute('type')).toBe('button')
+  expect(pickButton(dialog).getAttribute('aria-expanded')).toBe('false')
+  expect(repoBoxes(dialog)).toEqual([])
+})
+
+test('Pick them yourself shows the checkboxes, none ticked, with clickable labels; Let the plan pick hides them and clears ticks', async () => {
+  const dialog = open()
+  await parentFolder(dialog, ['api', 'backoffice', 'portal'])
+  pickButton(dialog).click()
+  expect(pickButton(dialog).textContent).toBe('Let the plan pick')
+  expect(pickButton(dialog).getAttribute('aria-expanded')).toBe('true')
   const group = dialog.querySelector('fieldset.q-repos') as HTMLFieldSetElement
   expect(group.querySelector('legend')?.textContent).toBe('Repos this ticket touches')
   expect(repoBoxes(dialog).map(box => [box.value, box.checked])).toEqual([['api', false], ['backoffice', false], ['portal', false]])
@@ -97,34 +115,40 @@ test('a parent folder offers its repos as checkboxes, none ticked, with clickabl
   expect(label.textContent).toBe('backoffice')
   label.click()
   expect(repoBoxes(dialog)[1]!.checked).toBe(true)
+  pickButton(dialog).click()
+  expect(repoBoxes(dialog)).toEqual([])
+  expect(pickButton(dialog).textContent).toBe('Pick them yourself')
+  pickButton(dialog).click()
+  expect(repoBoxes(dialog).map(box => box.checked)).toEqual([false, false, false])
 })
 
-test('Add with no repo ticked asks for one and posts nothing; ticked repos are posted', async () => {
+test('Add for a folder of repos posts an empty list unless repos are ticked', async () => {
   const dialog = open()
   field<HTMLInputElement>(dialog, 'ref').value = '86abc'
-  typeFolder(dialog, '/Users/me/klangtech')
-  await flush()
-  reply('/Users/me/klangtech', { path: '/Users/me/klangtech', isRepo: false, repos: ['api', 'backoffice'] })
-  await flush()
+  await parentFolder(dialog, ['api', 'backoffice'])
   submit(dialog)
   await flush()
-  expect(alertText(dialog)).toBe('Tick at least one repo this ticket touches')
-  expect(calls.filter(call => call.method === 'POST')).toEqual([])
-  repoBoxes(dialog)[1]!.click()
-  repoBoxes(dialog)[0]!.click()
-  submit(dialog)
+  const body = { source: 'clickup-board', externalId: '86abc', repo: '/Users/me/klangtech', position: 'end' }
+  expect(calls.filter(call => call.method === 'POST').map(call => call.body)).toEqual([{ ...body, repos: [] }])
+  const again = open()
+  field<HTMLInputElement>(again, 'ref').value = '86abc'
+  calls.length = 0
+  await parentFolder(again, ['api', 'backoffice'])
+  pickButton(again).click()
+  submit(again)
   await flush()
-  const posted = calls.filter(call => call.method === 'POST')
-  expect(posted.map(call => call.body)).toEqual([{ source: 'clickup-board', externalId: '86abc', repo: '/Users/me/klangtech', repos: ['api', 'backoffice'], position: 'end' }])
-  expect(dialog.open).toBe(false)
+  repoBoxes(again)[1]!.click()
+  repoBoxes(again)[0]!.click()
+  submit(again)
+  await flush()
+  expect(calls.filter(call => call.method === 'POST').map(call => call.body)).toEqual([{ ...body, repos: [] }, { ...body, repos: ['api', 'backoffice'] }])
 })
 
-test('a folder with one repo inside has it ticked already', async () => {
+test('a folder with one repo inside has it ticked once the list is shown', async () => {
   const dialog = open()
-  typeFolder(dialog, '/Users/me/solo-parent')
-  await flush()
-  reply('/Users/me/solo-parent', { path: '/Users/me/solo-parent', isRepo: false, repos: ['api'] })
-  await flush()
+  await parentFolder(dialog, ['api'])
+  expect((dialog.querySelector('.q-plan-picks') as HTMLElement).textContent).toBe('The plan picks from the 1 repo here.Pick them yourself')
+  pickButton(dialog).click()
   expect(repoBoxes(dialog).map(box => box.checked)).toEqual([true])
 })
 
@@ -186,17 +210,16 @@ test('an answer for a folder no longer in the field is ignored', async () => {
   expect(addButton(dialog).getAttribute('aria-disabled')).toBe('false')
 })
 
-test('Add for a folder not checked yet posts it as a repo, then offers its repos when it turns out to be a parent', async () => {
-  answer = call => (call.method === 'POST' ? Response.json({ error: 'cwd is not a git repository' }, { status: 400 }) : Response.json({ path: '/Users/me/klangtech', isRepo: false, repos: ['api', 'web'] }))
+test('Add for a folder not checked yet posts it, and explains in plain words if it is no repo at all', async () => {
+  answer = call => (call.method === 'POST' ? Response.json({ error: 'cwd is not a git repository' }, { status: 400 }) : Response.json({ path: '/Users/me/notes', isRepo: false, repos: [] }))
   const dialog = open()
   field<HTMLInputElement>(dialog, 'ref').value = '1'
-  field<HTMLInputElement>(dialog, 'repo').value = '/Users/me/klangtech'
+  field<HTMLInputElement>(dialog, 'repo').value = '/Users/me/notes'
   submit(dialog)
   await flush(8)
-  expect(calls.map(call => `${call.method} ${call.url}`)).toEqual(['POST /api/queue', `GET ${folderUrl('/Users/me/klangtech')}`])
-  expect(calls[0]!.body).toEqual({ source: 'clickup-board', externalId: '1', repo: '/Users/me/klangtech', position: 'end' })
-  expect(repoBoxes(dialog).map(box => box.value)).toEqual(['api', 'web'])
-  expect(alertText(dialog)).toBe('Tick at least one repo this ticket touches')
+  expect(calls.map(call => `${call.method} ${call.url}`)).toEqual(['POST /api/queue', `GET ${folderUrl('/Users/me/notes')}`])
+  expect(calls[0]!.body).toEqual({ source: 'clickup-board', externalId: '1', repo: '/Users/me/notes', position: 'end' })
+  expect(alertText(dialog)).toBe("This folder isn't a git repo and has no repos inside it.")
   expect(dialog.open).toBe(true)
 })
 
@@ -223,10 +246,10 @@ test('Add pressed while typing is still settling checks the folder first and the
   expect(calls.map(call => call.url)).toEqual([folderUrl('/Users/me/solo-parent')])
   reply('/Users/me/solo-parent', { path: '/Users/me/solo-parent', isRepo: false, repos: ['api'] })
   await flush(8)
-  expect(calls.filter(call => call.method === 'POST').map(call => call.body)).toEqual([{ source: 'clickup-board', externalId: '9', repo: '/Users/me/solo-parent', repos: ['api'], position: 'end' }])
+  expect(calls.filter(call => call.method === 'POST').map(call => call.body)).toEqual([{ source: 'clickup-board', externalId: '9', repo: '/Users/me/solo-parent', repos: [], position: 'end' }])
 })
 
-test('Add pressed during a check of a folder of repos shows the list and asks for a tick', async () => {
+test('Add pressed during a check of a folder of repos adds it for the plan to pick', async () => {
   const dialog = open()
   field<HTMLInputElement>(dialog, 'ref').value = '9'
   typeFolder(dialog, '/Users/me/klangtech')
@@ -234,9 +257,7 @@ test('Add pressed during a check of a folder of repos shows the list and asks fo
   submit(dialog)
   reply('/Users/me/klangtech', { path: '/Users/me/klangtech', isRepo: false, repos: ['api', 'web'] })
   await flush(8)
-  expect(repoBoxes(dialog).map(box => box.value)).toEqual(['api', 'web'])
-  expect(alertText(dialog)).toBe('Tick at least one repo this ticket touches')
-  expect(calls.filter(call => call.method === 'POST')).toEqual([])
+  expect(calls.filter(call => call.method === 'POST').map(call => call.body)).toEqual([{ source: 'clickup-board', externalId: '9', repo: '/Users/me/klangtech', repos: [], position: 'end' }])
 })
 
 test('folders whose check took too long are named as left out', async () => {
@@ -275,8 +296,9 @@ test('a multi-repo row shows its folder with one chip per repo; a single-repo ro
     { ...view({ id: 'm1' }), repo: '/Users/me/klangtech', repos: ['api', 'backoffice'] },
     { ...view({ id: 's1' }), repo: '/Users/me/api' },
     { ...view({ id: 'bad' }), repo: '/Users/me/x', repos: 'api' },
+    { ...view({ id: 'p1' }), repo: '/Users/me/klangtech', repos: [] },
   ])
-  expect(read.map(entry => [entry.id, entry.repos ?? null])).toEqual([['m1', ['api', 'backoffice']], ['s1', null], ['bad', null]])
+  expect(read.map(entry => [entry.id, entry.repos ?? null])).toEqual([['m1', ['api', 'backoffice']], ['s1', null], ['bad', null], ['p1', []]])
   const screen = renderQueue(read, { plugins: [], flows: [], now: 0, checkedAt: null, openIds: new Set() })
   const row = (id: string) => screen.querySelector(`.q-row[data-id="${id}"]`) as HTMLElement
   const folder = row('m1').querySelector('.q-folder') as HTMLElement
@@ -284,4 +306,5 @@ test('a multi-repo row shows its folder with one chip per repo; a single-repo ro
   expect([...folder.querySelectorAll('.q-chip')].map(chip => chip.textContent)).toEqual(['api', 'backoffice'])
   expect(folder.textContent).toBe('klangtechapibackoffice')
   expect(row('s1').querySelector('.q-folder')).toBeNull()
+  expect([...row('p1').querySelectorAll('.q-folder .q-chip')].map(chip => chip.textContent)).toEqual(['repos: plan picks'])
 })

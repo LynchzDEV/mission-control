@@ -1352,6 +1352,9 @@ a.q-src:hover { color: var(--accent); }
 .q-add-foot { display: flex; justify-content: flex-end; gap: 10px; }
 .q-folder-check { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
 .q-folder-check[hidden] { display: none; }
+.q-plan-picks { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: -6px 0 14px; font-size: 12px; color: var(--text-soft); }
+.q-plan-picks .q-pick { padding: 0; font-size: 12px; color: var(--accent); cursor: pointer; }
+.q-chip-open { font-style: italic; color: var(--muted); }
 .q-folder-skipped { display: block; margin: -6px 0 14px; color: var(--muted); font-size: 12px; }
 .q-add button[aria-disabled="true"] { opacity: .6; cursor: progress; }
 .q-repos { margin: 0 0 14px; padding: 10px 12px 12px; border: 1px solid var(--q-line); border-radius: var(--r-md); corner-shape: var(--corner); }

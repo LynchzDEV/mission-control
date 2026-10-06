@@ -2,7 +2,6 @@ import { errorText, getJson, type ApiResult } from './shared'
 import { el } from './queue-view'
 
 export const NO_REPOS_HERE = "This folder isn't a git repo and has no repos inside it."
-export const TICK_A_REPO = 'Tick at least one repo this ticket touches'
 export const NOT_A_REPO = 'cwd is not a git repository'
 const CHECK_DELAY_MS = 300
 const PLAIN: Record<string, string> = {
@@ -37,6 +36,9 @@ function readFolder(path: string, result: ApiResult): FolderState {
   return repos.length > 0 ? { path, skipped, kind: 'parent', repos } : { path, skipped, kind: 'none', error: NO_REPOS_HERE }
 }
 
+const planText = (count: number): string =>
+  count === 1 ? 'The plan picks from the 1 repo here.' : `The plan picks the repos it needs from these ${count}.`
+
 const skippedNote = (count: number): HTMLElement =>
   el('small', { class: 'q-folder-skipped' }, count === 1 ? '1 folder took too long to check and was left out.' : `${count} folders took too long to check and were left out.`)
 
@@ -57,9 +59,22 @@ export function createFolderPicker(input: HTMLInputElement, hooks: PickerHooks):
   let inflight: { path: string; result: Promise<FolderState | null> } | null = null
 
   const setBusy = (on: boolean): void => { note.hidden = !on; hooks.busy(on) }
+  let picking = false
+
+  const repoChoice = (repos: readonly string[]): HTMLElement[] => {
+    const toggle = el('button', { type: 'button', class: 'text-button q-pick', 'aria-expanded': String(picking) }, picking ? 'Let the plan pick' : 'Pick them yourself')
+    toggle.addEventListener('click', () => { picking = !picking; render() })
+    return [el('p', { class: 'q-plan-picks' }, planText(repos.length), toggle), ...(picking ? [repoList(repos)] : [])]
+  }
+
+  function render(): void {
+    slot.replaceChildren(...(known?.kind === 'parent' ? repoChoice(known.repos) : []), ...(known !== null && known.skipped > 0 ? [skippedNote(known.skipped)] : []))
+  }
+
   const show = (state: FolderState | null): void => {
     known = state
-    slot.replaceChildren(...(state?.kind === 'parent' ? [repoList(state.repos)] : []), ...(state !== null && state.skipped > 0 ? [skippedNote(state.skipped)] : []))
+    picking = false
+    render()
     hooks.problem(state?.kind === 'none' ? state.error : '')
   }
   const stop = (): void => { clearTimeout(timer); waiting = false; ticket += 1; inflight = null; setBusy(false) }
@@ -97,8 +112,8 @@ export function createFolderPicker(input: HTMLInputElement, hooks: PickerHooks):
     known: () => (known?.path === input.value.trim() ? known : null),
     checking: () => inflight !== null,
     settling: () => waiting || inflight !== null,
-    ticked: () => [...slot.querySelectorAll<HTMLInputElement>('input[name="repos"]')].filter(box => box.checked).map(box => box.value),
-    reset: () => { stop(); known = null; slot.replaceChildren() },
+    ticked: () => (!picking ? [] : [...slot.querySelectorAll<HTMLInputElement>('input[name="repos"]')].filter(box => box.checked).map(box => box.value)),
+    reset: () => { stop(); known = null; picking = false; slot.replaceChildren() },
   }
 }
 
