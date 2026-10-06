@@ -73,14 +73,17 @@ One item builds at a time. Parked items do not hold the slot.
 
 ## Multi-repo items (added 2026-10-06)
 
-"Build in" may be a single repo (unchanged) or a folder under $HOME whose direct children are repos (e.g. `~/klangtech/{api,backoffice,...}`). For a folder, whoever adds the item ticks the repos the ticket touches (1 to 8).
+"Build in" may be a single repo (unchanged) or a folder under $HOME whose direct children are repos (e.g. `~/klangtech/{api,backoffice,...}`). For a folder, the plan picks the repos it needs by default (`repos: []`); ticking them (up to 8) is an optional override ("Pick them yourself" in the dialog, `--repos` in the CLI).
+
+- The run request lists the real repos at `<folder>/<name>` as READ-ONLY (read and plan only) and says work happens only in `<workspace>/<name>`. To get a copy the agent ends the step `MC_RESULT blocked` with one evidence item `repo: <name>` per repo; other evidence items stay questions.
+- A blocked run with repo requests: each name is checked like an add (plus the build-time checks), added to `repos` and its worktree made. Repo requests only → back to the front of the queue for a new run on the same workspace, nothing posted. With questions too → repos added and the questions posted/parked as before. An unknown name, asking only for repos it already has, a 4th repo-only rerun, or more than 8 repos fails the item with a plain reason. `repo:` lines never reach the source.
 
 - `GET /api/queue/folder?path=` → `{ path, isRepo, repos }`. A child counts only if it is a real directory (symlinks refused), does not start with a dot, and is its own git top level.
-- `POST /api/queue` takes optional `repos: string[]`; names are re-checked against the listing at add time. Item keeps `repo` = folder and gains `repos`; old `queue.json` loads unchanged.
+- `POST /api/queue` takes optional `repos: string[]` (may be empty); a folder of repos without `repos` is stored with `repos: []`. Names are re-checked against the listing at add time. Item keeps `repo` = folder and gains `repos`; old `queue.json` loads unchanged.
 - One workspace per item: `<folder>/.worktree/<branch>/` with one git worktree per ticked repo at `<workspace>/<repo>`, all on the item's branch. The run's cwd is the workspace root, so the agent sees the repos side by side. `.mission-control/repos.json` (0600) marks the folder as a workspace; queue context and answers sit at the root, outside every child repo.
 - Restore recreates only missing child worktrees. Remove keeps worktrees and branches, as single-repo removal does.
 - A job's diff stat and a step's workspace fingerprint are the union over child repos, paths prefixed `repo/…`, unchanged repos left out. Parallel flow paths (fork/join) need one git top level and block with a reason in a multi-repo workspace. The Git tree view does not draw per-repo lanes for multi-repo items yet.
-- Add: Queue screen → Add item → Build in `~/klangtech` → tick `api` and `backoffice`; or `mctl queue add <source> <id> --repo ~/klangtech --repos api,backoffice`.
+- Add: Queue screen → Add item → Build in `~/klangtech` (optionally "Pick them yourself"); or `mctl queue add <source> <id> --repo ~/klangtech [--repos api,backoffice]`.
 
 ## UI
 
