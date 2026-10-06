@@ -1,8 +1,8 @@
-import { lstat, mkdir, readFile, realpath } from 'node:fs/promises'
+import { lstat, mkdir, readFile, realpath, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, sep } from 'node:path'
 
-import { git, isWorktreeOf, prepareWorktree, worktreeBranch } from './job-worktrees'
+import { addPathWorktree, git, isWorktreeOf, prepareWorktree, removePathWorktree, worktreeBranch } from './job-worktrees'
 import { SESSION_CONTEXT_DIR } from './plugins/context-files'
 import { writePrivate } from './queue-files'
 import { isRepoList } from './repo-names'
@@ -106,6 +106,45 @@ export async function prepareRepoWorkspace(given: string, repos: readonly string
   for (const name of missing) await prepareWorktree(join(folder, name), label, join(workspace, name))
   await writeReposRecord(workspace, repos)
   return { worktree: workspace }
+}
+
+async function checkedFolder(given: string, repos: readonly string[]): Promise<string> {
+  if (!isRepoList(repos) || repos.length === 0) throw new Error('Not a valid list of repos')
+  const folder = await realpath(given)
+  if (!(await underHome(folder))) throw new Error('The folder must be inside your home folder')
+  for (const name of repos) await checkTickedRepo(folder, name)
+  return folder
+}
+
+async function plainPathWorkspace(folder: string, branch: string): Promise<string> {
+  const parent = join(folder, '.worktree')
+  const dir = join(parent, worktreeBranch(branch))
+  await plainFolderAt(parent, parent)
+  await plainFolderAt(dir, dir)
+  return dir
+}
+
+export async function preparePathWorkspace(given: string, repos: readonly string[], branch: string, snapshots: Readonly<Record<string, string>>): Promise<string> {
+  const folder = await checkedFolder(given, repos)
+  const dir = await plainPathWorkspace(folder, branch)
+  for (const name of repos) await addPathWorktree(join(folder, name), join(dir, name), branch, snapshots[name]!)
+  await writeReposRecord(dir, repos)
+  return dir
+}
+
+export async function restorePathWorkspace(given: string, repos: readonly string[], branch: string): Promise<string> {
+  const folder = await checkedFolder(given, repos)
+  const dir = await plainPathWorkspace(folder, branch)
+  for (const name of await missingWorktrees(folder, dir, repos)) await prepareWorktree(join(folder, name), branch, join(dir, name))
+  await writeReposRecord(dir, repos)
+  return dir
+}
+
+export async function removePathWorkspace(folder: string, repos: readonly string[], dir: string, branch: string, keepBranch: boolean): Promise<string[]> {
+  const errors: string[] = []
+  for (const name of repos) await removePathWorktree(join(folder, name), join(dir, name), branch, keepBranch).catch((error: unknown) => { errors.push(`${name}: ${error instanceof Error ? error.message : String(error)}`) })
+  await rm(dir, { recursive: true, force: true })
+  return errors
 }
 
 type FileChange = { path: string; added: number; deleted: number; kind: 'text' | 'binary' | 'new' }
