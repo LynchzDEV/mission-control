@@ -202,9 +202,10 @@ function detached(node: WorkflowNode): WorkflowNode {
 }
 
 const ENTER_DELAY_MS = 150
-export const NUDGE_PROMPT = 'Your last turn ended without the MC_RESULT line. Anything you left running in the background was stopped when your turn ended. Re-run what you need in the foreground, then end with exactly one MC_RESULT line.'
+export const NUDGE_PROMPT = 'Your last turn ended without the MC_RESULT line. Anything you left running in the background was stopped when your turn ended. Re-run what you need in the foreground. Give your complete final answer again (for a plan: the whole plan and any MC_SHAPE line), ending with exactly one MC_RESULT line.'
 const NUDGEABLE_ENGINES: ReadonlySet<string> = new Set(['claude', 'glm'])
 const LAST_WORDS_CHARS = 200
+const OUTPUT_CHARS = 64000
 const oneLine = (text: string) => text.replace(/[\x00-\x1f\x7f]+/g, ' ')
 const sessionClosed = (title: string) => `The session that owned ${title} closed; Retry runs it as an agent`
 
@@ -435,6 +436,16 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const chat = run.chatId ? { chatId: run.chatId, ...(run.chatTurn ? { chatTurn: run.chatTurn } : {}), reason: `Studio · ${run.workflow.name} · ${node.title}` } : {}
     return { engine: agent.engine, model: agent.model ?? undefined, connection: agent.connection, cwd: token.workspace, ...(token.workspace === run.cwd ? {} : { baseRepo: run.cwd }), label: run.chatId ? node.title : run.label, prompt, ...chat, coreRules: node.kind === 'implement' ? `${run.policy.coreRules}\n\n${run.policy.implementationRules}` : run.policy.coreRules, mcpServers: node.mcpServers, workflowRunId: run.id, workflowNodeId: node.id, workflowAttempt: attempt.number, terminalId: run.terminalId }
   }
+  function lastWords(output: string): string {
+    const words = output.slice(-LAST_WORDS_CHARS).trim()
+    return words ? `Agent ended twice without MC_RESULT; last words: ${words}` : 'Agent ended twice without MC_RESULT'
+  }
+  function heldJobs(run: WorkflowRun): JobRecord[] {
+    return run.attempts.flatMap(attempt => {
+      const job = attempt.status === 'running' && !attempt.inSession && attempt.jobId ? deps.manager.getJob(attempt.jobId) : undefined
+      return job && job.status !== 'running' ? [job] : []
+    })
+  }
   function settleIfFinished(run: WorkflowRun, id: string): void {
     const job = deps.manager.getJob(id)
     if (job && job.status !== 'running') queueMicrotask(() => { void onJobSettled(job).catch(error => block(run, String(error))) })
@@ -536,12 +547,17 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const token = run.tokens.find(token => token.id === attempt.tokenId)!
     const log = await redactRunOutput(run, await readLogFile(deps.manager.logPath(record.id)))
     const messages = parseThread(log)
-    attempt.output = (messages.findLast(event => event.kind === 'result')?.detail ?? messages.filter(event => event.kind === 'text').map(event => event.detail).join('\n')).slice(-64000)
-    let result = readNodeResult(log)
+    const own = messages.findLast(event => event.kind === 'result')?.detail ?? messages.filter(event => event.kind === 'text').map(event => event.detail).join('\n')
     const nudged = attempt.nudgedFrom !== undefined && attempt.nudgedFrom !== record.id
-    const sessionId = deps.manager.getJob(record.id)?.sessionId ?? parseSessionId(log)
-    if (record.status === 'done' && !result && !nudged && sessionId && NUDGEABLE_ENGINES.has(record.engine)) return nudge(run, attempt, token, record, sessionId)
-    if (record.status === 'done' && !result && nudged) result = { outcome: 'blocked', summary: `Agent ended twice without MC_RESULT; last words: ${attempt.output.slice(-LAST_WORDS_CHARS).trim()}`, evidence: [] }
+    attempt.output = (nudged ? [attempt.output, own].filter(Boolean).join('\n') : own).slice(-OUTPUT_CHARS)
+    let result = readNodeResult(log)
+    const current = deps.manager.getJob(record.id) ?? record
+    const sessionId = current.sessionId ?? parseSessionId(log)
+    if (record.status === 'done' && !result && !nudged && current.stoppedAt === undefined && sessionId && NUDGEABLE_ENGINES.has(record.engine)) {
+      if (run.status === 'paused') { await persist(run); return null }
+      return nudge(run, attempt, token, record, sessionId)
+    }
+    if (record.status === 'done' && !result && nudged) result = { outcome: 'blocked', summary: lastWords(own), evidence: [] }
     if (record.status !== 'done' && result?.outcome !== 'fail' && result?.outcome !== 'blocked') result = { outcome: 'blocked', summary: `Agent process failed (${record.exitCode ?? 'unknown exit'})`, evidence: [] }
     if (!result || (result.outcome === 'pass' && !result.evidence.length)) result = { outcome: 'blocked', summary: 'Agent did not provide a valid MC_RESULT with evidence', evidence: [] }
     if (result.outcome === 'pass' && kindOf(run, attempt) === 'plan') {
@@ -1127,13 +1143,15 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     return exclusive(id, async () => { await persist(run); return structuredClone(run) })
   }
   async function resume(id: string): Promise<WorkflowRun> {
-    return exclusive(id, async () => {
+    const resumed = await exclusive(id, async () => {
       const run = mustGet(id)
       if (run.status !== 'paused') throw new RunActionError('Only a paused flow can be resumed', 409)
       run.status = 'running'
       await advance(run)
       return structuredClone(run)
     })
+    for (const job of heldJobs(mustGet(id))) void onJobSettled(job).catch(error => block(mustGet(id), String(error)))
+    return resumed
   }
   async function markSessionNotified(id: string, attempt: number, at: number): Promise<void> {
     await exclusive(id, async () => {

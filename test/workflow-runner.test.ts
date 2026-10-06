@@ -1722,3 +1722,161 @@ test('a restart after the nudge was recorded but before its job launched still r
   expect(again.status).toBe('done')
   expect(calls.filter(call => call.resumeSessionId === STEP_SESSION)).toHaveLength(2)
 })
+
+const slowLines = (ms: number, before: string[], after: string[]) => ({ cmd: process.execPath, args: ['-e', `${before.map(line => `console.log(${JSON.stringify(line)})`).join(';')}; setTimeout(() => { ${after.map(line => `console.log(${JSON.stringify(line)})`).join(';')} }, ${ms})`], env: {} })
+const resumedStarted = (run: WorkflowRun) => run.attempts[0]?.nudgedFrom !== undefined && run.attempts[0]?.jobId !== run.attempts[0]?.nudgedFrom
+const running = () => manager.listJobs().filter(job => job.status === 'running')
+async function noJobsRunning() {
+  for (let i = 0; i < 200 && running().length; i++) await Bun.sleep(20)
+  return running()
+}
+
+test('a nudged step keeps the first job\'s answer ahead of the resumed reply and asks for the whole answer again', async () => {
+  const firstAnswer = JSON.stringify({ type: 'result', result: 'PLAN-BODY step 1 do X\nWaiting for the background check' })
+  const { resolver: waiter, calls } = backgroundWaiter(() => lines(sessionLine, report()), () => lines(sessionLine, firstAnswer))
+  const store = build(waiter)
+  const graph = await singleStep(store)
+  const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge-output' })
+  const done = await finished(run.id)
+  expect(done.status).toBe('done')
+  const output = done.attempts[0]!.output
+  expect(output.indexOf('PLAN-BODY step 1 do X')).toBeGreaterThan(-1)
+  expect(output.indexOf('PLAN-BODY step 1 do X')).toBeLessThan(output.indexOf('MC_RESULT'))
+  expect(calls[1]!.prompt).toContain('Give your complete final answer again (for a plan: the whole plan and any MC_SHAPE line), ending with exactly one MC_RESULT line.')
+})
+
+test('a plan step nudged after writing its split still proposes the split, and a nudged path step resumes in its own path workspace', async () => {
+  await homeConfig()
+  const waits = new Set(['plan', 'api'])
+  const calls: StepCall[] = []
+  const planner: EngineResolver = ({ prompt, resumeSessionId, step }) => {
+    calls.push({ prompt, resumeSessionId, step })
+    const checking = prompt.includes('Verify the upstream plan') || prompt.includes('Independently review')
+    const stage = prompt.includes('flowShapeRules') ? 'plan' : prompt.includes('Add the endpoint') && !checking ? 'api' : 'other'
+    if (resumeSessionId === undefined && waits.delete(stage)) {
+      const answer = stage === 'plan' ? `THE PLAN\nMC_SHAPE ${JSON.stringify(csvShape)}\nWaiting for the background check` : 'Endpoint added; waiting for the background suite'
+      return lines(sessionLine, JSON.stringify({ type: 'result', result: answer }))
+    }
+    return lines(sessionLine, report())
+  }
+  build(planner)
+  const started = await runner.start({ cwd: repo, request: 'Add CSV export', label: 'csv', graph: withoutSession() })
+  const done = await finished(started.id)
+  expect(done.status).toBe('done')
+  expect(done.attempts[0]!.shape).toBeDefined()
+  expect(done.versions[1]).toMatchObject({ state: 'approved', reason: 'Plan splits the work into 2 parallel paths: API, UI' })
+  const api = done.attempts.filter(attempt => attempt.nodeId === 'path-api-1')
+  expect(api).toHaveLength(1)
+  expect(api[0]!.nudgedFrom).toBeDefined()
+  const apiJobs = manager.listJobs().filter(job => job.workflowNodeId === 'path-api-1')
+  expect(apiJobs).toHaveLength(2)
+  expect(new Set(apiJobs.map(job => job.cwd)).size).toBe(1)
+  expect(apiJobs[0]!.cwd).not.toBe(repo)
+  expect(calls.filter(call => call.resumeSessionId === STEP_SESSION)).toHaveLength(2)
+})
+
+test('a step job the user stopped is never nudged, even when it exits zero', async () => {
+  const { resolver: waiter, calls } = backgroundWaiter(() => lines(sessionLine, report()), () => ({ cmd: '/bin/sh', args: ['-c', `echo '${sessionLine}'; trap 'exit 0' TERM; sleep 30 & wait`], env: {} }))
+  const store = build(waiter)
+  const graph = await singleStep(store)
+  const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge-stopped' })
+  const working = await until(run.id, current => current.attempts[0]?.status === 'running' && !!current.attempts[0]?.jobId)
+  await Bun.sleep(300)
+  await manager.killJob(working.attempts[0]!.jobId!)
+  const done = await finished(run.id)
+  expect(manager.getJob(working.attempts[0]!.jobId!)?.status).toBe('done')
+  expect(done.status).toBe('blocked')
+  expect(done.attempts[0]!.nudgedFrom).toBeUndefined()
+  expect(calls).toHaveLength(1)
+})
+
+test('stopping the run while the resumed job works kills it and leaves the run stopped', async () => {
+  const { resolver: waiter, calls } = backgroundWaiter(() => slowLines(5000, [sessionLine], [report()]))
+  const store = build(waiter)
+  const graph = await singleStep(store)
+  const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge-stop' })
+  await until(run.id, resumedStarted)
+  expect((await runner.stop(run.id)).status).toBe('stopped')
+  expect(await noJobsRunning()).toHaveLength(0)
+  expect(calls).toHaveLength(2)
+  expect(runner.get(run.id)!.status).toBe('stopped')
+})
+
+test('stopping the run while the resumed job is still launching kills it once it starts', async () => {
+  let entered!: () => void
+  const resolving = new Promise<void>(resolve => { entered = resolve })
+  let calls = 0
+  const store = build(async ({ resumeSessionId }) => {
+    calls++
+    if (resumeSessionId === undefined) return lines(sessionLine, waitingLine)
+    entered()
+    await Bun.sleep(400)
+    return slowLines(5000, [sessionLine], [report()])
+  })
+  const graph = await singleStep(store)
+  const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge-stop-launch' })
+  await resolving
+  expect((await runner.stop(run.id)).status).toBe('stopped')
+  expect(await noJobsRunning()).toHaveLength(0)
+  expect(calls).toBe(2)
+})
+
+test('settling the first job again after the nudge changes nothing', async () => {
+  const { resolver: waiter, calls } = backgroundWaiter(() => slowLines(800, [sessionLine], [report()]))
+  const store = build(waiter)
+  const graph = await singleStep(store)
+  const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge-double' })
+  const working = await until(run.id, resumedStarted)
+  const first = manager.getJob(working.attempts[0]!.nudgedFrom!)!
+  await runner.onJobSettled(first)
+  await runner.onJobSettled(first)
+  expect(runner.get(run.id)!.attempts[0]!.jobId).toBe(working.attempts[0]!.jobId)
+  expect((await finished(run.id)).status).toBe('done')
+  expect(calls).toHaveLength(2)
+})
+
+test('a paused flow holds the nudge until it is resumed', async () => {
+  const { resolver: waiter, calls } = backgroundWaiter(() => lines(sessionLine, report()), () => slowLines(300, [sessionLine], [waitingLine]))
+  const store = build(waiter)
+  const graph = await singleStep(store)
+  const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge-pause' })
+  const working = await until(run.id, current => current.attempts[0]?.status === 'running' && !!current.attempts[0]?.jobId)
+  await runner.pause(run.id)
+  for (let i = 0; i < 200 && manager.getJob(working.attempts[0]!.jobId!)?.status === 'running'; i++) await Bun.sleep(20)
+  await Bun.sleep(200)
+  expect(calls).toHaveLength(1)
+  expect(runner.get(run.id)!.attempts[0]).toMatchObject({ status: 'running', jobId: working.attempts[0]!.jobId })
+  await runner.resume(run.id)
+  const done = await finished(run.id)
+  expect(done.status).toBe('done')
+  expect(calls).toHaveLength(2)
+  expect(calls[1]!.resumeSessionId).toBe(STEP_SESSION)
+})
+
+test('a nudge held by a pause survives a restart and launches on resume', async () => {
+  const { resolver: waiter, calls } = backgroundWaiter(() => lines(sessionLine, report()), () => slowLines(300, [sessionLine], [waitingLine]))
+  const store = build(waiter)
+  const graph = await singleStep(store)
+  const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge-pause-restart' })
+  const working = await until(run.id, current => current.attempts[0]?.status === 'running' && !!current.attempts[0]?.jobId)
+  await runner.pause(run.id)
+  for (let i = 0; i < 200 && manager.getJob(working.attempts[0]!.jobId!)?.status === 'running'; i++) await Bun.sleep(20)
+  await Bun.sleep(200)
+  runner = createWorkflowRunner({ manager, resolver: waiter, store, base: dir })
+  await runner.recover()
+  await Bun.sleep(200)
+  expect(runner.get(run.id)!.status).toBe('paused')
+  expect(calls).toHaveLength(1)
+  await runner.resume(run.id)
+  expect((await finished(run.id)).status).toBe('done')
+  expect(calls).toHaveLength(2)
+})
+
+test('a second miss with no closing words blocks without an empty last-words clause', async () => {
+  const { resolver: waiter } = backgroundWaiter(() => lines(sessionLine))
+  const store = build(waiter)
+  const graph = await singleStep(store)
+  const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge-silent' })
+  const done = await finished(run.id)
+  expect(done.attempts[0]!.result?.summary).toBe('Agent ended twice without MC_RESULT')
+})
