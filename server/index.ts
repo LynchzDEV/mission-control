@@ -40,6 +40,7 @@ import { pluginSource } from './queue-source'
 import { createQueueStore, queuePath } from './queue-store'
 import { queueRoutes } from './routes/queue'
 import { queueTree } from './queue-tree'
+import { prepareRepoWorkspace } from './repo-workspace'
 import { terminalsRoutes } from './routes/terminals'
 import { outcomesRoutes } from './routes/outcomes'
 import { attentionRoutes } from './routes/attention'
@@ -220,6 +221,7 @@ export async function createApp(): Promise<Elysia> {
     runner: workflowRunner,
     source: pluginId => pluginSource(pluginId, { installed: getInstalled, runtimes: defaultRuntimes }),
     prepareWorktree: (repo, label) => prepareWorktree(repo, label),
+    prepareWorkspace: (folder, repos, label) => prepareRepoWorkspace(folder, repos, label),
     isWorktree: (repo, worktree) => isWorktreeOf(repo, worktree),
     writeContext: (pluginId, context, cwd) => writeQueueContext(pluginId, context, cwd),
     pluginFiles: pluginId => join(configDir(), 'plugin-data', pluginId, 'files'),

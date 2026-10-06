@@ -19,9 +19,13 @@ export function branchLabel(item: Pick<QueueItem, 'title' | 'externalId' | 'sour
   return slug ? `queue-${slug}-${id}` : `queue-${id}`
 }
 
-export function runRequest(item: Pick<QueueItem, 'title' | 'url' | 'contextPath' | 'answerPaths'>): string {
+const reposLine = (repos: readonly string[]): string =>
+  `This workspace holds ${repos.length} repos side by side: ${repos.map(name => `${name}/`).join(', ')}. Each is its own git worktree; make, test and inspect changes inside each repo folder.`
+
+export function runRequest(item: Pick<QueueItem, 'title' | 'url' | 'contextPath' | 'answerPaths' | 'repos'>): string {
   return [
     `Work on "${item.title}" (${item.url}).`,
+    ...(item.repos === undefined ? [] : [reposLine(item.repos)]),
     `Read the task context in ${item.contextPath}.`,
     ...(item.answerPaths.length > 0 ? [`The requester answered your earlier questions: read ${item.answerPaths.join(', ')}.`] : []),
     'If information you need is missing and you cannot decide it yourself, end the step with MC_RESULT blocked and put each question for the requester as one evidence item.',

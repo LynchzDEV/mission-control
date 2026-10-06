@@ -34,7 +34,7 @@ export function replyCheck(deps: QueueEngineDeps, fail: (item: QueueItem, reason
   const saveFailures = failureCounter(deps, 'Could not save the replies')
 
   async function resume(item: QueueItem, stored: string, replies: SourceReply[], lastId: string | null): Promise<void> {
-    const worktree = await restore({ repo: item.repo, worktree: stored })
+    const worktree = await restore({ ...item, worktree: stored })
     await refuseLinkedQueueFolders(worktree, item.source)
     const images = await importImages(deps.pluginFiles(item.source), replies, queueFolder(worktree, item.source))
     const markdown = answersMarkdown(item.questions, replies, images)

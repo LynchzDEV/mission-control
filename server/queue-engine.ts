@@ -1,11 +1,11 @@
 import type { TaskContext } from './plugins/context-files'
 import { dropAnswerBackups, restoreAnswers } from './queue-answers'
-import { branchLabel, questionsOf, runRequest, SETTLED, type RunView } from './queue-prompts'
+import { questionsOf, runRequest, SETTLED, type RunView } from './queue-prompts'
 import { refuseLinkedQueueFolders } from './queue-files'
 import { message, replyCheck } from './queue-replies'
 import type { QueueSource } from './queue-source'
 import type { QueueItem, QueueStore } from './queue-store'
-import { fileExists, worktreeRestorer } from './queue-worktree'
+import { fileExists, freshWorktree, worktreeRestorer } from './queue-worktree'
 
 export type QueueRunner = {
   start(input: { cwd: string; request: string; label: string; workflowId?: string }, context: { startedByUser: boolean }): Promise<{ id: string }>
@@ -17,6 +17,7 @@ export type QueueEngineDeps = {
   runner: QueueRunner
   source(pluginId: string): QueueSource
   prepareWorktree(repo: string, label: string): Promise<{ worktree: string }>
+  prepareWorkspace?(folder: string, repos: readonly string[], label: string): Promise<{ worktree: string }>
   isWorktree?(repo: string, worktree: string): Promise<boolean>
   writeContext(pluginId: string, context: TaskContext, cwd: string): Promise<string>
   pluginFiles(pluginId: string): string
@@ -25,7 +26,7 @@ export type QueueEngineDeps = {
   now?: () => number
 }
 
-export type AddInput = { source: string; externalId: string; repo: string; flowId?: string | null; position?: 'end' | 'next' }
+export type AddInput = { source: string; externalId: string; repo: string; repos?: string[]; flowId?: string | null; position?: 'end' | 'next' }
 
 export type QueueEngine = {
   add(input: AddInput): Promise<QueueItem>
@@ -121,6 +122,7 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
   }
 
   const restore = worktreeRestorer(deps)
+  const prepare = freshWorktree(deps)
 
   async function contextIn(item: QueueItem, worktree: string): Promise<string> {
     if (item.contextPath !== null && await fileExists(item.contextPath)) return item.contextPath
@@ -137,7 +139,7 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
   }
 
   async function build(item: QueueItem): Promise<void> {
-    const worktree = item.worktree === null ? (await deps.prepareWorktree(item.repo, branchLabel(item))).worktree : await restore({ ...item, worktree: item.worktree })
+    const worktree = item.worktree === null ? (await prepare(item)).worktree : await restore({ ...item, worktree: item.worktree })
     await refuseLinkedQueueFolders(worktree, item.source)
     const contextPath = await contextIn(item, worktree)
     const answerPaths = await answersOf(item)
@@ -177,7 +179,7 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     refuseDuplicate(input)
     const detail = await fromSource(() => deps.source(input.source).item({ id: input.externalId }))
     refuseDuplicate(input)
-    const item = await store.add({ source: input.source, externalId: input.externalId, title: detail.title, url: detail.url, repo: input.repo, flowId: input.flowId ?? null }, input.position ?? 'end')
+    const item = await store.add({ source: input.source, externalId: input.externalId, title: detail.title, url: detail.url, repo: input.repo, flowId: input.flowId ?? null, ...(input.repos === undefined ? {} : { repos: input.repos }) }, input.position ?? 'end')
     await serial(startNext)
     return store.get(item.id) ?? item
   }

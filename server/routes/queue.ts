@@ -4,9 +4,9 @@ import { z } from 'zod'
 import { requireLocal } from '../auth'
 import { QueueRefusal, SourceFailure, type QueueEngine } from '../queue-engine'
 import type { QueueStore } from '../queue-store'
+import { listFolderRepos, resolveQueueFolder } from '../queue-folder'
 import { queueTree, type QueueTree } from '../queue-tree'
 import { eventStreamResponse, type RunEvents } from '../run-events'
-import { validateWorkspaceCwd } from '../workspace'
 
 type Status = { status?: number | string }
 type QueueEngineRoutes = Pick<QueueEngine, 'add' | 'requeue' | 'checkReplies' | 'remove' | 'move' | 'checkedAt' | 'subscribeChecks'>
@@ -15,6 +15,7 @@ const addSchema = z.object({
   source: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/),
   externalId: z.string().min(1).max(200),
   repo: z.string().min(1).max(2048),
+  repos: z.array(z.string().max(255)).max(64).optional(),
   flowId: z.string().min(1).max(200).nullable().optional(),
   position: z.enum(['end', 'next']).optional(),
 })
@@ -42,15 +43,24 @@ async function requeueItem(store: QueueStore, engine: QueueEngineRoutes, id: str
 async function addItem(engine: QueueEngineRoutes, body: unknown, set: Status) {
   const parsed = addSchema.safeParse(body)
   if (!parsed.success) { set.status = 400; return { error: 'source, externalId and repo are required; position is end or next' } }
-  const repo = await validateWorkspaceCwd(parsed.data.repo, undefined, { requireGit: true })
+  const { repos: ticked, ...fields } = parsed.data
+  const repo = await resolveQueueFolder(fields.repo, ticked)
   if (!repo.ok) { set.status = 400; return { error: repo.error } }
+  const input = { ...fields, repo: repo.path, ...(repo.repos === undefined ? {} : { repos: repo.repos }) }
   try {
-    return await refusing(set, async () => ({ item: await engine.add({ ...parsed.data, repo: repo.path }) }))
+    return await refusing(set, async () => ({ item: await engine.add(input) }))
   } catch (error) {
     if (!(error instanceof SourceFailure)) throw error
     set.status = 502
     return { error: error.message }
   }
+}
+
+async function folderRepos(path: unknown, set: Status) {
+  if (typeof path !== 'string' || path === '' || path.length > 2048) { set.status = 400; return { error: 'path is required' } }
+  const listing = await listFolderRepos(path)
+  if (!listing.ok) { set.status = 400; return { error: listing.error } }
+  return { path: listing.path, isRepo: listing.isRepo, repos: listing.repos }
 }
 
 const isConflict = (error: unknown): boolean => error instanceof QueueRefusal && error.status === 409
@@ -74,6 +84,7 @@ export function queueRoutes(store: QueueStore, engine: QueueEngineRoutes, tree: 
     .onBeforeHandle(requireLocal)
     .get('/api/queue', snapshot)
     .get('/api/queue/tree', () => tree())
+    .get('/api/queue/folder', ({ query, set }) => folderRepos(query.path, set))
     .get('/api/queue/stream', ({ request }) => eventStreamResponse(itemsAndChecks(store, engine), snapshot, request.signal))
     .post('/api/queue', ({ body, set }) => addItem(engine, body, set))
     .post('/api/queue/check', () => engine.checkReplies())

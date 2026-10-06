@@ -2,6 +2,7 @@ import { access, lstat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
 import type { QueueEngineDeps } from './queue-engine'
+import { branchLabel } from './queue-prompts'
 import type { QueueItem } from './queue-store'
 
 export class WorktreeGone extends Error {
@@ -11,18 +12,29 @@ export class WorktreeGone extends Error {
   }
 }
 
-export type StoredWorktree = Pick<QueueItem, 'repo' | 'worktree'> & { worktree: string }
+export type StoredWorktree = Pick<QueueItem, 'repo' | 'repos'> & { worktree: string }
+type Preparers = Pick<QueueEngineDeps, 'prepareWorktree' | 'prepareWorkspace'>
 
 const hasGitEntry = async (_repo: string, worktree: string): Promise<boolean> => lstat(join(worktree, '.git')).then(() => true, () => false)
 
 export const fileExists = (path: string): Promise<boolean> => access(path).then(() => true, () => false)
 
-export function worktreeRestorer(deps: Pick<QueueEngineDeps, 'prepareWorktree' | 'isWorktree'>): (item: StoredWorktree) => Promise<string> {
+function prepareIn(deps: Preparers, item: Pick<QueueItem, 'repo' | 'repos'>, label: string): Promise<{ worktree: string }> {
+  if (item.repos === undefined) return deps.prepareWorktree(item.repo, label)
+  if (deps.prepareWorkspace === undefined) return Promise.reject(new Error('This Mission Control cannot build multi-repo items'))
+  return deps.prepareWorkspace(item.repo, item.repos, label)
+}
+
+export function freshWorktree(deps: Preparers): (item: QueueItem) => Promise<{ worktree: string }> {
+  return item => prepareIn(deps, item, branchLabel(item))
+}
+
+export function worktreeRestorer(deps: Preparers & Pick<QueueEngineDeps, 'isWorktree'>): (item: StoredWorktree) => Promise<string> {
   const isWorktree = deps.isWorktree ?? hasGitEntry
   return async (item) => {
-    if (await isWorktree(item.repo, item.worktree)) return item.worktree
+    if (item.repos === undefined && await isWorktree(item.repo, item.worktree)) return item.worktree
     try {
-      return (await deps.prepareWorktree(item.repo, basename(item.worktree))).worktree
+      return (await prepareIn(deps, item, basename(item.worktree))).worktree
     } catch (error) {
       throw new WorktreeGone(error instanceof Error ? error.message : String(error))
     }

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
+import { isRepoList } from './repo-workspace'
 import type { RunEvents } from './run-events'
 import { configDir } from './secrets'
 import { atomicJson } from './workflows'
@@ -14,10 +15,10 @@ export type QueueItem = {
   id: string; source: string; externalId: string; title: string; url: string; repo: string; flowId: string | null
   state: QueueState; worktree: string | null; contextPath: string | null; answerPaths: string[]
   runIds: string[]; currentRunId: string | null; questions: string[]; lastSeenId: string | null; error: string | null
-  createdAt: number; updatedAt: number
+  createdAt: number; updatedAt: number; repos?: string[]
 }
 
-export type NewQueueItem = Pick<QueueItem, 'source' | 'externalId' | 'title' | 'url' | 'repo' | 'flowId'>
+export type NewQueueItem = Pick<QueueItem, 'source' | 'externalId' | 'title' | 'url' | 'repo' | 'flowId' | 'repos'>
 export type QueuePatch = Partial<Omit<QueueItem, 'id' | 'createdAt' | 'updatedAt'>>
 
 export type QueueStore = RunEvents & {
@@ -43,6 +44,7 @@ function isItem(value: unknown): value is QueueItem {
     && [item.flowId, item.worktree, item.contextPath, item.currentRunId, item.lastSeenId, item.error].every(isTextOrNull)
     && isTexts(item.answerPaths) && isTexts(item.runIds) && isTexts(item.questions)
     && typeof item.createdAt === 'number' && typeof item.updatedAt === 'number'
+    && (item.repos === undefined || isRepoList(item.repos))
 }
 
 const isMissingFile = (error: unknown): boolean => (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
