@@ -1354,6 +1354,7 @@ a.q-src:hover { color: var(--accent); }
 .q-folder-check[hidden] { display: none; }
 .q-plan-picks { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: -6px 0 14px; font-size: 12px; color: var(--text-soft); }
 .q-plan-picks .q-pick { padding: 0; font-size: 12px; color: var(--accent); cursor: pointer; }
+.q-meta > .q-real-changed { color: var(--danger); }
 .q-chip-open { font-style: italic; color: var(--muted); }
 .q-folder-skipped { display: block; margin: -6px 0 14px; color: var(--muted); font-size: 12px; }
 .q-add button[aria-disabled="true"] { opacity: .6; cursor: progress; }

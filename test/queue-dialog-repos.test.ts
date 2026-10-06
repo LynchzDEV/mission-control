@@ -308,3 +308,25 @@ test('a multi-repo row shows its folder with one chip per repo; a single-repo ro
   expect(row('s1').querySelector('.q-folder')).toBeNull()
   expect([...row('p1').querySelectorAll('.q-folder .q-chip')].map(chip => chip.textContent)).toEqual(['repos: plan picks'])
 })
+
+test('Pick them yourself with every tick removed still lets the plan pick', async () => {
+  const dialog = open()
+  field<HTMLInputElement>(dialog, 'ref').value = '5'
+  await parentFolder(dialog, ['api', 'web'])
+  pickButton(dialog).click()
+  repoBoxes(dialog)[0]!.click()
+  repoBoxes(dialog)[0]!.click()
+  submit(dialog)
+  await flush()
+  expect(calls.filter(call => call.method === 'POST').map(call => (call.body as { repos: unknown }).repos)).toEqual([[]])
+})
+
+test('a row warns when a real repo changed while the item was building', async () => {
+  const { renderQueue, readQueueItems } = await import('../client/queue-view')
+  const read = readQueueItems([{ ...view({ id: 'w1', state: 'ready' }), repo: '/Users/me/klangtech', repos: ['api'], realChanged: ['web'] }, { ...view({ id: 'ok' }), repo: '/Users/me/klangtech', repos: ['api'] }])
+  const screen = renderQueue(read, { plugins: [], flows: [], now: 0, checkedAt: null, openIds: new Set() })
+  const warn = screen.querySelector('.q-row[data-id="w1"] .q-real-changed') as HTMLElement
+  expect(warn.textContent).toBe('web changed during the build')
+  expect(warn.getAttribute('title')).toBe("web in /Users/me/klangtech changed while this item was building — check it wasn't the agent")
+  expect(screen.querySelector('.q-row[data-id="ok"] .q-real-changed')).toBeNull()
+})

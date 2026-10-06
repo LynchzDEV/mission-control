@@ -3,7 +3,7 @@ export type QueueState = 'queued' | 'building' | 'waiting-info' | 'ready' | 'fai
 export type QueueItemView = {
   id: string; source: string; externalId: string; title: string; url: string; flowId: string | null
   state: QueueState; runIds: string[]; questions: string[]; error: string | null; updatedAt: number
-  repo?: string; repos?: string[]
+  repo?: string; repos?: string[]; realChanged?: string[]
 }
 
 export type QueuePlugin = { id: string; name: string; icon?: string; enabled: boolean; queueSource?: true }
@@ -158,7 +158,9 @@ function folderWithRepos(item: QueueItemView): HTMLElement[] {
   if (item.repos === undefined) return []
   const folder = item.repo ?? ''
   const chips = item.repos.length === 0 ? [el('span', { class: 'q-chip q-chip-open' }, 'repos: plan picks')] : item.repos.map(name => el('span', { class: 'q-chip' }, name))
-  return [el('span', { class: 'q-folder', title: folder }, icon('folder-icon'), folderName(folder), ...chips)]
+  const moved = item.realChanged ?? []
+  const warning = moved.length === 0 ? [] : [el('span', { class: 'q-real-changed', title: `${moved.join(', ')} in ${folder} changed while this item was building — check it wasn't the agent` }, icon('mk-warn'), `${moved.join(', ')} changed during the build`)]
+  return [el('span', { class: 'q-folder', title: folder }, icon('folder-icon'), folderName(folder), ...chips), ...warning]
 }
 
 function row(item: QueueItemView, items: readonly QueueItemView[], context: QueueContext): HTMLElement {
@@ -214,6 +216,7 @@ function readItem(value: unknown): QueueItemView | null {
     flowId: isText(flowId) ? flowId : null, state: state as QueueState, runIds, questions, error: isText(error) ? error : null, updatedAt,
     ...(isText(entry.repo) ? { repo: entry.repo } : {}),
     ...(isTexts(entry.repos) ? { repos: entry.repos } : {}),
+    ...(isTexts(entry.realChanged) && entry.realChanged.length > 0 ? { realChanged: entry.realChanged } : {}),
   }
 }
 
