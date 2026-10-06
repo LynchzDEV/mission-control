@@ -12,7 +12,7 @@ export type RunEdgeView = { source: string; target: string; outcome: 'pass' | 'f
 export type RunVersionView = Omit<RunVersion, 'graph' | 'agents' | 'skills'>
 export type RunProposalView = { number: number; reason: string; nodes: RunStepView[]; edges: RunEdgeView[]; removed: string[]; changed: string[] }
 export type RunChangeView = { number: number; reason: string; size: 'small' | 'big'; approvedVia: ApprovalVia | null; state: string }
-export type RunView = { id: string; label: string; status: string; error: string | null; workflowName: string; revision: string; entry: string; currentNodeId: string; origin: RunOrigin; versions: RunVersionView[]; nodes: RunStepView[]; edges: RunEdgeView[]; attempts: RunAttemptView[]; createdAt: number; updatedAt: number; proposal: RunProposalView | null; latestChange: RunChangeView | null; tokens: RunTokenView[]; sections: RunSectionView[]; keptBranches: string[] }
+export type RunView = { id: string; label: string; status: string; error: string | null; workflowName: string; revision: string; entry: string; currentNodeId: string; origin: RunOrigin; versions: RunVersionView[]; nodes: RunStepView[]; edges: RunEdgeView[]; attempts: RunAttemptView[]; createdAt: number; updatedAt: number; proposal: RunProposalView | null; latestChange: RunChangeView | null; tokens: RunTokenView[]; sections: RunSectionView[]; keptBranches: string[]; dismissed: boolean }
 export type QuickJobView = { id: string; label: string; engine: string; status: string; startedAt: number; endedAt: number | null }
 export type ScopeSnapshot = { runs: RunView[]; jobs: QuickJobView[] }
 
@@ -86,6 +86,7 @@ export function runView(run: WorkflowRun, jobsById: ReadonlyMap<string, JobRecor
     tokens: run.tokens.map(token => ({ nodeId: token.nodeId, pathId: token.pathId, state: token.state, from: token.from })),
     sections: forkSections(run.workflow).map(section => sectionView(run, section)),
     keptBranches: run.keptBranches,
+    dismissed: typeof run.dismissedAt === 'number',
   }
 }
 

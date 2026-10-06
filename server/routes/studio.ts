@@ -142,4 +142,5 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
     .post('/api/studio/runs/:id/resume', ({ params }) => runner.resume(params.id).then(publicRun))
     .post('/api/studio/runs/:id/stop', ({ params }) => runner.stop(params.id).then(publicRun))
     .post('/api/studio/runs/:id/retry', ({ params }) => runner.retry(params.id).then(publicRun))
+    .post('/api/studio/runs/:id/dismiss', ({ params }) => runner.dismiss(params.id).then(publicRun))
 }

@@ -61,6 +61,7 @@ export type WorkflowRun = {
   status: RunStatus; error: string | null; origin: RunOrigin; versions: RunVersion[];
   currentNodeId: string; attempts: WorkflowAttempt[]; createdAt: number; updatedAt: number;
   tokens: WorkflowToken[]; sections: OpenSection[]; keptBranches: string[];
+  dismissedAt?: number | null
 }
 
 export function lineage(a: string, b: string): boolean {
@@ -1018,7 +1019,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       if (!deps.manager.claimWorkspace(run.cwd, run.id)) throw new Error('Workspace already has running work')
       const taken = claimPaths(run)
       if (taken) { deps.manager.releaseWorkspace(run.cwd, run.id); throw new Error(`Another run owns ${taken}`) }
-      run.status = 'running'; run.error = null
+      run.status = 'running'; run.error = null; run.dismissedAt = null
       if (run.chatId) run.reportedAt = null
       await advance(run)
       return structuredClone(run)
@@ -1153,6 +1154,15 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     for (const job of heldJobs(mustGet(id))) void onJobSettled(job).catch(error => block(mustGet(id), String(error)))
     return resumed
   }
+  async function dismiss(id: string): Promise<WorkflowRun> {
+    return exclusive(id, async () => {
+      const run = mustGet(id)
+      if (run.status !== 'blocked' && run.status !== 'failed') throw new RunActionError('Only failed or blocked runs can be dismissed', 409)
+      run.dismissedAt = Date.now()
+      await persist(run)
+      return structuredClone(run)
+    })
+  }
   async function markSessionNotified(id: string, attempt: number, at: number): Promise<void> {
     await exclusive(id, async () => {
       const run = runs.get(id)
@@ -1170,6 +1180,6 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       await persist(run)
     })
   }
-  return { start, stop, retry, recover, approve, reject, propose, pause, resume, onJobSettled, report, waitingStep, remind, markSessionNotified, markReported, get: (id: string) => { const run = runs.get(id); return run ? structuredClone(run) : undefined }, list: () => { followResumedTerminals([...runs.values()]); return [...runs.values()].map(run => structuredClone(run)).sort((a, b) => b.createdAt - a.createdAt) } }
+  return { start, stop, retry, dismiss, recover, approve, reject, propose, pause, resume, onJobSettled, report, waitingStep, remind, markSessionNotified, markReported, get: (id: string) => { const run = runs.get(id); return run ? structuredClone(run) : undefined }, list: () => { followResumedTerminals([...runs.values()]); return [...runs.values()].map(run => structuredClone(run)).sort((a, b) => b.createdAt - a.createdAt) } }
 }
 export type WorkflowRunner = ReturnType<typeof createWorkflowRunner>

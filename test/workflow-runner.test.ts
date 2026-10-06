@@ -1880,3 +1880,46 @@ test('a second miss with no closing words blocks without an empty last-words cla
   const done = await finished(run.id)
   expect(done.attempts[0]!.result?.summary).toBe('Agent ended twice without MC_RESULT')
 })
+
+async function settledAs(store: ReturnType<typeof build>, status: 'blocked' | 'failed'): Promise<string> {
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  const done = await finished(started.id)
+  await settledStatuses()
+  const file = join(dir, 'workflow-runs', `${done.id}.json`)
+  const record = JSON.parse(await Bun.file(file).text()) as Record<string, unknown>
+  await Bun.write(file, JSON.stringify({ ...record, status, error: 'Fix reached its visit limit' }))
+  runner = createWorkflowRunner({ manager, resolver, store, base: dir, requireApproval: async () => false })
+  return done.id
+}
+
+test('a blocked or failed run can be dismissed, and the mark is saved with the run', async () => {
+  const store = build()
+  const id = await settledAs(store, 'blocked')
+  const dismissed = await runner.dismiss(id)
+  expect(typeof dismissed.dismissedAt).toBe('number')
+  expect(dismissed.status).toBe('blocked')
+  const saved = JSON.parse(await Bun.file(join(dir, 'workflow-runs', `${id}.json`)).text()) as WorkflowRun
+  expect(saved.dismissedAt).toBe(dismissed.dismissedAt!)
+  expect(runner.get(id)!.dismissedAt).toBe(dismissed.dismissedAt!)
+  const failedId = await settledAs(store, 'failed')
+  expect(typeof (await runner.dismiss(failedId)).dismissedAt).toBe('number')
+})
+
+test('only a failed or blocked run can be dismissed, and an unknown run is not found', async () => {
+  build()
+  const started = await runner.start({ cwd: repo, request: 'Implement', label: 'fixture' })
+  const done = await finished(started.id)
+  const refused = await runner.dismiss(done.id).catch((error: unknown) => error)
+  expect(refused).toBeInstanceOf(RunActionError)
+  expect(refused).toMatchObject({ status: 409, message: 'Only failed or blocked runs can be dismissed' })
+  expect(await runner.dismiss('missing').catch((error: unknown) => error)).toMatchObject({ status: 404, message: 'Run not found' })
+})
+
+test('retrying a dismissed run clears the dismissal', async () => {
+  const store = build()
+  const id = await settledAs(store, 'blocked')
+  await runner.dismiss(id)
+  const retried = await runner.retry(id)
+  expect(retried.dismissedAt).toBeNull()
+  expect((await finished(id)).status).toBe('done')
+})

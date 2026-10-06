@@ -162,6 +162,14 @@ test('pause and resume answer with the run, and a wrong state or unknown run is 
   expect((await post('/api/studio/runs/no-such-run/resume', {}, {})).status).toBe(404)
 })
 
+test('dismiss refuses a run that is not failed or blocked, and an unknown run', async () => {
+  const run = await (await post('/api/studio/runs', await runBody(), {})).json()
+  const waiting = await post(`/api/studio/runs/${run.id}/dismiss`, {}, { 'sec-fetch-site': 'same-origin' })
+  expect(waiting.status).toBe(409)
+  expect((await waiting.json()).error).toBe('Only failed or blocked runs can be dismissed')
+  expect((await post('/api/studio/runs/no-such-run/dismiss', {}, { 'sec-fetch-site': 'same-origin' })).status).toBe(404)
+})
+
 test('the run list filters by chat and terminal', async () => {
   const chatId = await chatRoot()
   const chatRun = await (await post('/api/studio/runs', { ...(await runBody('chat')), chat: chatId }, {})).json()

@@ -188,3 +188,9 @@ test('a resumed step names the job it was resumed from so a picked first job sti
   const view = runView(run({ attempts: [{ nodeId: 'execute', number: 0, jobId: 'j2', status: 'running', prompt: 'p', startedAt: 1, endedAt: null, result: null, checks: [], output: '', workspace: null, tokenId: 'tok-1', pathId: 'main', from: [], nudgedFrom: 'j1' }] }))
   expect(view.attempts[0]).toMatchObject({ jobId: 'j2', nudgedFrom: 'j1' })
 })
+
+test('a run view says whether a failed or blocked run was dismissed', () => {
+  expect(runView(run({ status: 'blocked' })).dismissed).toBe(false)
+  expect(runView(run({ status: 'blocked', dismissedAt: null })).dismissed).toBe(false)
+  expect(runView(run({ status: 'blocked', dismissedAt: 5 })).dismissed).toBe(true)
+})
