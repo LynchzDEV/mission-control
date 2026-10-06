@@ -8,6 +8,8 @@ import { validateWorkspaceCwd } from './workspace'
 
 export { MAX_QUEUE_REPOS }
 
+const NOT_A_REPO = 'cwd is not a git repository'
+
 export type FolderListing = { ok: true; path: string; isRepo: boolean; repos: string[]; skipped: number } | { ok: false; error: string }
 export type ResolvedFolder = { ok: true; path: string; repos?: string[] } | { ok: false; error: string }
 
@@ -35,13 +37,17 @@ const missingText = (missing: readonly string[]): string =>
 export async function resolveQueueFolder(folder: string, repos: readonly string[] | undefined, home: string = homedir()): Promise<ResolvedFolder> {
   if (repos === undefined) {
     const checked = await validateWorkspaceCwd(folder, home, { requireGit: true })
-    return checked.ok ? { ok: true, path: checked.path } : checked
+    if (checked.ok) return { ok: true, path: checked.path }
+    if (checked.error !== NOT_A_REPO) return checked
+    const listing = await listFolderRepos(folder, home)
+    return listing.ok && !listing.isRepo && listing.repos.length > 0 ? { ok: true, path: listing.path, repos: [] } : checked
   }
   const problem = repoNamesProblem(repos)
   if (problem !== null) return { ok: false, error: problem }
   const listing = await listFolderRepos(folder, home)
   if (!listing.ok) return listing
   if (listing.isRepo) return { ok: false, error: 'This folder is a git repo itself, so leave the repos out' }
+  if (listing.repos.length === 0) return { ok: false, error: NOT_A_REPO }
   const missing = repos.filter(name => !listing.repos.includes(name))
   if (missing.length > 0) return { ok: false, error: missingText(missing) }
   return { ok: true, path: listing.path, repos: [...repos].sort() }

@@ -4,7 +4,6 @@ export const isPlainRepoName = (name: string): boolean =>
   name.length > 0 && name.length <= 255 && !name.startsWith('.') && !/[/\\\0]/.test(name) && !name.includes('..')
 
 export function repoNamesProblem(repos: readonly string[]): string | null {
-  if (repos.length === 0) return 'Tick at least one repo this ticket touches'
   if (repos.length > MAX_QUEUE_REPOS) return `Pick at most ${MAX_QUEUE_REPOS} repos for one item`
   const bad = repos.find(name => !isPlainRepoName(name))
   if (bad !== undefined) return `Not a repo name: ${bad}`

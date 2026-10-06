@@ -77,20 +77,21 @@ test('POST with repos hands the engine the folder and the sorted repo names', as
   expect((await response.json()).item.repos).toEqual(['api', 'backoffice'])
 })
 
-test('POST without repos keeps the single-repo shape and the single-repo errors', async () => {
+test('POST without repos keeps the single-repo shape and errors, and a folder of repos becomes a plan-picks item', async () => {
   const added: AddInput[] = []
   const app = appWith(added)
   expect((await post(app, '/api/queue', { source: 'clickup-board', externalId: '1', repo: join(parent, 'api') })).status).toBe(200)
   expect(added).toEqual([{ source: 'clickup-board', externalId: '1', repo: join(parent, 'api') }])
-  const refused = await post(app, '/api/queue', { source: 'clickup-board', externalId: '2', repo: parent })
+  const refused = await post(app, '/api/queue', { source: 'clickup-board', externalId: '2', repo: join(parent, 'empty') })
   expect((await refused.json()).error).toBe('cwd is not a git repository')
+  expect((await post(app, '/api/queue', { source: 'clickup-board', externalId: '4', repo: parent })).status).toBe(200)
+  expect(added.at(-1)).toEqual({ source: 'clickup-board', externalId: '4', repo: parent, repos: [] })
 })
 
 test('POST refuses bad repo lists before the engine sees them', async () => {
   const added: AddInput[] = []
   const app = appWith(added)
   const cases: Array<[unknown, string]> = [
-    [[], 'Tick at least one repo this ticket touches'],
     [['../x'], 'Not a repo name: ../x'],
     [['api', 'api'], 'api is ticked twice'],
     [['web'], 'web is not a repo in this folder'],

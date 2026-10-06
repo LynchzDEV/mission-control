@@ -15,7 +15,7 @@ export type QueueItem = {
   id: string; source: string; externalId: string; title: string; url: string; repo: string; flowId: string | null
   state: QueueState; worktree: string | null; contextPath: string | null; answerPaths: string[]
   runIds: string[]; currentRunId: string | null; questions: string[]; lastSeenId: string | null; error: string | null
-  createdAt: number; updatedAt: number; repos?: string[]
+  createdAt: number; updatedAt: number; repos?: string[]; repoReruns?: number
 }
 
 export type NewQueueItem = Pick<QueueItem, 'source' | 'externalId' | 'title' | 'url' | 'repo' | 'flowId' | 'repos'>
@@ -45,6 +45,7 @@ function isItem(value: unknown): value is QueueItem {
     && isTexts(item.answerPaths) && isTexts(item.runIds) && isTexts(item.questions)
     && typeof item.createdAt === 'number' && typeof item.updatedAt === 'number'
     && (item.repos === undefined || isRepoList(item.repos))
+    && (item.repoReruns === undefined || (Number.isInteger(item.repoReruns) && (item.repoReruns as number) >= 0))
 }
 
 const isMissingFile = (error: unknown): boolean => (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
