@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { existsSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { Elysia } from 'elysia'
 
@@ -138,6 +139,53 @@ describe('sandbox config', () => {
     await mkdir(pluginDataDir(await installedPlugin('net-wild')), { recursive: true })
     const config = await sandboxConfigFor(await installedPlugin('net-wild'))
     expect(config.network).toEqual({ allowedDomains: network, deniedDomains: [] })
+  })
+
+  async function installedWithData(id: string): Promise<{ installed: InstalledPlugin; dataDir: string; bundleDir: string; pluginDataRoot: string }> {
+    await installFixture(id, isolatedManifest({ id, server: 'src/server.ts', permissions: { settings: true } }), isolatedFixtureServer())
+    const installed = await installedPlugin(id)
+    await mkdir(pluginDataDir(installed), { recursive: true })
+    return {
+      installed,
+      dataDir: await realpath(pluginDataDir(installed)),
+      bundleDir: await realpath(join(pluginFolder(id), '.mc-build')),
+      pluginDataRoot: await realpath(join(configDir, 'plugin-data')),
+    }
+  }
+
+  const sharedTemp = ['/tmp/claude', '/private/tmp/claude']
+
+  test('on linux, hides home and the config dir without re-allowing any ancestor of the writable data folder', async () => {
+    const { installed, dataDir, bundleDir } = await installedWithData('linux-fs')
+    const { filesystem } = await sandboxConfigFor(installed, 'linux')
+
+    expect(filesystem.denyRead).toEqual([await realpath(homedir()), await realpath(configDir), ...sharedTemp])
+    expect(filesystem.allowRead).toContain(bundleDir)
+    expect(filesystem.allowRead).toContain(dataDir)
+    expect(filesystem.allowRead).toContain(dirname(await realpath(process.execPath)))
+    expect(filesystem.allowRead.filter(path => dataDir.startsWith(`${path}/`))).toEqual([])
+    expect(filesystem.allowWrite).toEqual([dataDir])
+    expect(filesystem.denyWrite).toEqual(sharedTemp)
+  })
+
+  test('on linux, re-allows sandbox-runtime\'s seccomp helper folder so bwrap can exec it under the hidden home', async () => {
+    const { installed } = await installedWithData('linux-seccomp')
+    const { filesystem } = await sandboxConfigFor(installed, 'linux')
+
+    const seccompDir = filesystem.allowRead.find(path => path.endsWith('/@anthropic-ai/sandbox-runtime/vendor/seccomp'))
+    expect(seccompDir).toBeDefined()
+    expect(existsSync(join(seccompDir as string, 'x64', 'apply-seccomp'))).toBe(true)
+  })
+
+  test('on macos, keeps the plugin-data glob deny and the readable ancestors seatbelt needs', async () => {
+    const { installed, dataDir, bundleDir, pluginDataRoot } = await installedWithData('mac-fs')
+    const { filesystem } = await sandboxConfigFor(installed, 'darwin')
+
+    expect(filesystem.denyRead).toEqual([await realpath(homedir()), await realpath(configDir), `${pluginDataRoot}/*`, ...sharedTemp])
+    expect(filesystem.allowRead).toEqual(expect.arrayContaining([bundleDir, dataDir, dirname(dataDir), pluginDataRoot]))
+    expect(filesystem.allowRead.some(path => path.includes('sandbox-runtime'))).toBe(false)
+    expect(filesystem.allowWrite).toEqual([dataDir])
+    expect(filesystem.denyWrite).toEqual(sharedTemp)
   })
 })
 

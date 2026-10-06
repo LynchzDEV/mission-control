@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Readable, Writable } from 'node:stream'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import {
@@ -111,27 +112,48 @@ async function realPathOf(path: string): Promise<string> {
   return realpath(path)
 }
 
+type FilesystemReadRules = { denyRead: string[]; allowRead: string[] }
+
+const SHARED_TEMP_PATHS = ['/tmp/claude', '/private/tmp/claude']
+
+function sandboxRuntimeSeccompDir(): string {
+  const packageRoot = dirname(dirname(fileURLToPath(import.meta.resolve('@anthropic-ai/sandbox-runtime'))))
+  return join(packageRoot, 'vendor', 'seccomp')
+}
+
 // bun 1.2.17 wipes the child's env when its startup walk-up from the data-folder cwd hits an unreadable ancestor, so plugin-data and the plugin's own folder stay readable while the plugin-data/* glob re-seals every sibling; /tmp/claude is sandbox-runtime's always-writable shared temp and gets both denies.
-export async function sandboxConfigFor(installed: InstalledPlugin): Promise<SandboxRuntimeConfig> {
-  const dataDir = pluginDataDir(installed)
-  const bundleDir = join(pluginFolder(installed.id), '.mc-build')
-  const bunInstallDir = join(homedir(), '.bun')
+async function seatbeltReadRules(dataDir: string, sharedReads: string[]): Promise<FilesystemReadRules> {
   const pluginDataRoot = await realPathOf(join(configDir(), 'plugin-data'))
-  const sharedTempPaths = ['/tmp/claude', '/private/tmp/claude']
+  return {
+    denyRead: [await realPathOf(homedir()), await realPathOf(configDir()), `${pluginDataRoot}/*`, ...SHARED_TEMP_PATHS],
+    allowRead: [...sharedReads, await realPathOf(dirname(dataDir)), pluginDataRoot],
+  }
+}
+
+// bwrap denies a directory by mounting a tmpfs over it and re-binds each allowRead path on top, so an allowRead ancestor of the writable data folder would re-mount it read-only.
+async function bubblewrapReadRules(sharedReads: string[]): Promise<FilesystemReadRules> {
+  return {
+    denyRead: [await realPathOf(homedir()), await realPathOf(configDir()), ...SHARED_TEMP_PATHS],
+    allowRead: [...sharedReads, await realPathOf(sandboxRuntimeSeccompDir())],
+  }
+}
+
+export async function sandboxConfigFor(installed: InstalledPlugin, platform: NodeJS.Platform = process.platform): Promise<SandboxRuntimeConfig> {
+  const dataDir = pluginDataDir(installed)
+  const bunInstallDir = join(homedir(), '.bun')
+  const sharedReads = [
+    await realPathOf(join(pluginFolder(installed.id), '.mc-build')),
+    await realPathOf(dataDir),
+    dirname(await realPathOf(process.execPath)),
+    ...(existsSync(bunInstallDir) ? [await realPathOf(bunInstallDir)] : []),
+  ]
+  const readRules = platform === 'linux' ? await bubblewrapReadRules(sharedReads) : await seatbeltReadRules(dataDir, sharedReads)
   return {
     network: { allowedDomains: installed.permissions.network ?? [], deniedDomains: [] },
     filesystem: {
-      denyRead: [await realPathOf(homedir()), await realPathOf(configDir()), `${pluginDataRoot}/*`, ...sharedTempPaths],
-      allowRead: [
-        await realPathOf(bundleDir),
-        await realPathOf(dataDir),
-        await realPathOf(dirname(dataDir)),
-        pluginDataRoot,
-        dirname(await realPathOf(process.execPath)),
-        ...(existsSync(bunInstallDir) ? [await realPathOf(bunInstallDir)] : []),
-      ],
+      ...readRules,
       allowWrite: [await realPathOf(dataDir)],
-      denyWrite: [...sharedTempPaths],
+      denyWrite: [...SHARED_TEMP_PATHS],
     },
   }
 }
