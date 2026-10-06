@@ -171,6 +171,9 @@ dialog::backdrop { background: var(--scrim, #41485218); backdrop-filter: blur(3p
 .round.ag-x:active { box-shadow: var(--inset); }
 .round.ag-x svg { width: 16px; height: 16px; }
 #live-agents-status:empty { display: none; }
+#agents[data-flows] > .activity-empty { display: none; }
+.flow-agents { margin-top: 10px; }
+.flow-agents h3 { margin: 0 0 6px; padding: 0 10px; font-size: 12px; font-weight: 500; color: var(--muted); }
 .ag-item { position: relative; margin-bottom: 6px; padding: 2px 0; border-radius: var(--r-md); corner-shape: var(--corner); cursor: pointer; transition: background .15s; }
 .ag-item:hover, .ag-item.open { background: color-mix(in srgb, var(--hi) 45%, var(--paper)); }
 .ag-item.open { box-shadow: inset 0 0 0 1px var(--line); }

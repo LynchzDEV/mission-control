@@ -166,6 +166,7 @@ const BODY = `
     <header class="ag-header"><h2 id="agents-title">Agents</h2><span id="agents-summary" class="ag-count"></span><form method="dialog"><button class="round ag-x" aria-label="Close agents" autofocus><svg><use href="#close-icon"/></svg></button></form></header>
     <div id="live-agents" hidden><p id="live-agents-status" class="muted" role="status"></p><div id="live-agents-list"></div></div>
     <div class="activity-empty"><p>No agents yet.</p><p class="muted">They’ll appear here when a session starts.</p></div>
+    <section id="flow-agents" class="flow-agents" aria-labelledby="flow-agents-title" hidden><h3 id="flow-agents-title">Flows running</h3><div id="flow-agents-list"></div></section>
     <form id="agent-reply" class="agent-reply" hidden><label for="reply" id="agent-reply-label">Message</label><div class="reply-line"><textarea id="reply" rows="2" placeholder="Add a direction…" required></textarea><button class="round" type="submit" aria-label="Send to this agent"><svg><use href="#arrow-icon"/></svg></button></div></form>
   </dialog>
 
@@ -244,6 +245,7 @@ export function ShellPage(props: ShellProps): string {
   <script src="/js/shell-activity.js" type="module" defer></script>
   <script src="/js/flow-drawer.js" type="module" defer></script>
   <script src="/js/job-terminal.js" type="module" defer></script>
+  <script src="/js/flow-agents.js" type="module" defer></script>
   <script src="/js/usage-card.js" type="module" defer></script>
   <script src="/js/backdrop.js" type="module" defer></script>
   <script src="/js/access.js" type="module" defer></script>
