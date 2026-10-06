@@ -346,20 +346,25 @@ test('the Add form posts the item and closes', async () => {
   expect(toasts).toEqual(['Added Products v2'])
 })
 
-test('the Add button says Adding… and stays disabled until the server answers', async () => {
+test('the Add button says Adding… while the folder is still being checked, before anything is posted', async () => {
   click(buttonNamed('Add item', section()))
   await flush()
   field<HTMLInputElement>('ref').value = '86d3j4f8q'
   field<HTMLInputElement>('repo').value = '/Users/me/api'
-  let answer: (response: Response) => void = () => {}
-  replies.set('POST /api/queue', () => new Promise<Response>(resolve => { answer = resolve }) as unknown as Response)
+  let folderAnswer: (response: Response) => void = () => {}
+  replies.set(`GET /api/queue/folder?path=${encodeURIComponent('/Users/me/api')}`, () => new Promise<Response>(resolve => { folderAnswer = resolve }) as unknown as Response)
+  field<HTMLInputElement>('repo').dispatchEvent(new window.Event('input', { bubbles: true }))
+  field<HTMLInputElement>('repo').dispatchEvent(new window.Event('blur'))
+  await flush()
   dialog().querySelector('form.field-stack')?.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
+  await flush()
   const submit = dialog().querySelector<HTMLButtonElement>('form.field-stack button.primary[type="submit"]')!
   expect([submit.textContent, submit.disabled]).toEqual(['Adding…', true])
-  await flush()
-  expect([submit.textContent, submit.disabled]).toEqual(['Adding…', true])
-  answer(Response.json({ error: 'Already in the queue' }, { status: 409 }))
-  await flush()
+  expect(calls.filter(call => call.method === 'POST')).toEqual([])
+  replies.set('POST /api/queue', () => Response.json({ error: 'Already in the queue' }, { status: 409 }))
+  folderAnswer(Response.json({ path: '/Users/me/api', isRepo: true, repos: [], skipped: 0 }))
+  await flush(6)
+  expect(calls.filter(call => call.method === 'POST')).toHaveLength(1)
   expect([submit.textContent, submit.disabled]).toEqual(['Add', false])
   dialog().close()
 })
