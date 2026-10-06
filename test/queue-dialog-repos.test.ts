@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:test'
 import { JSDOM } from 'jsdom'
 
 import type { QueueItemView } from '../client/queue-view'
@@ -13,6 +13,7 @@ let answer: (call: Call) => Response | null = () => null
 const flush = async (times = 4) => { for (let index = 0; index < times; index++) await new Promise(resolve => setTimeout(resolve, 0)) }
 const folderUrl = (path: string) => `/api/queue/folder?path=${encodeURIComponent(path)}`
 
+const realFetch = globalThis.fetch
 let dialogs: typeof import('../client/queue-dialog')
 let items: QueueItemView[] = []
 const toasts: string[] = []
@@ -40,6 +41,10 @@ beforeEach(() => {
   doc.body.replaceChildren()
 })
 afterEach(() => { doc.querySelector('dialog')?.remove() })
+afterAll(() => {
+  globalThis.fetch = realFetch
+  for (const key of ['window', 'document', 'localStorage', 'Element', 'HTMLElement']) Reflect.deleteProperty(globalThis, key)
+})
 
 const open = () => {
   for (const old of doc.querySelectorAll('dialog')) old.remove()
