@@ -1,5 +1,5 @@
 import { getJson, readArray } from './shared'
-import { currentQueueItems, openQueueStream, QUEUE_KEY, queueGroup } from './sidebar-queue'
+import { currentQueueItems, openQueueStream, QUEUE_KEY, queueGroup, queueRail } from './sidebar-queue'
 import { blendColor, fold, glide, settleIn } from './morph'
 import { chatSignal, historyDay, historyOpen, type HistoryItem } from './chat-view'
 import { renameValue, sessionSlot, type Session } from './terminal-state'
@@ -366,7 +366,8 @@ function paint(items: HistoryItem[]): void {
       ...group.items.map(item => rowElement(rowOf(item), 'sb-row')),
     ]),
   )
-  document.getElementById('sidebar-mini')!.replaceChildren(...pluginRows.map(plugin => pluginRow(plugin, 'sb-mini')), ...rows.filter(inRail).map(row => rowElement(row, 'sb-mini')))
+  const sourced = currentQueueItems().filter(item => pluginRows.some(plugin => plugin.id === item.source))
+  document.getElementById('sidebar-mini')!.replaceChildren(...pluginRows.map(plugin => pluginRow(plugin, 'sb-mini')), ...queueRail(sourced, pluginRows.some(plugin => plugin.queueSource === true)), ...rows.filter(inRail).map(row => rowElement(row, 'sb-mini')))
   for (const [key, dot] of dotElements()) blendColor(dot, dots.get(key))
   markSelected()
 }

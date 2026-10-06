@@ -79,3 +79,27 @@ export function queueGroup(items: readonly QueueItemView[], isQueueSource: boole
   group.append(inItem(head), ...items.map(queueItemRow))
   return [group]
 }
+
+export function queueRail(items: readonly QueueItemView[], hasQueueSource: boolean): HTMLElement[] {
+  if (items.length === 0 && !hasQueueSource) return []
+  const building = items.filter(item => item.state === 'building').length
+  const label = `Queue · ${items.length} item${items.length === 1 ? '' : 's'}${building > 0 ? `, ${building} building` : ''}`
+  const element = document.createElement('a')
+  element.className = 'sb-mini'
+  element.dataset.kind = 'queue'
+  element.dataset.key = QUEUE_KEY
+  element.href = '#'
+  element.title = label
+  element.setAttribute('aria-label', label)
+  element.onclick = (event) => { event.preventDefault(); showQueue() }
+  const icon = document.createElement('span')
+  icon.className = 'sb-ic'
+  icon.innerHTML = '<svg><use href="#q-queue"/></svg>'
+  element.append(icon, Object.assign(document.createElement('em'), { className: 'q-mini-n', textContent: String(items.length) }))
+  if (building > 0) {
+    const dot = Object.assign(document.createElement('i'), { className: 'sb-dot' })
+    dot.dataset.s = 'running'
+    element.append(dot)
+  }
+  return [element]
+}

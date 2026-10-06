@@ -208,14 +208,48 @@ test('an empty queue removes every group', async () => {
   expect(groups()).toHaveLength(0)
 })
 
-test('the collapsed rail gets no queue rows', async () => {
-  stream().send([item({ id: 'c1' })])
+const rail = (): HTMLElement => doc.getElementById('sidebar-mini')!
+const railQueue = (): HTMLElement | null => rail().querySelector<HTMLElement>('.sb-mini[data-kind="queue"]')
+
+test('the collapsed rail shows one Queue entry with its count and a building dot', async () => {
+  stream().send([building, queued, ready])
   await flush()
   doc.getElementById('sb-shell')!.classList.add('collapsed')
   dispatchEvent(new Event('quiet:sidebar-toggle'))
-  const mini = doc.getElementById('sidebar-mini')!
-  expect(mini.querySelector('[data-kind="plugin"]')).not.toBeNull()
-  expect(mini.querySelector('.q-dot, [data-kind="queue"], [data-kind="queue-item"]')).toBeNull()
+  expect(rail().querySelector('[data-kind="plugin"]')).not.toBeNull()
+  const entry = railQueue()!
+  expect(entry.dataset.key).toBe('queue')
+  expect(entry.getAttribute('title')).toBe('Queue · 3 items, 1 building')
+  expect(entry.getAttribute('aria-label')).toBe('Queue · 3 items, 1 building')
+  expect(entry.querySelector('use')?.getAttribute('href')).toBe('#q-queue')
+  expect(entry.querySelector('.q-mini-n')?.textContent).toBe('3')
+  expect(entry.querySelector<HTMLElement>('.sb-dot')?.dataset.s).toBe('running')
+  expect(rail().querySelector('.q-dot, [data-kind="queue-item"]')).toBeNull()
+  expect(rail().querySelectorAll('[data-kind="queue"]')).toHaveLength(1)
+})
+
+test('the rail Queue entry has no dot when nothing builds, opens the Queue screen, and is selected there', async () => {
+  stream().send([queued, ready])
+  await flush()
+  const entry = railQueue()!
+  expect(entry.querySelector('.sb-dot')).toBeNull()
+  expect(entry.getAttribute('title')).toBe('Queue · 2 items')
+  shown.length = 0
+  entry.click()
+  expect(shown).toEqual(['queue'])
+  dispatchEvent(new CustomEvent('quiet:screen', { detail: 'queue' }))
+  expect(railQueue()!.classList.contains('sel')).toBe(true)
+  dispatchEvent(new CustomEvent('quiet:screen', { detail: 'welcome' }))
+})
+
+test('the rail has no Queue entry when no enabled source has items', async () => {
+  stream().send([item({ id: 'u1', source: 'gone-plugin' })])
+  await flush()
+  expect(railQueue()).toBeNull()
+  doc.getElementById('sb-shell')!.classList.remove('collapsed')
+  dispatchEvent(new Event('quiet:sidebar-toggle'))
+  stream().send([item({ id: 'c1' })])
+  await flush()
 })
 
 test('a malformed message keeps the last good rows, is not passed on, and the stream stays the only one', async () => {
