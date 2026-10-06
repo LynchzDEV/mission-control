@@ -14,6 +14,7 @@ import {
 import { DIR_MODE, FILE_MODE, configDir, listenTarget, readApiToken } from './secrets'
 import { chatRules } from './chat-profile'
 import { isOwnClaudeChild, readProcessInfo, type ProcessInfoReader } from './process-info'
+import { workspaceDiffStat, workspaceRepos } from './repo-workspace'
 import { validateWorkspaceCwd } from './workspace'
 import { git, prepareWorktree, worktreeBranch } from './job-worktrees'
 import type { EngineResolver, EngineResolverParams, EngineSpawn } from './jobs-engine-iface'
@@ -228,7 +229,12 @@ function ensureDirsSync(dir: string, logsDir: string): void {
 export type { CwdCheck } from './workspace'
 export { validateWorkspaceCwd as validateJobCwd } from './workspace'
 
-async function captureDiffStat(cwd: string): Promise<string | null> {
+async function workspaceDiffStatOf(cwd: string): Promise<string | null> {
+  const repos = await workspaceRepos(cwd)
+  return repos === null ? null : workspaceDiffStat(cwd, repos).catch(() => null)
+}
+
+export async function captureDiffStat(cwd: string): Promise<string | null> {
   try {
     const proc = Bun.spawn(['git', '-C', cwd, 'diff', '--stat', 'HEAD'], {
       stdout: 'pipe',
@@ -238,7 +244,7 @@ async function captureDiffStat(cwd: string): Promise<string | null> {
       new Response(proc.stdout).text(),
       proc.exited,
     ])
-    if (exitCode !== 0) return null
+    if (exitCode !== 0) return workspaceDiffStatOf(cwd)
     const trimmed = output.trim()
     return trimmed === '' ? null : trimmed
   } catch {

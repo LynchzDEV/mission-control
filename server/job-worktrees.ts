@@ -123,13 +123,13 @@ export function worktreeBranch(label: string): string {
   return label.replace(/[^A-Za-z0-9._-]/g, '-')
 }
 
-export async function prepareWorktree(baseRepo: string, label: string) {
+export async function prepareWorktree(baseRepo: string, label: string, at?: string) {
   const branch = worktreeBranch(label)
   await git(baseRepo, 'check-ref-format', '--branch', branch)
   const baseBranch = await git(baseRepo, 'rev-parse', '--abbrev-ref', 'HEAD')
   if (baseBranch === 'HEAD') throw new Error('worktree jobs require a checked-out base branch')
   if (branch === baseBranch) throw new Error('worktree label must differ from the base branch')
-  const worktree = join(baseRepo, '.worktree', branch)
+  const worktree = at ?? join(baseRepo, '.worktree', branch)
   const entries = (await git(baseRepo, 'worktree', 'list', '--porcelain')).split('\n\n')
   const listed = entries.find((entry) => entry.split('\n').includes(`worktree ${worktree}`))
   const prunable = listed?.split('\n').some(line => line.startsWith('prunable')) === true

@@ -15,6 +15,7 @@ import type { EngineResolver } from './jobs-engine-iface'
 import type { TerminalRegistry } from './terminals'
 import { threadRootOf } from './threads'
 import { configDir, mcUrl, readConfig, readSecrets } from './secrets'
+import { workspaceRepos } from './repo-workspace'
 import { validateWorkspaceCwd } from './workspace'
 import { checkShape, readShape, shapeGraph, shapeNotes, shapeTarget, type FlowShape } from './flow-shape'
 import { atomicJson, composeWorkflowPrompt, draftRevision, forkSections, identifier, passTargets, sessionRules, type Outcome, type PolicyRevision, type WorkflowNode, type WorkflowRevision, type WorkflowStore } from './workflows'
@@ -213,7 +214,19 @@ async function snapshotSkills(node: WorkflowNode, cwd: string): Promise<Array<{ 
   }))
 }
 
-async function workspaceSnapshot(cwd: string): Promise<WorkspaceState> {
+export async function workspaceSnapshot(cwd: string): Promise<WorkspaceState> {
+  try {
+    return await repoSnapshot(cwd)
+  } catch (error) {
+    const repos = await workspaceRepos(cwd)
+    if (repos === null) throw error
+    const parts = await Promise.all(repos.map(name => repoSnapshot(join(cwd, name))))
+    const head = repos.map((name, index) => `${name}:${parts[index]!.head}`).join(' ')
+    return { head, diffHash: createHash('sha256').update(JSON.stringify(parts.map(part => part.diffHash))).digest('hex') }
+  }
+}
+
+async function repoSnapshot(cwd: string): Promise<WorkspaceState> {
   const [head, diff, untracked] = await Promise.all([git(cwd, 'rev-parse', 'HEAD'), git(cwd, 'diff', '--binary', 'HEAD'), git(cwd, 'ls-files', '--others', '--exclude-standard', '-z')])
   const hash = createHash('sha256').update(diff)
   for (const path of untracked.split('\0').filter(Boolean).sort()) {
@@ -566,6 +579,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const closing = forkSections(run.workflow).find(section => section.fork === node.id)
     if (!closing) throw new Error(`${node.title} paths must meet at one join`)
     const parentWorkspace = token.workspace
+    if (await workspaceRepos(parentWorkspace) !== null) { await block(run, 'Parallel paths need a single git repo; this run spans several repos'); return false }
     const top = await gitTimed(parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-toplevel'])
     const prefix = (await gitTimed(parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-prefix'])).replace(/\/$/, '')
     await mkdir(join(root, run.id), { recursive: true, mode: 0o700 })

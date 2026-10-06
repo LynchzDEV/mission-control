@@ -2,6 +2,8 @@ import { realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { sep } from 'node:path'
 
+import { workspaceRepos } from './repo-workspace'
+
 export type CwdCheck = { ok: true; path: string } | { ok: false; error: string }
 
 export async function validateWorkspaceCwd(
@@ -41,7 +43,7 @@ export async function validateWorkspaceCwd(
       stderr: 'ignore',
     })
     const exitCode = await gitCheck.exited
-    if (exitCode !== 0) return { ok: false, error: 'cwd is not a git repository' }
+    if (exitCode !== 0 && await workspaceRepos(real) === null) return { ok: false, error: 'cwd is not a git repository' }
   }
 
   return { ok: true, path: real }
