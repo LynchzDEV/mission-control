@@ -253,3 +253,12 @@ test('an unchanged real repo raises nothing extra', async () => {
   expect(h.store.get(item.id)!.realChanged ?? []).toEqual([])
   expect(h.alerts.map(alert => alert.reason)).toEqual(['Built and ready for review'])
 })
+
+test('repos a run added to the workspace itself are picked up by the item when the run settles', async () => {
+  await repos('a', 'b')
+  const h = harness()
+  const item = await h.engine.add({ ...multi, repo: parent, repos: ['a'] })
+  await prepareRepoWorkspace(parent, ['a', 'b'], 'queue-task-7-7-a8c0')
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))
+  expect(h.store.get(item.id)).toMatchObject({ state: 'ready', repos: ['a', 'b'] })
+})

@@ -5,6 +5,7 @@ import { grantRepos, movedRealRepos, movedText, realRepoStates, reposToOffer, SI
 import { refuseLinkedQueueFolders } from './queue-files'
 import { message, replyCheck } from './queue-replies'
 import type { QueueSource } from './queue-source'
+import { workspaceRepos } from './repo-workspace'
 import type { QueueItem, QueueStore } from './queue-store'
 import { fileExists, freshWorktree, worktreeRestorer } from './queue-worktree'
 
@@ -129,6 +130,13 @@ function queueSteps(deps: QueueEngineDeps, onPreparing: (id: string | null) => v
     }
   }
 
+  async function withRecordedRepos(item: QueueItem): Promise<QueueItem> {
+    if (item.repos === undefined || item.worktree === null) return item
+    const recorded = await workspaceRepos(item.worktree)
+    if (recorded === null || recorded.every(name => item.repos!.includes(name))) return item
+    return store.update(item.id, { repos: [...new Set([...item.repos, ...recorded])] })
+  }
+
   async function noteMovedRealRepos(item: QueueItem): Promise<{ item: QueueItem; moved: string[] }> {
     const moved = await movedRealRepos(item)
     if (moved.length === 0) return { item, moved }
@@ -147,7 +155,7 @@ function queueSteps(deps: QueueEngineDeps, onPreparing: (id: string | null) => v
     const found = settling(run)
     if (found === undefined) return
     applied.set(run.id, fingerprint(run))
-    const { item, moved } = await noteMovedRealRepos(found)
+    const { item, moved } = await noteMovedRealRepos(await withRecordedRepos(found))
     await settleState(item, run)
     if (moved.length > 0) deps.needsYou(store.get(item.id) ?? item, movedText(item, moved))
   }
