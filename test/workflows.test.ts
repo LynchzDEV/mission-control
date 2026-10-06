@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createWorkflowStore, defaultWorkflow, draftRevision, forkSections, passTargets, validateWorkflow, workflowSchema, composeWorkflowPrompt } from '../server/workflows'
+import { CORE_RULES, createWorkflowStore, defaultWorkflow, draftRevision, forkSections, passTargets, validateWorkflow, workflowSchema, composeWorkflowPrompt } from '../server/workflows'
 
 let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'mc-workflows-')) })
@@ -193,4 +193,11 @@ test('with no saved choice the AI designs each flow on top of the built-in steps
   const restarted = createWorkflowStore(dir)
   expect(await restarted.design()).toBe(true)
   expect((await restarted.selected()).id).toBe('default')
+})
+
+test('worker rules keep long commands in the foreground because a headless session ends with its turn', () => {
+  const lines = CORE_RULES.split('\n')
+  const foreground = lines.findIndex(line => line.includes('foreground') && line.includes('background') && line.includes('MC_RESULT'))
+  expect(foreground).toBeGreaterThan(-1)
+  expect(foreground).toBeLessThan(lines.findIndex(line => line.startsWith('End your final response')))
 })
