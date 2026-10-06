@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -85,4 +86,82 @@ test('the run fingerprint of a workspace changes when any child repo changes', a
   expect(after.diffHash).not.toBe(before.diffHash)
   expect(after.head).toMatch(/^a:[0-9a-f]{40} b:[0-9a-f]{40}$/)
   await expect(workspaceSnapshot(scratch)).rejects.toThrow()
+})
+
+const worktreesOf = (repo: string) => git(repo, 'worktree', 'list', '--porcelain').split('\n').filter(line => line.startsWith('worktree ')).length
+
+test('a ticked repo swapped for a symlink after add is refused at build and no worktree is made for any repo', async () => {
+  await twoRepos()
+  const elsewhere = await repoAt(join(scratch, 'evil'))
+  await rm(join(parent, 'b'), { recursive: true, force: true })
+  await symlink(elsewhere, join(parent, 'b'))
+  await expect(prepareRepoWorkspace(parent, ['a', 'b'], 'queue-x-7-a8c0')).rejects.toThrow('b is no longer a repo in this folder')
+  expect(worktreesOf(join(parent, 'a'))).toBe(1)
+  expect(worktreesOf(elsewhere)).toBe(1)
+})
+
+test('a ticked repo deleted after add is refused at build with its name', async () => {
+  await twoRepos()
+  await rm(join(parent, 'b'), { recursive: true, force: true })
+  await expect(prepareRepoWorkspace(parent, ['a', 'b'], 'queue-x-7-a8c0')).rejects.toThrow('b is no longer a repo in this folder')
+  expect(worktreesOf(join(parent, 'a'))).toBe(1)
+})
+
+test('a folder that only contains a repo is not one: a child must be its own git top level', async () => {
+  await repoAt(join(parent, 'a'))
+  await mkdir(join(parent, 'a', 'sub'))
+  await expect(prepareRepoWorkspace(join(parent, 'a'), ['sub'], 'queue-x-7-a8c0')).rejects.toThrow('sub is no longer a repo in this folder')
+})
+
+test('a ticked repo that is detached or mid-rebase is refused before any worktree is made', async () => {
+  await twoRepos()
+  git(join(parent, 'b'), 'checkout', '-q', '--detach')
+  await expect(prepareRepoWorkspace(parent, ['a', 'b'], 'queue-x-7-a8c0')).rejects.toThrow('b is not on a branch (detached or mid-rebase); check out a branch in it first')
+  expect(worktreesOf(join(parent, 'a'))).toBe(1)
+})
+
+test('a workspace folder planted as a symlink is refused and nothing is written where it points', async () => {
+  await twoRepos()
+  const target = await mkdtemp(join(homedir(), 'mc-repo-workspace-target-'))
+  try {
+    await mkdir(join(parent, '.worktree'))
+    await symlink(target, join(parent, '.worktree', 'queue-x-7-a8c0'))
+    await expect(prepareRepoWorkspace(parent, ['a', 'b'], 'queue-x-7-a8c0')).rejects.toThrow('The workspace folder is a link, not a plain folder')
+    expect(existsSync(join(target, '.mission-control'))).toBe(false)
+    expect(existsSync(join(target, 'a'))).toBe(false)
+  } finally { await rm(target, { recursive: true, force: true }) }
+})
+
+test('a .worktree folder that is a symlink is refused', async () => {
+  await twoRepos()
+  await symlink(scratch, join(parent, '.worktree'))
+  await expect(prepareRepoWorkspace(parent, ['a', 'b'], 'queue-x-7-a8c0')).rejects.toThrow('The workspace folder is a link, not a plain folder')
+  expect(existsSync(join(scratch, 'queue-x-7-a8c0'))).toBe(false)
+})
+
+test('a child folder in the workspace planted as a symlink is refused', async () => {
+  await twoRepos()
+  const { worktree } = await prepareRepoWorkspace(parent, ['a', 'b'], 'queue-x-7-a8c0')
+  await rm(join(worktree, 'b'), { recursive: true, force: true })
+  git(join(parent, 'b'), 'worktree', 'prune')
+  await symlink(join(parent, 'b'), join(worktree, 'b'))
+  await expect(prepareRepoWorkspace(parent, ['a', 'b'], 'queue-x-7-a8c0')).rejects.toThrow('The workspace folder is a link, not a plain folder')
+})
+
+test('a hand-made repos record does not make a plain folder pass as a workspace', async () => {
+  await twoRepos()
+  await mkdir(join(parent, '.mission-control'))
+  await writeFile(join(parent, '.mission-control', 'repos.json'), JSON.stringify({ repos: ['a', 'b'] }))
+  expect(await workspaceRepos(parent)).toBeNull()
+  expect(await validateWorkspaceCwd(parent)).toEqual({ ok: false, error: 'cwd is not a git repository' })
+})
+
+test('a hand-made record under .worktree with plain repo copies instead of worktrees is not a workspace', async () => {
+  await twoRepos()
+  const fake = join(parent, '.worktree', 'queue-fake-1-a8c0')
+  await mkdir(join(fake, '.mission-control'), { recursive: true })
+  await writeFile(join(fake, '.mission-control', 'repos.json'), JSON.stringify({ repos: ['a', 'b'] }))
+  for (const name of ['a', 'b']) await cp(join(parent, name), join(fake, name), { recursive: true })
+  expect(await workspaceRepos(fake)).toBeNull()
+  expect(await validateWorkspaceCwd(fake)).toEqual({ ok: false, error: 'cwd is not a git repository' })
 })

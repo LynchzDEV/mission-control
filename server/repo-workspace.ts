@@ -1,10 +1,12 @@
-import { lstat, mkdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { lstat, mkdir, readFile, realpath } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { basename, dirname, join, sep } from 'node:path'
 
 import { git, isWorktreeOf, prepareWorktree, worktreeBranch } from './job-worktrees'
 import { SESSION_CONTEXT_DIR } from './plugins/context-files'
 import { writePrivate } from './queue-files'
 import { isRepoList } from './repo-names'
+import { probeRepo } from './repo-probe'
 
 const REPOS_RECORD = 'repos.json'
 const MAX_RECORD_BYTES = 8192
@@ -19,30 +21,81 @@ async function writeReposRecord(workspace: string, repos: readonly string[]): Pr
   await writePrivate(recordPath(workspace), Buffer.from(JSON.stringify({ repos })))
 }
 
-const hasGitEntry = (path: string): Promise<boolean> => lstat(join(path, '.git')).then(() => true, () => false)
+const lstatOrNull = (path: string) => lstat(path).catch(() => null)
+
+async function isPlainDir(path: string): Promise<boolean> {
+  const info = await lstatOrNull(path)
+  return info !== null && info.isDirectory() && !info.isSymbolicLink()
+}
+
+async function isTrustedChild(folder: string, workspace: string, name: string): Promise<boolean> {
+  const child = join(workspace, name)
+  return await isPlainDir(child) && await isWorktreeOf(join(folder, name), child)
+}
 
 export async function workspaceRepos(dir: string): Promise<string[] | null> {
   try {
-    if (!(await lstat(join(dir, SESSION_CONTEXT_DIR))).isDirectory()) return null
-    const record = await lstat(recordPath(dir))
+    const real = await realpath(dir)
+    if (basename(dirname(real)) !== '.worktree') return null
+    if (!(await isPlainDir(join(real, SESSION_CONTEXT_DIR)))) return null
+    const record = await lstat(recordPath(real))
     if (!record.isFile() || record.size > MAX_RECORD_BYTES) return null
-    const { repos } = JSON.parse(await readFile(recordPath(dir), 'utf8')) as { repos?: unknown }
+    const { repos } = JSON.parse(await readFile(recordPath(real), 'utf8')) as { repos?: unknown }
     if (!isRepoList(repos)) return null
-    return (await Promise.all(repos.map(name => hasGitEntry(join(dir, name))))).every(Boolean) ? repos : null
+    const folder = dirname(dirname(real))
+    return (await Promise.all(repos.map(name => isTrustedChild(folder, real, name)))).every(Boolean) ? repos : null
   } catch {
     return null
   }
 }
 
-export async function prepareRepoWorkspace(folder: string, repos: readonly string[], label: string): Promise<{ worktree: string }> {
-  if (!isRepoList(repos)) throw new Error('Not a valid list of repos')
-  const workspace = join(folder, '.worktree', worktreeBranch(label))
-  await mkdir(workspace, { recursive: true, mode: 0o700 })
+
+async function underHome(path: string): Promise<boolean> {
+  const home = await realpath(homedir()).catch(() => homedir())
+  return path === home || path.startsWith(home + sep)
+}
+
+async function checkTickedRepo(folder: string, name: string): Promise<void> {
+  const child = join(folder, name)
+  const stillRepo = await isPlainDir(child) && await realpath(child).catch(() => null) === child && await probeRepo(child) === 'repo'
+  if (!stillRepo) throw new Error(`${name} is no longer a repo in this folder`)
+}
+
+async function checkOnBranch(folder: string, name: string): Promise<void> {
+  const repo = join(folder, name)
+  const onBranch = await git(repo, 'symbolic-ref', '-q', 'HEAD').then(() => true, () => false)
+  const rebasing = await Promise.all(['rebase-merge', 'rebase-apply'].map(async state => lstatOrNull(await git(repo, 'rev-parse', '--path-format=absolute', '--git-path', state))))
+  if (!onBranch || rebasing.some(found => found !== null)) throw new Error(`${name} is not on a branch (detached or mid-rebase); check out a branch in it first`)
+}
+
+async function plainFolderAt(path: string, expected: string): Promise<void> {
+  await mkdir(path, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error })
+  if (!(await isPlainDir(path)) || await realpath(path) !== expected) throw new Error(`The workspace folder is a link, not a plain folder: ${path}`)
+}
+
+async function missingWorktrees(folder: string, workspace: string, repos: readonly string[]): Promise<string[]> {
+  const missing: string[] = []
   for (const name of repos) {
-    const repo = join(folder, name)
     const dir = join(workspace, name)
-    if (!(await isWorktreeOf(repo, dir))) await prepareWorktree(repo, label, dir)
+    const found = await lstatOrNull(dir)
+    if (found !== null && (found.isSymbolicLink() || !found.isDirectory())) throw new Error(`The workspace folder is a link, not a plain folder: ${dir}`)
+    if (found === null || !(await isWorktreeOf(join(folder, name), dir))) missing.push(name)
   }
+  return missing
+}
+
+export async function prepareRepoWorkspace(given: string, repos: readonly string[], label: string): Promise<{ worktree: string }> {
+  if (!isRepoList(repos)) throw new Error('Not a valid list of repos')
+  const folder = await realpath(given)
+  if (!(await underHome(folder))) throw new Error('The folder must be inside your home folder')
+  for (const name of repos) await checkTickedRepo(folder, name)
+  const parent = join(folder, '.worktree')
+  const workspace = join(parent, worktreeBranch(label))
+  await plainFolderAt(parent, parent)
+  await plainFolderAt(workspace, workspace)
+  const missing = await missingWorktrees(folder, workspace, repos)
+  for (const name of missing) await checkOnBranch(folder, name)
+  for (const name of missing) await prepareWorktree(join(folder, name), label, join(workspace, name))
   await writeReposRecord(workspace, repos)
   return { worktree: workspace }
 }

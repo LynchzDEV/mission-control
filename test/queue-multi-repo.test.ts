@@ -163,3 +163,28 @@ test('remove leaves worktrees and branches in place for multi-repo items, as it 
     expect(git(join(parent, name), 'branch', '--list', 'queue-task-2-2-a8c0')).toContain('queue-task-2-2-a8c0')
   }
 })
+
+test('a multi-repo item whose ticked repo was deleted after add fails at build with the repo named', async () => {
+  await twoRepos()
+  const h = queueHarness(scratch, { prepareWorkspace: (folder, repos, label) => prepareRepoWorkspace(folder, repos, label) })
+  const blocker = await h.engine.add({ ...multi, externalId: '1', repo: '/repo' })
+  await rm(join(parent, 'b'), { recursive: true, force: true })
+  const item = await h.engine.add({ ...multi, repo: parent, repos: ['a', 'b'] })
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))
+  expect(h.store.get(blocker.id)!.state).toBe('ready')
+  expect(h.store.get(item.id)).toMatchObject({ state: 'failed', error: 'b is no longer a repo in this folder', worktree: null })
+  expect(existsSync(join(parent, '.worktree', 'queue-task-7-7-a8c0', 'a'))).toBe(false)
+})
+
+test('restoring a multi-repo item whose ticked repo became a symlink fails with a plain reason', async () => {
+  await twoRepos()
+  const h = queueHarness(scratch, { prepareWorkspace: (folder, repos, label) => prepareRepoWorkspace(folder, repos, label) })
+  const item = await h.engine.add({ ...multi, repo: parent, repos: ['a', 'b'] })
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'failed', error: 'boom' }))
+  const evil = await repoAt(join(scratch, 'evil'))
+  await rm(join(parent, 'b'), { recursive: true, force: true })
+  await symlink(evil, join(parent, 'b'))
+  await h.engine.requeue(item.id)
+  expect(h.store.get(item.id)).toMatchObject({ state: 'failed', error: 'Its worktree is gone and could not be restored: b is no longer a repo in this folder' })
+  expect(h.started).toHaveLength(1)
+})
