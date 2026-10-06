@@ -1,5 +1,6 @@
 import { errorText, postJson, readRecord, type JsonRecord } from './shared'
 import { readRecentDirectories } from './shell-launch'
+import { createFolderPicker, NOT_A_REPO, plainFolderError, TICK_A_REPO, type FolderState } from './queue-repos'
 import { el, icon, lineText, type QueueFlow, type QueueItemView, type QueuePlugin } from './queue-view'
 
 export type AddDialogSource = { plugins: QueuePlugin[]; flows: QueueFlow[]; items: QueueItemView[] }
@@ -53,10 +54,16 @@ export function createAddDialog(source: () => AddDialogSource, toast: (text: str
   const error = el('p', { class: 'q-add-error', role: 'alert', hidden: true })
   const submit = el('button', { type: 'submit', class: 'connection-button primary' }, 'Add') as HTMLButtonElement
   const cancel = el('button', { type: 'button', class: 'connection-button' }, 'Cancel')
+  let sourcesReady = false
+  const picker = createFolderPicker(repoInput, {
+    busy: (on) => { submit.disabled = on || !sourcesReady },
+    problem: (text) => { showError(text) },
+  })
   const form = el('form', { class: 'field-stack q-add-form' },
     el('label', { class: 'mk-field' }, 'Source', sourceSelect),
     el('label', { class: 'mk-field' }, 'Task link or id', refInput),
-    el('label', { class: 'mk-field' }, 'Build in', repoInput, recents, el('small', {}, 'A git folder in your home folder. The item gets its own worktree there.')),
+    el('label', { class: 'mk-field' }, 'Build in', repoInput, recents, el('small', {}, 'A git repo, or a folder of repos, in your home folder. The item gets its own worktree there.'), picker.note),
+    picker.slot,
     el('label', { class: 'mk-field' }, 'Flow', flowSelect),
     el('div', { class: 'mk-field' }, 'Position', el('div', { class: 'mk-seg' }, endButton, nextButton), note),
     error,
@@ -80,21 +87,33 @@ export function createAddDialog(source: () => AddDialogSource, toast: (text: str
   nextButton.addEventListener('click', () => setPosition('next'))
   cancel.addEventListener('click', () => dialog.close())
 
+  async function explainRefusal(text: string, known: FolderState | null): Promise<void> {
+    if (text !== NOT_A_REPO || known !== null) { showError(plainFolderError(text)); return }
+    const state = await picker.check()
+    if (state?.kind === 'parent') showError(TICK_A_REPO)
+    else if (state?.kind !== 'none') showError(plainFolderError(text))
+  }
+
   form.addEventListener('submit', (event) => {
     event.preventDefault()
+    if (picker.checking()) return
     const externalId = parseItemRef(refInput.value)
     const repo = repoInput.value.trim()
     if (sourceSelect.value === '') { showError('Turn on a source plugin in Marketplace first'); return }
     if (externalId === '') { showError('Paste a task link or id'); return }
     if (repo === '') { showError('Choose the folder to build in'); return }
-    const body: JsonRecord = { source: sourceSelect.value, externalId, repo, ...(flowSelect.value === '' ? {} : { flowId: flowSelect.value }), position }
+    const known = picker.known()
+    if (known?.kind === 'none') { showError(known.error); return }
+    const repos = known?.kind === 'parent' ? picker.ticked() : undefined
+    if (repos !== undefined && repos.length === 0) { showError(TICK_A_REPO); return }
+    const body: JsonRecord = { source: sourceSelect.value, externalId, repo, ...(repos === undefined ? {} : { repos }), ...(flowSelect.value === '' ? {} : { flowId: flowSelect.value }), position }
     showError('')
     submit.disabled = true
     submit.textContent = 'Adding…'
-    void postJson('/api/queue', body).then((result) => {
+    void postJson('/api/queue', body).then(async (result) => {
       submit.disabled = false
       submit.textContent = 'Add'
-      if (!result.ok) { showError(errorText(result)); return }
+      if (!result.ok) { await explainRefusal(errorText(result), known); return }
       const title = readRecord(result.data.item).title
       dialog.close()
       toast(typeof title === 'string' && title !== '' ? `Added ${title}` : 'Added to the queue')
@@ -112,9 +131,11 @@ export function createAddDialog(source: () => AddDialogSource, toast: (text: str
       flowSelect.replaceChildren(option('', 'Default flow'), ...flows.map(flow => option(flow.id, flow.name)))
       recents.replaceChildren(...storedRecents().map(path => option(path, path)))
       refInput.value = ''
+      picker.reset()
       setPosition('end')
       showError(enabled.length === 0 ? 'Turn on a source plugin in Marketplace first' : '')
-      submit.disabled = enabled.length === 0
+      sourcesReady = enabled.length > 0
+      submit.disabled = !sourcesReady
       if (!dialog.isConnected) document.body.append(dialog)
       dialog.showModal()
       refInput.focus()

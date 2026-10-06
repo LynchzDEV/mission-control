@@ -1350,6 +1350,16 @@ a.q-src:hover { color: var(--accent); }
 .q-add .mk-seg button[aria-pressed="true"] { box-shadow: var(--raised); }
 .q-add-error { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: var(--danger); white-space: pre-wrap; }
 .q-add-foot { display: flex; justify-content: flex-end; gap: 10px; }
+.q-folder-check { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
+.q-folder-check[hidden] { display: none; }
+.q-repos { margin: 0 0 14px; padding: 10px 12px 12px; border: 1px solid var(--q-line); border-radius: var(--r-md); corner-shape: var(--corner); }
+.q-repos legend { padding: 0 6px; font-size: 13px; color: var(--text-soft); }
+.q-repo-list { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.q-add .field-stack .q-repo { display: inline-flex; align-items: center; gap: 7px; margin: 0; font-size: 13px; color: var(--text); cursor: pointer; }
+.q-repo input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; cursor: pointer; }
+.q-repo input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.q-folder { gap: 6px; }
+.q-chip { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; background: var(--field); box-shadow: 0 0 0 1px var(--q-line); color: var(--text-soft); font-size: 11px; line-height: 16px; }
 .q-sb-children { margin: 0 0 6px 18px; padding-left: 8px; border-left: 1px solid var(--line); }
 .q-sb .sb-row { padding: 7px 12px; margin-bottom: 2px; font-size: 13px; }
 .q-sb .sb-t small { font-size: 11px; }

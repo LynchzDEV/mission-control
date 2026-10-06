@@ -3,6 +3,7 @@ export type QueueState = 'queued' | 'building' | 'waiting-info' | 'ready' | 'fai
 export type QueueItemView = {
   id: string; source: string; externalId: string; title: string; url: string; flowId: string | null
   state: QueueState; runIds: string[]; questions: string[]; error: string | null; updatedAt: number
+  repo?: string; repos?: string[]
 }
 
 export type QueuePlugin = { id: string; name: string; icon?: string; enabled: boolean; queueSource?: true }
@@ -151,12 +152,21 @@ function questionsThread(item: QueueItemView, now: number): HTMLElement {
   return el('div', { class: 'q-thread' }, ...asked, foot)
 }
 
+const folderName = (path: string): string => path.split('/').filter(part => part !== '').at(-1) ?? path
+
+function folderWithRepos(item: QueueItemView): HTMLElement[] {
+  if (item.repos === undefined || item.repos.length === 0) return []
+  const folder = item.repo ?? ''
+  return [el('span', { class: 'q-folder', title: folder }, icon('folder-icon'), folderName(folder), ...item.repos.map(name => el('span', { class: 'q-chip' }, name)))]
+}
+
 function row(item: QueueItemView, items: readonly QueueItemView[], context: QueueContext): HTMLElement {
   const movable = item.state === 'queued'
   const openable = item.state === 'waiting-info' && item.questions.length > 0
   const open = openable && context.openIds.has(item.id)
   const meta = el('div', { class: 'q-meta' },
     sourceBadge(item, context.plugins),
+    ...folderWithRepos(item),
     el('span', {}, icon('flow-icon'), flowName(item, context.flows)),
     el('span', {}, progressText(item, items, context.now)))
   return el('article', { class: 'q-row', 'data-id': item.id, 'data-state': item.state, 'data-movable': movable, draggable: movable ? 'true' : false, 'data-openable': openable, 'data-open': open },
@@ -201,6 +211,8 @@ function readItem(value: unknown): QueueItemView | null {
   return {
     id: id as string, source: source as string, externalId: externalId as string, title: title as string, url: url as string,
     flowId: isText(flowId) ? flowId : null, state: state as QueueState, runIds, questions, error: isText(error) ? error : null, updatedAt,
+    ...(isText(entry.repo) ? { repo: entry.repo } : {}),
+    ...(isTexts(entry.repos) && entry.repos.length > 0 ? { repos: entry.repos } : {}),
   }
 }
 
