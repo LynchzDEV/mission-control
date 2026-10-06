@@ -110,6 +110,21 @@ describe('validateJobCwd', () => {
 })
 
 describe('job lifecycle', () => {
+  test('only workflow step jobs are resolved as headless steps', async () => {
+    const repo = join(home, 'repo')
+    await initGitRepo(repo)
+    const manager = createJobManager({ home })
+    const seen: Array<boolean | undefined> = []
+    const recording: EngineResolver = ({ step, prompt }) => { seen.push(step); return { cmd: 'echo', args: [prompt], env: {} } }
+
+    const plain = await manager.createJob({ engine: 'glm', cwd: repo, prompt: 'plain', label: 'plain' }, recording)
+    if (plain.ok) await waitForStatus(manager, plain.job.id)
+    const step = await manager.createJob({ engine: 'glm', cwd: repo, prompt: 'step', label: 'step', workflowRunId: 'run-1', workflowNodeId: 'execute', workflowAttempt: 0 }, recording)
+    if (step.ok) await waitForStatus(manager, step.job.id)
+
+    expect(seen).toEqual([undefined, true])
+  })
+
   test('a job runs to completion and is recorded as done', async () => {
     const repo = join(home, 'repo')
     await initGitRepo(repo)

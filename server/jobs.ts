@@ -756,6 +756,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
         coreRules: params.coreRules,
         mcpServers: params.mcpServers,
         ...(params.resumeSessionId === undefined ? {} : { resumeSessionId: params.resumeSessionId }),
+        ...(params.workflowRunId ? { step: true } : {}),
         ...(typeof params.model === 'string' && params.model !== '' ? { model: params.model } : {}),
         ...(params.images === undefined ? {} : { images: params.images }),
         ...chatContext,

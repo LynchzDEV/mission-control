@@ -117,6 +117,19 @@ function processEnvRecord(): Record<string, string> {
   return { ...result, CLAUDE_CODE_FORCE_SESSION_PERSISTENCE: '1' }
 }
 
+const THIRTY_MINUTES_MS = '1800000'
+const NINETY_MINUTES_MS = '5400000'
+
+export const CLAUDE_STEP_ENV: Readonly<Record<string, string>> = {
+  CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
+  BASH_DEFAULT_TIMEOUT_MS: THIRTY_MINUTES_MS,
+  BASH_MAX_TIMEOUT_MS: NINETY_MINUTES_MS,
+}
+
+export function stepEnv(engine: EngineName): Record<string, string> {
+  return engine === 'codex' ? {} : { ...CLAUDE_STEP_ENV }
+}
+
 export async function buildEnv(
   engine: EngineName,
   opts?: { worker?: boolean; profiles?: { claude: string; codex: string } },

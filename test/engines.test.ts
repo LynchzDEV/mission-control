@@ -147,6 +147,31 @@ describe('worker profile env', () => {
   })
 })
 
+describe('workflow step jobs', () => {
+  const stepVars = ['CLAUDE_CODE_DISABLE_BACKGROUND_TASKS', 'BASH_DEFAULT_TIMEOUT_MS', 'BASH_MAX_TIMEOUT_MS'] as const
+  const stepVarsOf = (env: Record<string, string>) => Object.fromEntries(stepVars.flatMap(key => key in env ? [[key, env[key]]] : []))
+
+  beforeEach(() => {
+    process.env.MC_FAKE_ENGINES = '1'
+    for (const key of stepVars) delete process.env[key]
+  })
+
+  test('claude and glm steps cannot start background work and may run a long suite in the foreground', async () => {
+    await writeSecrets({ zaiAuthToken: TOKEN })
+    for (const engine of ['claude', 'glm']) {
+      const spawn = await realEngineResolver({ engine, prompt: 'p', step: true })
+      expect(stepVarsOf(spawn.env)).toEqual({ CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1', BASH_DEFAULT_TIMEOUT_MS: '1800000', BASH_MAX_TIMEOUT_MS: '5400000' })
+    }
+  })
+
+  test('ordinary jobs, chats and codex steps keep the CLI defaults', async () => {
+    await writeSecrets({ zaiAuthToken: TOKEN })
+    expect(stepVarsOf((await realEngineResolver({ engine: 'glm', prompt: 'p' })).env)).toEqual({})
+    expect(stepVarsOf((await realEngineResolver({ engine: 'claude', prompt: 'p', purpose: 'chat' })).env)).toEqual({})
+    expect(stepVarsOf((await realEngineResolver({ engine: 'codex', prompt: 'p', step: true })).env)).toEqual({})
+  })
+})
+
 describe('secrets never reach argv', () => {
   test('cmd for every engine is a static literal that never contains the token', async () => {
     await writeSecrets({ zaiAuthToken: TOKEN })

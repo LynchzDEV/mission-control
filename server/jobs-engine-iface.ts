@@ -22,6 +22,7 @@ export type EngineResolverParams = {
   forkSession?: boolean
   resumeSessionAt?: string
   allowedTools?: string[]
+  step?: boolean
 }
 
 export type EngineResolver = (params: EngineResolverParams) => EngineSpawn | Promise<EngineSpawn>
@@ -33,7 +34,7 @@ export const fakeEchoResolver: EngineResolver = ({ engine, prompt }) => ({
   env: {},
 })
 
-import { buildEnv, fakeEnginesEnabled, modelArgs, resolveBinary, resolveEngine, type EngineName, ENGINE_NAMES } from './engines'
+import { buildEnv, fakeEnginesEnabled, modelArgs, resolveBinary, resolveEngine, stepEnv, type EngineName, ENGINE_NAMES } from './engines'
 import { createConnectionStore } from './agent-connections'
 import { modelDiscovery } from './model-discovery'
 import { chatEnv, ensureChatProfile } from './chat-profile'
@@ -96,7 +97,7 @@ async function chatBridgeSpawn(
   }
 }
 
-export const realEngineResolver: EngineResolver = async ({ engine, prompt, resumeSessionId, model, connection, coreRules, mcpServers, readOnly, purpose, edit, images, permissionMode, forkSession, resumeSessionAt, allowedTools }) => {
+export const realEngineResolver: EngineResolver = async ({ engine, prompt, resumeSessionId, model, connection, coreRules, mcpServers, readOnly, purpose, edit, images, permissionMode, forkSession, resumeSessionAt, allowedTools, step }) => {
   if (!ENGINE_NAMES.includes(engine as EngineName)) {
     const selected = await modelDiscovery().effective(connection ?? await createConnectionStore().get(engine))
     if (selected.id !== engine) throw new Error('Connection does not match the selected engine')
@@ -117,5 +118,5 @@ export const realEngineResolver: EngineResolver = async ({ engine, prompt, resum
   const env = purpose === 'chat'
     ? { ...(await buildEnv(name, { worker: false })), ...(await chatProfileEnv(name)) }
     : await buildEnv(name, { worker: !readOnly })
-  return { cmd: resolveBinary(resolveEngine(name).cmd), args, env }
+  return { cmd: resolveBinary(resolveEngine(name).cmd), args, env: step === true && purpose !== 'chat' ? { ...env, ...stepEnv(name) } : env }
 }
