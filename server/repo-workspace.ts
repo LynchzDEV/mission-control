@@ -124,25 +124,63 @@ async function plainPathWorkspace(folder: string, branch: string): Promise<strin
   return dir
 }
 
+type ChildState = 'missing' | 'plain' | 'unsafe'
+
+async function childState(path: string): Promise<ChildState> {
+  const found = await lstatOrNull(path)
+  if (found === null) return 'missing'
+  return found.isDirectory() && !found.isSymbolicLink() && await realpath(path) === path ? 'plain' : 'unsafe'
+}
+
+async function refuseUnsafeChildren(dir: string, repos: readonly string[]): Promise<void> {
+  for (const name of repos) {
+    if (await childState(join(dir, name)) === 'unsafe') throw new Error(`The workspace folder is a link, not a plain folder: ${join(dir, name)}`)
+  }
+}
+
 export async function preparePathWorkspace(given: string, repos: readonly string[], branch: string, snapshots: Readonly<Record<string, string>>): Promise<string> {
   const folder = await checkedFolder(given, repos)
   const dir = await plainPathWorkspace(folder, branch)
+  await refuseUnsafeChildren(dir, repos)
   for (const name of repos) await addPathWorktree(join(folder, name), join(dir, name), branch, snapshots[name]!)
   await writeReposRecord(dir, repos)
   return dir
 }
 
-export async function restorePathWorkspace(given: string, repos: readonly string[], branch: string): Promise<string> {
+const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null']
+
+async function restoreChild(repo: string, child: string, branch: string, snapshot: string | undefined, name: string): Promise<void> {
+  await git(repo, 'worktree', 'prune')
+  if (await git(repo, 'for-each-ref', '--format=%(refname)', `refs/heads/${branch}`) !== '') {
+    await git(repo, ...NO_HOOKS, 'worktree', 'add', '-q', child, branch)
+    return
+  }
+  const usable = snapshot !== undefined && await git(repo, 'cat-file', '-e', `${snapshot}^{commit}`).then(() => true, () => false)
+  if (!usable) throw new Error(`${name} has neither the path branch ${branch} nor its fork snapshot; it cannot be restored`)
+  await git(repo, ...NO_HOOKS, 'worktree', 'add', '-q', '-b', branch, child, snapshot!)
+}
+
+export async function pathWorkspaceIntact(dir: string, repos: readonly string[]): Promise<boolean> {
+  if (!(await isPlainDir(dir))) return false
+  for (const name of repos) if (!(await isPlainDir(join(dir, name))) || await lstatOrNull(join(dir, name, '.git')) === null) return false
+  return true
+}
+
+export async function restorePathWorkspace(given: string, repos: readonly string[], branch: string, snapshots: Readonly<Record<string, string>>): Promise<string> {
   const folder = await checkedFolder(given, repos)
   const dir = await plainPathWorkspace(folder, branch)
-  for (const name of await missingWorktrees(folder, dir, repos)) await prepareWorktree(join(folder, name), branch, join(dir, name))
+  for (const name of await missingWorktrees(folder, dir, repos)) await restoreChild(join(folder, name), join(dir, name), branch, snapshots[name], name)
   await writeReposRecord(dir, repos)
   return dir
 }
 
 export async function removePathWorkspace(folder: string, repos: readonly string[], dir: string, branch: string, keepBranch: boolean): Promise<string[]> {
   const errors: string[] = []
-  for (const name of repos) await removePathWorktree(join(folder, name), join(dir, name), branch, keepBranch).catch((error: unknown) => { errors.push(`${name}: ${error instanceof Error ? error.message : String(error)}`) })
+  for (const name of repos) {
+    const child = join(dir, name)
+    if (await childState(child) === 'unsafe') { errors.push(`${name}: ${child} is not a plain folder; left it alone`); continue }
+    await removePathWorktree(join(folder, name), child, branch, keepBranch).catch((error: unknown) => { errors.push(`${name}: ${error instanceof Error ? error.message : String(error)}`) })
+  }
   await rm(dir, { recursive: true, force: true })
   return errors
 }

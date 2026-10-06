@@ -5,7 +5,8 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { captureDiffStat } from '../server/jobs'
-import { prepareRepoWorkspace, workspaceDiffStat, workspaceRepos } from '../server/repo-workspace'
+import { joinRepoPath, snapshotRepos, commitRepoPath } from '../server/repo-paths'
+import { preparePathWorkspace, prepareRepoWorkspace, removePathWorkspace, restorePathWorkspace, workspaceDiffStat, workspaceRepos } from '../server/repo-workspace'
 import { workspaceSnapshot } from '../server/workflow-runner'
 import { validateWorkspaceCwd } from '../server/workspace'
 import { git, repoAt } from './support/git-repos'
@@ -164,4 +165,68 @@ test('a hand-made record under .worktree with plain repo copies instead of workt
   for (const name of ['a', 'b']) await cp(join(parent, name), join(fake, name), { recursive: true })
   expect(await workspaceRepos(fake)).toBeNull()
   expect(await validateWorkspaceCwd(fake)).toEqual({ ok: false, error: 'cwd is not a git repository' })
+})
+
+const pathBranch = 'flow-deadbeef-a2-1'
+
+async function splitReady() {
+  await twoRepos()
+  const { worktree } = await prepareRepoWorkspace(parent, ['a', 'b'], 'queue-x-7-a8c0')
+  await writeFile(join(worktree, 'a', 'queue.txt'), 'earlier work\n')
+  git(join(worktree, 'a'), 'add', '.')
+  git(join(worktree, 'a'), 'commit', '-qm', 'queue work')
+  return { worktree, snapshots: await snapshotRepos(worktree, ['a', 'b'], 'snap') }
+}
+
+test('a path workspace whose branch was deleted is restored from the fork snapshot, never from the base HEAD', async () => {
+  const { worktree, snapshots } = await splitReady()
+  const dir = await preparePathWorkspace(parent, ['a', 'b'], pathBranch, snapshots)
+  await removePathWorkspace(parent, ['a', 'b'], dir, pathBranch, false)
+  expect(git(join(parent, 'a'), 'branch', '--list', pathBranch)).toBe('')
+  await restorePathWorkspace(parent, ['a', 'b'], pathBranch, snapshots)
+  expect(git(join(dir, 'a'), 'rev-parse', 'HEAD')).toBe(snapshots.a!)
+  await writeFile(join(dir, 'a', 'path.txt'), 'path work\n')
+  await commitRepoPath(dir, ['a', 'b'], 'path')
+  expect(await joinRepoPath(worktree, dir, 'a', snapshots.a!)).toEqual({ applied: true, files: 1 })
+  expect(await readFile(join(worktree, 'a', 'queue.txt'), 'utf8')).toBe('earlier work\n')
+})
+
+test('restoring a path workspace works while the base repo is detached', async () => {
+  const { snapshots } = await splitReady()
+  const dir = await preparePathWorkspace(parent, ['a', 'b'], pathBranch, snapshots)
+  await rm(join(dir, 'a'), { recursive: true, force: true })
+  git(join(parent, 'a'), 'checkout', '-q', '--detach')
+  await restorePathWorkspace(parent, ['a', 'b'], pathBranch, snapshots)
+  expect(git(join(dir, 'a'), 'rev-parse', '--abbrev-ref', 'HEAD')).toBe(pathBranch)
+})
+
+test('a path workspace whose branch and snapshot are both gone is not restored', async () => {
+  const { snapshots } = await splitReady()
+  const dir = await preparePathWorkspace(parent, ['a', 'b'], pathBranch, snapshots)
+  await removePathWorkspace(parent, ['a', 'b'], dir, pathBranch, false)
+  await expect(restorePathWorkspace(parent, ['a', 'b'], pathBranch, { ...snapshots, a: 'f'.repeat(40) })).rejects.toThrow(`a has neither the path branch ${pathBranch} nor its fork snapshot; it cannot be restored`)
+})
+
+test('a symlink planted as a repo folder in a path workspace is refused and the linked worktree is left alone', async () => {
+  const { snapshots } = await splitReady()
+  const { worktree: other } = await prepareRepoWorkspace(parent, ['a'], 'queue-other-2-bbbb')
+  await writeFile(join(other, 'a', 'precious.txt'), 'uncommitted\n')
+  const dir = join(parent, '.worktree', pathBranch)
+  await mkdir(dir, { recursive: true })
+  await symlink(join(other, 'a'), join(dir, 'a'))
+  await expect(preparePathWorkspace(parent, ['a', 'b'], pathBranch, snapshots)).rejects.toThrow(`The workspace folder is a link, not a plain folder: ${join(dir, 'a')}`)
+  expect(await readFile(join(other, 'a', 'precious.txt'), 'utf8')).toBe('uncommitted\n')
+})
+
+test('removing a path workspace leaves a linked repo folder\'s target alone and says so', async () => {
+  const { snapshots } = await splitReady()
+  const { worktree: other } = await prepareRepoWorkspace(parent, ['a'], 'queue-other-2-bbbb')
+  await writeFile(join(other, 'a', 'precious.txt'), 'uncommitted\n')
+  const dir = await preparePathWorkspace(parent, ['a', 'b'], pathBranch, snapshots)
+  await rm(join(dir, 'a'), { recursive: true, force: true })
+  await symlink(join(other, 'a'), join(dir, 'a'))
+  const errors = await removePathWorkspace(parent, ['a', 'b'], dir, pathBranch, false)
+  expect(errors).toEqual([`a: ${join(dir, 'a')} is not a plain folder; left it alone`])
+  expect(await readFile(join(other, 'a', 'precious.txt'), 'utf8')).toBe('uncommitted\n')
+  expect(existsSync(dir)).toBe(false)
 })
