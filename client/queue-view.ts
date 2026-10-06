@@ -3,7 +3,7 @@ export type QueueState = 'queued' | 'building' | 'waiting-info' | 'ready' | 'fai
 export type QueueItemView = {
   id: string; source: string; externalId: string; title: string; url: string; flowId: string | null
   state: QueueState; runIds: string[]; questions: string[]; error: string | null; updatedAt: number
-  repo?: string; repos?: string[]; realChanged?: string[]; currentRunId?: string; step?: QueueStepView
+  repo?: string; repos?: string[]; realChanged?: string[]; currentRunId?: string; step?: QueueStepView; preparing?: true
 }
 
 export type QueueStepView = { title: string; attempt: number; maxAttempts: number }
@@ -70,9 +70,11 @@ export function isWebLink(url: string): boolean {
   return /^https?:\/\//i.test(url)
 }
 
+const waitingInLine = (item: QueueItemView): boolean => item.state === 'queued' && item.preparing !== true
+
 export function lineText(items: readonly QueueItemView[], queuedIndex: number): string {
   if (queuedIndex === 0) return 'Next up'
-  return `${ordinal(queuedIndex + 1 + (items.some(item => item.state === 'building') ? 1 : 0))} in line`
+  return `${ordinal(queuedIndex + 1 + (items.some(item => item.state === 'building' || item.preparing === true) ? 1 : 0))} in line`
 }
 
 export function pill(state: QueueState): HTMLElement {
@@ -126,7 +128,8 @@ export function stepText(step: QueueStepView): string {
 
 function progressText(item: QueueItemView, items: readonly QueueItemView[], now: number): string {
   if (item.state === 'building') return item.step === undefined ? 'Building' : stepText(item.step)
-  if (item.state === 'queued') return lineText(items, items.filter(entry => entry.state === 'queued').indexOf(item))
+  if (item.preparing === true) return 'Getting the workspace ready…'
+  if (item.state === 'queued') return lineText(items, items.filter(waitingInLine).indexOf(item))
   if (item.state === 'waiting-info') {
     const count = item.questions.length
     return `Asked ${count} question${count === 1 ? '' : 's'} · ${ageText(item.updatedAt, now)}`
@@ -143,7 +146,7 @@ function actions(item: QueueItemView, now: number): HTMLElement {
     parts.push(el('span', { class: 'muted q-time' }, `started ${ageText(item.updatedAt, now)}`))
     if (watchRunId(item) !== undefined) parts.push(button('Watch', 'connection-button primary', { ...id, 'data-act': 'watch', 'aria-label': `Watch ${item.title}` }, 'eye-icon'))
   }
-  if (item.state === 'queued') parts.push(button('Remove', 'text-button q-remove', { ...id, 'data-act': 'remove' }))
+  if (waitingInLine(item)) parts.push(button('Remove', 'text-button q-remove', { ...id, 'data-act': 'remove' }))
   if (item.state === 'waiting-info') parts.push(button('Requeue', 'text-button', { ...id, 'data-act': 'requeue' }))
   if (item.state === 'ready') {
     parts.push(button('Requeue', 'text-button', { ...id, 'data-act': 'requeue' }))
@@ -177,7 +180,7 @@ function folderWithRepos(item: QueueItemView): HTMLElement[] {
 }
 
 function row(item: QueueItemView, items: readonly QueueItemView[], context: QueueContext): HTMLElement {
-  const movable = item.state === 'queued'
+  const movable = waitingInLine(item)
   const openable = item.state === 'waiting-info' && item.questions.length > 0
   const open = openable && context.openIds.has(item.id)
   const watchable = !openable && watchRunId(item) !== undefined
@@ -240,6 +243,7 @@ function readItem(value: unknown): QueueItemView | null {
     ...(isTexts(entry.repos) ? { repos: entry.repos } : {}),
     ...(isTexts(entry.realChanged) && entry.realChanged.length > 0 ? { realChanged: entry.realChanged } : {}),
     ...(isText(entry.currentRunId) ? { currentRunId: entry.currentRunId } : {}),
+    ...(entry.preparing === true ? { preparing: true as const } : {}),
     ...(readStep(entry.step) ?? {}),
   }
 }

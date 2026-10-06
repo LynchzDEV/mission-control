@@ -10,7 +10,7 @@ import { queueTree, type QueueTree } from '../queue-tree'
 import { eventStreamResponse, type RunEvents } from '../run-events'
 
 type Status = { status?: number | string }
-type QueueEngineRoutes = Pick<QueueEngine, 'add' | 'requeue' | 'checkReplies' | 'remove' | 'move' | 'checkedAt' | 'subscribeChecks'>
+type QueueEngineRoutes = Pick<QueueEngine, 'add' | 'requeue' | 'checkReplies' | 'remove' | 'move' | 'checkedAt' | 'subscribeChecks'> & Partial<Pick<QueueEngine, 'preparing'>>
 export type QueueRunLookup = { get(id: string): QueueStepRun | undefined; subscribe(listener: () => void): () => void }
 const NO_RUNS: QueueRunLookup = { get: () => undefined, subscribe: () => () => {} }
 
@@ -80,14 +80,15 @@ function itemsChecksAndRuns(store: QueueStore, engine: QueueEngineRoutes, runs: 
   }
 }
 
-function withStep(item: QueueItem, runs: QueueRunLookup): QueueItem & { step?: QueueStep } {
+function withStep(item: QueueItem, runs: QueueRunLookup, preparing: string | null): QueueItem & { step?: QueueStep; preparing?: true } {
+  if (item.state === 'queued' && item.id === preparing) return { ...item, preparing: true }
   const run = item.state === 'building' && item.currentRunId !== null ? runs.get(item.currentRunId) : undefined
   const step = run === undefined ? null : queueStep(run)
   return step === null ? item : { ...item, step }
 }
 
 export function queueRoutes(store: QueueStore, engine: QueueEngineRoutes, tree: () => Promise<QueueTree> = () => queueTree(store.list()), runs: QueueRunLookup = NO_RUNS) {
-  const snapshot = () => ({ items: store.list().map(item => withStep(item, runs)), checkedAt: engine.checkedAt() })
+  const snapshot = () => ({ items: store.list().map(item => withStep(item, runs, engine.preparing?.() ?? null)), checkedAt: engine.checkedAt() })
   return new Elysia()
     .onBeforeHandle(requireLocal)
     .get('/api/queue', snapshot)

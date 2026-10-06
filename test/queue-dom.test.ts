@@ -281,6 +281,17 @@ test('a key pressed on a button inside a row does not also open the run', () => 
   expect(watched).toEqual([])
 })
 
+test('a queued item being prepared says so and cannot be removed or dragged', () => {
+  const preparing = { ...queuedA, preparing: true } as unknown as QueueItem
+  const view = queue.renderQueue(queue.readQueueItems([preparing, queuedB]), context())
+  const [first, second] = rows(view)
+  expect(first!.querySelector('.q-meta > span:last-child')?.textContent).toBe('Getting the workspace ready…')
+  expect(first!.querySelector('.q-remove')).toBeNull()
+  expect(first!.hasAttribute('data-movable')).toBe(false)
+  expect(first!.getAttribute('draggable')).toBeNull()
+  expect(second!.querySelector('.q-meta > span:last-child')?.textContent).toBe('Next up')
+})
+
 test('a building row shows its live step and attempt', () => {
   const step = (title: string, attempt: number, maxAttempts: number) => ({ ...building, step: { title, attempt, maxAttempts } }) as unknown as QueueItem
   const progress = (entry: QueueItem) => rows(queue.renderQueue(queue.readQueueItems([entry]), context()))[0]?.querySelector('.q-meta > span:last-child')?.textContent

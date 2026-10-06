@@ -71,6 +71,23 @@ test('adding in the background returns the queued item before its slow build fin
   expect(h.store.get(item.id)).toMatchObject({ state: 'building', currentRunId: 'run-1' })
 })
 
+test('while its workspace is being prepared the engine says which item it is preparing, and tells listeners', async () => {
+  let release = () => {}
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const h = harness({ prepareWorktree: async (repo, label) => { await gate; return { worktree: join(repo, '.worktree', label) } } })
+  let told = 0
+  h.engine.subscribeChecks(() => { told += 1 })
+  expect(h.engine.preparing()).toBeNull()
+  const item = await h.engine.add(add, { background: true })
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(h.engine.preparing()).toBe(item.id)
+  expect(told).toBe(1)
+  release()
+  await h.engine.kick()
+  expect(h.engine.preparing()).toBeNull()
+  expect(told).toBe(2)
+})
+
 test('a background build that fails marks the item failed without a stray rejection', async () => {
   const h = harness({ prepareWorktree: async () => { throw new Error('worktree add failed') } })
   const item = await h.engine.add(add, { background: true })

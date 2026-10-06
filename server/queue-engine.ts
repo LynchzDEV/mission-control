@@ -41,6 +41,7 @@ export type QueueEngine = {
   move(id: string, to: number): Promise<void>
   checkReplies(): Promise<{ checked: number; resumed: number }>
   checkedAt(): number | null
+  preparing(): string | null
   subscribeChecks(listener: () => void): () => void
 }
 
@@ -84,7 +85,7 @@ type QueueSteps = {
   startNext(): Promise<void>
 }
 
-function queueSteps(deps: QueueEngineDeps): QueueSteps {
+function queueSteps(deps: QueueEngineDeps, onPreparing: (id: string | null) => void): QueueSteps {
   const { store } = deps
 
   async function fail(item: QueueItem, reason: string): Promise<void> {
@@ -187,7 +188,8 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
     while (!store.list().some(item => item.state === 'building')) {
       const next = store.list().find(item => item.state === 'queued')
       if (next === undefined) return
-      try { await build(next) } catch (error) { await fail(next, message(error)) }
+      onPreparing(next.id)
+      try { await build(next) } catch (error) { await fail(next, message(error)) } finally { onPreparing(null) }
     }
   }
 
@@ -196,7 +198,10 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
 
 export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
   const { store } = deps
-  const { fail, settle, startNext } = queueSteps(deps)
+  const checkListeners = new Set<() => void>()
+  const tell = (): void => { for (const listener of checkListeners) listener() }
+  let preparingId: string | null = null
+  const { fail, settle, startNext } = queueSteps(deps, (id) => { preparingId = id; tell() })
   let lane: Promise<unknown> = Promise.resolve()
   const serial = <T>(work: () => Promise<T>): Promise<T> => {
     const result = lane.then(work)
@@ -255,10 +260,9 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
   }
 
   let lastCheckedAt: number | null = null
-  const checkListeners = new Set<() => void>()
   const markChecked = (): void => {
     lastCheckedAt = (deps.now ?? Date.now)()
-    for (const listener of checkListeners) listener()
+    tell()
   }
 
   const checkReplies = async (): Promise<{ checked: number; resumed: number }> => {
@@ -297,6 +301,7 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     onRunSettled: run => serial(async () => { await settle(run); await startNext() }),
     checkReplies,
     checkedAt: () => lastCheckedAt,
+    preparing: () => preparingId,
     subscribeChecks: (listener) => { checkListeners.add(listener); return () => { checkListeners.delete(listener) } },
   }
 }

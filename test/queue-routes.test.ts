@@ -316,3 +316,12 @@ test('the queue stream sends a new snapshot when the run moves to its next step'
   expect(await next()).toContain('"title":"Execute"')
   aborter.abort()
 })
+
+test('a queued item whose workspace is being prepared is marked preparing', async () => {
+  const items = store()
+  const a = await items.add(newItem, 'end')
+  await items.add({ ...newItem, externalId: '2' }, 'end')
+  const app = new Elysia().use(queueRoutes(items, { ...engine(items), preparing: () => a.id }))
+  const listed = (await (await call(app, '/api/queue')).json()).items as Array<{ externalId: string; preparing?: boolean }>
+  expect(listed.map(entry => entry.preparing)).toEqual([true, undefined])
+})
