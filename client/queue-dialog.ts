@@ -54,9 +54,8 @@ export function createAddDialog(source: () => AddDialogSource, toast: (text: str
   const error = el('p', { class: 'q-add-error', role: 'alert', hidden: true })
   const submit = el('button', { type: 'submit', class: 'connection-button primary' }, 'Add') as HTMLButtonElement
   const cancel = el('button', { type: 'button', class: 'connection-button' }, 'Cancel')
-  let sourcesReady = false
   const picker = createFolderPicker(repoInput, {
-    busy: (on) => { submit.disabled = on || !sourcesReady },
+    busy: (on) => { submit.setAttribute('aria-disabled', String(on)) },
     problem: (text) => { showError(text) },
   })
   const form = el('form', { class: 'field-stack q-add-form' },
@@ -94,14 +93,15 @@ export function createAddDialog(source: () => AddDialogSource, toast: (text: str
     else if (state?.kind !== 'none') showError(plainFolderError(text))
   }
 
-  form.addEventListener('submit', (event) => {
-    event.preventDefault()
-    if (picker.checking()) return
+  let adding = false
+
+  async function add(): Promise<void> {
     const externalId = parseItemRef(refInput.value)
     const repo = repoInput.value.trim()
     if (sourceSelect.value === '') { showError('Turn on a source plugin in Marketplace first'); return }
     if (externalId === '') { showError('Paste a task link or id'); return }
     if (repo === '') { showError('Choose the folder to build in'); return }
+    if (picker.settling() && await picker.check() === null) return
     const known = picker.known()
     if (known?.kind === 'none') { showError(known.error); return }
     const repos = known?.kind === 'parent' ? picker.ticked() : undefined
@@ -110,14 +110,20 @@ export function createAddDialog(source: () => AddDialogSource, toast: (text: str
     showError('')
     submit.disabled = true
     submit.textContent = 'Adding…'
-    void postJson('/api/queue', body).then(async (result) => {
-      submit.disabled = false
-      submit.textContent = 'Add'
-      if (!result.ok) { await explainRefusal(errorText(result), known); return }
-      const title = readRecord(result.data.item).title
-      dialog.close()
-      toast(typeof title === 'string' && title !== '' ? `Added ${title}` : 'Added to the queue')
-    })
+    const result = await postJson('/api/queue', body)
+    submit.disabled = false
+    submit.textContent = 'Add'
+    if (!result.ok) { await explainRefusal(errorText(result), known); return }
+    const title = readRecord(result.data.item).title
+    dialog.close()
+    toast(typeof title === 'string' && title !== '' ? `Added ${title}` : 'Added to the queue')
+  }
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault()
+    if (adding) return
+    adding = true
+    void add().finally(() => { adding = false })
   })
 
   return {
@@ -134,8 +140,7 @@ export function createAddDialog(source: () => AddDialogSource, toast: (text: str
       picker.reset()
       setPosition('end')
       showError(enabled.length === 0 ? 'Turn on a source plugin in Marketplace first' : '')
-      sourcesReady = enabled.length > 0
-      submit.disabled = !sourcesReady
+      submit.disabled = enabled.length === 0
       if (!dialog.isConnected) document.body.append(dialog)
       dialog.showModal()
       refInput.focus()

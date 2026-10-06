@@ -1352,6 +1352,8 @@ a.q-src:hover { color: var(--accent); }
 .q-add-foot { display: flex; justify-content: flex-end; gap: 10px; }
 .q-folder-check { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
 .q-folder-check[hidden] { display: none; }
+.q-folder-skipped { display: block; margin: -6px 0 14px; color: var(--muted); font-size: 12px; }
+.q-add button[aria-disabled="true"] { opacity: .6; cursor: progress; }
 .q-repos { margin: 0 0 14px; padding: 10px 12px 12px; border: 1px solid var(--q-line); border-radius: var(--r-md); corner-shape: var(--corner); }
 .q-repos legend { padding: 0 6px; font-size: 13px; color: var(--text-soft); }
 .q-repo-list { display: flex; flex-wrap: wrap; gap: 8px 16px; }

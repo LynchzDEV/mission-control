@@ -68,16 +68,17 @@ function typeFolder(root: ParentNode, path: string, how: 'blur' | 'input' = 'blu
 }
 const reply = (path: string, body: unknown, status = 200) => pending.get(folderUrl(path))!(Response.json(body, { status }))
 
-test('checking a folder disables Add and says so until the answer arrives', async () => {
+test('checking a folder marks Add as waiting and says so until the answer arrives', async () => {
   const dialog = open()
   typeFolder(dialog, '/Users/me/api')
   await flush()
   expect(calls.map(call => call.url)).toEqual([folderUrl('/Users/me/api')])
-  expect(addButton(dialog).disabled).toBe(true)
+  expect(addButton(dialog).getAttribute('aria-disabled')).toBe('true')
+  expect(addButton(dialog).disabled).toBe(false)
   expect((dialog.querySelector('.q-folder-check') as HTMLElement).textContent).toBe('Checking folder…')
   reply('/Users/me/api', { path: '/Users/me/api', isRepo: true, repos: [] })
   await flush()
-  expect(addButton(dialog).disabled).toBe(false)
+  expect(addButton(dialog).getAttribute('aria-disabled')).toBe('false')
   expect((dialog.querySelector('.q-folder-check') as HTMLElement).hidden).toBe(true)
   expect(dialog.querySelector('.q-repos')).toBeNull()
   expect(alertText(dialog)).toBe('')
@@ -182,7 +183,7 @@ test('an answer for a folder no longer in the field is ignored', async () => {
   reply('/Users/me/old', { path: '/Users/me/old', isRepo: false, repos: ['a', 'b'] })
   await flush()
   expect(dialog.querySelector('.q-repos')).toBeNull()
-  expect(addButton(dialog).disabled).toBe(false)
+  expect(addButton(dialog).getAttribute('aria-disabled')).toBe('false')
 })
 
 test('Add for a folder not checked yet posts it as a repo, then offers its repos when it turns out to be a parent', async () => {
@@ -197,6 +198,60 @@ test('Add for a folder not checked yet posts it as a repo, then offers its repos
   expect(repoBoxes(dialog).map(box => box.value)).toEqual(['api', 'web'])
   expect(alertText(dialog)).toBe('Tick at least one repo this ticket touches')
   expect(dialog.open).toBe(true)
+})
+
+test('Add pressed while a folder check is running waits for it and then adds, with one click', async () => {
+  const dialog = open()
+  field<HTMLInputElement>(dialog, 'ref').value = '9'
+  typeFolder(dialog, '/Users/me/api')
+  await flush()
+  submit(dialog)
+  await flush()
+  expect(calls.filter(call => call.method === 'POST')).toEqual([])
+  reply('/Users/me/api', { path: '/Users/me/api', isRepo: true, repos: [] })
+  await flush(8)
+  expect(calls.filter(call => call.method === 'POST').map(call => call.body)).toEqual([{ source: 'clickup-board', externalId: '9', repo: '/Users/me/api', position: 'end' }])
+  expect(dialog.open).toBe(false)
+})
+
+test('Add pressed while typing is still settling checks the folder first and then adds', async () => {
+  const dialog = open()
+  field<HTMLInputElement>(dialog, 'ref').value = '9'
+  typeFolder(dialog, '/Users/me/solo-parent', 'input')
+  submit(dialog)
+  await flush()
+  expect(calls.map(call => call.url)).toEqual([folderUrl('/Users/me/solo-parent')])
+  reply('/Users/me/solo-parent', { path: '/Users/me/solo-parent', isRepo: false, repos: ['api'] })
+  await flush(8)
+  expect(calls.filter(call => call.method === 'POST').map(call => call.body)).toEqual([{ source: 'clickup-board', externalId: '9', repo: '/Users/me/solo-parent', repos: ['api'], position: 'end' }])
+})
+
+test('Add pressed during a check of a folder of repos shows the list and asks for a tick', async () => {
+  const dialog = open()
+  field<HTMLInputElement>(dialog, 'ref').value = '9'
+  typeFolder(dialog, '/Users/me/klangtech')
+  await flush()
+  submit(dialog)
+  reply('/Users/me/klangtech', { path: '/Users/me/klangtech', isRepo: false, repos: ['api', 'web'] })
+  await flush(8)
+  expect(repoBoxes(dialog).map(box => box.value)).toEqual(['api', 'web'])
+  expect(alertText(dialog)).toBe('Tick at least one repo this ticket touches')
+  expect(calls.filter(call => call.method === 'POST')).toEqual([])
+})
+
+test('folders whose check took too long are named as left out', async () => {
+  const dialog = open()
+  typeFolder(dialog, '/Users/me/klangtech')
+  await flush()
+  reply('/Users/me/klangtech', { path: '/Users/me/klangtech', isRepo: false, repos: ['api'], skipped: 2 })
+  await flush()
+  expect((dialog.querySelector('.q-folder-skipped') as HTMLElement).textContent).toBe('2 folders took too long to check and were left out.')
+  typeFolder(dialog, '/Users/me/slow')
+  await flush()
+  reply('/Users/me/slow', { path: '/Users/me/slow', isRepo: false, repos: [], skipped: 1 })
+  await flush()
+  expect(alertText(dialog)).toBe("This folder isn't a git repo and has no repos inside it.")
+  expect((dialog.querySelector('.q-folder-skipped') as HTMLElement).textContent).toBe('1 folder took too long to check and was left out.')
 })
 
 const view = (patch: Partial<QueueItemView>): QueueItemView => ({ id: 'x', source: 's', externalId: '1', title: 't', url: '', flowId: null, state: 'queued', runIds: [], questions: [], error: null, updatedAt: 0, ...patch })
