@@ -226,7 +226,7 @@ describe('plugin frame routes', () => {
       "default-src 'none'; script-src http://127.0.0.1:7777 'unsafe-inline'; style-src http://127.0.0.1:7777 'unsafe-inline'; img-src http://127.0.0.1:7777 data:; connect-src 'none'; frame-ancestors http://127.0.0.1:7777",
     )
     expect(await response.text()).toBe(
-      '<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/plugin-frame/fixture-plugin/ui.css"></head><body><div id="root"></div><script>window.__MC_PLUGIN__={id:"fixture-plugin",runtime:"isolated"}</script><script src="/plugin-frame/fixture-plugin/screen.js"></script></body></html>',
+      '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plugin-frame/fixture-plugin/ui.css"></head><body><div id="root"></div><script>window.__MC_PLUGIN__={id:"fixture-plugin",runtime:"isolated"}</script><script src="/plugin-frame/fixture-plugin/screen.js"></script></body></html>',
     )
   })
 
