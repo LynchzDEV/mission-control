@@ -113,6 +113,20 @@ export function restoreTarget(urlId: string | null, storedId: string | null, ids
   return ids[0] ?? null
 }
 
+export type ScrollAction = { kind: 'lines'; amount: number } | { kind: 'wheel'; deltaY: number }
+
+export function scrollAction(mouseTracking: boolean, direction: 'up' | 'down', lines: number): ScrollAction {
+  const count = Math.max(0, lines)
+  const signed = direction === 'up' ? 0 - count : count
+  return mouseTracking ? { kind: 'wheel', deltaY: signed } : { kind: 'lines', amount: signed }
+}
+
+export function dragLines(pixels: number, cellHeight: number): { lines: number; rest: number } {
+  if (cellHeight <= 0) return { lines: 0, rest: 0 }
+  const lines = Math.trunc(pixels / cellHeight) + 0
+  return { lines, rest: pixels - lines * cellHeight }
+}
+
 export type StatusPill = { kind: 'live' | 'muted' | 'down'; text: string }
 
 export function statusPill(status: string): StatusPill {

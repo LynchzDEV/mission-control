@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { dragKind, dropCopy, findCount, findKeys, latestLine, sessionSlot, terminalKeys, nextActive, renameValue, restoreTarget, sessionState, splitPlan, dividerPair, statusPill } from '../client/terminal-state'
+import { dragKind, dropCopy, findCount, findKeys, latestLine, sessionSlot, terminalKeys, nextActive, renameValue, restoreTarget, sessionState, splitPlan, dividerPair, statusPill, scrollAction, dragLines } from '../client/terminal-state'
 
 describe('sessionState', () => {
   test('working within 5 s of output, idle after, ended wins', () => {
@@ -172,5 +172,33 @@ describe('statusPill', () => {
     expect(statusPill('Reconnecting…')).toEqual({ kind: 'muted', text: 'Reconnecting…' })
     expect(statusPill('Disconnected. Reconnect to try again.')).toEqual({ kind: 'down', text: 'Disconnected · Reconnect' })
     expect(statusPill('Session ended.')).toEqual({ kind: 'muted', text: 'Ended' })
+  })
+})
+
+describe('scrollAction', () => {
+  test('the normal buffer scrolls xterm itself, up is negative', () => {
+    expect(scrollAction(false, 'up', 3)).toEqual({ kind: 'lines', amount: -3 })
+    expect(scrollAction(false, 'down', 3)).toEqual({ kind: 'lines', amount: 3 })
+  })
+  test('an app with mouse tracking owns its scroll, so it gets wheel events', () => {
+    expect(scrollAction(true, 'up', 2)).toEqual({ kind: 'wheel', deltaY: -2 })
+    expect(scrollAction(true, 'down', 2)).toEqual({ kind: 'wheel', deltaY: 2 })
+  })
+  test('zero or negative line counts never flip the direction', () => {
+    expect(scrollAction(false, 'down', 0)).toEqual({ kind: 'lines', amount: 0 })
+    expect(scrollAction(true, 'up', -4)).toEqual({ kind: 'wheel', deltaY: 0 })
+  })
+})
+
+describe('dragLines', () => {
+  test('whole cells become lines and the remainder carries to the next move', () => {
+    expect(dragLines(35, 15)).toEqual({ lines: 2, rest: 5 })
+    expect(dragLines(-35, 15)).toEqual({ lines: -2, rest: -5 })
+  })
+  test('less than a cell scrolls nothing yet', () => {
+    expect(dragLines(14, 15)).toEqual({ lines: 0, rest: 14 })
+  })
+  test('an unmeasured terminal (zero cell height) scrolls nothing and drops the drag', () => {
+    expect(dragLines(80, 0)).toEqual({ lines: 0, rest: 0 })
   })
 })

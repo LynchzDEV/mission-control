@@ -12,6 +12,7 @@ import { createOutcomeStrip } from './outcome-strip'
 import type { ResumeRequest } from './chat-view'
 import { morph, reveal, rollText } from './morph'
 import { TERMINAL_FONT, terminalTheme } from './terminal-theme'
+import { attachTouchScroll } from './terminal-touch'
 
 type Provider = { id: string; name: string; models: string[] }
 
@@ -95,6 +96,7 @@ export class TerminalView {
     })
     this.search.onDidChangeResults(({ resultIndex, resultCount }) => { if (activeId === session.id) rollText(findPart('find-count'), findCount(resultIndex, resultCount, findInput.value)) })
     this.terminal.open(this.screen)
+    attachTouchScroll(this.terminal, this.screen)
     this.outcomes.setSource(`terminal=${encodeURIComponent(session.id)}`)
     this.terminal.onData(data => this.send(data))
     this.observer = new ResizeObserver(() => { cancelAnimationFrame(this.resizeFrame); this.resizeFrame = requestAnimationFrame(() => this.resize()) })

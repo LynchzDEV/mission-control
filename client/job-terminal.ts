@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import type { ThreadMessage } from './chat-view'
 import { errorText, getJson } from './shared'
 import { TERMINAL_FONT, terminalTheme } from './terminal-theme'
+import { attachTouchScroll } from './terminal-touch'
 import { toolCard } from './tool-cards'
 
 export type JobScreen = { write(text: string): void; replace(text: string): void; reset(): void; size(): { cols: number; rows: number }; fit(): void; dispose(): void }
@@ -209,6 +210,7 @@ export function xtermScreen(element: HTMLElement): JobScreen {
   terminal.loadAddon(fit)
   terminal.loadAddon(new WebLinksAddon())
   terminal.open(element)
+  attachTouchScroll(terminal, element)
   const hideCursor = (): void => terminal.write(`${ESC}[?25l`)
   hideCursor()
   const atBottom = (): boolean => terminal.buffer.active.viewportY >= terminal.buffer.active.baseY
