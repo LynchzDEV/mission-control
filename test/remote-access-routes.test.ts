@@ -122,6 +122,28 @@ describe('Tailscale access through the real app', () => {
     }
   })
 
+  test('a plugin screen frame loads its script and stylesheet for an allowed user, and for nobody else', async () => {
+    const server = listen(await createApp())
+    const frameAsset = { origin: 'null', 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'script' }
+    try {
+      const allowed = await viaProxy(server.port, '/plugin-frame/clickup-board/screen.js', { headers: frameAsset })
+      expect(allowed.status).toBe(404)
+      const allowedCss = await viaProxy(server.port, '/plugin-frame/clickup-board/ui.css', { headers: { ...frameAsset, 'sec-fetch-dest': 'style' } })
+      expect(allowedCss.status).toBe(404)
+
+      const wrongUser = await viaProxy(server.port, '/plugin-frame/clickup-board/screen.js', { headers: { ...frameAsset, 'tailscale-user-login': 'someone@example.com' } })
+      expect(wrongUser.status).toBe(403)
+      const otherHost = await viaProxy(server.port, '/plugin-frame/clickup-board/screen.js', { headers: { ...frameAsset, host: 'otherpc.tail1234.ts.net' } })
+      expect(otherHost.status).toBe(403)
+      const spoofedLocal = await throughTailscale(server.port, '/plugin-frame/clickup-board/screen.js', 'localhost', { headers: frameAsset })
+      expect(spoofedLocal.status).toBe(403)
+      const crossSiteApi = await viaProxy(server.port, '/api/plugins', { headers: { ...frameAsset, 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty' } })
+      expect(crossSiteApi.status).toBe(403)
+    } finally {
+      server.stop()
+    }
+  })
+
   test('refuses an allowed host when the request did not come over a socket', async () => {
     const app = await createApp()
     const request = new Request(`http://${HOST}/api/roles`, { headers: { host: HOST, 'tailscale-user-login': USER } })

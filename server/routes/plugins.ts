@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 import { Elysia } from 'elysia'
 
 import { requireLocal, type GuardContext } from '../auth'
-import { localHostRequest } from '../local-access'
+import { peerAddress, trustedHostRequest } from '../local-access'
 import { validateWorkspaceCwd } from '../workspace'
 import { ContextTooLarge, writeContextFile } from '../plugins/context-files'
 import { createInstaller, type Installer } from '../plugins/installer'
@@ -49,7 +49,7 @@ async function requireLocalExceptFrameAssets(context: GuardContext): Promise<voi
   const request = context.request
   if (request.method === 'GET'
     && FRAME_ASSET_PATH.test(new URL(request.url).pathname)
-    && localHostRequest(request)) return
+    && trustedHostRequest(request, peerAddress(context.server, request))) return
   return requireLocal(context)
 }
 

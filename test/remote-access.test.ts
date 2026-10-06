@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 
 import { requireLocal } from '../server/auth'
-import { allowedRemoteHosts, localHostRequest, localRequestAllowed, proxied, remoteAccessEnabled } from '../server/local-access'
+import { allowedRemoteHosts, localRequestAllowed, proxied, remoteAccessEnabled, trustedHostRequest } from '../server/local-access'
 
 const HOST = 'lynchzpc-wsl.tail1234.ts.net'
 const USER = 'lynchz@example.com'
@@ -191,10 +191,13 @@ describe('a request that came through a proxy', () => {
     expect(localRequestAllowed(at(HOST, FORWARDED), '127.0.0.1')).toBe(false)
   })
 
-  test('is refused as a local host for plugin frame assets', () => {
-    expect(localHostRequest(at('localhost'))).toBe(true)
-    expect(localHostRequest(at('localhost', { 'x-forwarded-for': '100.64.0.2' }))).toBe(false)
-    expect(localHostRequest(at('127.0.0.1:7777', FORWARDED))).toBe(false)
+  test('is refused as a local host for plugin frame assets, while an allowed Tailscale user is trusted', () => {
+    expect(trustedHostRequest(at('localhost'), null)).toBe(true)
+    expect(trustedHostRequest(at(HOST, { ...FORWARDED, 'tailscale-user-login': USER }), '127.0.0.1')).toBe(true)
+    expect(trustedHostRequest(at(HOST, { ...FORWARDED, 'tailscale-user-login': 'someone@example.com' }), '127.0.0.1')).toBe(false)
+    expect(trustedHostRequest(at(HOST, { ...FORWARDED, 'tailscale-user-login': USER }), '100.64.0.2')).toBe(false)
+    expect(trustedHostRequest(at('localhost', { 'x-forwarded-for': '100.64.0.2' }), '127.0.0.1')).toBe(false)
+    expect(trustedHostRequest(at('127.0.0.1:7777', FORWARDED), '127.0.0.1')).toBe(false)
   })
 
   test('a Tailscale-User-Login header alone marks Host: localhost as proxied, which refuses it', () => {

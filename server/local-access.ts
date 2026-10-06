@@ -95,7 +95,8 @@ export function localRequestAllowed(request: Request, peer?: string | null): boo
   return isTopLevelPageNavigation(request)
 }
 
-export function localHostRequest(request: Request): boolean {
+export function trustedHostRequest(request: Request, peer: string | null | undefined): boolean {
   const name = hostname(requestHost(request))
-  return name !== null && LOCAL_HOSTS.has(name) && !proxied(request)
+  if (name === null) return false
+  return proxied(request) ? remoteRequestAllowed(request, name, peer) : LOCAL_HOSTS.has(name)
 }
