@@ -158,7 +158,7 @@ export function xtermScreen(element: HTMLElement): JobScreen {
   const hideCursor = (): void => terminal.write(`${ESC}[?25l`)
   hideCursor()
   let frame = 0
-  const fitNow = (): void => { if (element.clientWidth > 0) fit.fit() }
+  const fitNow = (): void => { if (element.clientWidth === 0) return; fit.fit(); terminal.scrollToBottom() }
   const observer = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(fitNow) })
   observer.observe(element)
   const onTheme = (): void => { terminal.options.theme = terminalTheme() }

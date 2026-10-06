@@ -316,7 +316,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .flow-zoom[hidden] { display: none; }
 .flow-term { margin-top: 12px; height: min(42vh, 380px); padding: 10px; }
 .flow-term .term-bar { top: 10px; right: 10px; }
-.flow-term-screen { padding-top: 40px; }
+.flow-term-screen { margin-top: 36px; }
 .flow-step[data-watched] { outline: 2px solid var(--accent); outline-offset: 3px; }
 .flow-zoom-button { min-width: 26px; min-height: 24px; padding: 0 8px; border: 0; border-radius: var(--r-sm); corner-shape: var(--corner); background: transparent; box-shadow: none; font: inherit; font-size: 12px; color: var(--text); cursor: pointer; }
 .flow-zoom-button:hover { background: var(--field); }
