@@ -330,6 +330,24 @@ test('the Add form posts the item and closes', async () => {
   expect(toasts).toEqual(['Added Products v2'])
 })
 
+test('the Add button says Adding… and stays disabled until the server answers', async () => {
+  click(buttonNamed('Add item', section()))
+  await flush()
+  field<HTMLInputElement>('ref').value = '86d3j4f8q'
+  field<HTMLInputElement>('repo').value = '/Users/me/api'
+  let answer: (response: Response) => void = () => {}
+  replies.set('POST /api/queue', () => new Promise<Response>(resolve => { answer = resolve }) as unknown as Response)
+  dialog().querySelector('form.field-stack')?.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
+  const submit = dialog().querySelector<HTMLButtonElement>('form.field-stack button.primary[type="submit"]')!
+  expect([submit.textContent, submit.disabled]).toEqual(['Adding…', true])
+  await flush()
+  expect([submit.textContent, submit.disabled]).toEqual(['Adding…', true])
+  answer(Response.json({ error: 'Already in the queue' }, { status: 409 }))
+  await flush()
+  expect([submit.textContent, submit.disabled]).toEqual(['Add', false])
+  dialog().close()
+})
+
 test('the Add form leaves out a default flow and shows the source error inline', async () => {
   click(buttonNamed('Add item', section()))
   await flush()

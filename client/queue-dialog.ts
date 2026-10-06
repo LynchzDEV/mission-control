@@ -100,17 +100,22 @@ export function createAddDialog(source: () => AddDialogSource, toast: (text: str
     if (sourceSelect.value === '') { showError('Turn on a source plugin in Marketplace first'); return }
     if (externalId === '') { showError('Paste a task link or id'); return }
     if (repo === '') { showError('Choose the folder to build in'); return }
+    showError('')
+    submit.disabled = true
+    submit.textContent = 'Adding…'
+    try { await post(externalId, repo) } finally {
+      submit.disabled = false
+      submit.textContent = 'Add'
+    }
+  }
+
+  async function post(externalId: string, repo: string): Promise<void> {
     if (picker.settling() && await picker.check() === null) return
     const known = picker.known()
     if (known?.kind === 'none') { showError(known.error); return }
     const repos = known?.kind === 'parent' ? picker.ticked() : undefined
     const body: JsonRecord = { source: sourceSelect.value, externalId, repo, ...(repos === undefined ? {} : { repos }), ...(flowSelect.value === '' ? {} : { flowId: flowSelect.value }), position }
-    showError('')
-    submit.disabled = true
-    submit.textContent = 'Adding…'
     const result = await postJson('/api/queue', body)
-    submit.disabled = false
-    submit.textContent = 'Add'
     if (!result.ok) { await explainRefusal(errorText(result), known); return }
     const title = readRecord(result.data.item).title
     dialog.close()
