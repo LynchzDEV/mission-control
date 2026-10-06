@@ -133,6 +133,7 @@ mctl clickup board main              # the board, saved filters applied
 mctl clickup filter add main Assignee "is any of" --value Me
 mctl clickup start 86d4ccpu2 --board main   # chat with the task dossier attached
 mctl queue add clickup-board 86d4ccpu2 --repo ~/code/app   # build it when its turn comes
+mctl queue add clickup-board 86d4ccpu2 --repo ~/klangtech --repos api,backoffice   # a ticket that touches two repos in one folder
 ```
 
 - `--json` prints the server's JSON as one document (NDJSON for `job follow` and `job new --follow`); every command supports it.
