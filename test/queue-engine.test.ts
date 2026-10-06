@@ -59,6 +59,25 @@ test('adding an item fetches its title and starts building it in its own worktre
   expect(h.started).toEqual([{ cwd: '/repo/.worktree/queue-task-1-1-a8c0', request: expect.stringContaining('Work on "Task 1"'), label: 'Task 1', workflowId: 'wf-1' }])
 })
 
+test('adding in the background returns the queued item before its slow build finishes', async () => {
+  let release = () => {}
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const h = harness({ prepareWorktree: async (repo, label) => { await gate; return { worktree: join(repo, '.worktree', label) } } })
+  const item = await h.engine.add(add, { background: true })
+  expect(item).toMatchObject({ state: 'queued', title: 'Task 1' })
+  expect(h.started).toEqual([])
+  release()
+  await h.engine.kick()
+  expect(h.store.get(item.id)).toMatchObject({ state: 'building', currentRunId: 'run-1' })
+})
+
+test('a background build that fails marks the item failed without a stray rejection', async () => {
+  const h = harness({ prepareWorktree: async () => { throw new Error('worktree add failed') } })
+  const item = await h.engine.add(add, { background: true })
+  await h.engine.kick()
+  expect(h.store.get(item.id)).toMatchObject({ state: 'failed', error: 'worktree add failed' })
+})
+
 test('two adds at once build only the first; the second waits queued', async () => {
   const h = harness()
   await Promise.all([h.engine.add(add), h.engine.add({ ...add, externalId: '2' })])

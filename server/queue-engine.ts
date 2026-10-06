@@ -29,8 +29,10 @@ export type QueueEngineDeps = {
 
 export type AddInput = { source: string; externalId: string; repo: string; repos?: string[]; flowId?: string | null; position?: 'end' | 'next' }
 
+export type AddOptions = { background?: boolean }
+
 export type QueueEngine = {
-  add(input: AddInput): Promise<QueueItem>
+  add(input: AddInput, options?: AddOptions): Promise<QueueItem>
   kick(): Promise<void>
   onRunSettled(run: RunView): Promise<void>
   recover(): Promise<void>
@@ -206,12 +208,14 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     if (store.list().some(item => item.source === input.source && item.externalId === input.externalId)) throw new QueueRefusal('Already in the queue', 409)
   }
 
-  async function add(input: AddInput): Promise<QueueItem> {
+  async function add(input: AddInput, options: AddOptions = {}): Promise<QueueItem> {
     refuseDuplicate(input)
     const detail = await fromSource(() => deps.source(input.source).item({ id: input.externalId }))
     refuseDuplicate(input)
     const item = await store.add({ source: input.source, externalId: input.externalId, title: detail.title, url: detail.url, repo: input.repo, flowId: input.flowId ?? null, ...(input.repos === undefined ? {} : { repos: input.repos }) }, input.position ?? 'end')
-    await serial(startNext)
+    const building = serial(startNext)
+    if (options.background) building.catch(() => {})
+    else await building
     return store.get(item.id) ?? item
   }
 

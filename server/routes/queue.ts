@@ -48,7 +48,7 @@ async function addItem(engine: QueueEngineRoutes, body: unknown, set: Status) {
   if (!repo.ok) { set.status = 400; return { error: repo.error } }
   const input = { ...fields, repo: repo.path, ...(repo.repos === undefined ? {} : { repos: repo.repos }) }
   try {
-    return await refusing(set, async () => ({ item: await engine.add(input) }))
+    return await refusing(set, async () => ({ item: await engine.add(input, { background: true }) }))
   } catch (error) {
     if (!(error instanceof SourceFailure)) throw error
     set.status = 502

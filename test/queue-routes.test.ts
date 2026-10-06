@@ -245,9 +245,12 @@ function realEngine(items: ReturnType<typeof store>) {
 
 test('with the real engine: add builds, a queued item cannot be requeued, and a queued item can be removed', async () => {
   const items = store()
-  const app = new Elysia().use(queueRoutes(items, realEngine(items)))
+  const engine = realEngine(items)
+  const app = new Elysia().use(queueRoutes(items, engine))
   const first = await post(app, '/api/queue', { source: 'clickup-board', externalId: '1', repo })
-  expect((await first.json()).item).toMatchObject({ state: 'building', title: 'Task 1' })
+  expect((await first.json()).item).toMatchObject({ state: 'queued', title: 'Task 1' })
+  await engine.kick()
+  expect(items.list()[0]!.state).toBe('building')
   const second = (await (await post(app, '/api/queue', { source: 'clickup-board', externalId: '2', repo })).json()).item
   expect(second.state).toBe('queued')
   const twice = await post(app, '/api/queue', { source: 'clickup-board', externalId: '2', repo })
@@ -270,3 +273,12 @@ test('move refuses a position that is not a whole number', async () => {
   const app = new Elysia().use(queueRoutes(items, engine(items)))
   for (const to of [1.5, '1', null]) expect((await post(app, `/api/queue/${a.id}/move`, { to })).status).toBe(400)
 })
+
+test('POST asks the engine to build in the background so adding returns at once', async () => {
+  const items = store()
+  const options: unknown[] = []
+  const app = new Elysia().use(queueRoutes(items, engine(items, { add: async (input, given) => { options.push(given); return items.add({ ...newItem, externalId: input.externalId }, 'end') } })))
+  expect((await post(app, '/api/queue', { source: 'clickup-board', externalId: '7', repo })).status).toBe(200)
+  expect(options).toEqual([{ background: true }])
+})
+
