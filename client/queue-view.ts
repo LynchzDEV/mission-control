@@ -141,7 +141,7 @@ function actions(item: QueueItemView, now: number): HTMLElement {
   const parts: HTMLElement[] = []
   if (item.state === 'building') {
     parts.push(el('span', { class: 'muted q-time' }, `started ${ageText(item.updatedAt, now)}`))
-    if (watchRunId(item) !== undefined) parts.push(button('Watch', 'connection-button primary', { ...id, 'data-act': 'watch' }, 'eye-icon'))
+    if (watchRunId(item) !== undefined) parts.push(button('Watch', 'connection-button primary', { ...id, 'data-act': 'watch', 'aria-label': `Watch ${item.title}` }, 'eye-icon'))
   }
   if (item.state === 'queued') parts.push(button('Remove', 'text-button q-remove', { ...id, 'data-act': 'remove' }))
   if (item.state === 'waiting-info') parts.push(button('Requeue', 'text-button', { ...id, 'data-act': 'requeue' }))
@@ -181,12 +181,13 @@ function row(item: QueueItemView, items: readonly QueueItemView[], context: Queu
   const openable = item.state === 'waiting-info' && item.questions.length > 0
   const open = openable && context.openIds.has(item.id)
   const watchable = !openable && watchRunId(item) !== undefined
+  const rowKeys = watchable && item.state !== 'building'
   const meta = el('div', { class: 'q-meta' },
     sourceBadge(item, context.plugins),
     ...folderWithRepos(item),
     el('span', {}, icon('flow-icon'), flowName(item, context.flows)),
     el('span', {}, progressText(item, items, context.now)))
-  return el('article', { class: 'q-row', 'data-id': item.id, 'data-state': item.state, 'data-movable': movable, draggable: movable ? 'true' : false, 'data-openable': openable, 'data-open': open, 'data-watchable': watchable, tabindex: watchable ? '0' : false, title: watchable ? 'Watch this run' : false },
+  return el('article', { class: 'q-row', 'data-id': item.id, 'data-state': item.state, 'data-movable': movable, draggable: movable ? 'true' : false, 'data-openable': openable, 'data-open': open, 'data-watchable': watchable, tabindex: rowKeys ? '0' : false, title: watchable ? 'Watch this run' : false, 'aria-label': rowKeys ? `${item.title}, ${PILL[item.state].label}. Press Enter to watch its run` : false },
     el('span', { class: 'q-grip', title: movable ? 'Drag to reorder' : false }, icon('q-grip')),
     pill(item.state),
     el('div', { class: 'q-main' }, el('strong', {}, item.title), meta),

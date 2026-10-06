@@ -258,13 +258,18 @@ test('clicking a row with a run, or pressing Enter or Space on it, opens that ru
   click(rowOf('b1').querySelector('.q-main') as Element)
   click(rowOf('r1').querySelector('.q-main') as Element)
   rowOf('f1').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
-  rowOf('b1').dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))
-  expect(watched).toEqual([{ runId: 'r-b1' }, { runId: 'r-ready' }, { runId: 'r-failed' }, { runId: 'r-b1' }])
+  rowOf('r1').dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))
+  expect(watched).toEqual([{ runId: 'r-b1' }, { runId: 'r-ready' }, { runId: 'r-failed' }, { runId: 'r-ready' }])
 })
 
-test('rows with a run are focusable and say what clicking does; rows without one are not', () => {
-  expect(rowOf('b1').getAttribute('tabindex')).toBe('0')
+test('rows with a run but no Watch button are one named tab stop; a building row leaves the keyboard to its Watch button', () => {
+  expect(rowOf('r1').getAttribute('tabindex')).toBe('0')
+  expect(rowOf('r1').getAttribute('aria-label')).toBe('Invoice PDF footer, Ready. Press Enter to watch its run')
+  expect(rowOf('f1').getAttribute('aria-label')).toBe('Kood queue retry, Failed. Press Enter to watch its run')
   expect(rowOf('b1').getAttribute('title')).toBe('Watch this run')
+  expect(rowOf('b1').hasAttribute('tabindex')).toBe(false)
+  expect(rowOf('b1').hasAttribute('aria-label')).toBe(false)
+  expect(buttonNamed('Watch', rowOf('b1')).getAttribute('aria-label')).toBe('Watch Moni export: filter by call result')
   expect(rowOf('q1').hasAttribute('tabindex')).toBe(false)
   click(rowOf('q1').querySelector('.q-main') as Element)
   rowOf('q1').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
