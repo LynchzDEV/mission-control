@@ -2,7 +2,7 @@ import type { RunView } from '../server/run-view'
 
 export type StepState = 'done' | 'active' | 'session' | 'failed' | 'pending' | 'conditional' | 'proposed' | 'removed'
 export type EdgeState = 'done' | 'flowing' | 'failed' | 'idle' | 'proposed'
-export type GraphStep = { id: string; title: string; detail: string; state: StepState; engine: string; kind: string; since?: number; jobId?: string }
+export type GraphStep = { id: string; title: string; detail: string; state: StepState; engine: string; kind: string; since?: number; jobId?: string; opens?: 'output' }
 export type GraphEdge = { source: string; target: string; outcome: 'pass' | 'fail' | 'blocked'; state: EdgeState; label?: string }
 export type Placed = { id: string; x: number; y: number }
 export type Route = { source: string; target: string; shape: 'forward' | 'down' | 'up' | 'back'; d: string }
@@ -248,10 +248,11 @@ const isSectionBox = (id: string): boolean => id.startsWith('section:')
 export function describeCard(card: HTMLElement, step: GraphStep): void {
   card.title = step.title
   const box = isSectionBox(step.id)
-  if (!box && !step.jobId) { card.setAttribute('aria-label', `${step.title}, ${step.detail}`); return }
+  const output = !box && step.opens === 'output'
+  if (!box && !output && !step.jobId) { card.setAttribute('aria-label', `${step.title}, ${step.detail}`); return }
   card.setAttribute('role', 'button')
   card.tabIndex = 0
-  card.setAttribute('aria-label', `${step.title}, ${step.detail}, ${box ? 'show its steps' : 'open its agent'}`)
+  card.setAttribute('aria-label', `${step.title}, ${step.detail}, ${box ? 'show its steps' : output ? 'show its output' : 'open its agent'}`)
   if (box) card.setAttribute('aria-expanded', 'false')
 }
 

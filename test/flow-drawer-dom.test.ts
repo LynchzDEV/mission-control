@@ -608,3 +608,46 @@ test('going back to a session flow hides the terminal pane and steps open the ag
   expect(jobs).toEqual(['job-plan'])
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })
+
+test('in watch mode every step is a button that says it shows its output', () => {
+  stageSize.width = 1000
+  const stream = watchRun({ runId: 'W5' })
+  stream.send({ runs: [twoSteps('W5')], jobs: [] })
+  expect(card('plan')!.getAttribute('aria-label')).toBe('Plan, Done · 1s, show its output')
+  expect([card('ship')!.getAttribute('role'), card('ship')!.getAttribute('tabindex')]).toEqual(['button', '0'])
+  expect(card('ship')!.getAttribute('aria-label')).toMatch(/, show its output$/)
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('the step terminal is told to stop when its pane hides', () => {
+  stageSize.width = 1000
+  const shown = watchedJobs()
+  const stream = watchRun({ runId: 'W6' })
+  stream.send({ runs: [twoSteps('W6')], jobs: [] })
+  expect(shown.at(-1)).not.toBeNull()
+  dispatchEvent(new CustomEvent('quiet:chat-agents', { detail: 'chat-6' }))
+  expect(shown.at(-1)).toBeNull()
+  expect(term().hidden).toBe(true)
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('closing the drawer stops the step terminal and gives the drawer back to the session it showed before', () => {
+  stageSize.width = 1000
+  dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: { id: 'terminal-7', cwd: '/x' } }))
+  const shown = watchedJobs()
+  const stream = watchRun({ runId: 'W7' })
+  stream.send({ runs: [twoSteps('W7')], jobs: [] })
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+  expect(stream.closed).toBe(true)
+  expect(shown.at(-1)).toBeNull()
+  const count = streams.length
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: true }))
+  expect(streams).toHaveLength(count + 1)
+  expect(streams.at(-1)!.url).toBe('/api/studio/events?terminal=terminal-7')
+  streams.at(-1)!.send({ runs: [twoSteps('T7')], jobs: [] })
+  expect(term().hidden).toBe(true)
+  const jobs = opened()
+  tap(card('plan')!)
+  expect(jobs).toEqual(['job-plan'])
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})

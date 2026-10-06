@@ -343,6 +343,7 @@ function mountFlowDrawer(): void {
   let pickedStep: string | null = null
   let pickedJob: string | null = null
   let watchKey = ''
+  let scopeBeforeWatch: string | null = null
   let saving: string | null = null
   let reminded: string | null = null
   let remindTimer: ReturnType<typeof setTimeout> | undefined
@@ -350,7 +351,10 @@ function mountFlowDrawer(): void {
   const approvalRestored = new Set<string>()
   const expandedByRun = new Map<string, Set<string>>()
   const expandedFor = (runId: string): Set<string> => expandedByRun.get(runId) ?? expandedByRun.set(runId, new Set()).get(runId)!
-  const compose = (run: RunView, now: number): Composed => collapseSections(stepsFor(run, now), edgesFor(run), run.sections, expandedFor(run.id), run.attempts, now)
+  const compose = (run: RunView, now: number): Composed => {
+    const composed = collapseSections(stepsFor(run, now), edgesFor(run), run.sections, expandedFor(run.id), run.attempts, now)
+    return run.id === watching ? { ...composed, steps: composed.steps.map(step => ({ ...step, opens: 'output' as const })) } : composed
+  }
   const cardFor = (id: string | null | undefined): HTMLElement | null => id ? [...canvas.querySelectorAll<HTMLElement>('.flow-step')].find(card => card.dataset.step === id) ?? null : null
   const cardAt = (id: string | undefined): Point | null => {
     const card = cardFor(id)
@@ -590,7 +594,7 @@ function mountFlowDrawer(): void {
     const shown = watching !== null && run !== null && run.id === watching
     if (term) term.hidden = !shown
     canvas.querySelectorAll('.flow-step[data-watched]').forEach(card => card.removeAttribute('data-watched'))
-    if (!shown) { watchKey = ''; return }
+    if (!shown) { stopTerminal(); return }
     const attempt = watchedAttempt(run)
     const nodeId = attempt?.nodeId ?? pickedStep ?? run.currentNodeId
     const tries = run.attempts.filter(entry => entry.nodeId === nodeId)
@@ -601,6 +605,23 @@ function mountFlowDrawer(): void {
     if (key === watchKey) return
     watchKey = key
     dispatchEvent(new CustomEvent('quiet:job-watch', { detail }))
+  }
+
+  function stopTerminal(): void {
+    if (watchKey === '') return
+    watchKey = ''
+    dispatchEvent(new CustomEvent('quiet:job-watch', { detail: null }))
+  }
+
+  function stopWatching(restoreScope: boolean): void {
+    if (watching === null) return
+    watching = null
+    pickedStep = null
+    pickedJob = null
+    stopTerminal()
+    const before = scopeBeforeWatch
+    scopeBeforeWatch = null
+    if (restoreScope) setScope(before)
   }
 
   function watchStep(run: RunView, id: string): void {
@@ -704,11 +725,12 @@ function mountFlowDrawer(): void {
   stop.addEventListener('click', () => { if (stop.dataset.armed !== 'true') stopTarget = current?.id }, { capture: true })
   confirmButton(stop, 'Stop flow', () => void act('stop', stopTarget))
   save.onclick = () => void saveRun(current?.id)
-  addEventListener('quiet:flow-open', (event) => { open = (event as CustomEvent<boolean>).detail; if (!open) { hideNotice(); forgetReminder() } connect() })
-  addEventListener('quiet:activity-scope', (event) => { const session = (event as CustomEvent<{ id: string; cwd: string } | null>).detail; watching = null; setScope(session ? `terminal=${encodeURIComponent(session.id)}` : null) })
-  addEventListener('quiet:chat-agents', (event) => { const chat = (event as CustomEvent<string | null>).detail; if (!chat) return; watching = null; setScope(`chat=${encodeURIComponent(chat)}`) })
+  addEventListener('quiet:flow-open', (event) => { open = (event as CustomEvent<boolean>).detail; if (!open) { hideNotice(); forgetReminder(); stopWatching(true) } connect() })
+  addEventListener('quiet:activity-scope', (event) => { const session = (event as CustomEvent<{ id: string; cwd: string } | null>).detail; stopWatching(false); setScope(session ? `terminal=${encodeURIComponent(session.id)}` : null) })
+  addEventListener('quiet:chat-agents', (event) => { const chat = (event as CustomEvent<string | null>).detail; if (!chat) return; stopWatching(false); setScope(`chat=${encodeURIComponent(chat)}`) })
   addEventListener('quiet:flow-watch', (event) => {
     const { runId, jobId } = (event as CustomEvent<{ runId: string; jobId?: string }>).detail
+    if (watching === null) scopeBeforeWatch = scopeQuery
     watching = runId
     pickedStep = null
     pickedJob = jobId ?? null
