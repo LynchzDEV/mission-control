@@ -346,3 +346,45 @@ function showShot(arg: { id: string; longText: string }): void {
   const shown = document.getElementById(id === 'terminals' ? 'live' : id === 'flow' ? 'flow' : id)
   if (shown) { shown.style.animation = 'none'; shown.style.opacity = '1' }
 }
+
+const LANDSCAPE = '@media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {'
+const landscapeBlock = (css: string): string => {
+  const start = css.indexOf(LANDSCAPE)
+  return start < 0 ? '' : css.slice(start, css.indexOf('\n}', start))
+}
+
+describe('phone held sideways', () => {
+  const block = landscapeBlock(quiet)
+
+  test('one landscape-phone block takes the sidebar and toolbar away only while a terminal is live', () => {
+    expect(quiet.split(LANDSCAPE)).toHaveLength(2)
+    expect(block).toContain('body[data-live="true"] .toolbar { display: none; }')
+    expect(block).toContain('body[data-live="true"] .sb-shell.collapsed .sb { display: none; }')
+    expect(block).toContain('body[data-live="true"] .sb-shell { grid-template-columns: minmax(0, 1fr); }')
+  })
+
+  test('the sessions list opens as a sheet over the terminal', () => {
+    expect(block).toContain('body[data-live="true"] .sb-shell:not(.collapsed) .sb { position: fixed;')
+  })
+
+  test('the layout follows the visible viewport so the prompt stays above the keyboard', () => {
+    expect(block).toContain('height: var(--vvh, 100dvh);')
+  })
+
+  test('the slim bar buttons, key row and pill are display none outside the block', () => {
+    expect(quiet.replace(block, '')).toContain('.term-bar .term-bar-mobile, .key-row, .live-jump { display: none; }')
+    expect(block).toContain('#live .term-bar .term-bar-mobile { display: grid;')
+    expect(block).toContain('.key-row { display: flex;')
+    expect(block).toContain('.live-jump:not([hidden]) { display: inline-flex;')
+    expect(block).toContain('#live .term-bar { position: static;')
+  })
+
+  test('keys are 34px tall and share the row evenly so ten fit across 844px', () => {
+    expect(block).toContain('.key-row button { flex: 1 1 0; min-width: 0; height: 34px; min-height: 34px;')
+  })
+
+  test('the pill and keys use cockpit tokens, never a literal colour', () => {
+    expect(block).toContain('background: var(--accent);')
+    expect(block).not.toMatch(/#[0-9a-f]{3,8}\b/i)
+  })
+})

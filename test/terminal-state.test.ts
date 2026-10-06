@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { dragKind, dropCopy, findCount, findKeys, latestLine, sessionSlot, terminalKeys, nextActive, renameValue, restoreTarget, sessionState, splitPlan, dividerPair, statusPill, scrollAction, dragLines } from '../client/terminal-state'
+import { dragKind, dropCopy, findCount, findKeys, latestLine, sessionSlot, terminalKeys, nextActive, renameValue, restoreTarget, sessionState, splitPlan, dividerPair, statusPill, scrollAction, dragLines, KEY_ROW_BYTES, withCtrl, backToLiveText, liveJump } from '../client/terminal-state'
 
 describe('sessionState', () => {
   test('working within 5 s of output, idle after, ended wins', () => {
@@ -200,5 +200,56 @@ describe('dragLines', () => {
   })
   test('an unmeasured terminal (zero cell height) scrolls nothing and drops the drag', () => {
     expect(dragLines(80, 0)).toEqual({ lines: 0, rest: 0 })
+  })
+})
+
+describe('KEY_ROW_BYTES', () => {
+  test('each key in the phone key row sends the byte a hardware key would', () => {
+    expect(KEY_ROW_BYTES).toEqual({ esc: '\x1b', tab: '\t', 'ctrl-c': '\x03', left: '\x1b[D', right: '\x1b[C', enter: '\r' })
+  })
+})
+
+describe('withCtrl', () => {
+  test('letters of either case become their control byte', () => {
+    expect(withCtrl('c')).toBe('\x03')
+    expect(withCtrl('C')).toBe('\x03')
+    expect(withCtrl('a')).toBe('\x01')
+    expect(withCtrl('z')).toBe('\x1a')
+  })
+  test('the punctuation a terminal maps with Ctrl', () => {
+    expect(withCtrl('[')).toBe('\x1b')
+    expect(withCtrl('\\')).toBe('\x1c')
+    expect(withCtrl(']')).toBe('\x1d')
+    expect(withCtrl('^')).toBe('\x1e')
+    expect(withCtrl('_')).toBe('\x1f')
+    expect(withCtrl('@')).toBe('\x00')
+    expect(withCtrl(' ')).toBe('\x00')
+  })
+  test('anything else is left for the caller to send unchanged', () => {
+    for (const other of ['1', '?', 'é', '', 'ab', '\x1b[A']) expect(withCtrl(other)).toBeNull()
+  })
+})
+
+describe('backToLiveText', () => {
+  test('counts new lines, singular for one, none when nothing arrived', () => {
+    expect(backToLiveText(38)).toBe('↓ Back to live · 38 new lines')
+    expect(backToLiveText(1)).toBe('↓ Back to live · 1 new line')
+    expect(backToLiveText(0)).toBe('↓ Back to live')
+  })
+})
+
+describe('liveJump', () => {
+  test('at the bottom there is no anchor and nothing to count', () => {
+    expect(liveJump(91, 91, null)).toEqual({ anchor: null, newLines: 0 })
+    expect(liveJump(91, 91, 80)).toEqual({ anchor: null, newLines: 0 })
+  })
+  test('scrolling up anchors at the current bottom', () => {
+    expect(liveJump(60, 91, null)).toEqual({ anchor: 91, newLines: 0 })
+  })
+  test('output while scrolled up counts from the anchor', () => {
+    expect(liveJump(60, 129, 91)).toEqual({ anchor: 91, newLines: 38 })
+  })
+  test('a cleared buffer below the anchor never counts negative', () => {
+    expect(liveJump(0, 10, 91)).toEqual({ anchor: 91, newLines: 0 })
   })
 })

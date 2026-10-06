@@ -168,3 +168,35 @@ describe('attention delivery', () => {
     expect(await icon.text()).toContain('<svg')
   })
 })
+
+describe('phone held sideways', () => {
+  const termBar = (markup: string): string => markup.slice(markup.indexOf('<template id="term-bar">'), markup.indexOf('</template>', markup.indexOf('<template id="term-bar">')))
+
+  test('the terminal bar carries Sessions before the name and Flow, bell and Keyboard after Find', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    const bar = termBar(markup)
+    const order = ['data-sidebar-sheet', 'class="term-bar-logo"', 'class="term-bar-name"', 'class="term-bar-status"', 'class="term-bar-find"', 'data-click="toggle-flow"', 'data-click="open-attention"', 'data-keyboard'].map(marker => bar.indexOf(marker))
+    expect(order.every(index => index > 0)).toBe(true)
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    expect(bar.match(/class="sb-icon term-bar-mobile"/g)).toHaveLength(4)
+    expect(bar).toContain('aria-label="Keyboard" aria-pressed="false"')
+    expect(markup).toContain('<symbol id="keyboard-icon"')
+  })
+
+  test('the key row reads Esc, Tab, Ctrl, Ctrl-C, scroll up, scroll down, left, right, Enter, Paste', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    const row = markup.slice(markup.indexOf('<div id="key-row"'), markup.indexOf('</div>', markup.indexOf('<div id="key-row"')))
+    expect(row).toContain('class="key-row" role="toolbar" aria-label="Terminal keys"')
+    const keys = [...row.matchAll(/data-key="([^"]+)"/g)].map(match => match[1])
+    expect(keys).toEqual(['esc', 'tab', 'ctrl', 'ctrl-c', 'scroll-up', 'scroll-down', 'left', 'right', 'enter', 'paste'])
+    expect(row).toContain('data-key="ctrl" aria-pressed="false"')
+    expect(markup.indexOf('<div id="key-row"')).toBeGreaterThan(markup.indexOf('id="drop-stage"'))
+    expect(markup.indexOf('<div id="key-row"')).toBeLessThan(markup.indexOf('id="term-park"'))
+  })
+
+  test('the Back to live pill starts hidden inside the terminal stage', async () => {
+    const markup = await (await app.handle(new Request('http://localhost/'))).text()
+    const stage = markup.slice(markup.indexOf('id="drop-stage"'), markup.indexOf('id="term-park"'))
+    expect(stage).toContain('<button type="button" id="live-jump" class="live-jump" hidden></button>')
+  })
+})

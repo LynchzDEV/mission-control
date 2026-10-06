@@ -127,6 +127,29 @@ export function dragLines(pixels: number, cellHeight: number): { lines: number; 
   return { lines, rest: pixels - lines * cellHeight }
 }
 
+export const KEY_ROW_BYTES = { esc: '\x1b', tab: '\t', 'ctrl-c': '\x03', left: '\x1b[D', right: '\x1b[C', enter: '\r' } as const
+export type KeyRowByte = keyof typeof KEY_ROW_BYTES
+
+const CTRL_MAPPABLE = /^[a-zA-Z@[\\\]^_ ]$/
+
+export function withCtrl(char: string): string | null {
+  if (!CTRL_MAPPABLE.test(char)) return null
+  return char === ' ' ? '\x00' : String.fromCharCode(char.charCodeAt(0) & 0x1f)
+}
+
+export function backToLiveText(newLines: number): string {
+  if (newLines <= 0) return '↓ Back to live'
+  return `↓ Back to live · ${newLines} new line${newLines === 1 ? '' : 's'}`
+}
+
+export type LiveJump = { anchor: number | null; newLines: number }
+
+export function liveJump(viewportY: number, baseY: number, anchor: number | null): LiveJump {
+  if (viewportY >= baseY) return { anchor: null, newLines: 0 }
+  const from = anchor ?? baseY
+  return { anchor: from, newLines: Math.max(0, baseY - from) }
+}
+
 export type StatusPill = { kind: 'live' | 'muted' | 'down'; text: string }
 
 export function statusPill(status: string): StatusPill {

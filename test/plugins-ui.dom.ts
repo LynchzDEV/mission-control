@@ -22,7 +22,8 @@ const markup = `<div class="sb-shell" id="sb-shell">
     <section id="live" class="live-workspace" aria-label="Live terminals" hidden>
       <div class="live-main" id="live-main">
         <template id="term-bar"><div class="term-bar"><span class="term-bar-logo"><img alt=""></span><span class="term-bar-name"></span><button class="term-bar-status" type="button" data-kind="muted" disabled><i></i><span>Connecting…</span></button><span class="term-bar-sep"></span><button class="term-bar-find" type="button" aria-label="Find in this terminal"><svg aria-hidden="true"><use href="#search-icon"/></svg></button><div class="find" id="find" hidden><input id="find-input" type="text"><span id="find-count" role="status"></span><button class="round" id="find-prev" type="button"></button><button class="round" id="find-next" type="button"></button><button class="round" id="find-close" type="button"></button></div></div></template>
-        <div class="drop-stage" id="drop-stage" data-dragging="false"><div id="live-stage" class="live-stage"></div><div class="drop-zone right" id="drop-right" data-hot="false">Drop to open beside</div><div class="drop-zone bottom" id="drop-bottom" data-hot="false">Drop to open below</div><div class="drop-over" id="drop-over" hidden><strong id="drop-over-title">Drop to add files</strong></div></div>
+        <div class="drop-stage" id="drop-stage" data-dragging="false"><div id="live-stage" class="live-stage"></div><div class="drop-zone right" id="drop-right" data-hot="false">Drop to open beside</div><div class="drop-zone bottom" id="drop-bottom" data-hot="false">Drop to open below</div><div class="drop-over" id="drop-over" hidden><strong id="drop-over-title">Drop to add files</strong></div><button type="button" id="live-jump" class="live-jump" hidden></button></div>
+        <div id="key-row" class="key-row" role="toolbar" aria-label="Terminal keys"><button type="button" data-key="ctrl" aria-pressed="false">Ctrl</button><button type="button" data-key="paste">Paste</button></div>
         <div id="term-park" hidden></div>
       </div>
     </section>
@@ -160,7 +161,7 @@ beforeAll(async () => {
   Object.assign(globalThis, {
     window, document: doc, Node: window.Node, HTMLElement: window.HTMLElement, HTMLCanvasElement: window.HTMLCanvasElement,
     Option: window.Option, localStorage: window.localStorage, location: window.location, history: window.history,
-    matchMedia: () => ({ matches: true }),
+    matchMedia: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
     getComputedStyle: window.getComputedStyle,
     requestAnimationFrame: globalThis.requestAnimationFrame ?? window.requestAnimationFrame,
     cancelAnimationFrame: globalThis.cancelAnimationFrame ?? window.cancelAnimationFrame,

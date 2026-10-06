@@ -13,6 +13,7 @@ import type { ResumeRequest } from './chat-view'
 import { morph, reveal, rollText } from './morph'
 import { TERMINAL_FONT, terminalTheme } from './terminal-theme'
 import { attachTouchScroll } from './terminal-touch'
+import { createLandscape } from './terminal-landscape'
 
 type Provider = { id: string; name: string; models: string[] }
 
@@ -37,6 +38,7 @@ let activeId: string | null = null
 let opening = false
 let models: Record<string, string[]> = {}
 let workflowsReady = false
+const landscape = createLandscape(() => activeId ? views.get(activeId) ?? null : null)
 const engineName = (engine: string | undefined): string => engine === 'claude' ? 'Claude Code' : providerName(engine ?? '')
 cwdInput.value = (window as { MC_WORKSPACE_DIR?: string }).MC_WORKSPACE_DIR ?? ''
 
@@ -98,7 +100,7 @@ export class TerminalView {
     this.terminal.open(this.screen)
     attachTouchScroll(this.terminal, this.screen)
     this.outcomes.setSource(`terminal=${encodeURIComponent(session.id)}`)
-    this.terminal.onData(data => this.send(data))
+    this.terminal.onData(data => this.send(landscape.typed(data)))
     this.observer = new ResizeObserver(() => { cancelAnimationFrame(this.resizeFrame); this.resizeFrame = requestAnimationFrame(() => this.resize()) })
     this.observer.observe(this.screen)
   }
@@ -199,6 +201,7 @@ function ensureView(session: Session): TerminalView {
   if (!view) {
     view = new TerminalView(session)
     views.set(session.id, view)
+    landscape.attach(view)
     park.append(view.host)
     view.connect()
   } else if (view.session.title !== session.title || view.session.model !== session.model) {
@@ -225,6 +228,7 @@ function setActiveState(id: string): void {
     dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: view.session }))
   }
   $('live').setAttribute('aria-label', `Live ${engineName(view.session.engine)} terminal`)
+  landscape.refresh()
   publishSessions()
 }
 
