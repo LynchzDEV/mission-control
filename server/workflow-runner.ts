@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { mkdir, readFile, realpath, stat } from 'node:fs/promises'
 import { readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, join, resolve, sep } from 'node:path'
+import { basename, isAbsolute, join, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import { parseThread } from './activity'
 import { BUILTIN_AGENTS, createConnectionStore, modelFamily, SESSION_ENGINE, type AgentConnection } from './agent-connections'
@@ -15,7 +15,9 @@ import type { EngineResolver } from './jobs-engine-iface'
 import type { TerminalRegistry } from './terminals'
 import { threadRootOf } from './threads'
 import { configDir, mcUrl, readConfig, readSecrets } from './secrets'
-import { workspaceRepos } from './repo-workspace'
+import { commitRepoPath, joinRepoPath, shapeRepoNames, shapeRepoProblems, shapeRulesFor, snapshotRepos, workspaceFolder } from './repo-paths'
+import { MAX_QUEUE_REPOS } from './repo-names'
+import { preparePathWorkspace, prepareRepoWorkspace, removePathWorkspace, restorePathWorkspace, workspaceRepos } from './repo-workspace'
 import { validateWorkspaceCwd } from './workspace'
 import { checkShape, readShape, shapeGraph, shapeNotes, shapeTarget, type FlowShape } from './flow-shape'
 import { atomicJson, composeWorkflowPrompt, draftRevision, forkSections, identifier, passTargets, sessionRules, type Outcome, type PolicyRevision, type WorkflowNode, type WorkflowRevision, type WorkflowStore } from './workflows'
@@ -41,7 +43,7 @@ export type WorkflowAttempt = {
 }
 export type TokenState = 'ready' | 'working' | 'settled' | 'waiting'
 export type WorkflowToken = { id: string; nodeId: string; pathId: string; workspace: string; state: TokenState; attempt: number | null; from: number[] }
-export type OpenSection = { fork: string; join: string; forkAttempt: number; parentPathId: string; parentWorkspace: string; snapshot: string; joined: string[]; counts?: Record<string, number>; paths: { pathId: string; branch: string; dir: string; workspace: string; firstNodeId: string }[] }
+export type OpenSection = { fork: string; join: string; forkAttempt: number; parentPathId: string; parentWorkspace: string; snapshot: string; joined: string[]; counts?: Record<string, number>; paths: { pathId: string; branch: string; dir: string; workspace: string; firstNodeId: string }[]; folder?: string; repoSnapshots?: Record<string, string>; joinedRepos?: Record<string, string[]> }
 export type RunStatus = 'awaiting-approval' | 'running' | 'paused' | 'done' | 'failed' | 'blocked' | 'stopped'
 export type ApprovalVia = 'user' | 'drawer' | 'conversation' | 'auto'
 export type RunVersion = { number: number; revision: string; reason: string; size: 'initial' | 'small' | 'big'; state: 'pending' | 'approved' | 'rejected'; approvedVia: ApprovalVia | null; relayedBy: string | null; at: number; graph?: WorkflowRevision; agents?: Record<string, ResolvedAgent>; skills?: Record<string, Array<{ path: string; content: string }>> }
@@ -408,7 +410,10 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     const agent = run.agents[node.id]!
     if (agent.inSession && !sessionOf(run)) return block(run, sessionClosed(node.title))
     const policy = agent.inSession ? { ...run.policy, coreRules: sessionRules(mcUrl(), run.id, node.id) } : run.policy
-    const prompt = composeWorkflowPrompt(policy, run.workflow, node, run.request, inputs, run.skills[node.id], shapeNotes(run.workflow, node, inputs.map(input => input.output)))
+    const restored = await restorePath(run, token)
+    if (restored) return block(run, restored)
+    const repoRules = node.kind === 'plan' ? await shapeRulesFor(run.cwd) : ''
+    const prompt = composeWorkflowPrompt(policy, run.workflow, node, run.request, inputs, run.skills[node.id], shapeNotes(run.workflow, node, inputs.map(input => input.output), repoRules))
     const session = agent.inSession ? { inSession: true as const, sessionNotifiedAt: null, workspaceSnapshot: await workspaceSnapshot(token.workspace) } : {}
     const attempt: WorkflowAttempt = { nodeId: node.id, number: run.attempts.length, jobId: null, status: agent.inSession ? 'running' : 'starting', prompt, startedAt: Date.now(), endedAt: null, result: null, checks: [], output: '', workspace: null, tokenId: token.id, pathId: token.pathId, from: token.from, ...session }
     if (prompt.length > 500000) return block(run, 'Combined task inputs exceed 500 KB; use artifact paths for large outputs')
@@ -515,7 +520,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     if (record.status !== 'done' && result?.outcome !== 'fail' && result?.outcome !== 'blocked') result = { outcome: 'blocked', summary: `Agent process failed (${record.exitCode ?? 'unknown exit'})`, evidence: [] }
     if (!result || (result.outcome === 'pass' && !result.evidence.length)) result = { outcome: 'blocked', summary: 'Agent did not provide a valid MC_RESULT with evidence', evidence: [] }
     if (result.outcome === 'pass' && kindOf(run, attempt) === 'plan') {
-      const errors = keepShape(run, attempt)
+      const errors = await keepShape(run, attempt)
       if (errors.length) result = { ...result, evidence: [...result.evidence, `Flow shape ignored: ${errors.join('; ')}`] }
     }
     return accept(run, attempt, token, result)
@@ -575,43 +580,116 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     }
     return null
   }
-  async function fork(run: WorkflowRun, token: WorkflowToken, node: WorkflowNode, attempt: WorkflowAttempt): Promise<boolean> {
-    const closing = forkSections(run.workflow).find(section => section.fork === node.id)
-    if (!closing) throw new Error(`${node.title} paths must meet at one join`)
-    const parentWorkspace = token.workspace
-    if (await workspaceRepos(parentWorkspace) !== null) { await block(run, 'Parallel paths need a single git repo; this run spans several repos'); return false }
-    const top = await gitTimed(parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-toplevel'])
-    const prefix = (await gitTimed(parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-prefix'])).replace(/\/$/, '')
-    await mkdir(join(root, run.id), { recursive: true, mode: 0o700 })
-    const base = await realpath(join(root, run.id))
-    if (!base.startsWith(await realpath(homedir()) + sep)) { await block(run, 'Path worktrees must be under your home directory'); return false }
-    const stem = token.pathId === 'main' ? '' : `${token.pathId}.`
-    const paths = passTargets(run.workflow, node.id).map((firstNodeId, index) => {
-      const pathId = `${stem}a${attempt.number}-${index + 1}`
-      const dir = join(base, pathId)
-      return { pathId, branch: `flow-${run.id.slice(0, 8)}-${pathId}`, dir, workspace: prefix ? join(dir, prefix) : dir, firstNodeId }
-    })
-    const snapshot = await snapshotCommit(parentWorkspace, `${run.label}: snapshot before ${node.title}`)
-    const section: OpenSection = { fork: node.id, join: closing.join, forkAttempt: attempt.number, parentPathId: token.pathId, parentWorkspace, snapshot, joined: [], paths }
+  type PlannedPath = OpenSection['paths'][number]
+  async function startPaths(run: WorkflowRun, token: WorkflowToken, node: WorkflowNode, attempt: WorkflowAttempt, section: OpenSection, materialize: (path: PlannedPath) => Promise<string | null>): Promise<boolean> {
     run.sections = [...run.sections.filter(open => !(open.fork === node.id && open.forkAttempt === attempt.number)), section]
     await persist(run)
-    for (const path of paths) {
-      await addPathWorktree(top, path.dir, path.branch, snapshot)
-      const workspace = await realpath(path.workspace).catch(() => null)
-      if (!workspace) { await block(run, `${prefix} is not in the path's worktree (it holds only ignored files)`); return false }
-      path.workspace = workspace
+    for (const path of section.paths) {
+      const problem = await materialize(path)
+      if (problem) { await block(run, problem); return false }
       if (!deps.manager.claimWorkspace(path.workspace, run.id)) { await block(run, `Another run owns ${path.workspace}`); return false }
       const failed = await runSetup(run, node, path.workspace, attempt.number)
       if (stopping.has(run.id)) return false
       if (failed) { await block(run, failed); return false }
     }
-    run.tokens = [...run.tokens.filter(other => other.id !== token.id), ...paths.map(path => ({ id: crypto.randomUUID(), nodeId: path.firstNodeId, pathId: path.pathId, workspace: path.workspace, state: 'ready' as const, attempt: null, from: [attempt.number] }))]
+    run.tokens = [...run.tokens.filter(other => other.id !== token.id), ...section.paths.map(path => ({ id: crypto.randomUUID(), nodeId: path.firstNodeId, pathId: path.pathId, workspace: path.workspace, state: 'ready' as const, attempt: null, from: [attempt.number] }))]
     return true
+  }
+  function plannedPaths(run: WorkflowRun, token: WorkflowToken, node: WorkflowNode, attempt: WorkflowAttempt, dirOf: (pathId: string, branch: string) => string): PlannedPath[] {
+    const stem = token.pathId === 'main' ? '' : `${token.pathId}.`
+    return passTargets(run.workflow, node.id).map((firstNodeId, index) => {
+      const pathId = `${stem}a${attempt.number}-${index + 1}`
+      const branch = `flow-${run.id.slice(0, 8)}-${pathId}`
+      const dir = dirOf(pathId, branch)
+      return { pathId, branch, dir, workspace: dir, firstNodeId }
+    })
+  }
+  function plannedShape(run: WorkflowRun, token: WorkflowToken): FlowShape | undefined {
+    return run.attempts.filter(attempt => kindOf(run, attempt) === 'plan' && attempt.shape && lineage(attempt.pathId, token.pathId)).at(-1)?.shape
+  }
+  async function reposForSplit(run: WorkflowRun, token: WorkflowToken, folder: string, repos: string[]): Promise<string[] | string> {
+    const shape = plannedShape(run, token)
+    const missing = shape ? shapeRepoNames(shape).filter(name => !repos.includes(name)) : []
+    if (missing.length === 0) return repos.length > 0 ? repos : 'Parallel paths need at least one repo copy in this workspace; ask for the repos first'
+    if (token.workspace !== run.cwd) return `This path has no copy of ${missing.join(', ')}; only the run's own workspace can add repos`
+    if (repos.length + missing.length > MAX_QUEUE_REPOS) return `The split needs more than ${MAX_QUEUE_REPOS} repos`
+    try {
+      await prepareRepoWorkspace(folder, [...repos, ...missing], basename(token.workspace))
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
+    }
+    return [...repos, ...missing]
+  }
+  async function forkRepos(run: WorkflowRun, token: WorkflowToken, node: WorkflowNode, attempt: WorkflowAttempt, joinId: string, current: string[]): Promise<boolean> {
+    const folder = await workspaceFolder(token.workspace)
+    const repos = await reposForSplit(run, token, folder, current)
+    if (typeof repos === 'string') { await block(run, repos); return false }
+    const paths = plannedPaths(run, token, node, attempt, (_, branch) => join(folder, '.worktree', branch))
+    const repoSnapshots = await snapshotRepos(token.workspace, repos, `${run.label}: snapshot before ${node.title}`)
+    const section: OpenSection = { fork: node.id, join: joinId, forkAttempt: attempt.number, parentPathId: token.pathId, parentWorkspace: token.workspace, snapshot: '', joined: [], paths, folder, repoSnapshots }
+    return startPaths(run, token, node, attempt, section, async path => {
+      try {
+        path.workspace = await preparePathWorkspace(folder, repos, path.branch, repoSnapshots)
+        return null
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+      }
+    })
+  }
+  async function fork(run: WorkflowRun, token: WorkflowToken, node: WorkflowNode, attempt: WorkflowAttempt): Promise<boolean> {
+    const closing = forkSections(run.workflow).find(section => section.fork === node.id)
+    if (!closing) throw new Error(`${node.title} paths must meet at one join`)
+    const parentWorkspace = token.workspace
+    const repos = await workspaceRepos(parentWorkspace)
+    if (repos !== null) return forkRepos(run, token, node, attempt, closing.join, repos)
+    const top = await gitTimed(parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-toplevel'])
+    const prefix = (await gitTimed(parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-prefix'])).replace(/\/$/, '')
+    await mkdir(join(root, run.id), { recursive: true, mode: 0o700 })
+    const base = await realpath(join(root, run.id))
+    if (!base.startsWith(await realpath(homedir()) + sep)) { await block(run, 'Path worktrees must be under your home directory'); return false }
+    const paths = plannedPaths(run, token, node, attempt, pathId => join(base, pathId)).map(path => ({ ...path, workspace: prefix ? join(path.dir, prefix) : path.dir }))
+    const snapshot = await snapshotCommit(parentWorkspace, `${run.label}: snapshot before ${node.title}`)
+    const section: OpenSection = { fork: node.id, join: closing.join, forkAttempt: attempt.number, parentPathId: token.pathId, parentWorkspace, snapshot, joined: [], paths }
+    return startPaths(run, token, node, attempt, section, async path => {
+      await addPathWorktree(top, path.dir, path.branch, snapshot)
+      const workspace = await realpath(path.workspace).catch(() => null)
+      if (!workspace) return `${prefix} is not in the path's worktree (it holds only ignored files)`
+      path.workspace = workspace
+      return null
+    })
+  }
+  function sectionOf(run: WorkflowRun, pathId: string): { section: OpenSection; path: PlannedPath } | undefined {
+    for (const section of run.sections) {
+      const path = section.paths.find(entry => entry.pathId === pathId)
+      if (path) return { section, path }
+    }
+    return undefined
+  }
+  async function restorePath(run: WorkflowRun, token: WorkflowToken): Promise<string | null> {
+    const found = sectionOf(run, token.pathId)
+    if (!found?.section.repoSnapshots || !found.section.folder) return null
+    try {
+      await restorePathWorkspace(found.section.folder, Object.keys(found.section.repoSnapshots), found.path.branch)
+      return null
+    } catch (error) {
+      return `The path workspace ${found.path.dir} could not be restored: ${error instanceof Error ? error.message : String(error)}`
+    }
   }
   function joinable(run: WorkflowRun): OpenSection | undefined {
     return run.sections.find(section => section.paths.every(path => run.tokens.some(token => token.pathId === path.pathId && token.state === 'waiting' && token.nodeId === section.join)))
   }
+  async function closeRepoSection(run: WorkflowRun, section: OpenSection, keep: (pathId: string) => boolean): Promise<string[]> {
+    const errors: string[] = []
+    const repos = Object.keys(section.repoSnapshots ?? {})
+    for (const path of section.paths) {
+      const failed = await removePathWorkspace(section.folder!, repos, path.dir, path.branch, keep(path.pathId))
+      errors.push(...failed.map(error => `${path.pathId}: ${error}`))
+      deps.manager.releaseWorkspace(path.workspace, run.id)
+    }
+    return errors
+  }
   async function closeSection(run: WorkflowRun, section: OpenSection, keep: (pathId: string) => boolean): Promise<string[]> {
+    if (section.repoSnapshots) return closeRepoSection(run, section, keep)
     const errors: string[] = []
     const reason = (error: unknown) => error instanceof Error ? error.message : String(error)
     const top = await gitTimed(section.parentWorkspace, GIT_TIMEOUT, ['rev-parse', '--show-toplevel']).catch(error => { errors.push(reason(error)); return null })
@@ -625,8 +703,34 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     return section.counts?.[path.pathId] ?? await changedFileCount(section.parentWorkspace, section.snapshot, path.branch).catch(() => 0)
   }
   type Joining = { counts: string[]; conflict: { pathId: string; files: string[] } | null }
+  async function joinRepoPathInto(run: WorkflowRun, section: OpenSection, path: PlannedPath): Promise<{ files: number } | { conflicts: string[] }> {
+    for (const [name, snapshot] of Object.entries(section.repoSnapshots!)) {
+      if (section.joinedRepos?.[path.pathId]?.includes(name)) continue
+      const joined = await joinRepoPath(section.parentWorkspace, path.dir, name, snapshot)
+      if (!joined.applied) return { conflicts: joined.conflicts }
+      section.joinedRepos = { ...section.joinedRepos, [path.pathId]: [...(section.joinedRepos?.[path.pathId] ?? []), name] }
+      section.counts = { ...section.counts, [path.pathId]: (section.counts?.[path.pathId] ?? 0) + joined.files }
+      await persist(run)
+    }
+    return { files: section.counts?.[path.pathId] ?? 0 }
+  }
+  async function applyRepoSection(run: WorkflowRun, section: OpenSection, title: (id: string) => string): Promise<Joining> {
+    const repos = Object.keys(section.repoSnapshots!)
+    for (const path of section.paths.filter(path => !section.joined.includes(path.pathId))) await commitRepoPath(path.dir, repos, `${run.label}: ${title(path.firstNodeId)}`)
+    const counts: string[] = []
+    for (const path of section.paths) {
+      if (section.joined.includes(path.pathId)) { counts.push(`${path.pathId}: ${section.counts?.[path.pathId] ?? 0} files`); continue }
+      const joined = await joinRepoPathInto(run, section, path)
+      if ('conflicts' in joined) return { counts, conflict: { pathId: path.pathId, files: joined.conflicts } }
+      section.joined.push(path.pathId)
+      counts.push(`${path.pathId}: ${joined.files} files`)
+      await persist(run)
+    }
+    return { counts, conflict: null }
+  }
   async function applySection(run: WorkflowRun, section: OpenSection): Promise<Joining> {
     const title = (id: string) => run.workflow.nodes.find(node => node.id === id)?.title ?? id
+    if (section.repoSnapshots) return applyRepoSection(run, section, title)
     const open = section.paths.filter(path => !section.joined.includes(path.pathId))
     for (const path of open) await commitPath(path.dir, `${run.label}: ${title(path.firstNodeId)}`)
     const counts: string[] = []
@@ -680,14 +784,16 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     if (cleanup.length) attempt.result = { ...result, evidence: [...result.evidence, ...cleanup.map(error => `Cleanup failed: ${error}`)] }
     await route(run, parent)
   }
-  function shapeOf(run: WorkflowRun, output: string): { shape: FlowShape } | { errors: string[] } | null {
+  async function shapeOf(run: WorkflowRun, output: string): Promise<{ shape: FlowShape } | { errors: string[] } | null> {
     const read = readShape(output)
     if (!read || 'errors' in read) return read
     const errors = checkShape(read.shape, run.workflow)
-    return errors.length ? { errors } : read
+    if (errors.length) return { errors }
+    const repoErrors = await shapeRepoProblems(read.shape, run.cwd)
+    return repoErrors.length ? { errors: repoErrors } : read
   }
-  function keepShape(run: WorkflowRun, attempt: WorkflowAttempt): string[] {
-    const planned = shapeOf(run, attempt.output)
+  async function keepShape(run: WorkflowRun, attempt: WorkflowAttempt): Promise<string[]> {
+    const planned = await shapeOf(run, attempt.output)
     if (!planned) return []
     if ('errors' in planned) return planned.errors
     attempt.shape = planned.shape
@@ -791,7 +897,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
       if (reported.outcome === 'pass' && kindOf(run, attempt) === 'plan' && await changedCode(attempt, token.workspace)) throw new RunActionError('A plan step must not change code', 409)
       const redact = (text: string) => redactRunOutput(run, text)
       const redactedOutput = await redact(output ?? reported.summary)
-      const planned = reported.outcome === 'pass' && kindOf(run, attempt) === 'plan' ? shapeOf(run, redactedOutput) : null
+      const planned = reported.outcome === 'pass' && kindOf(run, attempt) === 'plan' ? await shapeOf(run, redactedOutput) : null
       if (planned && 'errors' in planned) throw new Error(planned.errors.join('\n'))
       const result: NodeResult = { outcome: reported.outcome, summary: await redact(reported.summary), evidence: await Promise.all(reported.evidence.map(redact)) }
       attempt.output = redactedOutput

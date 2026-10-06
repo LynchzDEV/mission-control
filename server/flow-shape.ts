@@ -107,9 +107,9 @@ export function shapeGraph(workflow: Workflow, shape: FlowShape): Workflow {
 export const FLOW_SHAPE_RULES = 'Flow shape. After your plan, decide whether the work splits into parallel paths. Split only when all of these hold: the work has 2 to 4 parts that can each be built and tested on their own; each part owns its own files and no file or folder is listed by two parts; and everything the parts share (API shape, types, names, data format) is written in the contract, so no part has to guess what another decided. Otherwise do not split. Most tasks should stay one straight path; a split that saves little is not worth the merge risk. To split, put one line just before your MC_RESULT line: MC_SHAPE {"contract":"...","paths":[{"id":"api","title":"API","files":["..."],"steps":[{"title":"...","instructions":"..."}]}]}. Each path has 1 to 3 steps: the first builds, later steps check that path\'s own work and send it back to the first step when they fail. List files as repo-relative paths or folders, no wildcards. Mission Control turns this into parallel paths that meet at a join before review, and asks the user to approve the split.'
 export const FLOW_SHAPE_CHECK = 'The plan proposes a split (MC_SHAPE). Also check it: fail if any part needs a file another part owns, if the parts depend on anything missing from the contract, or if the work is too small or too connected to be worth splitting. Name the problem.'
 
-export function shapeNotes(workflow: Workflow, node: WorkflowNode, upstreamOutputs: string[]): { flowShapeRules?: string; flowShapeCheck?: string } {
+export function shapeNotes(workflow: Workflow, node: WorkflowNode, upstreamOutputs: string[], repoRules = ''): { flowShapeRules?: string; flowShapeCheck?: string } {
   if (!shapeTarget(workflow)) return {}
-  if (node.kind === 'plan') return { flowShapeRules: FLOW_SHAPE_RULES }
+  if (node.kind === 'plan') return { flowShapeRules: `${FLOW_SHAPE_RULES}${repoRules}` }
   if (node.kind === 'verify-plan' && upstreamOutputs.some(output => readShape(output))) return { flowShapeCheck: FLOW_SHAPE_CHECK }
   return {}
 }
