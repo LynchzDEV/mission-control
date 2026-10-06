@@ -1,7 +1,7 @@
 import type { TaskContext } from './plugins/context-files'
 import { dropAnswerBackups, restoreAnswers } from './queue-answers'
 import { questionsOf, repoRequestsOf, runRequest, SETTLED, type RunView } from './queue-prompts'
-import { availableRepos, grantRepos } from './queue-repo-asks'
+import { grantRepos, movedRealRepos, movedText, realRepoStates, reposToOffer, SINGLE_REPO_ASK } from './queue-repo-asks'
 import { refuseLinkedQueueFolders } from './queue-files'
 import { message, replyCheck } from './queue-replies'
 import type { QueueSource } from './queue-source'
@@ -109,6 +109,7 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
   async function askOrFail(settled: QueueItem, run: RunView): Promise<void> {
     let item = settled
     const questions = questionsOf(run)
+    if (item.repos === undefined && questions.length === 0 && repoRequestsOf(run).length > 0) return fail(item, SINGLE_REPO_ASK)
     const asked = item.repos === undefined ? [] : repoRequestsOf(run)
     if (asked.length > 0) {
       const granted = await grantRepos(deps, item, asked, questions.length > 0)
@@ -125,14 +126,27 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
     }
   }
 
-  async function settle(run: RunView): Promise<void> {
-    if (!SETTLED.has(run.status)) return
-    const item = settling(run)
-    if (item === undefined) return
-    applied.set(run.id, fingerprint(run))
+  async function noteMovedRealRepos(item: QueueItem): Promise<{ item: QueueItem; moved: string[] }> {
+    const moved = await movedRealRepos(item)
+    if (moved.length === 0) return { item, moved }
+    const realChanged = [...new Set([...(item.realChanged ?? []), ...moved])]
+    return { item: await store.update(item.id, { realChanged }), moved }
+  }
+
+  async function settleState(item: QueueItem, run: RunView): Promise<void> {
     if (run.status !== 'done') return askOrFail(item, run)
     const ready = await store.update(item.id, { state: 'ready', currentRunId: null, error: null, questions: [] })
     deps.needsYou(ready, 'Built and ready for review')
+  }
+
+  async function settle(run: RunView): Promise<void> {
+    if (!SETTLED.has(run.status)) return
+    const found = settling(run)
+    if (found === undefined) return
+    applied.set(run.id, fingerprint(run))
+    const { item, moved } = await noteMovedRealRepos(found)
+    await settleState(item, run)
+    if (moved.length > 0) deps.needsYou(store.get(item.id) ?? item, movedText(item, moved))
   }
 
   const restore = worktreeRestorer(deps)
@@ -153,14 +167,16 @@ function queueSteps(deps: QueueEngineDeps): QueueSteps {
   }
 
   async function build(item: QueueItem): Promise<void> {
+    const available = item.repos === undefined ? [] : await reposToOffer(item.repo)
     const worktree = item.worktree === null ? (await prepare(item)).worktree : await restore({ ...item, worktree: item.worktree })
     await refuseLinkedQueueFolders(worktree, item.source)
     const contextPath = await contextIn(item, worktree)
     const answerPaths = await answersOf(item)
     const ready = { ...item, worktree, contextPath, answerPaths }
-    const available = item.repos === undefined ? [] : await availableRepos(item.repo)
+    const realBaseline = item.repos === undefined ? undefined : await realRepoStates(item.repo, available)
+    if (item.repos !== undefined) await store.update(item.id, { worktree })
     const run = await deps.runner.start({ cwd: worktree, request: runRequest(ready, available), label: item.title.slice(0, MAX_RUN_LABEL), ...(item.flowId ? { workflowId: item.flowId } : {}) }, { startedByUser: true })
-    await store.update(item.id, { state: 'building', worktree, contextPath, currentRunId: run.id, runIds: [...item.runIds, run.id], error: null })
+    await store.update(item.id, { state: 'building', worktree, contextPath, currentRunId: run.id, runIds: [...item.runIds, run.id], error: null, realBaseline })
     const now = deps.runner.get(run.id)
     if (now !== undefined && SETTLED.has(now.status)) await settle(now)
   }
@@ -209,7 +225,7 @@ export function createQueueEngine(deps: QueueEngineDeps): QueueEngine {
     const item = found(store, id)
     if (!REQUEUEABLE.has(item.state)) throw stateRefusal(item.state)
     if (runningInStudio(item)) throw new QueueRefusal('It is running in Studio now', 409)
-    await store.update(id, { state: 'queued', error: null, currentRunId: null, questions: [], repoReruns: item.repoReruns === undefined ? undefined : 0 })
+    await store.update(id, { state: 'queued', error: null, currentRunId: null, questions: [], repoReruns: item.repoReruns === undefined ? undefined : 0, realChanged: item.realChanged === undefined ? undefined : [] })
     await store.move(id, store.list().length)
     await startNext()
     return found(store, id)

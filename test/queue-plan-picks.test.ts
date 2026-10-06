@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { questionsOf, runRequest, type RunView } from '../server/queue-prompts'
-import { prepareRepoWorkspace } from '../server/repo-workspace'
+import { questionsOf, repoRequestsOf, runRequest, type RunView } from '../server/queue-prompts'
+import { prepareRepoWorkspace, registerQueueWorkspaces } from '../server/repo-workspace'
+import { createQueueStore } from '../server/queue-store'
+import { validateWorkspaceCwd } from '../server/workspace'
 import { git, repoAt } from './support/git-repos'
 import { blockedWith, queueHarness } from './support/queue-harness'
 
@@ -17,6 +19,7 @@ beforeEach(async () => {
   scratch = await mkdtemp(join(tmpdir(), 'mc-plan-picks-scratch-'))
 })
 afterEach(async () => {
+  registerQueueWorkspaces(() => false)
   await rm(parent, { recursive: true, force: true })
   await rm(scratch, { recursive: true, force: true })
 })
@@ -107,6 +110,14 @@ test('a run that would take the item past 8 repos fails it', async () => {
   expect(h.store.get(item.id)).toMatchObject({ state: 'failed', error: 'The plan asked for more than 8 repos' })
 })
 
+test('a single-repo item whose run only asks for repos fails with a plain reason', async () => {
+  const h = queueHarness(scratch)
+  const item = await h.engine.add({ ...multi, repo: '/repo' })
+  await h.engine.onRunSettled(h.settle('run-1', blocked(['`repo: a`'])))
+  expect(h.store.get(item.id)).toMatchObject({ state: 'failed', error: 'This item builds in one repo; add it with the parent folder to let it use more' })
+  expect(h.posted).toEqual([])
+})
+
 test('a single-repo item never asks the source about repo lines', async () => {
   const h = queueHarness(scratch)
   const item = await h.engine.add({ ...multi, repo: '/repo' })
@@ -116,9 +127,11 @@ test('a single-repo item never asks the source about repo lines', async () => {
   expect('repos' in h.store.get(item.id)!).toBe(false)
 })
 
-test('questionsOf leaves out repo requests', () => {
-  const run: RunView = { id: 'r', status: 'blocked', error: null, attempts: [blockedWith(['repo: api', '  repo:web ', 'Which page?', 'Is the repo: label right?'])] }
+test('questionsOf leaves out repo requests in any of the forms an agent writes them', () => {
+  const asks = ['repo: api', '  repo:web ', '`repo: api`', 'Repo: api', 'REPO: api', '- repo: api', '* `repo: web`', '1. repo: api', '"repo: api"', 'repo: `api`', 'repo: api, web']
+  const run: RunView = { id: 'r', status: 'blocked', error: null, attempts: [blockedWith([...asks, 'Which page?', 'Is the repo: label right?'])] }
   expect(questionsOf(run)).toEqual(['Which page?', 'Is the repo: label right?'])
+  expect(repoRequestsOf(run)).toEqual(['api', 'web'])
 })
 
 test('a ticked multi-repo item builds its repos up front as before', async () => {
@@ -134,4 +147,109 @@ test('the request for a single-repo item has no repo instructions', () => {
   const request = runRequest({ title: 'T', url: 'u', contextPath: '/c.md', answerPaths: [], repo: '/repo', worktree: '/repo/.worktree/q' })
   expect(request).not.toContain('repo: <name>')
   expect(request).not.toContain('READ-ONLY')
+})
+
+test('the request asks for every repo in one go and names the cap', async () => {
+  await repos('a')
+  const h = harness()
+  await h.engine.add({ ...multi, repo: parent, repos: [] })
+  expect(h.started[0]!.request).toContain('Ask for every repo you need in one go: Mission Control makes the copies and starts a new run, and stops after 3 such asks.')
+})
+
+test('an ask written with backticks, a bullet or a capital is granted, and posts nothing', async () => {
+  await repos('a', 'b')
+  const h = harness()
+  const item = await h.engine.add({ ...multi, repo: parent, repos: [] })
+  await h.engine.onRunSettled(h.settle('run-1', blocked(['- `Repo: a`', 'repo: `b`'])))
+  expect(h.store.get(item.id)).toMatchObject({ state: 'building', repos: ['a', 'b'] })
+  expect(h.posted).toEqual([])
+})
+
+test('a folder whose repos are gone fails the item before a run starts', async () => {
+  await repos('a')
+  const h = harness()
+  const blocker = await h.engine.add({ ...multi, externalId: '1', repo: '/repo' })
+  const item = await h.engine.add({ ...multi, repo: parent, repos: [] })
+  await rm(join(parent, 'a'), { recursive: true, force: true })
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))
+  expect(h.store.get(blocker.id)!.state).toBe('ready')
+  expect(h.store.get(item.id)).toMatchObject({ state: 'failed', error: `${parent} has no repos inside it any more` })
+  expect(h.started).toHaveLength(1)
+})
+
+test('a manual requeue resets the repo rerun count', async () => {
+  await repos('a', 'b')
+  const h = harness()
+  const item = await h.engine.add({ ...multi, repo: parent, repos: [] })
+  await h.engine.onRunSettled(h.settle('run-1', blocked(['repo: a'])))
+  await h.engine.onRunSettled(h.settle('run-2', { status: 'failed', error: 'boom' }))
+  expect(h.store.get(item.id)!.repoReruns).toBe(1)
+  await h.engine.requeue(item.id)
+  expect(h.store.get(item.id)!.repoReruns).toBe(0)
+})
+
+test('an ask for a repo swapped for a symlink after add is refused and makes no copy', async () => {
+  await repos('a', 'b')
+  const evil = await repoAt(join(scratch, 'evil'))
+  const h = harness()
+  const item = await h.engine.add({ ...multi, repo: parent, repos: [] })
+  await rm(join(parent, 'b'), { recursive: true, force: true })
+  await symlink(evil, join(parent, 'b'))
+  await h.engine.onRunSettled(h.settle('run-1', blocked(['repo: b'])))
+  expect(h.store.get(item.id)).toMatchObject({ state: 'failed', error: `The plan asked for b, which is not a repo in ${parent}` })
+  expect(git(evil, 'worktree', 'list').split('\n')).toHaveLength(1)
+})
+
+test('settling the same blocked run twice makes the copy once and counts the rerun once', async () => {
+  await repos('a')
+  const h = harness()
+  const item = await h.engine.add({ ...multi, repo: parent, repos: [] })
+  const run = h.settle('run-1', blocked(['repo: a']))
+  await h.engine.onRunSettled(run)
+  await h.engine.onRunSettled(run)
+  expect(h.store.get(item.id)).toMatchObject({ repos: ['a'], repoReruns: 1 })
+  expect(h.started).toHaveLength(2)
+})
+
+test('an empty workspace record only counts for a workspace a queue item owns', async () => {
+  const planted = join(parent, 'other', '.worktree', 'evil')
+  await mkdir(join(planted, '.mission-control'), { recursive: true })
+  await writeFile(join(planted, '.mission-control', 'repos.json'), JSON.stringify({ repos: [] }))
+  expect(await validateWorkspaceCwd(planted)).toEqual({ ok: false, error: 'cwd is not a git repository' })
+  const store = createQueueStore(join(scratch, 'owned.json'))
+  registerQueueWorkspaces(path => store.list().some(item => item.repos !== undefined && item.worktree === path))
+  expect(await validateWorkspaceCwd(planted)).toEqual({ ok: false, error: 'cwd is not a git repository' })
+  const owned = await store.add({ source: 's', externalId: '1', title: 't', url: 'u', repo: join(parent, 'other'), flowId: null, repos: [] }, 'end')
+  await store.update(owned.id, { worktree: planted })
+  expect(await validateWorkspaceCwd(planted)).toEqual({ ok: true, path: planted })
+})
+
+test('the first run of a plan-picks item starts only after its workspace is stored on the item', async () => {
+  await repos('a')
+  let seen: string | null | undefined
+  const h = queueHarness(scratch, {
+    prepareWorkspace: (folder, names, label) => prepareRepoWorkspace(folder, names, label),
+    runner: { start: async () => { seen = h.store.list()[0]?.worktree; return { id: 'run-x' } }, get: () => undefined },
+  })
+  await h.engine.add({ ...multi, repo: parent, repos: [] })
+  expect(seen).toBe(workspace())
+})
+
+test('a real repo that changes while the item builds is recorded on the item and raised, without failing it', async () => {
+  await repos('a', 'b')
+  const h = harness()
+  const item = await h.engine.add({ ...multi, repo: parent, repos: [] })
+  await writeFile(join(parent, 'b', 'stray.txt'), 'oops')
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))
+  expect(h.store.get(item.id)).toMatchObject({ state: 'ready', realChanged: ['b'] })
+  expect(h.alerts.at(-1)).toMatchObject({ reason: `b in ${parent} changed while Task 7 was building — check it wasn't the agent` })
+})
+
+test('an unchanged real repo raises nothing extra', async () => {
+  await repos('a')
+  const h = harness()
+  const item = await h.engine.add({ ...multi, repo: parent, repos: [] })
+  await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))
+  expect(h.store.get(item.id)!.realChanged ?? []).toEqual([])
+  expect(h.alerts.map(alert => alert.reason)).toEqual(['Built and ready for review'])
 })

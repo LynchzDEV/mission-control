@@ -161,6 +161,7 @@ test('requeue of a multi-repo item with one child worktree deleted recreates onl
 })
 
 test('a multi-repo item without a workspace preparer fails with a clear reason', async () => {
+  await twoRepos()
   const h = queueHarness(scratch)
   const item = await h.engine.add({ ...multi, repo: parent, repos: ['a', 'b'] })
   expect(h.store.get(item.id)).toMatchObject({ state: 'failed', error: 'This Mission Control cannot build multi-repo items' })

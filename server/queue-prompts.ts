@@ -20,7 +20,15 @@ export function branchLabel(item: Pick<QueueItem, 'title' | 'externalId' | 'sour
   return slug ? `queue-${slug}-${id}` : `queue-${id}`
 }
 
-const REPO_REQUEST = /^repo:\s*(\S.*)$/
+const REPO_REQUEST = /^repo:\s*(\S.*)$/i
+const QUOTES = /^[`'"]+|[`'"]+$/g
+
+function requestedRepos(line: string): string[] | null {
+  const bare = line.replace(/^(?:[-*•>]|\d+[.)])\s*/, '').replace(QUOTES, '').trim()
+  const match = REPO_REQUEST.exec(bare)
+  if (match === null) return null
+  return match[1]!.split(/[\s,]+/).map(name => name.replace(QUOTES, '')).filter(name => name !== '')
+}
 
 function reposLines(item: Pick<QueueItem, 'repo' | 'worktree'> & { repos: readonly string[] }, available: readonly string[]): string[] {
   const copies = item.repos.length === 0 ? 'none yet' : item.repos.map(name => join(item.worktree ?? '', name)).join(', ')
@@ -28,6 +36,7 @@ function reposLines(item: Pick<QueueItem, 'repo' | 'worktree'> & { repos: readon
     `This item spans several repos in ${item.repo}. The real repos there are READ-ONLY: read them to plan, never change them: ${available.map(name => join(item.repo, name)).join(', ')}.`,
     `Work only in the repo copies in this workspace, at ${item.worktree}/<name>. Copies ready now: ${copies}. Each copy is its own git worktree; make, test and inspect changes inside it.`,
     'To get a copy of another repo, end the step with MC_RESULT blocked and one evidence item per repo in exactly the form `repo: <name>`. Any other evidence item is a question for the requester.',
+    'Ask for every repo you need in one go: Mission Control makes the copies and starts a new run, and stops after 3 such asks.',
   ]
 }
 
@@ -53,11 +62,11 @@ function blockedEvidence(run: RunView): string[] {
 }
 
 export function questionsOf(run: RunView): string[] {
-  return blockedEvidence(run).filter(line => !REPO_REQUEST.test(line))
+  return blockedEvidence(run).filter(line => requestedRepos(line) === null)
 }
 
 export function repoRequestsOf(run: RunView): string[] {
-  return [...new Set(blockedEvidence(run).flatMap(line => REPO_REQUEST.exec(line)?.[1]?.trim() ?? []))]
+  return [...new Set(blockedEvidence(run).flatMap(line => requestedRepos(line) ?? []))]
 }
 
 export function answersMarkdown(questions: string[], replies: SourceReply[], images: string[]): string {

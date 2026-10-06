@@ -16,6 +16,7 @@ export type QueueItem = {
   state: QueueState; worktree: string | null; contextPath: string | null; answerPaths: string[]
   runIds: string[]; currentRunId: string | null; questions: string[]; lastSeenId: string | null; error: string | null
   createdAt: number; updatedAt: number; repos?: string[]; repoReruns?: number
+  realBaseline?: Record<string, string>; realChanged?: string[]
 }
 
 export type NewQueueItem = Pick<QueueItem, 'source' | 'externalId' | 'title' | 'url' | 'repo' | 'flowId' | 'repos'>
@@ -35,6 +36,7 @@ const STATES = new Set<string>(['queued', 'building', 'waiting-info', 'ready', '
 const isText = (value: unknown): value is string => typeof value === 'string'
 const isTextOrNull = (value: unknown): boolean => value === null || typeof value === 'string'
 const isTexts = (value: unknown): boolean => Array.isArray(value) && value.every(isText)
+const isTextRecord = (value: unknown): boolean => typeof value === 'object' && value !== null && !Array.isArray(value) && Object.values(value).every(isText)
 
 function isItem(value: unknown): value is QueueItem {
   if (typeof value !== 'object' || value === null) return false
@@ -45,6 +47,8 @@ function isItem(value: unknown): value is QueueItem {
     && isTexts(item.answerPaths) && isTexts(item.runIds) && isTexts(item.questions)
     && typeof item.createdAt === 'number' && typeof item.updatedAt === 'number'
     && (item.repos === undefined || isRepoList(item.repos))
+    && (item.realBaseline === undefined || isTextRecord(item.realBaseline))
+    && (item.realChanged === undefined || isTexts(item.realChanged))
     && (item.repoReruns === undefined || (Number.isInteger(item.repoReruns) && (item.repoReruns as number) >= 0))
 }
 
