@@ -5,7 +5,7 @@ import type { RunView, ScopeSnapshot } from '../server/run-view'
 const markup = `<section id="flow" data-open="true"><h2 id="flow-title"></h2><select id="flow-runs" hidden></select><small id="flow-meta"></small><div id="flow-pills"></div>
 <div class="flow-actions"><button id="flow-save" type="button" hidden>Save as workflow</button><button id="flow-pause" type="button" hidden>Pause</button><button id="flow-stop" class="flow-confirm" type="button" aria-label="Stop" hidden><span>Stop</span><span>Stop flow</span></button><button id="flow-studio" type="button" hidden>Open in Studio</button></div>
 <div id="flow-banner" hidden><span class="flow-mark"></span><p></p><div class="flow-banner-actions"></div></div>
-<div id="flow-stage" hidden><div id="flow-canvas" class="flow-canvas"></div><div class="flow-zoom" hidden><button type="button" data-zoom="out" aria-label="Zoom out">−</button><button type="button" data-zoom="in" aria-label="Zoom in">+</button><button type="button" data-zoom="fit">Fit</button><button type="button" data-zoom="follow" aria-pressed="true">Follow</button></div></div><div id="flow-quick" hidden><ol id="flow-quick-list"></ol></div><p id="flow-empty"></p></section>`
+<div id="flow-stage" hidden><div id="flow-canvas" class="flow-canvas"></div><div class="flow-zoom" hidden><button type="button" data-zoom="out" aria-label="Zoom out">−</button><button type="button" data-zoom="in" aria-label="Zoom in">+</button><button type="button" data-zoom="fit">Fit</button><button type="button" data-zoom="follow" aria-pressed="true">Follow</button></div></div><div id="flow-quick" hidden><ol id="flow-quick-list"></ol></div><div id="flow-term" hidden></div><p id="flow-empty"></p></section>`
 const { window } = new JSDOM(`<body>${markup}</body>`, { url: 'http://127.0.0.1:7777/' })
 const streams: FakeSource[] = []
 type Sent = { url: string; method: string; body: unknown }
@@ -532,5 +532,79 @@ test('a refused Remind says why in the banner and frees the button', async () =>
   expect(bannerText()).toBe('Could not remind: That step is not waiting for the session')
   expect([remind.textContent, remind.disabled]).toEqual(['Remind Claude', false])
   respond = ok
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+const watchedJobs = (): unknown[] => {
+  const shown: unknown[] = []
+  addEventListener('quiet:job-watch', (event) => shown.push((event as CustomEvent).detail))
+  return shown
+}
+const term = (): HTMLElement => document.getElementById('flow-term')!
+const watchRun = (detail: { runId: string; jobId?: string }): FakeSource => {
+  window.localStorage.setItem('mc.motion.paused', 'true')
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: true }))
+  dispatchEvent(new CustomEvent('quiet:flow-watch', { detail }))
+  return streams.at(-1)!
+}
+
+test('watching a run streams just that run and shows the working step in the terminal pane', () => {
+  stageSize.width = 1000
+  const shown = watchedJobs()
+  const jobs = opened()
+  const stream = watchRun({ runId: 'W1' })
+  expect(stream.url).toBe('/api/studio/events?run=W1')
+  stream.send({ runs: [twoSteps('W1')], jobs: [] })
+  expect(term().hidden).toBe(false)
+  expect(shown.at(-1)).toEqual({ jobId: 'job-build', title: 'Build', engine: 'codex' })
+  expect(card('build')!.hasAttribute('data-watched')).toBe(true)
+  tap(card('plan')!)
+  expect(shown.at(-1)).toEqual({ jobId: 'job-plan', title: 'Plan', engine: 'claude' })
+  expect(card('plan')!.hasAttribute('data-watched')).toBe(true)
+  expect(card('build')!.hasAttribute('data-watched')).toBe(false)
+  tap(card('ship')!)
+  expect(shown.at(-1)).toEqual({ jobId: null, title: 'Ship', engine: 'claude' })
+  card('build')!.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  expect(shown.at(-1)).toEqual({ jobId: 'job-build', title: 'Build', engine: 'codex' })
+  expect(jobs).toEqual([])
+  const count = shown.length
+  stream.send({ runs: [{ ...twoSteps('W1'), updatedAt: 99 }], jobs: [] })
+  expect(shown).toHaveLength(count)
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('while following, the pane moves on to the step that starts next and counts its attempts', () => {
+  stageSize.width = 1000
+  const shown = watchedJobs()
+  const stream = watchRun({ runId: 'W2' })
+  stream.send({ runs: [twoSteps('W2')], jobs: [] })
+  const retried = twoSteps('W2', 'settled')
+  retried.attempts = [...retried.attempts, { ...retried.attempts[1]!, number: 2, jobId: 'job-build-2', status: 'running', outcome: null, endedAt: null, from: [1] }]
+  stream.send({ runs: [retried], jobs: [] })
+  expect(shown.at(-1)).toEqual({ jobId: 'job-build-2', title: 'Build · attempt 2', engine: 'codex' })
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('watching with a job named shows that job first', () => {
+  stageSize.width = 1000
+  const shown = watchedJobs()
+  const stream = watchRun({ runId: 'W3', jobId: 'job-plan' })
+  stream.send({ runs: [twoSteps('W3')], jobs: [] })
+  expect(shown.at(-1)).toEqual({ jobId: 'job-plan', title: 'Plan', engine: 'claude' })
+  dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
+})
+
+test('going back to a session flow hides the terminal pane and steps open the agent again', () => {
+  stageSize.width = 1000
+  const stream = watchRun({ runId: 'W4' })
+  stream.send({ runs: [twoSteps('W4')], jobs: [] })
+  dispatchEvent(new CustomEvent('quiet:activity-scope', { detail: { id: 'terminal-9', cwd: '/x' } }))
+  const scoped = streams.at(-1)!
+  expect(scoped.url).toBe('/api/studio/events?terminal=terminal-9')
+  scoped.send({ runs: [twoSteps('T9')], jobs: [] })
+  expect(term().hidden).toBe(true)
+  const jobs = opened()
+  tap(card('plan')!)
+  expect(jobs).toEqual(['job-plan'])
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })

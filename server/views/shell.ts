@@ -99,6 +99,7 @@ const BODY = `
         </header>
         <div id="flow-banner" class="flow-banner" role="status" hidden><span class="flow-mark"></span><p></p><div class="flow-banner-actions"></div></div>
         <div id="flow-stage" class="flow-stage" role="group" tabindex="0" aria-label="Flow graph. Arrow keys pan, plus and minus zoom, 0 fits" hidden><div id="flow-canvas" class="flow-canvas"></div><div class="flow-zoom" hidden><button class="flow-zoom-button" type="button" data-zoom="out" aria-label="Zoom out">&minus;</button><button class="flow-zoom-button" type="button" data-zoom="in" aria-label="Zoom in">+</button><button class="flow-zoom-button" type="button" data-zoom="fit">Fit</button><button class="flow-zoom-button" type="button" data-zoom="follow" aria-pressed="true">Follow</button></div></div>
+        <div id="flow-term" class="term-host flow-term" role="region" aria-label="Step output" hidden></div>
         <div id="flow-quick" class="flow-quick" hidden><p class="muted">No flow for this work. The agents run directly.</p><ol id="flow-quick-list"></ol></div>
         <p id="flow-empty" class="flow-empty muted">Your session’s flow will appear here.</p>
       </div></div>
@@ -242,6 +243,7 @@ export function ShellPage(props: ShellProps): string {
   <script src="/js/terminals.js" type="module" defer></script>
   <script src="/js/shell-activity.js" type="module" defer></script>
   <script src="/js/flow-drawer.js" type="module" defer></script>
+  <script src="/js/job-terminal.js" type="module" defer></script>
   <script src="/js/usage-card.js" type="module" defer></script>
   <script src="/js/backdrop.js" type="module" defer></script>
   <script src="/js/access.js" type="module" defer></script>

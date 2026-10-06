@@ -322,6 +322,7 @@ function mountFlowDrawer(): void {
   const pause = $('flow-pause') as HTMLButtonElement, stop = $('flow-stop') as HTMLButtonElement, save = $('flow-save') as HTMLButtonElement
   const banner = $('flow-banner'), stage = $('flow-stage'), canvas = $('flow-canvas'), quick = $('flow-quick'), quickList = $('flow-quick-list'), empty = $('flow-empty')
   const studio = $('flow-studio') as HTMLButtonElement
+  const term = document.getElementById('flow-term')
   const viewport = mountViewport(stage, canvas, { animate: motionAllowed })
   const notice = document.createElement('p')
   notice.className = 'flow-notice'
@@ -338,6 +339,10 @@ function mountFlowDrawer(): void {
   let selected: string | null = null
   let current: RunView | null = null
   let bannerKey = ''
+  let watching: string | null = null
+  let pickedStep: string | null = null
+  let pickedJob: string | null = null
+  let watchKey = ''
   let saving: string | null = null
   let reminded: string | null = null
   let remindTimer: ReturnType<typeof setTimeout> | undefined
@@ -563,13 +568,46 @@ function mountFlowDrawer(): void {
       viewport.paint(run.id, frame, frame.focus, keep && after ? { before: keep.before, after } : undefined)
       const refocus = cardFor(focused)
       if (refocus && document.activeElement !== refocus) viewport.quietly(() => refocus.focus({ preventScroll: true }))
+      paintWatch(run)
       return
     }
+    paintWatch(null)
     const newest = snapshot.jobs[0]
     paintHeader(null, newest?.label ?? EMPTY_TITLE)
     meta.replaceChildren(newest ? 'Quick work · no flow needed' : '')
     const now = Date.now()
     quickList.replaceChildren(...snapshot.jobs.map(job => quickRow(job, now)))
+  }
+
+  function watchedAttempt(run: RunView): RunAttemptView | undefined {
+    const attempts = inOrder(run)
+    if (pickedJob !== null) return attempts.find(attempt => attempt.jobId === pickedJob)
+    if (pickedStep !== null) return attempts.filter(attempt => attempt.nodeId === pickedStep).at(-1)
+    return attempts.filter(attempt => attempt.status !== 'settled').at(-1) ?? attempts.at(-1)
+  }
+
+  function paintWatch(run: RunView | null): void {
+    const shown = watching !== null && run !== null && run.id === watching
+    if (term) term.hidden = !shown
+    canvas.querySelectorAll('.flow-step[data-watched]').forEach(card => card.removeAttribute('data-watched'))
+    if (!shown) { watchKey = ''; return }
+    const attempt = watchedAttempt(run)
+    const nodeId = attempt?.nodeId ?? pickedStep ?? run.currentNodeId
+    const tries = run.attempts.filter(entry => entry.nodeId === nodeId)
+    const visit = attempt === undefined ? tries.length + 1 : tries.findIndex(entry => entry.number === attempt.number) + 1
+    cardFor(nodeId)?.setAttribute('data-watched', '')
+    const detail = { jobId: attempt?.jobId ?? null, title: `${titleOf(run, nodeId)}${visit > 1 ? ` · attempt ${visit}` : ''}`, engine: run.nodes.find(node => node.id === nodeId)?.engine ?? 'claude' }
+    const key = JSON.stringify(detail)
+    if (key === watchKey) return
+    watchKey = key
+    dispatchEvent(new CustomEvent('quiet:job-watch', { detail }))
+  }
+
+  function watchStep(run: RunView, id: string): void {
+    const working = inOrder(run).filter(attempt => attempt.status !== 'settled').at(-1)
+    pickedJob = null
+    pickedStep = working?.nodeId === id ? null : id
+    paintWatch(run)
   }
 
   function tick(): void {
@@ -622,6 +660,7 @@ function mountFlowDrawer(): void {
   function activateStep(id: string | null | undefined): void {
     if (!id || !current) return
     if (id.startsWith(sectionBox(''))) { toggleSection(id.slice(sectionBox('').length), true); return }
+    if (watching !== null && current.id === watching) { watchStep(current, id); return }
     const jobId = compose(current, Date.now()).steps.find(step => step.id === id)?.jobId
     if (jobId) dispatchEvent(new CustomEvent('quiet:agent-open', { detail: { jobId } }))
   }
@@ -666,8 +705,18 @@ function mountFlowDrawer(): void {
   confirmButton(stop, 'Stop flow', () => void act('stop', stopTarget))
   save.onclick = () => void saveRun(current?.id)
   addEventListener('quiet:flow-open', (event) => { open = (event as CustomEvent<boolean>).detail; if (!open) { hideNotice(); forgetReminder() } connect() })
-  addEventListener('quiet:activity-scope', (event) => { const session = (event as CustomEvent<{ id: string; cwd: string } | null>).detail; setScope(session ? `terminal=${encodeURIComponent(session.id)}` : null) })
-  addEventListener('quiet:chat-agents', (event) => { const chat = (event as CustomEvent<string | null>).detail; if (chat) setScope(`chat=${encodeURIComponent(chat)}`) })
+  addEventListener('quiet:activity-scope', (event) => { const session = (event as CustomEvent<{ id: string; cwd: string } | null>).detail; watching = null; setScope(session ? `terminal=${encodeURIComponent(session.id)}` : null) })
+  addEventListener('quiet:chat-agents', (event) => { const chat = (event as CustomEvent<string | null>).detail; if (!chat) return; watching = null; setScope(`chat=${encodeURIComponent(chat)}`) })
+  addEventListener('quiet:flow-watch', (event) => {
+    const { runId, jobId } = (event as CustomEvent<{ runId: string; jobId?: string }>).detail
+    watching = runId
+    pickedStep = null
+    pickedJob = jobId ?? null
+    watchKey = ''
+    setScope(`run=${encodeURIComponent(runId)}`)
+    selected = runId
+    paint()
+  })
   if (document.body.dataset.chat) setScope(`chat=${encodeURIComponent(document.body.dataset.chat)}`)
   else paint()
 }

@@ -311,6 +311,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .flow-run { position: relative; }
 .flow-zoom { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 4px; padding: 3px; border-radius: var(--r-md); corner-shape: var(--corner); background: color-mix(in srgb, var(--hi) 70%, var(--paper)); border: 1px solid var(--line); cursor: default; }
 .flow-zoom[hidden] { display: none; }
+.flow-term { margin-top: 12px; height: min(42vh, 380px); padding: 10px; }
+.flow-term .term-bar { top: 10px; right: 10px; }
+.flow-term-screen { padding-top: 40px; }
+.flow-step[data-watched] { outline: 2px solid var(--accent); outline-offset: 3px; }
 .flow-zoom-button { min-width: 26px; min-height: 24px; padding: 0 8px; border: 0; border-radius: var(--r-sm); corner-shape: var(--corner); background: transparent; box-shadow: none; font: inherit; font-size: 12px; color: var(--text); cursor: pointer; }
 .flow-zoom-button:hover { background: var(--field); }
 .flow-zoom-button[aria-pressed="true"] { background: var(--purple-bg); color: var(--purple-ink); }
