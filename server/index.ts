@@ -296,7 +296,7 @@ export async function createApp(): Promise<Elysia> {
     .use(modelsRoutes)
     .use(providersRoutes)
     .use(pluginsRoutes())
-    .use(queueRoutes(queueStore, queueEngine, () => queueTree(queueStore.list())))
+    .use(queueRoutes(queueStore, queueEngine, () => queueTree(queueStore.list()), { get: id => workflowRunner.get(id), subscribe: runEvents.subscribe }))
 
   await defaultRuntimes()
 

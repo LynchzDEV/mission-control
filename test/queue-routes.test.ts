@@ -29,6 +29,7 @@ afterAll(async () => {
 })
 
 type Engine = Pick<QueueEngine, 'add' | 'requeue' | 'checkReplies' | 'remove' | 'move' | 'checkedAt' | 'subscribeChecks'>
+type RunLookup = NonNullable<Parameters<typeof queueRoutes>[3]>
 
 function engine(items: ReturnType<typeof store>, over: Partial<QueueEngine> = {}): Engine {
   const found = (id: string) => { const item = items.get(id); if (item === undefined) throw new QueueRefusal(`No queue item ${id}`, 404); return item }
@@ -282,3 +283,36 @@ test('POST asks the engine to build in the background so adding returns at once'
   expect(options).toEqual([{ background: true }])
 })
 
+const runWith = (currentNodeId: string, nodeIds: string[]) => ({ workflow: { nodes: [{ id: 'plan', title: 'Plan', maxVisits: 3 }, { id: 'execute', title: 'Execute', maxVisits: 4 }] }, currentNodeId, attempts: nodeIds.map(nodeId => ({ nodeId })) })
+
+test('a building item carries its run step; other items do not', async () => {
+  const items = store()
+  const building = await items.add(newItem, 'end')
+  await items.update(building.id, { state: 'building', currentRunId: 'run-1', runIds: ['run-1'] })
+  await items.add({ ...newItem, externalId: '2' }, 'end')
+  const runs: RunLookup = { get: id => (id === 'run-1' ? runWith('execute', ['plan', 'execute', 'execute']) : undefined) as ReturnType<RunLookup['get']>, subscribe: () => () => {} }
+  const app = new Elysia().use(queueRoutes(items, engine(items), undefined, runs))
+  const listed = (await (await call(app, '/api/queue')).json()).items as Array<{ externalId: string; step?: unknown }>
+  expect(listed[0]!.step).toEqual({ title: 'Execute', attempt: 2, maxAttempts: 4 })
+  expect(listed[1]!.step).toBeUndefined()
+})
+
+test('the queue stream sends a new snapshot when the run moves to its next step', async () => {
+  const items = store()
+  const building = await items.add(newItem, 'end')
+  await items.update(building.id, { state: 'building', currentRunId: 'run-1', runIds: ['run-1'] })
+  let current = runWith('plan', ['plan'])
+  const listeners = new Set<() => void>()
+  const runs: RunLookup = { get: () => current as ReturnType<RunLookup['get']>, subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } } }
+  const app = new Elysia().use(queueRoutes(items, engine(items), undefined, runs))
+  const aborter = new AbortController()
+  const response = await app.handle(new Request('http://127.0.0.1:7777/api/queue/stream', { headers: { host: '127.0.0.1:7777' }, signal: aborter.signal }))
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  const next = async () => decoder.decode((await reader.read()).value)
+  expect(await next()).toContain('"title":"Plan"')
+  current = runWith('execute', ['plan', 'execute'])
+  for (const listener of listeners) listener()
+  expect(await next()).toContain('"title":"Execute"')
+  aborter.abort()
+})

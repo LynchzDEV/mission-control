@@ -3,13 +3,16 @@ import { z } from 'zod'
 
 import { requireLocal } from '../auth'
 import { QueueRefusal, SourceFailure, type QueueEngine } from '../queue-engine'
-import type { QueueStore } from '../queue-store'
+import type { QueueItem, QueueStore } from '../queue-store'
+import { queueStep, type QueueStep, type QueueStepRun } from '../queue-step'
 import { listFolderRepos, resolveQueueFolder } from '../queue-folder'
 import { queueTree, type QueueTree } from '../queue-tree'
 import { eventStreamResponse, type RunEvents } from '../run-events'
 
 type Status = { status?: number | string }
 type QueueEngineRoutes = Pick<QueueEngine, 'add' | 'requeue' | 'checkReplies' | 'remove' | 'move' | 'checkedAt' | 'subscribeChecks'>
+export type QueueRunLookup = { get(id: string): QueueStepRun | undefined; subscribe(listener: () => void): () => void }
+const NO_RUNS: QueueRunLookup = { get: () => undefined, subscribe: () => () => {} }
 
 const addSchema = z.object({
   source: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/),
@@ -67,25 +70,30 @@ const isConflict = (error: unknown): boolean => error instanceof QueueRefusal &&
 const removeExplanation = (error: unknown): string => (isConflict(error) ? 'Stop its run in Studio first' : NO_ITEM)
 const moveExplanation = (error: unknown): string => (isConflict(error) ? message(error) : NO_ITEM)
 
-function itemsAndChecks(store: QueueStore, engine: QueueEngineRoutes): RunEvents {
+function itemsChecksAndRuns(store: QueueStore, engine: QueueEngineRoutes, runs: QueueRunLookup): RunEvents {
   return {
     changed: store.changed,
     subscribe(listener) {
-      const stopItems = store.subscribe(listener)
-      const stopChecks = engine.subscribeChecks(listener)
-      return () => { stopItems(); stopChecks() }
+      const stops = [store.subscribe(listener), engine.subscribeChecks(listener), runs.subscribe(listener)]
+      return () => { for (const stop of stops) stop() }
     },
   }
 }
 
-export function queueRoutes(store: QueueStore, engine: QueueEngineRoutes, tree: () => Promise<QueueTree> = () => queueTree(store.list())) {
-  const snapshot = () => ({ items: store.list(), checkedAt: engine.checkedAt() })
+function withStep(item: QueueItem, runs: QueueRunLookup): QueueItem & { step?: QueueStep } {
+  const run = item.state === 'building' && item.currentRunId !== null ? runs.get(item.currentRunId) : undefined
+  const step = run === undefined ? null : queueStep(run)
+  return step === null ? item : { ...item, step }
+}
+
+export function queueRoutes(store: QueueStore, engine: QueueEngineRoutes, tree: () => Promise<QueueTree> = () => queueTree(store.list()), runs: QueueRunLookup = NO_RUNS) {
+  const snapshot = () => ({ items: store.list().map(item => withStep(item, runs)), checkedAt: engine.checkedAt() })
   return new Elysia()
     .onBeforeHandle(requireLocal)
     .get('/api/queue', snapshot)
     .get('/api/queue/tree', () => tree())
     .get('/api/queue/folder', ({ query, set }) => folderRepos(query.path, set))
-    .get('/api/queue/stream', ({ request }) => eventStreamResponse(itemsAndChecks(store, engine), snapshot, request.signal))
+    .get('/api/queue/stream', ({ request }) => eventStreamResponse(itemsChecksAndRuns(store, engine, runs), snapshot, request.signal))
     .post('/api/queue', ({ body, set }) => addItem(engine, body, set))
     .post('/api/queue/check', () => engine.checkReplies())
     .post('/api/queue/:id/move', async ({ params, body, set }) => {
