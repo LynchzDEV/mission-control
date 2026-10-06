@@ -584,6 +584,16 @@ describe('GET /api/jobs/:id/thread', () => {
     }
   })
 
+  test('reports the size of the job log it read, so a live view can follow from there', async () => {
+    const manager = createJobManager()
+    const app = buildApp(manager, echoResolver)
+    const job = await dispatch(app, { engine: 'claude', cwd: repo, prompt: 'plain', label: 'l' })
+    await pollUntilDone(app, job.id)
+
+    const thread = (await (await app.handle(get(`/api/jobs/${job.id}/thread`))).json()) as { logSize: number }
+    expect(thread.logSize).toBe((await stat(manager.logPath(job.id))).size)
+  })
+
   test('reports canReply false while no session id has appeared', async () => {
     const app = buildApp(createJobManager(), echoResolver)
     const job = await dispatch(app, { engine: 'claude', cwd: repo, prompt: 'plain', label: 'l' })

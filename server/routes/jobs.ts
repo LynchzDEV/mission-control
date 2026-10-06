@@ -558,6 +558,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       const tree = isChat ? buildTurnTree(rootId, manager.listJobs()) : null
       const leaf = tree === null ? null : activeLeaf(tree, query.leaf) ?? newestLeaf(tree)
       const chain = tree !== null && leaf !== null ? tree.pathToLeaf(leaf) : threadChain(manager.listJobs(), rootId)
+      const logSize = (await stat(manager.logPath(job.id)).catch(() => null))?.size ?? 0
       const snapshot = isChat && chatUsesBridge(job.engine, 'chat') ? await liveSnapshot(chain, manager, readLogBytes) : null
       const messages = await assembleThread(chain, (jobId) => (snapshot !== null && jobId === snapshot.live.jobId ? Promise.resolve(snapshot.log) : readRedactedLog(manager.logPath(jobId))))
       const pathSession = tree !== null && leaf !== null ? nearestSessionId(tree, leaf) : replySessionId(chain)
@@ -568,6 +569,7 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
         sessionId: pathSession,
         canReply: !job.workflowRunId && job.purpose !== 'workflow-design' && (job.resumeSupported ?? engineSupportsResume(job.engine)) && pathSession !== null,
         messages,
+        logSize,
         ...(tree !== null ? { versions: tree.versions, branchPoints: tree.branchPoints, leaf: leaf === null ? null : leaf } : {}),
         ...(isChat && chatUsesBridge(job.engine, 'chat') ? { live: snapshot?.live ?? null } : {}),
         ...(isChat ? { usage: await chatUsage(chain, manager, threadHead?.engine ?? job.engine) } : {}),
