@@ -19,6 +19,10 @@ const isLiveTerminal = (item: HistoryItem): boolean => item.kind === 'terminal' 
 
 const isActive = (item: HistoryItem): boolean => isLiveTerminal(item) || (item.kind === 'chat' && item.running)
 
+export function clearableItems(items: readonly HistoryItem[]): HistoryItem[] {
+  return items.filter(item => !isActive(item))
+}
+
 export function sidebarGroups(items: HistoryItem[], now: number): { day: Day; items: HistoryItem[] }[] {
   const dayOf = (item: HistoryItem): Day | null => {
     const day = historyDay(item.updatedAt, now)
@@ -116,13 +120,43 @@ function readHidden(): Record<string, number> {
   try { return JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? '{}') as Record<string, number> } catch { return {} }
 }
 
-function hide(key: string): void {
-  hidden = { ...readHidden(), [key]: Date.now() }
+function hide(keys: readonly string[]): void {
+  const at = Date.now()
+  hidden = { ...readHidden(), ...Object.fromEntries(keys.map(key => [key, at])) }
   try { localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden)) } catch {}
   const repaint = (): void => { signature = ''; paint(historyItems) }
-  const row = document.querySelector<HTMLElement>(`#sidebar-list .sb-row[data-key="${CSS.escape(key)}"]`)?.closest<HTMLElement>('.sb-item')
-  if (row) fold(row, repaint)
-  else repaint()
+  const rows = keys.flatMap(key => document.querySelector<HTMLElement>(`#sidebar-list .sb-row[data-key="${CSS.escape(key)}"]`)?.closest<HTMLElement>('.sb-item') ?? [])
+  if (rows.length === 0) { repaint(); return }
+  let folding = rows.length
+  for (const row of rows) fold(row, () => { folding -= 1; if (folding === 0) repaint() })
+}
+
+async function removeTerminal(id: string): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    return response.ok || response.status === 404
+  } catch {
+    return false
+  }
+}
+
+async function clearGroup(items: readonly HistoryItem[]): Promise<void> {
+  const targets = clearableItems(items)
+  const removed = await Promise.all(targets.map(item => item.kind === 'terminal' ? removeTerminal(item.id) : Promise.resolve(true)))
+  hide(targets.filter((_, index) => removed[index]).map(keyOf))
+  const failed = removed.filter(ok => !ok).length
+  if (failed > 0) dispatchEvent(new CustomEvent('quiet:toast', { detail: `${failed} terminal${failed === 1 ? '' : 's'} could not be removed. Try again.` }))
+}
+
+function dayHeader(group: { day: Day; items: HistoryItem[] }): HTMLElement {
+  const header = Object.assign(document.createElement('p'), { className: 'sb-day', textContent: group.day })
+  if (group.day === 'Pinned' || clearableItems(group.items).length === 0) return header
+  const button = Object.assign(document.createElement('button'), { type: 'button', className: 'sb-clear', title: `Remove every finished row in ${group.day}` })
+  button.setAttribute('aria-label', `Clear ${group.day}`)
+  button.innerHTML = '<svg aria-hidden="true"><use href="#close-icon"/></svg><span>Clear all</span>'
+  header.append(button)
+  confirmButton(button, 'Clear all', () => void clearGroup(group.items))
+  return header
 }
 let renaming = false
 
@@ -283,7 +317,7 @@ function removeButton(item: HistoryItem, wrap: HTMLElement, state: Row['state'])
   wrap.append(button)
   confirmButton(button, 'Remove', () => {
     if (item.kind === 'terminal') dispatchEvent(new CustomEvent('quiet:terminal-end', { detail: item.id }))
-    else hide(keyOf(item))
+    else hide([keyOf(item)])
   })
 }
 
@@ -362,7 +396,7 @@ function paint(items: HistoryItem[]): void {
     ...(pluginRows.length > 0 ? [Object.assign(document.createElement('p'), { className: 'sb-day', textContent: 'Plugins' })] : []),
     ...pluginRows.flatMap(plugin => [pluginRow(plugin, 'sb-row'), ...queueGroup(currentQueueItems().filter(item => item.source === plugin.id), plugin.queueSource === true)]),
     ...groups.flatMap(group => [
-      Object.assign(document.createElement('p'), { className: 'sb-day', textContent: group.day }),
+      dayHeader(group),
       ...group.items.map(item => rowElement(rowOf(item), 'sb-row')),
     ]),
   )
@@ -387,7 +421,7 @@ if (typeof document !== 'undefined') {
   addEventListener('quiet:terminals', (event) => { liveTerminals = (event as CustomEvent<Session[]>).detail; paint(historyItems); markSelected() })
   addEventListener('quiet:new-chat', () => { openChatId = null; markSelected() })
   addEventListener('quiet:sidebar-toggle', () => paint(historyItems))
-  addEventListener('quiet:terminal-ended', (event) => hide(`terminal:${(event as CustomEvent<string>).detail}`))
+  addEventListener('quiet:terminal-ended', (event) => hide([`terminal:${(event as CustomEvent<string>).detail}`]))
   addEventListener('storage', (event) => { if ((event as StorageEvent).key === HIDDEN_KEY) { hidden = readHidden(); signature = ''; paint(historyItems) } })
   addEventListener('quiet:screen', (event) => { screen = String((event as CustomEvent<string>).detail); markSelected() })
   addEventListener('quiet:activity-scope', markSelected)

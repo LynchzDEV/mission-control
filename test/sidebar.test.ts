@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { numberedKeys, sidebarGroups, visibleItems, withLiveTerminals } from '../client/sidebar'
+import { clearableItems, numberedKeys, sidebarGroups, visibleItems, withLiveTerminals } from '../client/sidebar'
 import type { HistoryItem } from '../client/chat-view'
 
 const DAY = 86_400_000
@@ -80,6 +80,16 @@ describe('numberedKeys', () => {
     const busy = { ...chat('busy', 7), running: true } as HistoryItem
     const items = [session('h1', 9), terminal('t1', 8), chat('c1', 8), busy, terminal('old', 6, false)]
     expect(numberedKeys(items, true)).toEqual(['terminal:t1', 'chat:c1', 'chat:busy'])
+  })
+})
+
+describe('clearableItems', () => {
+  test('clear all takes ended terminals, idle chats and Claude sessions; live terminals and running chats stay', () => {
+    const items = [terminal('live', 5), terminal('ended', 4, false), chat('idle', 3), { ...chat('busy', 2), running: true }, session('s1', 1)]
+    expect(clearableItems(items).map(item => item.id)).toEqual(['ended', 'idle', 's1'])
+  })
+  test('a group with only running work has nothing to clear', () => {
+    expect(clearableItems([terminal('live', 1), { ...chat('busy', 2), running: true }])).toEqual([])
   })
 })
 
