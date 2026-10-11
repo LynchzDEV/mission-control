@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Usage: prune-worktrees [--dry-run] <repo-or-folder-of-repos>...
+set -uo pipefail
+
+dry_run=false
+if [ "${1:-}" = "--dry-run" ]; then dry_run=true; shift; fi
+[ $# -gt 0 ] || { echo "usage: prune-worktrees [--dry-run] <repo-or-folder-of-repos>..." >&2; exit 2; }
+
+repos_in() {
+  if git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$1" rev-parse --path-format=absolute --git-common-dir | xargs dirname
+  else
+    for child in "$1"/*/; do
+      git -C "$child" rev-parse --is-inside-work-tree >/dev/null 2>&1 && git -C "$child" rev-parse --path-format=absolute --git-common-dir | xargs dirname
+    done
+  fi
+}
+
+trunks_of() {
+  { git -C "$1" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null; echo origin/main; echo origin/master; } |
+    sort -u | while IFS= read -r ref; do git -C "$1" rev-parse --verify --quiet "$ref" >/dev/null && echo "$ref"; done
+}
+
+landed_on_a_trunk() {
+  local worktree=$1 trunks=$2 trunk
+  for trunk in $trunks; do
+    [ -z "$(git -C "$worktree" cherry "$trunk" HEAD 2>/dev/null | grep '^+')" ] && return 0
+  done
+  return 1
+}
+
+in_use() {
+  local worktree pid_cwd
+  worktree=$(realpath "$1")
+  for cwd_link in /proc/[0-9]*/cwd; do
+    pid_cwd=$(readlink "$cwd_link" 2>/dev/null) || continue
+    case "$pid_cwd/" in "$worktree"/*) return 0 ;; esac
+  done
+  return 1
+}
+
+keep_reason() {
+  local worktree=$1 trunks=$2
+  [ -n "$(git -C "$worktree" status --porcelain 2>/dev/null)" ] && { echo "uncommitted or untracked changes"; return; }
+  landed_on_a_trunk "$worktree" "$trunks" || { echo "commits not on $(echo $trunks | tr ' ' '/')" | sed 's#/origin/# or origin/#g'; return; }
+  in_use "$worktree" && { echo "a process is working inside it"; return; }
+}
+
+prune_repo() {
+  local repo=$1 trunks path branch locked reason
+  if ! git -C "$repo" fetch --quiet origin 2>/dev/null; then echo "SKIP $repo: fetch failed, not deciding on stale data"; return; fi
+  trunks=$(trunks_of "$repo" | tr '\n' ' ')
+  git -C "$repo" worktree prune
+  path="" branch="" locked=false
+  while IFS= read -r line || [ -n "$path" ]; do
+    case "$line" in
+      "worktree "*) path=${line#worktree }; branch=""; locked=false ;;
+      "branch refs/heads/"*) branch=${line#branch refs/heads/} ;;
+      locked*) locked=true ;;
+      "")
+        if [ -n "$path" ] && [ "$path" != "$repo" ]; then
+          if $locked; then reason="locked"; else reason=$(keep_reason "$path" "$trunks"); fi
+          if [ -n "$reason" ]; then
+            echo "KEEP   $path ($reason)"
+          elif $dry_run; then
+            echo "WOULD  $path${branch:+ (branch $branch)}"
+          elif git -C "$repo" worktree remove "$path"; then
+            echo "REMOVE $path"
+            [ -n "$branch" ] && git -C "$repo" branch -D "$branch" >/dev/null 2>&1 && echo "       deleted branch $branch"
+          else
+            echo "KEEP   $path (git refused to remove it)"
+          fi
+        fi
+        path="" ;;
+    esac
+  done < <(git -C "$repo" worktree list --porcelain; echo)
+}
+
+for target in "$@"; do
+  repos_in "$target" | sort -u | while IFS= read -r repo; do prune_repo "$repo"; done
+done
