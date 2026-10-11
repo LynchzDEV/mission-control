@@ -1,5 +1,6 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { resolveBinary } from './engines'
+import { requestOverStdio, type StdioSpawner } from './stdio-rpc'
 
 export type UsageLimits = {
   fiveHourPct?: number | null
@@ -36,52 +37,17 @@ export function parseCodexLimits(value: unknown): UsageLimits {
   if (result.fiveHourPct === null || result.weeklyPct === null) result.reason = 'Some usage windows are unavailable'
   return result
 }
-export type CodexSpawner = () => ChildProcessWithoutNullStreams
 export async function readCodexLimits(
-  launch: CodexSpawner = () => spawn(resolveBinary('codex'), ['app-server', '--stdio'], { stdio: 'pipe' }),
+  launch: StdioSpawner = () => spawn(resolveBinary('codex'), ['app-server', '--stdio'], { stdio: 'pipe' }),
   timeoutMs = 4000,
 ): Promise<UsageLimits> {
-  let child: ChildProcessWithoutNullStreams | undefined
-  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    return await new Promise<UsageLimits>((resolve, reject) => {
-      timer = setTimeout(() => reject(new Error('timeout')), timeoutMs)
-      child = launch()
-      const proc = child
-      let pending = '', initialized = false
-      const fail = () => reject(new Error('unavailable'))
-      const send = (value: unknown) => proc.stdin.write(JSON.stringify(value) + '\n')
-      proc.on('error', fail)
-      proc.on('exit', fail)
-      proc.stdout.on('end', fail)
-      proc.stdout.on('error', fail)
-      proc.stdin.on('error', fail)
-      proc.stderr.on('error', fail)
-      proc.stderr.resume()
-      proc.stdout.setEncoding('utf8')
-      proc.stdout.on('data', (chunk: string) => {
-        pending += chunk
-        if (pending.length > 1_000_000) { fail(); return }
-        let newline: number
-        while ((newline = pending.indexOf('\n')) >= 0) {
-          const line = pending.slice(0, newline); pending = pending.slice(newline + 1)
-          let message: Record<string, unknown>
-          try { message = record(JSON.parse(line)) } catch { continue }
-          if (message.id !== (initialized ? 2 : 1)) continue
-          if (message.error || !('result' in message)) { fail(); return }
-          if (!initialized) {
-            initialized = true
-            send({ method: 'initialized' })
-            send({ id: 2, method: 'account/rateLimits/read', params: {} })
-          } else { resolve(parseCodexLimits(message.result)); return }
-        }
-      })
-      send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'mission-control-quota', version: '1.0.0' }, capabilities: { experimentalApi: true } } })
-    })
+    return parseCodexLimits(await requestOverStdio(launch, {
+      initialize: { method: 'initialize', params: { clientInfo: { name: 'mission-control-quota', version: '1.0.0' }, capabilities: { experimentalApi: true } } },
+      afterInitialize: { method: 'initialized' },
+      request: { method: 'account/rateLimits/read', params: {} },
+    }, timeoutMs))
   } catch {
     return { fiveHourPct: null, weeklyPct: null, fiveHourResetsAt: null, weeklyResetsAt: null, reason: 'Codex usage limits unavailable' }
-  } finally {
-    clearTimeout(timer)
-    if (child) { child.stdin.end(); child.stdout.destroy(); child.stderr.destroy(); if (child.exitCode === null) child.kill('SIGKILL') }
   }
 }
