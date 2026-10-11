@@ -259,7 +259,9 @@ Workers run on the slim profile, so the prompt is their only contract. Every
 spec ends with these lines verbatim, after the ticket-specific acceptance
 bullets (2026-09-08, user-mandated; scoped 2026-09-09 so the full suite runs
 once per landed change, not once per worker iteration; concern 4 added
-2026-09-14; concern 5 added 2026-09-22; concern 6 added 2026-09-30):
+2026-09-14; concern 5 added 2026-09-22; concern 6 added 2026-09-30; concern 7
+added 2026-10-11 from the team's Definition of Done,
+https://app.clickup.com/3845974/v/dc/3nbup-45016/3nbup-367616):
 
 ```
 Done means all of these hold, verified by you before you report:
@@ -269,7 +271,8 @@ Done means all of these hold, verified by you before you report:
 4. The engine HAS TO spin up on its own: `spec/dummy` boots and its specs run with no host, no sibling engine and no host table; you added no dependency that is not necessary, and any that is enters through a settings adapter, never a direct constant.
 5. Migrations track schema changes and nothing else: create every new migration with `bin/rails g migration` so it carries a real wall-clock timestamp, never rename or re-timestamp one that is committed or already applied anywhere, and never add, update or delete data inside one — a data move is its own rake task with a spec.
 6. No needless recurring jobs: add no cron, scheduled, recurring or polling job (sidekiq-cron, whenever, solid_queue recurring, setInterval poll) that fires on a short fixed interval such as every 1 or 5 minutes to check whether something changed. Trigger the work from the event that causes it (enqueue at the moment of change, a callback, a webhook). A new recurring job is allowed only when no event exists to hang it on, and then at the longest interval the business tolerates.
-Report the exact spec command you ran and its summary line as evidence for 1 and 2, every model spec you added or changed with the model rule each example covers (plus any business-logic-in-model flag) for 2, the dummy boot command for 4, and the generator command plus resulting filename for any migration you added for 5, and every recurring or scheduled job you added (or "none") with its interval and why no event trigger fits for 6.
+7. Names say what something is, does, or selects — for identifiers you added or renamed only; existing names are not a finding, do not rename them for style. Thing: a noun, plural for a collection (`Order`, `orders`, `total_price`). State: a predicate ending in `?`, positive wording, never saves, publishes or enqueues (`active?`, `has_stock?`). Action: a specific verb (`publish`, `calculate_total`). Selection (scope / query): names the records it returns (`Order.paid`, `Order.for_customer(customer)`). Job: verb + object + `Job` (`SendReceiptJob`). Concern: the capability it adds, usually an `-able` adjective (`Publishable`). `!` means "raises on failure" and nothing else (enum-generated methods exempt). No vague names (`data`, `info`, `manager`, `handler`, `process`) when a domain noun or verb exists. Renaming anything stored or called from outside the class (public API, database column, payload key, job class name) needs a compatibility plan.
+Report the exact spec command you ran and its summary line as evidence for 1 and 2, every model spec you added or changed with the model rule each example covers (plus any business-logic-in-model flag) for 2, the dummy boot command for 4, and the generator command plus resulting filename for any migration you added for 5, and every recurring or scheduled job you added (or "none") with its interval and why no event trigger fits for 6, and every identifier you added or renamed with its kind (Thing / State / Action / Selection / Job / Concern) for 7 — the reviewer signs that list off, not you.
 ```
 
 A job that reports done without that evidence is not done: reply to it
@@ -304,7 +307,7 @@ export mapping/variable/journey redesigned from mockups instead of backoffice
 on 2026-09-23). [daily-retro 2026-09-23 E01-E03]
 
 **"All N concerns pass?" answers are a table.** When the user asks whether the
-acceptance concerns pass, reply with one line per concern (1-6: PASS/FAIL +
+acceptance concerns pass, reply with one line per concern (1-7: PASS/FAIL +
 the evidence command), never a bare "yes" — the user asked twice in a row on
 2026-09-23 because the first answer carried no per-concern status.
 [daily-retro 2026-09-23 E09]
@@ -313,7 +316,7 @@ the evidence command), never a bare "yes" — the user asked twice in a row on
 for across sessions:
 1. End every landing report with the per-concern table (1-N, PASS/FAIL + the
    evidence command) unasked; N is whatever the baseline block above holds
-   (6 as of 2026-09-30), and `four-concerns-checklist` is only the legacy
+   (7 as of 2026-10-11), and `four-concerns-checklist` is only the legacy
    memory name. He asked "5 concerns gone?" in three separate sessions before
    allowing a push.
 2. Before the first dispatch on a repo, run `git fetch` and print one line of
