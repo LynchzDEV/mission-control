@@ -498,9 +498,9 @@ checkout that sits on the trunk; the main checkout only tracks origin.
    `--dry-run` shows what it would do. Then
    `git -C <main checkout> reset --keep origin/<trunk>` if that checkout
    holds stale local copies of the landed commits.
-4. **Safety net:** a once-a-day run of the same script over every repo
-   folder catches trees nobody cleaned up. Event-first, timer only as backup
-   (check 6 of 7: no needless recurring jobs).
+4. **No timer, no cron** (check 6 of 7: no needless recurring jobs). Step 3
+   runs over the whole repo, so a tree left behind by an earlier task is
+   removed at the next push to that repo; the push is the trigger.
 
 Starting a Mission Control server inside a worktree re-points
 `~/.claude/skills/mc-dispatch` at that worktree. After such a session, check
