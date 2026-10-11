@@ -474,6 +474,38 @@ turned 10-minute UI tickets into 2-hour sessions. Replace it with:
 5. Verification proportional to risk: browser/Playwright checks for UI the user
    will click; curl for endpoints; nothing beyond `bun test` for internal
    refactors. Do not spin a throwaway server for a one-line change.
+6. Pushed → remove the worktree in the same step (see Worktree lifecycle).
+
+## Worktree lifecycle (never work on main, never leave a landed tree behind)
+
+Every edit, commit and test run for a task happens in a worktree, never in a
+checkout that sits on the trunk; the main checkout only tracks origin.
+
+1. **Start:** `git fetch origin && git worktree add -b <task> .worktree/<task> origin/<trunk>`.
+   Copy the gitignored files the app needs (`config/master.key`,
+   `config/credentials/*.key`, `.env`) from the main checkout. Link
+   `node_modules` from the main checkout instead of installing, and keep the
+   link out of commits.
+2. **Land:** in the worktree, `git fetch origin && git rebase origin/<trunk>`,
+   run the repo's gate once, then `git push origin HEAD:<trunk>`
+   (fast-forward only; the local branch is a scratch handle, never pushed).
+3. **Clean up right after the push:** run
+   `~/.claude/skills/mc-dispatch/scripts/prune-worktrees <repo>`. It removes
+   only worktrees that are clean, whose commits are all on `origin/main`,
+   `origin/master` or origin's default branch (patch-equivalent, so rebased
+   commits count), and that no running process is inside. It never touches
+   the main checkout, and deletes the scratch branch with the worktree.
+   `--dry-run` shows what it would do. Then
+   `git -C <main checkout> reset --keep origin/<trunk>` if that checkout
+   holds stale local copies of the landed commits.
+4. **Safety net:** a once-a-day run of the same script over every repo
+   folder catches trees nobody cleaned up. Event-first, timer only as backup
+   (check 6 of 7: no needless recurring jobs).
+
+Starting a Mission Control server inside a worktree re-points
+`~/.claude/skills/mc-dispatch` at that worktree. After such a session, check
+`readlink ~/.claude/skills/mc-dispatch` and point it back at the main checkout
+(`ln -sfn <mission-control>/skills/mc-dispatch ~/.claude/skills/mc-dispatch`).
 
 ## Failure modes
 
