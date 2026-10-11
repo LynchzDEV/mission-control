@@ -59,7 +59,7 @@ function endedTerminalItems(input: HistoryInput): HistoryItem[] {
     const kept = latest.get(entry.sessionId)
     if (kept === undefined || endedAt(entry) > endedAt(kept)) latest.set(entry.sessionId, entry)
   }
-  return [...latest.values(), ...unresumable].map(endedTerminalItem)
+  return [...latest.values(), ...unresumable].filter(entry => entry.dismissedAt === undefined).map(endedTerminalItem)
 }
 
 function sessionItems(input: HistoryInput): HistoryItem[] {

@@ -3,8 +3,8 @@ import { dirname } from 'node:path'
 
 import { configPath } from './secrets'
 
-export type PastTerminal = { id: string; engine: string; cwd: string; title: string; sessionId: string | null; createdAt: number; endedAt: number | null }
-export type TerminalLog = { record(entry: PastTerminal): void; list(): PastTerminal[] }
+export type PastTerminal = { id: string; engine: string; cwd: string; title: string; sessionId: string | null; createdAt: number; endedAt: number | null; dismissedAt?: number }
+export type TerminalLog = { record(entry: PastTerminal): void; dismiss(id: string, at: number): boolean; list(): PastTerminal[] }
 
 export function terminalLogPath(): string {
   return configPath('terminals.jsonl')
@@ -38,16 +38,23 @@ function readEntries(path: string): Map<string, PastTerminal> {
 export function createTerminalLog(path: string = terminalLogPath()): TerminalLog {
   const entries = readEntries(path)
   let warned = false
+  const record = (entry: PastTerminal): void => {
+    entries.set(entry.id, entry)
+    try {
+      mkdirSync(dirname(path), { recursive: true })
+      appendFileSync(path, `${JSON.stringify(entry)}\n`)
+    } catch (error) {
+      if (!warned) console.error('terminals: could not save terminal history', error)
+      warned = true
+    }
+  }
   return {
-    record(entry) {
-      entries.set(entry.id, entry)
-      try {
-        mkdirSync(dirname(path), { recursive: true })
-        appendFileSync(path, `${JSON.stringify(entry)}\n`)
-      } catch (error) {
-        if (!warned) console.error('terminals: could not save terminal history', error)
-        warned = true
-      }
+    record,
+    dismiss(id, at) {
+      const entry = entries.get(id)
+      if (entry === undefined) return false
+      record({ ...entry, dismissedAt: at })
+      return true
     },
     list: () => [...entries.values()],
   }

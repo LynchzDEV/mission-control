@@ -117,7 +117,7 @@ function readHidden(): Record<string, number> {
 }
 
 function hide(key: string): void {
-  hidden = { ...hidden, [key]: Date.now() }
+  hidden = { ...readHidden(), [key]: Date.now() }
   try { localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden)) } catch {}
   const repaint = (): void => { signature = ''; paint(historyItems) }
   const row = document.querySelector<HTMLElement>(`#sidebar-list .sb-row[data-key="${CSS.escape(key)}"]`)?.closest<HTMLElement>('.sb-item')
@@ -282,7 +282,7 @@ function removeButton(item: HistoryItem, wrap: HTMLElement, state: Row['state'])
   button.innerHTML = '<svg aria-hidden="true"><use href="#close-icon"/></svg><span>Remove</span>'
   wrap.append(button)
   confirmButton(button, 'Remove', () => {
-    if (live) dispatchEvent(new CustomEvent('quiet:terminal-end', { detail: item.id }))
+    if (item.kind === 'terminal') dispatchEvent(new CustomEvent('quiet:terminal-end', { detail: item.id }))
     else hide(keyOf(item))
   })
 }
@@ -388,6 +388,7 @@ if (typeof document !== 'undefined') {
   addEventListener('quiet:new-chat', () => { openChatId = null; markSelected() })
   addEventListener('quiet:sidebar-toggle', () => paint(historyItems))
   addEventListener('quiet:terminal-ended', (event) => hide(`terminal:${(event as CustomEvent<string>).detail}`))
+  addEventListener('storage', (event) => { if ((event as StorageEvent).key === HIDDEN_KEY) { hidden = readHidden(); signature = ''; paint(historyItems) } })
   addEventListener('quiet:screen', (event) => { screen = String((event as CustomEvent<string>).detail); markSelected() })
   addEventListener('quiet:activity-scope', markSelected)
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') void poll() })

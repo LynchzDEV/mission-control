@@ -13,6 +13,7 @@ import {
   readSocketMessage,
   terminalsRoutes,
 } from '../server/routes/terminals'
+import { createTerminalLog } from '../server/terminal-log'
 import { createTerminalRegistry, type TerminalRegistry } from '../server/terminals'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 
@@ -248,6 +249,17 @@ describe('DELETE /api/terminals/:id', () => {
     expect(deleted.status).toBe(200)
     await waitFor(() => !processAlive(terminal.pid))
     expect(processAlive(terminal.pid)).toBe(false)
+  })
+
+  test('removes a terminal that already ended', async () => {
+    registry = createTerminalRegistry({ log: createTerminalLog(join(configDir, 'terminals.jsonl')) })
+    const app = buildApp()
+    const created = await app.handle(request('/api/terminals', 'POST', LOCAL, { engine: 'claude', cwd: repo }))
+    const terminal = (await created.json()) as { id: string }
+    registry.kill(terminal.id)
+
+    const deleted = await app.handle(request(`/api/terminals/${terminal.id}`, 'DELETE'))
+    expect(deleted.status).toBe(200)
   })
 })
 

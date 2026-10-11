@@ -182,7 +182,7 @@ function terminalApi(registry: TerminalRegistry, helpers: TerminalHelpers): Elys
       return registry.get(params.id)
     })
     .delete('/api/terminals/:id', ({ params, set }) => {
-      if (!registry.kill(params.id)) {
+      if (!registry.remove(params.id)) {
         set.status = 404
         return { error: 'terminal not found' }
       }

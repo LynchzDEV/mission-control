@@ -75,6 +75,7 @@ export type TerminalRegistry = {
   write(id: string, data: string): boolean
   resize(id: string, cols: unknown, rows: unknown): boolean
   kill(id: string): boolean
+  remove(id: string): boolean
   rename(id: string, title: string): boolean
   replay(id: string): string
   transcriptPath(id: string): Promise<string | null>
@@ -305,6 +306,11 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
   return {
     createTerminal,
     kill,
+    remove(id) {
+      const ended = kill(id)
+      const dismissed = log?.dismiss(id, Date.now()) ?? false
+      return ended || dismissed
+    },
     rename(id, title) {
       const session = sessions.get(id)
       const clean = normalizeTitle(title)

@@ -34,6 +34,14 @@ describe('terminal log', () => {
     appendFileSync(file, `not json\n${JSON.stringify(entry)}\n{"id":42}\n`)
     expect(createTerminalLog(file).list()).toEqual([entry])
   })
+
+  test('a removed terminal stays marked removed after a reload; an unknown id is not', () => {
+    const log = createTerminalLog(file)
+    log.record({ ...entry, endedAt: 5_000 })
+    expect(log.dismiss('t1', 6_000)).toBe(true)
+    expect(log.dismiss('missing', 6_000)).toBe(false)
+    expect(createTerminalLog(file).list()).toEqual([{ ...entry, endedAt: 5_000, dismissedAt: 6_000 }])
+  })
 })
 
 describe('terminal registry with a log', () => {

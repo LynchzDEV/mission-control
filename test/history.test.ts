@@ -57,6 +57,16 @@ describe('buildHistory', () => {
     expect(rows.map(item => `${item.id}:${item.kind === 'terminal' ? item.live : ''}`)).toEqual(['t1:true', 'e3:false', 'e5:false', 'e4:false'])
   })
 
+  test('a terminal removed from the sidebar stays gone: no older run and no session row takes its place', () => {
+    const run = (id: string, endedAt: number, dismissedAt?: number): PastTerminal => ({ ...ended, id, sessionId: 'sess-gone', endedAt, ...(dismissedAt === undefined ? {} : { dismissedAt }) })
+    const rows = buildHistory({ jobs: [], terminals: [], ended: [run('old', 100), run('removed', 200, 250), { ...run('loose', 50, 60), sessionId: null }], sessions: [session('sess-gone', 300)] })
+    expect(rows).toEqual([])
+  })
+  test('resuming a removed session and ending it again lists the new run', () => {
+    const rows = buildHistory({ jobs: [], terminals: [], ended: [{ ...ended, id: 'removed', endedAt: 200, dismissedAt: 250 }, { ...ended, id: 'again', endedAt: 400 }], sessions: [] })
+    expect(rows.map(item => item.id)).toEqual(['again'])
+  })
+
   test('a finished chat is not running', () => {
     const quiet = buildHistory({ jobs: [root, { ...agent, status: 'done' }], terminals: [], ended: [], sessions: [] })
     expect(quiet).toHaveLength(1)

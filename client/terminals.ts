@@ -360,7 +360,7 @@ dropStage.addEventListener('drop', (event) => {
 async function endSession(id: string): Promise<void> {
   let ok = false
   try { const response = await fetch(`/api/terminals/${encodeURIComponent(id)}`, { method: 'DELETE' }); ok = response.ok || response.status === 404 } catch {}
-  if (!ok) { toast('Could not end this terminal. Try again.'); return }
+  if (!ok) { toast('Could not remove this terminal. Try again.'); return }
   dispatchEvent(new CustomEvent('quiet:terminal-ended', { detail: id }))
   await refreshSessions()
   if (canvas.dataset.live === 'true' && activeId) views.get(activeId)?.terminal.focus()

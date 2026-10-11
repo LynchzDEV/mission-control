@@ -17,6 +17,7 @@ import {
   type TerminalRegistry,
 } from '../server/terminals'
 import { flowDesignRules } from '../server/flow-design'
+import { createTerminalLog } from '../server/terminal-log'
 import { initScratchGitRepo } from './support/scratch-git-repo'
 import { createWorkflowStore, defaultWorkflow } from '../server/workflows'
 
@@ -255,6 +256,21 @@ describe('registry lifecycle over a real pty', () => {
     expect(registry.get(id)?.title).toBe('api worktree')
     expect(registry.rename('missing', 'anything')).toBe(false)
     registry.kill(id)
+  })
+
+  test('remove ends a live terminal and marks it removed in the log; an ended one is only marked; unknown ids are refused', async () => {
+    const log = createTerminalLog(join(configDir, 'terminals.jsonl'))
+    const logged = createTerminalRegistry({ log })
+    const live = await logged.createTerminal({ engine: 'claude', cwd: repo })
+    const ended = await logged.createTerminal({ engine: 'claude', cwd: repo })
+    if (!live.ok || !ended.ok) throw new Error('spawn failed')
+    logged.kill(ended.terminal.id)
+
+    expect(logged.remove(live.terminal.id)).toBe(true)
+    expect(logged.remove(ended.terminal.id)).toBe(true)
+    expect(logged.remove('missing')).toBe(false)
+    expect(logged.list()).toEqual([])
+    expect(log.list().map(entry => [entry.id, entry.endedAt !== null, typeof entry.dismissedAt])).toEqual([[live.terminal.id, true, 'number'], [ended.terminal.id, true, 'number']])
   })
 
   test('write, resize, kill, replay and subscribe are no-ops for unknown ids', () => {
