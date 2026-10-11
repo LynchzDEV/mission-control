@@ -140,7 +140,10 @@ function terminalApi(registry: TerminalRegistry, helpers: TerminalHelpers): Elys
       }
       return { sessions: await sessionsFor(check.path) }
     })
-    .get('/api/terminals', () => ({ sessions: registry.list() }))
+    .get('/api/terminals', async () => {
+      await registry.refreshTitles()
+      return { sessions: registry.list() }
+    })
     .get('/api/terminals/:id/thread', async ({ params, set }) => {
       const record = registry.get(params.id)
       if (record === undefined) {

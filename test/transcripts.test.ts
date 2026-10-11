@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { defaultProjectsDir, listSessions, listUserSessions, projectSlug } from '../server/transcripts'
+import { defaultProjectsDir, listSessions, listUserSessions, projectSlug, transcriptTitle } from '../server/transcripts'
 
 let projectsDir: string
 let sessionDir: string
@@ -188,5 +188,22 @@ describe('listUserSessions', () => {
 
   test('a missing projects folder is empty', async () => {
     expect(await listUserSessions({ projectsDir: join(projectsDir, 'nope'), since: 0, limit: 10 })).toEqual([])
+  })
+})
+
+describe('transcriptTitle', () => {
+  const write = async (name: string, lines: unknown[]): Promise<string> => {
+    const path = join(projectsDir, name)
+    await writeFile(path, jsonl(lines))
+    return path
+  }
+  const prompt = (content: string): unknown => ({ type: 'user', entrypoint: 'cli', cwd: '/Users/x/api', message: { role: 'user', content }, timestamp: TS })
+
+  test('a pasted first prompt is named by its text, without the paste markup', async () => {
+    expect(await transcriptTitle(await write('paste.jsonl', [prompt('\n\n<pasted_content id="21d5">\ndeploy failed on web-1\n</pasted_content> why')]))).toBe('deploy failed on web-1 why')
+  })
+  test('a missing file or a prompt that is only markup has no title', async () => {
+    expect(await transcriptTitle(join(projectsDir, 'missing.jsonl'))).toBeNull()
+    expect(await transcriptTitle(await write('empty.jsonl', [prompt('\n<pasted_content id="1"></pasted_content>')]))).toBeNull()
   })
 })

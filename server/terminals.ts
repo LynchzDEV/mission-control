@@ -3,6 +3,7 @@ import { basename } from 'node:path'
 import { spawn, type IPty } from 'bun-pty'
 
 import { claudeTranscriptPath, findCodexRollout } from './session-transcript'
+import { transcriptTitle } from './transcripts'
 
 import {
   ENGINE_NAMES,
@@ -40,6 +41,7 @@ export type TerminalRecord = {
   pid: number
   createdAt: number
   title: string
+  autoTitle?: true
   sessionId: string | null
   inSessionAware?: true
   firstMessageDropped?: true
@@ -77,6 +79,7 @@ export type TerminalRegistry = {
   kill(id: string): boolean
   remove(id: string): boolean
   rename(id: string, title: string): boolean
+  refreshTitles(): Promise<void>
   replay(id: string): string
   transcriptPath(id: string): Promise<string | null>
   subscribe(id: string, listener: OutputListener, onClose?: CloseListener): () => void
@@ -273,6 +276,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       pid: pty.pid,
       createdAt: Date.now(),
       title: normalizeTitle(params.title) ?? `${engine.toUpperCase()} · ${basename(cwdCheck.path)}`,
+      ...(normalizeTitle(params.title) === null ? { autoTitle: true as const } : {}),
       sessionId,
       inSessionAware: true,
       ...(firstMessageDropped ? { firstMessageDropped: true as const } : {}),
@@ -303,6 +307,19 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     return true
   }
 
+  function retitle(session: Session, title: string): void {
+    const { autoTitle: _, ...record } = session.record
+    session.record = { ...record, title }
+    remember(session.record, null)
+  }
+
+  async function nameFromTranscript(session: Session): Promise<void> {
+    if (session.transcript === null) return
+    const found = await transcriptTitle(session.transcript)
+    const title = found === null ? null : normalizeTitle(found.slice(0, MAX_TITLE_LENGTH))
+    if (title !== null && session.record.autoTitle && sessions.get(session.record.id) === session) retitle(session, title)
+  }
+
   return {
     createTerminal,
     kill,
@@ -315,9 +332,11 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
       const session = sessions.get(id)
       const clean = normalizeTitle(title)
       if (session === undefined || clean === null) return false
-      session.record = { ...session.record, title: clean }
-      remember(session.record, null)
+      retitle(session, clean)
       return true
+    },
+    async refreshTitles() {
+      await Promise.all([...sessions.values()].filter(session => session.record.autoTitle).map(nameFromTranscript))
     },
     list() {
       return [...sessions.values()]

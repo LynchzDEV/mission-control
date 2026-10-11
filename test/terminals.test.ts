@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import {
   DEFAULT_COLS,
@@ -271,6 +271,53 @@ describe('registry lifecycle over a real pty', () => {
     expect(logged.remove('missing')).toBe(false)
     expect(logged.list()).toEqual([])
     expect(log.list().map(entry => [entry.id, entry.endedAt !== null, typeof entry.dismissedAt])).toEqual([[live.terminal.id, true, 'number'], [ended.terminal.id, true, 'number']])
+  })
+
+  describe('automatic names', () => {
+    const userLine = (content: string): string => JSON.stringify({ type: 'user', entrypoint: 'cli', cwd: repo, message: { role: 'user', content }, timestamp: '2026-10-11T00:00:00.000Z' })
+    const writeTranscript = async (id: string, lines: string[]): Promise<void> => {
+      const path = await registry.transcriptPath(id)
+      if (path === null) throw new Error('no transcript path')
+      await mkdir(dirname(path), { recursive: true })
+      await writeFile(path, `${lines.join('\n')}\n`)
+    }
+    const open = async (title?: string): Promise<string> => {
+      const created = await registry.createTerminal({ engine: 'claude', cwd: repo, ...(title === undefined ? {} : { title }) })
+      if (!created.ok) throw new Error('spawn failed')
+      return created.terminal.id
+    }
+
+    test('an unnamed terminal takes its first prompt as its name, collapsed and cut to the title limit', async () => {
+      const id = await open()
+      const before = registry.get(id)?.title
+      await registry.refreshTitles()
+      expect(registry.get(id)?.title).toBe(before)
+      await writeTranscript(id, [userLine(`fix the   export\nbutton ${'x'.repeat(80)}`)])
+      await registry.refreshTitles()
+      expect(registry.get(id)?.title).toBe(`fix the export button ${'x'.repeat(MAX_TITLE_LENGTH - 'fix the export button '.length)}`)
+      registry.kill(id)
+    })
+
+    test("Claude's own session title wins over the first prompt", async () => {
+      const id = await open()
+      await writeTranscript(id, [JSON.stringify({ type: 'ai-title', aiTitle: 'export-button-fix' }), userLine('fix the export button')])
+      await registry.refreshTitles()
+      expect(registry.get(id)?.title).toBe('export-button-fix')
+      registry.kill(id)
+    })
+
+    test('a name given at launch or by a rename is never replaced, and an automatic name is set only once', async () => {
+      const given = await open('deploy box')
+      const renamed = await open()
+      const named = await open()
+      registry.rename(renamed, 'mine')
+      for (const id of [given, renamed, named]) await writeTranscript(id, [userLine('first ask')])
+      await registry.refreshTitles()
+      await writeTranscript(named, [userLine('another ask')])
+      await registry.refreshTitles()
+      expect([given, renamed, named].map(id => registry.get(id)?.title)).toEqual(['deploy box', 'mine', 'first ask'])
+      for (const id of [given, renamed, named]) registry.kill(id)
+    })
   })
 
   test('write, resize, kill, replay and subscribe are no-ops for unknown ids', () => {

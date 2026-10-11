@@ -176,6 +176,13 @@ async function readSessionHead(filePath: string): Promise<SessionHead> {
   return head
 }
 
+export async function transcriptTitle(filePath: string): Promise<string | null> {
+  const head = await readSessionHead(filePath).catch(() => null)
+  const text = head?.aiTitle ?? head?.prompt?.text
+  const title = text?.replace(/<\/?pasted_content[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+  return title ? title : null
+}
+
 async function sessionHead(file: SessionFile): Promise<SessionHead> {
   const cached = heads.get(file.path)
   if (cached !== undefined) {
