@@ -50,6 +50,7 @@ function quota(overrides: Partial<QuotaComposite> = {}): QuotaComposite {
     claude: { available: true, active: true, tokens: 1, costUSD: null, resetsAt: null, blockPercent: null, nonCacheTokens: null },
     glm: { available: true, fiveHourPct: 10, monthlyPct: null },
     codex: { available: true, authed: true },
+    grok: { available: false, reason: 'not installed' },
     peak: { peak: false, minutesToChange: 60 },
     ...overrides,
   }

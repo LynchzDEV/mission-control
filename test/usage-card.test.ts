@@ -10,6 +10,11 @@ describe('usageItems', () => {
       { provider: 'codex', name: 'Codex', logo: '/providers/codex.svg', period: 'Week', primary: '73%', primaryPercent: 73, weekly: null, weeklyPercent: null, unavailable: false },
     ])
   })
+  test('Grok is a weekly-only tile like Codex', () => {
+    expect(usageItems([normalizeUsage('grok', { available: true, weeklyPct: 1 })])).toEqual([
+      { provider: 'grok', name: 'Grok', logo: '/providers/grok.svg', period: 'Week', primary: '1%', primaryPercent: 1, weekly: null, weeklyPercent: null, unavailable: false },
+    ])
+  })
   test('renders unavailable providers as dashes', () => {
     const [item] = usageItems([normalizeUsage('glm', { available: false, reason: 'no token' })])
     expect(item).toMatchObject({ name: 'GLM', primary: '—', weekly: '—', unavailable: true })

@@ -16,7 +16,7 @@ export function normalizeUsage(provider: string, raw: unknown): ProviderUsage {
   const fallback = available && provider === 'claude' ? percent(data.blockPercent) : null
   return { provider, fiveHour: { percent: reported ?? fallback, estimate: reported === null && fallback !== null, reset: reset(data.fiveHourResetsAt) ?? (reported === null && fallback !== null ? reset(data.resetsAt) : null) }, weekly: { percent: available ? percent(data.weeklyPct) : null, reset: reset(data.weeklyResetsAt), estimate: false }, reason: data.source === 'ccstatusline cache' ? `Last observed ${typeof data.observedAt === 'string' ? new Date(data.observedAt).toLocaleString() : 'time unavailable'}` : typeof data.reason === 'string' ? data.reason : reported === null && fallback !== null ? 'ccusage estimate' : '', observedAt: typeof data.observedAt === 'string' ? data.observedAt : null }
 }
-export const weeklyOnly = (provider: string): boolean => provider === 'codex'
+export const weeklyOnly = (provider: string): boolean => provider === 'codex' || provider === 'grok'
 function meter(window: QuotaWindow, label: string): HTMLElement {
   if (window.percent === null) { const track = document.createElement('span'); track.className = 'quota-track'; track.setAttribute('role', 'img'); track.setAttribute('aria-label', `${label}: unavailable`); return track }
   const result = document.createElement('meter'); result.min = 0; result.max = 100; result.value = window.percent

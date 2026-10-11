@@ -128,6 +128,7 @@ function quotaWith(resetsAt: string | null, tokens = 1_000): () => Promise<Quota
     claude: { available: true, active: true, tokens, costUSD: null, resetsAt, blockPercent: null },
     glm: { available: false, reason: 'not configured' },
     codex: { available: true, authed: false },
+    grok: { available: false, reason: 'not installed' },
     peak: { peak: false, minutesToChange: 30 },
   })
 }

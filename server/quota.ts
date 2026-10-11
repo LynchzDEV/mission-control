@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readCodexLimits, resetIso, usagePercent, type UsageLimits } from './codex-limits'
 import { resolveBinary } from './engines'
+import { readGrokLimits } from './grok-limits'
 import type { Secrets } from './secrets'
 
 type ClaudeEstimate =
@@ -26,6 +27,8 @@ export type GlmQuota =
 
 export type CodexQuota = (UsageLimits & { available: true; authed: boolean }) | { available: false; reason: string }
 
+export type GrokQuota = (UsageLimits & { available: true }) | { available: false; reason: string }
+
 export type PeakInfo = { peak: boolean; minutesToChange: number }
 
 export type ExternalEngine = 'claude' | 'codex'
@@ -36,6 +39,7 @@ export type QuotaComposite = {
   claude: ClaudeQuota
   glm: GlmQuota
   codex: CodexQuota
+  grok: GrokQuota
   peak: PeakInfo
 }
 
@@ -345,6 +349,10 @@ export async function fetchCodexQuota(run: CommandRunner = runCommand, collect: 
     return { available: false, reason: 'Codex authentication status unavailable' }
   }
 }
+export async function fetchGrokQuota(collect: () => Promise<UsageLimits> = readGrokLimits): Promise<GrokQuota> {
+  const limits = await collect().catch((): UsageLimits => ({ weeklyPct: null }))
+  return limits.weeklyPct == null ? { available: false, reason: 'Grok usage limits unavailable' } : { available: true, ...limits }
+}
 
 const PEAK_START_MIN = 14 * 60
 const PEAK_END_MIN = 18 * 60
@@ -480,6 +488,6 @@ export function createQuotaCache<T>(fetcher: () => Promise<T>, ttlMs = 60_000, c
 }
 
 export async function fetchQuotaComposite(secrets: Secrets, now: Date = new Date()): Promise<QuotaComposite> {
-  const [claude, glm, codex] = await Promise.all([fetchClaudeQuota(), fetchGlmQuota(secrets, now), fetchCodexQuota()])
-  return { claude, glm, codex, peak: glmPeak(now) }
+  const [claude, glm, codex, grok] = await Promise.all([fetchClaudeQuota(), fetchGlmQuota(secrets, now), fetchCodexQuota(), fetchGrokQuota()])
+  return { claude, glm, codex, grok, peak: glmPeak(now) }
 }

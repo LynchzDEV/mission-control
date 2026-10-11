@@ -4,7 +4,8 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { parseCodexLimits, readCodexLimits, resetIso } from '../server/codex-limits'
-import { fetchClaudeQuota, fetchCodexQuota, parseClaudeCache } from '../server/quota'
+import { parseGrokLimits, readGrokLimits } from '../server/grok-limits'
+import { fetchClaudeQuota, fetchCodexQuota, fetchGrokQuota, parseClaudeCache } from '../server/quota'
 const weekly = { windowDurationMins: 10080, usedPercent: 9, resetsAt: 1800000000 }
 const five = { windowDurationMins: 300, usedPercent: 0, resetsAt: 1800000001 }
 test('Codex matches duration regardless of position and keeps weekly-only missing 5h', () => {
@@ -20,7 +21,7 @@ test('malformed percentages and timestamps never become zero or valid dates', ()
   }
   for (const resetsAt of [Infinity, -1, 1e30, null]) expect(parseCodexLimits({ rateLimits: { primary: { ...weekly, resetsAt } } }).weeklyResetsAt).toBeNull()
 })
-function transport(mode: 'success' | 'error' | 'eof' | 'timeout' | 'process-error') {
+function transport(mode: 'success' | 'error' | 'eof' | 'timeout' | 'process-error', result: unknown = { rateLimits: { primary: weekly } }) {
   const child = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), exitCode: null, killed: false, kill() { this.killed = true; return true } })
   const sent: any[] = []
   child.stdin.on('data', data => {
@@ -33,7 +34,7 @@ function transport(mode: 'success' | 'error' | 'eof' | 'timeout' | 'process-erro
         child.stdout.write('{"method":"notice"}\n{"id":88,"result":{}}\n{"id":1,')
         child.stdout.write('"result":{}}\n')
       }
-      if (message.id === 2) child.stdout.write(JSON.stringify(mode === 'error' ? { id: 2, error: { message: 'SECRET' } } : { id: 2, result: { rateLimits: { primary: weekly } } }) + '\n')
+      if (message.id === 2) child.stdout.write(JSON.stringify(mode === 'error' ? { id: 2, error: { message: 'SECRET' } } : { id: 2, result }) + '\n')
     })
   })
   return { child, sent, launch: () => child as unknown as ChildProcessWithoutNullStreams }
@@ -90,4 +91,37 @@ test('collector and normalizer retain fresh actual limits without accounting', a
   const collected = await fetchClaudeQuota(async () => ({exitCode:1,stdout:''}), now, async () => ({raw:'{"sessionUsage":34,"weeklyUsage":51}',mtimeMs:+now}))
   expect(collected).toMatchObject({tokens:null,costUSD:null})
   expect(normalizeUsage('claude', collected)).toMatchObject({fiveHour:{percent:34,estimate:false},weekly:{percent:51,estimate:false}})
+})
+
+const grokBilling = { config: { creditUsagePercent: 1, currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', start: '2026-10-10T04:16:13.628205+00:00', end: '2026-10-17T04:16:13.628205+00:00' }, onDemandCap: { val: 0 }, isUnifiedBillingUser: true }, subscription_tier: 'SuperGrok' }
+test('Grok billing credit percent becomes the weekly window with its period end as reset', () => {
+  expect(parseGrokLimits(grokBilling)).toEqual({ fiveHourPct: null, weeklyPct: 1, fiveHourResetsAt: null, weeklyResetsAt: '2026-10-17T04:16:13.628Z' })
+  expect(parseGrokLimits({ config: { creditUsagePercent: 0 } })).toMatchObject({ weeklyPct: 0, weeklyResetsAt: null })
+})
+test('Grok billing without a usable percent is unavailable, never zero', () => {
+  for (const value of [{}, null, 'x', { config: {} }, { config: { creditUsagePercent: 101 } }, { config: { creditUsagePercent: -1 } }, { config: { creditUsagePercent: '5' } }]) {
+    expect(parseGrokLimits(value)).toMatchObject({ weeklyPct: null, reason: 'Grok usage limits unavailable' })
+  }
+})
+test('Grok RPC sends ACP initialize then the billing extension and cleans up its child', async () => {
+  const h = transport('success', grokBilling)
+  expect(await readGrokLimits(h.launch, 100)).toMatchObject({ weeklyPct: 1, fiveHourPct: null })
+  expect(h.sent.map(value => value.method)).toEqual(['initialize', '_x.ai/billing'])
+  expect(h.sent.every(value => value.jsonrpc === '2.0')).toBe(true)
+  expect(h.sent[0].params.protocolVersion).toBe(1)
+  expect(h.child.killed).toBe(true)
+  expect(h.child.stdin.writableEnded).toBe(true)
+})
+for (const mode of ['error', 'eof', 'timeout', 'process-error'] as const) test(`Grok RPC ${mode} is bounded, sanitized and cleaned up`, async () => {
+  const h = transport(mode, grokBilling)
+  const result = await readGrokLimits(h.launch, 10)
+  expect(result).toMatchObject({ weeklyPct: null, reason: 'Grok usage limits unavailable' })
+  expect(h.child.killed).toBe(true)
+  expect(JSON.stringify(result)).not.toContain('SECRET')
+})
+test('Grok quota is available only when a weekly percent was read', async () => {
+  expect(await fetchGrokQuota(async () => parseGrokLimits(grokBilling))).toEqual({ available: true, fiveHourPct: null, weeklyPct: 1, fiveHourResetsAt: null, weeklyResetsAt: '2026-10-17T04:16:13.628Z' })
+  expect(await fetchGrokQuota(async () => parseGrokLimits({}))).toEqual({ available: false, reason: 'Grok usage limits unavailable' })
+  expect(await fetchGrokQuota(async () => { throw new Error('SECRET') })).toEqual({ available: false, reason: 'Grok usage limits unavailable' })
+  expect(normalizeUsage('grok', await fetchGrokQuota(async () => parseGrokLimits(grokBilling)))).toMatchObject({ fiveHour: { percent: null }, weekly: { percent: 1, reset: '2026-10-17T04:16:13.628Z' } })
 })
