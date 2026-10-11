@@ -3,16 +3,30 @@ import { createInterface } from 'node:readline'
 import { defaultWorkflow } from '../../../server/workflows'
 const lines = createInterface({ input: process.stdin })
 const send = (value: unknown) => process.stdout.write(`${JSON.stringify(value)}\n`)
+let pendingPromptId: unknown = null
+let terminalId = ''
+const finish = (id: unknown, text: string) => {
+  send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'fixture-session', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } })
+  send({ jsonrpc: '2.0', id, result: { stopReason: process.env.FIXTURE_STOP || 'end_turn' } })
+}
 for await (const line of lines) {
   const message = JSON.parse(line)
   if (process.env.FIXTURE_LOG && message.method) appendFileSync(process.env.FIXTURE_LOG, `${message.method}\n`)
-  if (message.method === 'initialize') send({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: true, ...(process.env.FIXTURE_CLOSE === '1' ? { sessionCapabilities: { close: {} } } : {}) }, authMethods: [] } })
+  if (message.id === 'term-create') { terminalId = message.result?.terminalId ?? ''; send({ jsonrpc: '2.0', id: 'term-wait', method: 'terminal/wait_for_exit', params: { sessionId: 'fixture-session', terminalId } }) }
+  else if (message.id === 'term-wait') send({ jsonrpc: '2.0', id: 'term-output', method: 'terminal/output', params: { sessionId: 'fixture-session', terminalId } })
+  else if (message.id === 'term-output') finish(pendingPromptId, `Terminal said ${JSON.stringify(message.result?.output ?? message.error?.message ?? '')}`)
+  else if (message.method === 'initialize') send({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: true, ...(process.env.FIXTURE_CLOSE === '1' ? { sessionCapabilities: { close: {} } } : {}) }, authMethods: [] } })
   else if (message.method === 'session/close') send({ jsonrpc: '2.0', id: message.id, result: {} })
   else if (message.method === 'session/new' || message.method === 'session/load') send({ jsonrpc: '2.0', id: message.id, result: { sessionId: 'fixture-session', configOptions: [{ id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: 'fixture-model', options: [{ value: 'fixture-model', name: 'Fixture' }] }] } })
   else if (message.method === 'session/set_config_option') send({ jsonrpc: '2.0', id: message.id, result: { configOptions: [] } })
   else if (message.method === 'session/prompt') {
     if (process.env.FIXTURE_PERMISSION === '1') {
       send({ jsonrpc: '2.0', id: 'permission', method: 'session/request_permission', params: { sessionId: 'fixture-session', toolCall: { toolCallId: 'tool', title: 'Edit file', status: 'pending' }, options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }] } })
+    }
+    if (process.env.FIXTURE_TERMINAL) {
+      pendingPromptId = message.id
+      send({ jsonrpc: '2.0', id: 'term-create', method: 'terminal/create', params: { sessionId: 'fixture-session', command: process.env.FIXTURE_TERMINAL } })
+      continue
     }
     const prompt = message.params.prompt.map((part: {text?:string}) => part.text ?? '').join('\n')
     let text = 'MC_RESULT {"outcome":"pass","summary":"Fixture ran","evidence":["fixture assertion"]}'

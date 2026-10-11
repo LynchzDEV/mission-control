@@ -111,7 +111,8 @@ export async function runAgentBridge(raw: unknown): Promise<number> {
         requireTools()
         const cwd = params.cwd ? await workspaceFile(params.cwd, process.cwd()) : process.cwd()
         const terminalId = crypto.randomUUID()
-        const terminal = launch(params.command, params.args ?? [], cwd, Object.fromEntries((params.env ?? []).map(entry => [entry.name, entry.value])))
+        const [command, args] = params.args?.length ? [params.command, params.args] : ['/bin/sh', ['-c', params.command]]
+        const terminal = launch(command, args, cwd, Object.fromEntries((params.env ?? []).map(entry => [entry.name, entry.value])))
         terminal.child.stdin!.end()
         terminals.set(terminalId, terminal)
         return { terminalId }

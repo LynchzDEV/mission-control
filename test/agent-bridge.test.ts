@@ -25,6 +25,12 @@ test('permission refusal and incomplete protocol stops cannot look successful', 
   expect((await bridge({}, {}, { FIXTURE_STOP: 'max_tokens' })).exit).not.toBe(0)
 })
 
+test('an ACP terminal command given as one shell line runs through the shell', async () => {
+  const result = await bridge({ autoApprove: true }, {}, { FIXTURE_TERMINAL: 'echo hello && echo world' })
+  expect(result).toMatchObject({ exit: 0 })
+  expect(parseThread(result.output).some(event => event.detail.includes('hello\\nworld'))).toBe(true)
+})
+
 test('plain CLI output is normalized and nonzero exits remain failures', async () => {
   const result = await bridge({ adapter: 'cli', command: '/bin/echo', args: ['{{prompt}}'] }, { prompt: 'hello' })
   expect(result).toMatchObject({ exit: 0 })
