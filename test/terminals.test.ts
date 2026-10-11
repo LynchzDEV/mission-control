@@ -274,6 +274,12 @@ describe('registry lifecycle over a real pty', () => {
   })
 
   describe('automatic names', () => {
+    const ownConfigDir = process.env.CLAUDE_CONFIG_DIR
+    beforeEach(() => { process.env.CLAUDE_CONFIG_DIR = join(configDir, 'claude') })
+    afterEach(() => {
+      if (ownConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR
+      else process.env.CLAUDE_CONFIG_DIR = ownConfigDir
+    })
     const userLine = (content: string): string => JSON.stringify({ type: 'user', entrypoint: 'cli', cwd: repo, message: { role: 'user', content }, timestamp: '2026-10-11T00:00:00.000Z' })
     const writeTranscript = async (id: string, lines: string[]): Promise<void> => {
       const path = await registry.transcriptPath(id)
@@ -281,6 +287,12 @@ describe('registry lifecycle over a real pty', () => {
       await mkdir(dirname(path), { recursive: true })
       await writeFile(path, `${lines.join('\n')}\n`)
     }
+    test('transcripts are written under the test config, never the real ~/.claude', async () => {
+      const id = await open()
+      expect(await registry.transcriptPath(id)).toStartWith(join(configDir, 'claude', 'projects'))
+      registry.kill(id)
+    })
+
     const open = async (title?: string): Promise<string> => {
       const created = await registry.createTerminal({ engine: 'claude', cwd: repo, ...(title === undefined ? {} : { title }) })
       if (!created.ok) throw new Error('spawn failed')
