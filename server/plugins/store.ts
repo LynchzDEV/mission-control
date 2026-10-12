@@ -2,7 +2,7 @@ import { join } from 'node:path'
 
 import { atomicJson } from '../workflows'
 import { configDir, ensureConfigDir, readJsonFile } from '../secrets'
-import type { PluginManifest, PluginPermissions, SettingField } from './manifest'
+import type { PluginContributions, PluginManifest, PluginPermissions, SettingField } from './manifest'
 
 export const PLUGINS_FILE = 'plugins.json'
 
@@ -20,6 +20,8 @@ export type InstalledPlugin = {
   server?: string
   screen?: string
   queueSource?: true
+  contributes?: PluginContributions
+  contributedPaths?: string[]
   enabled: boolean
   restartRequired?: boolean
   installedAt: string

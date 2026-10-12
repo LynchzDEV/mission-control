@@ -2,20 +2,22 @@ import { settingsFile } from './settings'
 import { mkdir, mkdtemp, readdir, rename as fsRename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 
+import { syncEngineAssets } from '../engine-assets'
 import { gitTimed } from '../job-worktrees'
 import { DIR_MODE, configDir, ensureConfigDir } from '../secrets'
 import { applyPrivateModes, findEscapingLink } from './checkout-tree'
 import { errorMessage } from './errors'
 import { PluginBusyError, withPluginLock } from './locks'
+import { checkFlows, contributionTargets, mctlCommand, removeContributions, syncContributions } from './contributions'
 import { catalog } from './marketplaces'
-import { parseManifest, permissionsAdded, type PluginManifest, type PluginPermissions, type PluginRuntime } from './manifest'
+import { contributionsAdded, parseManifest, permissionsAdded, type PluginManifest, type PluginPermissions, type PluginRuntime } from './manifest'
 import { isAllowedRepoUrl } from './repo-url'
 import { invalidateRuntime } from './runtimes'
 import { getInstalled, pluginFolder, pluginsRoot, removeInstalled, saveInstalled, type InstalledPlugin } from './store'
 
 const GIT_TIMEOUT = 120_000
 
-export type InstallStep = 'clone' | 'manifest' | 'dependencies' | 'build' | 'move'
+export type InstallStep = 'clone' | 'manifest' | 'dependencies' | 'build' | 'move' | 'contributions'
 
 export type StepFailure = { ok: false; status: number; error: string; step: InstallStep }
 export type MessageFailure = { ok: false; status: number; error: string; step?: undefined }
@@ -45,7 +47,12 @@ export type InstallerDeps = {
   rename: (from: string, to: string) => Promise<void>
   saveInstalled: (plugin: InstalledPlugin) => Promise<void>
   marketplaceListing: (marketplace: string, pluginId: string) => Promise<MarketplaceListing | null>
+  contributionTargets: () => string[]
+  mctlCommand: () => string
+  syncEngineAssets: () => Promise<unknown>
 }
+
+const CONTRIBUTIONS_NEED_TRUST = 'Plugins that add agents, skills or flows need trust: true'
 
 const defaultGit = (cwd: string, args: string[]): Promise<string> => gitTimed(cwd, GIT_TIMEOUT, args)
 
@@ -98,7 +105,16 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
     rename: (from, to) => fsRename(from, to),
     saveInstalled,
     marketplaceListing: defaultMarketplaceListing,
+    contributionTargets,
+    mctlCommand,
+    syncEngineAssets,
     ...overrides,
+  }
+  const contributionOptions = () => ({ targets: deps.contributionTargets(), mctl: deps.mctlCommand() })
+
+  async function contributionFailure(folder: string, manifest: PluginManifest): Promise<StepFailure | null> {
+    const errors = await checkFlows(folder, manifest.contributes?.flows ?? [])
+    return errors.length > 0 ? { ok: false, status: 400, error: errors.join('\n'), step: 'contributions' } : null
   }
 
   function checkedRepoRef(body: { repo?: unknown; ref?: unknown }): MessageFailure | null {
@@ -224,6 +240,7 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
       ...(manifest.server !== undefined ? { server: manifest.server } : {}),
       ...(manifest.screen !== undefined ? { screen: manifest.screen } : {}),
       ...(manifest.queueSource === true ? { queueSource: true as const } : {}),
+      ...(manifest.contributes !== undefined ? { contributes: manifest.contributes } : {}),
       enabled: true,
       installedAt,
       updatedAt: now,
@@ -260,19 +277,29 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
     if (prepared !== null) return prepared
     await mkdir(pluginsRoot(), { recursive: true, mode: DIR_MODE })
     const target = pluginFolder(manifest.id)
-    const record = recordOf(manifest, { repo: body.repo, ref: body.ref, ...(body.marketplace !== undefined ? { marketplace: body.marketplace } : {}) }, sha, new Date().toISOString())
+    const fresh = recordOf(manifest, { repo: body.repo, ref: body.ref, ...(body.marketplace !== undefined ? { marketplace: body.marketplace } : {}) }, sha, new Date().toISOString())
+    const badFlow = await contributionFailure(tmp, manifest)
+    if (badFlow !== null) return badFlow
     try {
       await deps.rename(tmp, target)
     } catch (error) {
       await rm(target, { recursive: true, force: true })
       return { ok: false, status: 500, error: errorMessage(error), step: 'move' }
     }
+    const applied = await syncContributions(fresh, contributionOptions())
+    if (!applied.ok) {
+      await rm(target, { recursive: true, force: true })
+      return { ok: false, status: 409, error: applied.error, step: 'contributions' }
+    }
+    const record: InstalledPlugin = manifest.contributes !== undefined ? { ...fresh, contributedPaths: applied.written } : fresh
     try {
       await deps.saveInstalled(record)
     } catch (error) {
+      await removeContributions(manifest.id, applied.written)
       await rm(target, { recursive: true, force: true })
       return { ok: false, status: 500, error: errorMessage(error), step: 'move' }
     }
+    if (manifest.contributes !== undefined) await deps.syncEngineAssets()
     return { ok: true, plugin: record }
   }
 
@@ -290,6 +317,9 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
       if (!manifest.ok) return manifest
       const unsafe = await checkSourceLinks(tmp)
       if (unsafe !== null) return unsafe
+      if (manifest.manifest.contributes !== undefined && body.trust !== true) {
+        return { ok: false, status: 400, error: CONTRIBUTIONS_NEED_TRUST }
+      }
       if (manifest.manifest.runtime === 'trusted' && body.trust !== true) {
         return { ok: false, status: 400, error: 'Trusted plugins need trust: true' }
       }
@@ -367,20 +397,34 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
           if (manifest.manifest.runtime === 'trusted' && installed.runtime === 'isolated' && body.trust !== true) {
             return { ok: false, status: 409, needsTrust: true }
           }
-          const added = permissionsAdded(installed.permissions, manifest.manifest.permissions)
+          if (manifest.manifest.contributes !== undefined && installed.contributes === undefined && body.trust !== true) {
+            return { ok: false, status: 409, needsTrust: true }
+          }
+          const added = [
+            ...permissionsAdded(installed.permissions, manifest.manifest.permissions),
+            ...contributionsAdded(installed.contributes, manifest.manifest.contributes),
+          ]
           if (added.length > 0 && body.accept !== true) return { ok: false, status: 409, needsConsent: true, added }
           const sha = await headSha(tmp)
           if (sha !== body.commit) return { ok: false, status: 409, error: 'The plugin changed since you reviewed it; preview again' }
           const prepared = await prepareBuild(tmp, manifest.manifest)
           if (prepared !== null) return prepared
-          const record: InstalledPlugin = {
+          const badFlow = await contributionFailure(tmp, manifest.manifest)
+          if (badFlow !== null) return badFlow
+          const replacement: InstalledPlugin = {
             ...recordOf(manifest.manifest, { repo, ref, ...(installed.source.marketplace !== undefined ? { marketplace: installed.source.marketplace } : {}) }, sha, installed.installedAt),
             enabled: installed.enabled,
             ...(installed.runtime === 'trusted' && manifest.manifest.runtime === 'trusted' ? { restartRequired: true } : {}),
           }
-          const replaced = await replaceInstalled(id, tmp, record)
+          const replaced = await replaceInstalled(id, tmp, replacement)
           if (replaced !== null) return replaced
           await invalidateRuntime(id)
+          if (installed.contributes === undefined && replacement.contributes === undefined) return { ok: true, plugin: replacement }
+          const applied = await syncContributions({ ...replacement, contributedPaths: installed.contributedPaths ?? [] }, contributionOptions())
+          if (!applied.ok) return { ok: false, status: 409, error: applied.error, step: 'contributions' }
+          const record: InstalledPlugin = { ...replacement, contributedPaths: applied.written }
+          await deps.saveInstalled(record)
+          await deps.syncEngineAssets()
           return { ok: true, plugin: record }
         } finally {
           await rm(tmp, { recursive: true, force: true })
@@ -395,10 +439,13 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
   async function uninstall(id: string, options: { keepData?: boolean } = {}): Promise<UninstallResult> {
     try {
       return await withPluginLock(id, async () => {
-        if (await getInstalled(id) === null) return { ok: false, status: 404, error: 'That plugin is not installed' }
+        const installed = await getInstalled(id)
+        if (installed === null) return { ok: false, status: 404, error: 'That plugin is not installed' }
+        await removeContributions(id, installed.contributedPaths ?? [])
         await removeStaleOldFolders(id)
         await rm(pluginFolder(id), { recursive: true, force: true })
         await removeInstalled(id)
+        if (installed.contributes !== undefined) await deps.syncEngineAssets()
         await invalidateRuntime(id)
         const keepData = options.keepData !== false
         if (!keepData) {
@@ -418,8 +465,12 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
       return await withPluginLock(id, async () => {
         const installed = await getInstalled(id)
         if (installed === null) return { ok: false, status: 404, error: 'That plugin is not installed' }
-        const record: InstalledPlugin = { ...installed, enabled, updatedAt: new Date().toISOString() }
+        const toggled: InstalledPlugin = { ...installed, enabled, updatedAt: new Date().toISOString() }
+        const applied = installed.contributes === undefined ? null : await syncContributions(toggled, contributionOptions())
+        if (applied !== null && !applied.ok) return { ok: false, status: 409, error: applied.error }
+        const record: InstalledPlugin = applied === null ? toggled : { ...toggled, contributedPaths: applied.written }
         await deps.saveInstalled(record)
+        if (applied !== null) await deps.syncEngineAssets()
         if (!enabled) await invalidateRuntime(id)
         return { ok: true, plugin: record }
       })

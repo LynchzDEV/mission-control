@@ -638,3 +638,88 @@ describe('marketplaces', () => {
     await expectPrivateTree(join(configDir, 'marketplaces', marketplaceSlug(fileUrl(source))))
   })
 })
+
+describe('contributed agents, skills and flows', () => {
+  const AGENT = '---\nname: biz-gate\ndescription: Gate a card.\n---\nRepos in {{setting:reposRoot}}.\n'
+  const SKILL = '---\nname: card-refine\ndescription: Refine.\n---\nRun {{mc:mctl}}.\n'
+  const FLOW = JSON.stringify({ id: 'card-pipeline', name: 'Card pipeline', entry: 'gate', nodes: [{ id: 'gate', title: 'Gate', instructions: 'Run it.', kind: 'task' }], edges: [] })
+  let targets: string[]
+  let syncs: number
+
+  const contributingManifest = (overrides: Record<string, unknown> = {}) => isolatedManifest({
+    pluginApi: 2,
+    settings: [{ key: 'reposRoot', label: 'Repos', type: 'text' }],
+    contributes: { agents: ['agents/biz-gate.md'], skills: ['skills/card-refine'], flows: ['flows/card-pipeline.json'] },
+    ...overrides,
+  })
+  const contributingFiles = { 'src/screen.ts': TRIVIAL_SCREEN, 'agents/biz-gate.md': AGENT, 'skills/card-refine/SKILL.md': SKILL, 'flows/card-pipeline.json': FLOW }
+  const contributingInstaller = () => createInstaller({ contributionTargets: () => targets, mctlCommand: () => 'mctl', syncEngineAssets: async () => { syncs += 1 } })
+
+  beforeEach(() => {
+    targets = [join(configDir, 'home-claude'), join(configDir, 'worker-claude')]
+    syncs = 0
+  })
+
+  async function installContributing(manifest = contributingManifest(), files: Record<string, string> = contributingFiles, trust = true) {
+    const source = await repo('contributing', manifest, files)
+    return contributingInstaller().install({ repo: fileUrl(source), ref: 'v1.0.0', commit: await fixtureSha(source), trust })
+  }
+
+  test('needs trust even when the runtime is isolated', async () => {
+    const result = await installContributing(contributingManifest(), contributingFiles, false)
+    expect(result).toEqual({ ok: false, status: 400, error: 'Plugins that add agents, skills or flows need trust: true' })
+    await assertNothingInstalled('fixture-plugin')
+  })
+
+  test('install copies the agent and skill into every profile and records what it wrote', async () => {
+    const result = await installContributing()
+    if (!result.ok) throw new Error(JSON.stringify(result))
+    for (const target of targets) {
+      expect(await readFile(join(target, 'agents', 'biz-gate.md'), 'utf8')).toContain('<!-- installed by mission-control plugin fixture-plugin -->')
+      expect(await readFile(join(target, 'skills', 'card-refine', 'SKILL.md'), 'utf8')).toContain('Run mctl.')
+    }
+    const saved = await getInstalled('fixture-plugin')
+    expect(saved?.contributes).toEqual({ agents: ['agents/biz-gate.md'], skills: ['skills/card-refine'], flows: ['flows/card-pipeline.json'] })
+    expect(saved?.contributedPaths?.length).toBe(4)
+    expect(syncs).toBe(1)
+  })
+
+  test('install stops on an agent the user already has and leaves nothing behind', async () => {
+    await mkdir(join(targets[0]!, 'agents'), { recursive: true })
+    await writeFile(join(targets[0]!, 'agents', 'biz-gate.md'), 'mine\n')
+    const result = await installContributing()
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.step).toBe('contributions')
+    expect(await readFile(join(targets[0]!, 'agents', 'biz-gate.md'), 'utf8')).toBe('mine\n')
+    await assertNothingInstalled('fixture-plugin')
+  })
+
+  test('install refuses a broken flow', async () => {
+    const result = await installContributing(contributingManifest(), { ...contributingFiles, 'flows/card-pipeline.json': '{"id":"x"}' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.step).toBe('contributions')
+    await assertNothingInstalled('fixture-plugin')
+  })
+
+  test('disable removes the files, enable puts them back, uninstall removes them', async () => {
+    const result = await installContributing()
+    if (!result.ok) throw new Error(JSON.stringify(result))
+    const agent = join(targets[1]!, 'agents', 'biz-gate.md')
+    await contributingInstaller().setEnabled('fixture-plugin', false)
+    expect(await pathExists(agent)).toBe(false)
+    await contributingInstaller().setEnabled('fixture-plugin', true)
+    expect(await pathExists(agent)).toBe(true)
+    await contributingInstaller().uninstall('fixture-plugin')
+    expect(await pathExists(agent)).toBe(false)
+    expect(await pathExists(join(targets[1]!, 'skills', 'card-refine'))).toBe(false)
+  })
+
+  test('an update that adds an agent asks for consent', async () => {
+    const source = await repo('contributing', contributingManifest({ contributes: { agents: ['agents/biz-gate.md'] } }), contributingFiles)
+    const first = await contributingInstaller().install({ repo: fileUrl(source), ref: 'v1.0.0', commit: await fixtureSha(source), trust: true })
+    if (!first.ok) throw new Error(JSON.stringify(first))
+    await commitFixture(source, { 'mc-plugin.json': `${JSON.stringify(contributingManifest(), null, 2)}\n` }, { tag: 'v1.1.0' })
+    const result = await contributingInstaller().update('fixture-plugin', { ref: 'v1.1.0', commit: await fixtureSha(source) })
+    expect(result).toEqual({ ok: false, status: 409, needsConsent: true, added: ['Add the skill skills/card-refine to your engines', 'Add the Studio flow flows/card-pipeline.json'] })
+  })
+})
