@@ -201,3 +201,13 @@ test('worker rules keep long commands in the foreground because a headless sessi
   expect(foreground).toBeGreaterThan(-1)
   expect(foreground).toBeLessThan(lines.findIndex(line => line.startsWith('End your final response')))
 })
+
+test('plugin flows are listed, readable and read-only', async () => {
+  const pluginFlow = { ...draftRevision({ id: 'card-pipeline--card-pipeline', name: 'Card pipeline: Card pipeline', entry: 'gate', nodes: [{ id: 'gate', title: 'Gate', instructions: 'Run it.', kind: 'task' }], edges: [] }), createdAt: 0, plugin: 'card-pipeline' }
+  const store = createWorkflowStore(dir, { pluginFlows: async () => [pluginFlow] })
+  expect((await store.list()).map(flow => flow.id)).toContain('card-pipeline--card-pipeline')
+  expect((await store.get('card-pipeline--card-pipeline')).name).toBe('Card pipeline: Card pipeline')
+  expect((await store.get('card-pipeline--card-pipeline', pluginFlow.revision)).revision).toBe(pluginFlow.revision)
+  const { revision: _revision, createdAt: _createdAt, plugin: _plugin, ...graph } = pluginFlow
+  await expect(store.save(graph, pluginFlow.revision)).rejects.toThrow('This flow comes from the card-pipeline plugin; save it under a new id to change it')
+})

@@ -21,6 +21,7 @@ import { connectionEnvironment, createConnectionStore, type AgentConnection } fr
 import { modelDiscovery } from './model-discovery'
 import { configDir, listenTarget } from './secrets'
 import { createWorkflowStore } from './workflows'
+import { listedPluginFlows } from './plugins/contributions'
 import { flowDesignRules } from './flow-design'
 import type { PastTerminal, TerminalLog } from './terminal-log'
 
@@ -230,7 +231,7 @@ export function createTerminalRegistry(options: TerminalRegistryOptions = {}): T
     try {
       if (params.revision && !params.workflowId) throw new Error('Choose a workflow for this version')
       if (params.design && params.workflowId) throw new Error('Choose either AI flow design or a saved workflow')
-      const store = createWorkflowStore()
+      const store = createWorkflowStore(undefined, { pluginFlows: listedPluginFlows })
       const design = params.design === true || (!params.workflowId && await store.design())
       const selected = params.workflowId ? await store.get(params.workflowId, params.revision) : design ? await store.get('default') : await store.selected()
       workflow = { id: selected.id, revision: selected.revision, name: selected.name, selectedDefault: !params.workflowId && !params.design, design }

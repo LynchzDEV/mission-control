@@ -52,6 +52,7 @@ import { secretsRoutes } from './routes/secrets'
 import { flowApprovalRoutes, rolesRoutes } from './routes/roles'
 import { claudeSkillsDir, describeSkillInstall, installSkills } from './skill-install'
 import { syncEngineAssets } from './engine-assets'
+import { listedPluginFlows, refreshAllContributions } from './plugins/contributions'
 import { ShellPage } from './views/shell'
 import { jobLine, log, requestLine, shouldLogRequest } from './server-log'
 
@@ -153,6 +154,7 @@ function healthApi() {
 
 export async function createApp(): Promise<Elysia> {
   const skills = await installSkills()
+  for (const problem of await refreshAllContributions()) console.error(`plugin contributions: ${problem}`)
   const assets = await syncEngineAssets()
   if (assets.linked.length > 0 || assets.written.length > 0 || assets.movedAside.length > 0) {
     console.error(`codex assets — linked ${assets.linked.length}, written ${assets.written.length}, moved aside ${assets.movedAside.length}, skipped ${assets.skipped.length}`)
@@ -160,7 +162,7 @@ export async function createApp(): Promise<Elysia> {
   if (skills.linked.length > 0 || skills.movedAside.length > 0) {
     console.error(`skills: ${describeSkillInstall(skills)} -> ${claudeSkillsDir()}`)
   }
-  const workflowStore = createWorkflowStore()
+  const workflowStore = createWorkflowStore(undefined, { pluginFlows: listedPluginFlows })
   const runEvents = createRunEvents()
   const attention = createAttentionStore()
   const attentionOn = attentionEvents(attention)

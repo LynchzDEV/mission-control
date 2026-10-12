@@ -242,8 +242,15 @@ export async function atomicJson(path: string, value: unknown): Promise<void> {
   await rename(temporary, path)
 }
 
-export function createWorkflowStore(base = configDir()) {
+export type PluginFlowRevision = WorkflowRevision & { plugin: string }
+export type WorkflowStoreOptions = { pluginFlows?: () => Promise<PluginFlowRevision[]> }
+
+export function createWorkflowStore(base = configDir(), options: WorkflowStoreOptions = {}) {
   const root = join(base, 'workflows')
+  const pluginFlows = options.pluginFlows ?? (async () => [])
+  async function pluginFlow(id: string): Promise<PluginFlowRevision | undefined> {
+    return (await pluginFlows()).find(flow => flow.id === id)
+  }
   const policies = join(base, 'policies')
   let writes = Promise.resolve<unknown>(undefined)
   function exclusive<T>(action: () => Promise<T>): Promise<T> {
@@ -254,6 +261,8 @@ export function createWorkflowStore(base = configDir()) {
   async function get(id: string, revision?: string): Promise<WorkflowRevision> {
     identifier.parse(id)
     if (revision) identifier.parse(revision)
+    const fromPlugin = id === 'default' ? undefined : await pluginFlow(id)
+    if (fromPlugin && (!revision || revision === fromPlugin.revision)) return fromPlugin
     const directory = join(root, id)
     if (id === 'default' && (!revision || revision === hash(defaultWorkflow()))) {
       const record = { ...defaultWorkflow(), revision: hash(defaultWorkflow()), createdAt: 0 }
@@ -277,6 +286,8 @@ export function createWorkflowStore(base = configDir()) {
       if (errors.length) throw new Error(errors.join('\n'))
       const graph = workflowSchema.parse(value)
       if (graph.id === 'default') throw new Error('Duplicate the built-in default to customize it')
+      const fromPlugin = await pluginFlow(graph.id)
+      if (fromPlugin) throw new Error(`This flow comes from the ${fromPlugin.plugin} plugin; save it under a new id to change it`)
       let current: WorkflowRevision | undefined
       try { current = await get(graph.id) } catch (error) { if ((error as Error).message !== 'Workflow not found') throw error }
       if (current && current.revision !== expectedRevision) throw new Error('Workflow changed; reload before saving')
@@ -293,7 +304,9 @@ export function createWorkflowStore(base = configDir()) {
   }
   async function list(): Promise<WorkflowRevision[]> {
     const entries = await readdir(root, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
-    return [await get('default'), ...await Promise.all(entries.filter(entry => entry.isDirectory() && entry.name !== 'default').map(entry => get(entry.name)))]
+    const saved = await Promise.all(entries.filter(entry => entry.isDirectory() && entry.name !== 'default').map(entry => get(entry.name)))
+    const savedIds = new Set(saved.map(flow => flow.id))
+    return [await get('default'), ...saved, ...(await pluginFlows()).filter(flow => !savedIds.has(flow.id))]
   }
   async function revisions(id: string): Promise<WorkflowRevision[]> {
     if (id === 'default') return [await get(id)]

@@ -11,6 +11,8 @@ import { addFromLink } from '../plugins/link'
 import { addMarketplace, catalog, listMarketplaces, removeMarketplace } from '../plugins/marketplaces'
 import { defaultRuntimes, type Runtimes } from '../plugins/runtimes'
 import { setSetting, settingsView } from '../plugins/settings'
+import { refreshContributions } from '../plugins/contributions'
+import { syncEngineAssets } from '../engine-assets'
 import { getInstalled, listInstalled, pluginFolder } from '../plugins/store'
 
 function failureBody(result: { ok: false; status: number }): Record<string, unknown> {
@@ -140,6 +142,8 @@ export function pluginsRoutes(deps: { installer?: Installer; runtimes?: Runtimes
       if (parsed.value !== null && typeof parsed.value !== 'string') { set.status = 400; return { error: 'value must be a string or null' } }
       const result = await setSetting(params.id, parsed.key, parsed.value)
       if (!result.ok) { set.status = result.status; return { error: result.error } }
+      const refreshed = await refreshContributions(params.id, { sync: syncEngineAssets })
+      if (!refreshed.ok) { set.status = 409; return { error: `Setting saved, but the plugin's agents and skills could not be updated: ${refreshed.error}` } }
       return result.value
     })
     .post('/api/plugins/:id/context', async ({ params, body, set }) => {
