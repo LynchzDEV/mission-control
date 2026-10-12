@@ -99,12 +99,16 @@ Generated from today's agent into `~/klangtech/.claude/biz-gate-team.md` (outsid
 
 ## Build order
 
-1. SDK: schema, types, check, README — published as a new version.
-2. Host: manifest, templating, copy / remove / collision / consent, startup self-heal — TDD, with the existing installer tests as the pattern.
-3. Template README paragraph.
-4. Plugin repo + KlangTech team file; install it from a `file:///` link, then from the marketplace.
+Mission Control does not import the SDK (`server/plugins/manifest.ts` is its own copy of the rules), so the SDK and the host are independent and run in parallel. Both must hold the same rules; each has its own tests for them.
 
-Each step is a cockpit job (mc-dispatch); the 7 acceptance concerns apply.
+| Job | Depends on |
+|---|---|
+| A. SDK: schema, types, check, README — published as a new version | nothing |
+| B. Host: manifest, templating, copy / remove / collision / consent, startup self-heal — TDD, with the existing installer tests as the pattern | nothing |
+| C. Template README paragraph | nothing |
+| D. Plugin repo + KlangTech team file; install from a `file:///` link, then from the marketplace | A (its manifest test uses the SDK) and B (installing needs the new host) |
+
+A, B and C start together as separate cockpit jobs (mc-dispatch); D starts when A and B have landed. The 7 acceptance concerns apply.
 
 ## Testing
 
