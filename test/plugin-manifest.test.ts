@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { parseManifest, permissionsAdded, type PluginManifest } from '../server/plugins/manifest'
+import { contributionsAdded, parseManifest, permissionsAdded, type PluginManifest } from '../server/plugins/manifest'
 
 const CLICKUP_MANIFEST: PluginManifest = {
   id: 'clickup-board',
@@ -38,7 +38,7 @@ describe('parseManifest', () => {
   })
 
   test('refuses a pluginApi the host does not speak', () => {
-    const result = parseManifest({ ...CLICKUP_MANIFEST, pluginApi: 2 })
+    const result = parseManifest({ ...CLICKUP_MANIFEST, pluginApi: 3 })
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.errors).toContain('This plugin needs a newer Mission Control')
   })
@@ -88,7 +88,7 @@ describe('parseManifest', () => {
   })
 
   test('collects several errors at once', () => {
-    const result = parseManifest({ ...CLICKUP_MANIFEST, id: 'x', pluginApi: 2, screen: '../x.ts' })
+    const result = parseManifest({ ...CLICKUP_MANIFEST, id: 'x', pluginApi: 3, screen: '../x.ts' })
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.errors.length).toBe(3)
   })
@@ -118,5 +118,64 @@ describe('permissionsAdded', () => {
 
   test('reports settings false to true and terminal growth separately', () => {
     expect(permissionsAdded({ sessions: ['chat'] }, { sessions: ['chat', 'terminal'], settings: true })).toEqual(['Start terminals', 'Keep its own settings'])
+  })
+})
+
+const CONTRIBUTING: PluginManifest = {
+  id: 'card-pipeline',
+  name: 'Card pipeline',
+  version: '0.1.0',
+  description: 'Refine ClickUp cards.',
+  pluginApi: 2,
+  runtime: 'isolated',
+  permissions: { settings: true },
+  settings: [{ key: 'reposRoot', label: 'Repos folder', type: 'text' }],
+  contributes: { agents: ['agents/biz-gate.md'], skills: ['skills/card-refine'], flows: ['flows/card-pipeline.json'] },
+}
+
+function errorsOf(raw: unknown): string[] {
+  const result = parseManifest(raw)
+  return result.ok ? [] : result.errors
+}
+
+describe('contributes', () => {
+  test('pluginApi 2 accepts agents, skills and flows', () => {
+    expect(parseManifest(CONTRIBUTING)).toEqual({ ok: true, manifest: CONTRIBUTING })
+  })
+
+  test('pluginApi 2 is accepted without contributes', () => {
+    const { contributes: _contributes, ...plain } = CONTRIBUTING
+    expect(parseManifest(plain).ok).toBe(true)
+  })
+
+  test('contributes needs pluginApi 2', () => {
+    expect(errorsOf({ ...CONTRIBUTING, pluginApi: 1 })).toContain('contributes needs pluginApi 2')
+  })
+
+  test('contributes lists at least one item and never repeats a path', () => {
+    expect(errorsOf({ ...CONTRIBUTING, contributes: {} })).toContain('contributes must list at least one agent, skill or flow')
+    expect(errorsOf({ ...CONTRIBUTING, contributes: { agents: ['agents/a.md', 'agents/a.md'] } })).toContain('contributes must not repeat a path')
+  })
+
+  test('agents are .md, skills are folders, flows are .json, all inside the repo', () => {
+    expect(errorsOf({ ...CONTRIBUTING, contributes: { agents: ['agents/a.txt'] } })).toContain('contributes.agents: agents/a.txt must be a .md file inside the plugin folder')
+    expect(errorsOf({ ...CONTRIBUTING, contributes: { agents: ['../a.md'] } })).toContain('contributes.agents: ../a.md must be a .md file inside the plugin folder')
+    expect(errorsOf({ ...CONTRIBUTING, contributes: { skills: ['skills/x/SKILL.md'] } })).toContain('contributes.skills: skills/x/SKILL.md must be a folder inside the plugin folder')
+    expect(errorsOf({ ...CONTRIBUTING, contributes: { flows: ['flows/x.yaml'] } })).toContain('contributes.flows: flows/x.yaml must be a .json file inside the plugin folder')
+  })
+})
+
+describe('contributionsAdded', () => {
+  test('lists every new agent, skill and flow', () => {
+    expect(contributionsAdded(undefined, CONTRIBUTING.contributes)).toEqual([
+      'Add the agent agents/biz-gate.md to your engines',
+      'Add the skill skills/card-refine to your engines',
+      'Add the Studio flow flows/card-pipeline.json',
+    ])
+  })
+
+  test('lists only what the update adds', () => {
+    expect(contributionsAdded({ agents: ['agents/biz-gate.md'] }, { agents: ['agents/biz-gate.md', 'agents/other.md'] })).toEqual(['Add the agent agents/other.md to your engines'])
+    expect(contributionsAdded(CONTRIBUTING.contributes, CONTRIBUTING.contributes)).toEqual([])
   })
 })

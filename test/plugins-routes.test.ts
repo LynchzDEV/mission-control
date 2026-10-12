@@ -78,7 +78,7 @@ describe('installed plugins', () => {
   })
 
   test('preview of an unsupported pluginApi reports the manifest errors', async () => {
-    const fixture = await makeFixture('future', isolatedManifest({ pluginApi: 2 }))
+    const fixture = await makeFixture('future', isolatedManifest({ pluginApi: 3 }))
     const response = await json('POST', '/api/plugins/preview', { repo: fixture.url, ref: 'v1.0.0' })
     expect(response.status).toBe(400)
     expect(await response.text()).toContain('This plugin needs a newer Mission Control')

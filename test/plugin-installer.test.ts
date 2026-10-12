@@ -200,7 +200,7 @@ describe('install failures leave nothing behind', () => {
   })
 
   test('manifest: an invalid manifest reports its errors', async () => {
-    const source = await repo('bad-manifest', isolatedManifest({ pluginApi: 2 }), { 'src/screen.ts': TRIVIAL_SCREEN })
+    const source = await repo('bad-manifest', isolatedManifest({ pluginApi: 3 }), { 'src/screen.ts': TRIVIAL_SCREEN })
     const result = await installer().install({ repo: fileUrl(source), ref: 'v1.0.0', commit: await fixtureSha(source) })
     expect(result.ok).toBe(false)
     if (!result.ok) {

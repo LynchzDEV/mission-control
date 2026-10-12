@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
-export const SUPPORTED_PLUGIN_APIS = [1]
+export const SUPPORTED_PLUGIN_APIS = [1, 2]
+
+export const CONTRIBUTIONS_PLUGIN_API = 2
 
 export const PLUGIN_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/
 
@@ -31,6 +33,8 @@ export type PluginPermissions = {
   settings?: boolean
 }
 
+export type PluginContributions = { agents?: string[]; skills?: string[]; flows?: string[] }
+
 export type PluginManifest = {
   id: string
   name: string
@@ -44,6 +48,7 @@ export type PluginManifest = {
   queueSource?: boolean
   permissions: PluginPermissions
   settings?: SettingField[]
+  contributes?: PluginContributions
 }
 
 export type ParseManifestResult = { ok: true; manifest: PluginManifest } | { ok: false; errors: string[] }
@@ -72,6 +77,11 @@ const manifestSchema = z.object({
     settings: z.boolean().optional(),
   }),
   settings: z.array(settingFieldSchema).optional(),
+  contributes: z.object({
+    agents: z.array(z.string()).optional(),
+    skills: z.array(z.string()).optional(),
+    flows: z.array(z.string()).optional(),
+  }).optional(),
 })
 
 function insideRepoPath(value: string): boolean {
@@ -106,6 +116,7 @@ export function parseManifest(raw: unknown): ParseManifestResult {
   for (const host of value.permissions.network ?? []) {
     if (!isNetworkPermission(host)) add(`network permission "${host}" must be a plain host name like api.example.com, or *. and a host like *.example.com`)
   }
+  for (const error of contributionErrors(value.contributes, value.pluginApi)) add(error)
   const settingKeys = new Set<string>()
   for (const field of value.settings ?? []) {
     if (settingKeys.has(field.key)) add(`settings: the key "${field.key}" is declared more than once`)
@@ -113,6 +124,40 @@ export function parseManifest(raw: unknown): ParseManifestResult {
   }
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true, manifest: value }
+}
+
+const CONTRIBUTION_KINDS = [
+  { key: 'agents', shape: '.md file', fits: (path: string) => path.endsWith('.md') },
+  { key: 'skills', shape: 'folder', fits: (path: string) => !path.endsWith('.md') && !path.endsWith('/') },
+  { key: 'flows', shape: '.json file', fits: (path: string) => path.endsWith('.json') },
+] as const
+
+function contributionErrors(contributes: PluginContributions | undefined, pluginApi: number): string[] {
+  if (contributes === undefined) return []
+  const errors: string[] = []
+  if (pluginApi < CONTRIBUTIONS_PLUGIN_API) errors.push('contributes needs pluginApi 2')
+  for (const kind of CONTRIBUTION_KINDS) {
+    for (const path of contributes[kind.key] ?? []) {
+      if (!insideRepoPath(path) || !kind.fits(path)) errors.push(`contributes.${kind.key}: ${path} must be a ${kind.shape} inside the plugin folder`)
+    }
+  }
+  const paths = CONTRIBUTION_KINDS.flatMap(kind => contributes[kind.key] ?? [])
+  if (paths.length === 0) errors.push('contributes must list at least one agent, skill or flow')
+  if (new Set(paths).size !== paths.length) errors.push('contributes must not repeat a path')
+  return errors
+}
+
+const CONTRIBUTION_LABEL = {
+  agents: (path: string) => `Add the agent ${path} to your engines`,
+  skills: (path: string) => `Add the skill ${path} to your engines`,
+  flows: (path: string) => `Add the Studio flow ${path}`,
+}
+
+export function contributionsAdded(old: PluginContributions | undefined, next: PluginContributions | undefined): string[] {
+  return CONTRIBUTION_KINDS.flatMap(kind => {
+    const before = new Set(old?.[kind.key] ?? [])
+    return (next?.[kind.key] ?? []).filter(path => !before.has(path)).map(CONTRIBUTION_LABEL[kind.key])
+  })
 }
 
 const SESSION_KIND_LABEL: Record<SessionKind, string> = { chat: 'Start chats', terminal: 'Start terminals' }
