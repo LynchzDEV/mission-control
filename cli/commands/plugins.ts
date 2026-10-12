@@ -64,20 +64,44 @@ function catalogText(value: unknown): string {
   }).join('\n')
 }
 
+const CONTRIBUTION_LINES = [
+  { key: 'agents', line: (path: string) => `Add the agent ${path} to your engines` },
+  { key: 'skills', line: (path: string) => `Add the skill ${path} to your engines` },
+  { key: 'flows', line: (path: string) => `Add the Studio flow ${path}` },
+] as const
+
+function contributionLines(preview: Json): string[] {
+  const manifest = isRecord(preview.manifest) ? preview.manifest : {}
+  const contributes = isRecord(manifest.contributes) ? manifest.contributes : {}
+  return CONTRIBUTION_LINES.flatMap((kind) => {
+    const paths = contributes[kind.key]
+    return Array.isArray(paths) ? paths.filter((path): path is string => typeof path === 'string').map(kind.line) : []
+  })
+}
+
+function needsTrust(preview: Json): boolean {
+  return preview.runtime === 'trusted' || contributionLines(preview).length > 0
+}
+
 function previewText(preview: Json): string {
   const manifest = isRecord(preview.manifest) ? preview.manifest : {}
+  const contributions = contributionLines(preview)
   const lines = [
     `${cell(manifest.name)} ${cell(manifest.version)} (${cell(preview.runtime)})`,
     ...(preview.runtime === 'trusted'
       ? ['Trusted: runs inside Mission Control with full access to your files, tokens and the internet.']
       : ['Isolated. It will be able to:', ...permissionLines(preview.permissions).map((line) => `  - ${line}`)]),
+    ...(contributions.length > 0
+      ? ['It adds work to your engines, which runs with your full access:', ...contributions.map((line) => `  - ${line}`)]
+      : []),
   ]
   return `${lines.join('\n')}\n`
 }
 
 async function installFromPreview(ctx: Context, repo: string, ref: string, preview: Json): Promise<void> {
   if (preview.runtime === 'trusted' && !flag(ctx, 'trust')) throw new UsageError('this plugin is trusted (full access); add --trust to install it')
-  const body = { repo, ref, commit: String(preview.commit ?? ''), ...(preview.runtime === 'trusted' ? { trust: true } : {}) }
+  if (contributionLines(preview).length > 0 && !flag(ctx, 'trust')) throw new UsageError('this plugin adds agents, skills or flows that run with your access; add --trust to install it')
+  const body = { repo, ref, commit: String(preview.commit ?? ''), ...(needsTrust(preview) ? { trust: true } : {}) }
   const installed = await ctx.client.post('/api/plugins/install', body)
   emit(ctx, installed, (value) => {
     const plugin = isRecord(value) && isRecord(value.plugin) ? value.plugin : {}
@@ -95,7 +119,7 @@ async function addFromLink(ctx: Context): Promise<void> {
     return
   }
   if (!flag(ctx, 'yes')) {
-    emit(ctx, result, (value) => `${previewText(value as Json)}Version ${cell(result.ref)}. Run again with --yes${result.runtime === 'trusted' ? ' --trust' : ''} to install.\n`)
+    emit(ctx, result, (value) => `${previewText(value as Json)}Version ${cell(result.ref)}. Run again with --yes${needsTrust(result as Json) ? ' --trust' : ''} to install.\n`)
     return
   }
   await installFromPreview(ctx, url, String(result.ref), result)
@@ -140,7 +164,7 @@ async function updatePlugin(ctx: Context): Promise<void> {
       const added = Array.isArray(error.body.added) ? error.body.added.map(String) : []
       throw new UsageError(`this update asks for more:\n${added.map((line) => `  - ${line}`).join('\n')}\nrun again with --yes --accept to allow it`)
     }
-    if (error.body.needsTrust === true) throw new UsageError('this update makes the plugin trusted (full access); run again with --yes --trust')
+    if (error.body.needsTrust === true) throw new UsageError('this update needs your trust (it runs trusted, or adds agents, skills or flows); run again with --yes --trust')
     throw error
   }
 }
@@ -201,7 +225,7 @@ export const pluginCommands: Command[] = [
     options: {
       yes: { type: 'boolean', description: 'apply the update (without it: check only)' },
       accept: { type: 'boolean', description: 'allow the extra permissions the update asks for' },
-      trust: { type: 'boolean', description: 'allow an update that makes the plugin trusted' },
+      trust: { type: 'boolean', description: 'allow an update that runs trusted or adds agents, skills or flows' },
     },
     summary: 'Check for and apply a plugin update',
     run: updatePlugin,

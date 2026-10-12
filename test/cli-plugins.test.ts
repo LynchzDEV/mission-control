@@ -91,6 +91,23 @@ describe('mctl plugin', () => {
     expect(install.out()).toContain('Installed ClickUp board 1.3.0')
   })
 
+  test('a plugin that adds agents, skills or flows lists them and needs --trust', async () => {
+    const preview = { kind: 'plugin', ref: 'v0.2.0', commit: 'cp1', runtime: 'isolated', manifest: { name: 'Card pipeline', version: '0.2.0', contributes: { agents: ['agents/biz-gate.md'], skills: ['skills/card-refine'], flows: ['flows/card-pipeline.json'] } }, permissions: {} }
+    const reply: Reply = (call) => (call.path === '/api/plugins/add-link' ? Response.json(preview) : call.path === '/api/plugins/install' ? Response.json({ plugin: { name: 'Card pipeline', version: '0.2.0' } }) : undefined)
+    const look = harness(reply)
+    expect(await main(['plugin', 'add', 'https://github.com/x/card-pipeline'], look.deps)).toBe(0)
+    expect(look.out()).toContain('Add the agent agents/biz-gate.md to your engines')
+    expect(look.out()).toContain('Add the skill skills/card-refine to your engines')
+    expect(look.out()).toContain('Add the Studio flow flows/card-pipeline.json')
+    expect(look.out()).toContain('Run again with --yes --trust')
+    const refused = harness(reply)
+    expect(await main(['plugin', 'add', 'https://github.com/x/card-pipeline', '--yes'], refused.deps)).toBe(2)
+    expect(refused.err()).toContain('this plugin adds agents, skills or flows that run with your access; add --trust to install it')
+    const install = harness(reply)
+    expect(await main(['plugin', 'add', 'https://github.com/x/card-pipeline', '--yes', '--trust'], install.deps)).toBe(0)
+    expect(install.calls.find((call) => call.path === '/api/plugins/install')?.body).toEqual({ repo: 'https://github.com/x/card-pipeline', ref: 'v0.2.0', commit: 'cp1', trust: true })
+  })
+
   test('a trusted plugin needs --trust, and a marketplace link just adds it', async () => {
     const trusted = harness((call) => (call.path === '/api/plugins/add-link' ? Response.json({ kind: 'plugin', ref: 'v0.1.0', commit: 'c1', runtime: 'trusted', manifest: { name: 'Hello', version: '0.1.0' } }) : undefined))
     expect(await main(['plugin', 'add', 'https://github.com/x/hello', '--yes'], trusted.deps)).toBe(2)
