@@ -5,7 +5,26 @@ type Listing = { plugin: CatalogPlugin; marketplace?: string }
 
 type Selection = { kind: 'installed'; id: string } | { kind: 'listing'; listing: Listing } | null
 
-type Preview = { manifest: { id: string; name: string; version: string }; commit: string; permissions: PluginPermissions; runtime: 'trusted' | 'isolated' }
+type Preview = { manifest: { id: string; name: string; version: string }; commit: string; permissions: PluginPermissions; runtime: 'trusted' | 'isolated'; contributions: string[] }
+
+const CONTRIBUTION_LINES = [
+  { key: 'agents', line: (path: string) => `Add the agent ${path} to your engines` },
+  { key: 'skills', line: (path: string) => `Add the skill ${path} to your engines` },
+  { key: 'flows', line: (path: string) => `Add the Studio flow ${path}` },
+] as const
+
+function contributionLines(manifest: unknown): string[] {
+  const contributes = (manifest as { contributes?: Record<string, unknown> } | undefined)?.contributes
+  if (contributes === undefined || contributes === null) return []
+  return CONTRIBUTION_LINES.flatMap(kind => {
+    const paths = contributes[kind.key]
+    return Array.isArray(paths) ? paths.filter((path): path is string => typeof path === 'string').map(kind.line) : []
+  })
+}
+
+function needsTrust(preview: Preview): boolean {
+  return preview.runtime === 'trusted' || preview.contributions.length > 0
+}
 
 type InstallDraft = { listing: Listing; preview: Preview; error: string }
 
@@ -288,7 +307,7 @@ function addLinkForm(): HTMLElement {
       const runtime = result.data.runtime === 'trusted' ? 'trusted' : 'isolated'
       installDraft = {
         listing: { plugin: { id: manifest.id, repo: link, ref: String(result.data.ref), name: manifest.name, description: manifest.description ?? '', runtime } },
-        preview: { manifest: { id: manifest.id, name: manifest.name, version: manifest.version }, commit: String(result.data.commit ?? ''), permissions: result.data.permissions as PluginPermissions, runtime },
+        preview: { manifest: { id: manifest.id, name: manifest.name, version: manifest.version }, commit: String(result.data.commit ?? ''), permissions: result.data.permissions as PluginPermissions, runtime, contributions: contributionLines(result.data.manifest) },
         error: '',
       }
       render()
@@ -325,6 +344,7 @@ async function previewListing(listing: Listing): Promise<Preview | null> {
     commit: String(result.data.commit ?? ''),
     permissions: result.data.permissions as PluginPermissions,
     runtime: result.data.runtime === 'trusted' ? 'trusted' : 'isolated',
+    contributions: contributionLines(result.data.manifest),
   }
 }
 
@@ -351,6 +371,23 @@ function installDialog(): HTMLElement {
     card.append(permList(draft.preview.permissions, 'It asks for').querySelector('.mk-perm')!)
     card.append(Object.assign(document.createElement('p'), { className: 'muted connection-small', textContent: 'It cannot read your files, your other secrets, or reach any other website.' }))
     install = button('Install', 'connection-button primary', element => { void confirmInstall(element, card) })
+    if (draft.preview.contributions.length > 0) {
+      const warn = document.createElement('div')
+      warn.className = 'mk-warn'
+      warn.innerHTML = `${icon('mk-warn')}<div><strong>It adds work to your engines.</strong> Agents and skills run with your full access when a session or flow uses them.</div>`
+      const list = document.createElement('ul')
+      list.className = 'mk-perm'
+      for (const line of draft.preview.contributions) list.append(Object.assign(document.createElement('li'), { textContent: line }))
+      const trust = document.createElement('label')
+      trust.className = 'switch-label'
+      const trustInput = document.createElement('input')
+      trustInput.type = 'checkbox'
+      trustInput.setAttribute('role', 'switch')
+      install.disabled = true
+      trustInput.onchange = () => { install.disabled = !trustInput.checked }
+      trust.append(trustInput, document.createTextNode('I trust this plugin'))
+      card.append(warn, list, trust)
+    }
   } else {
     const warn = document.createElement('div')
     warn.className = 'mk-warn'
@@ -383,7 +420,7 @@ async function confirmInstall(target: HTMLButtonElement, scope: ParentNode): Pro
       repo: draft.listing.plugin.repo,
       ref: draft.listing.plugin.ref,
       commit: draft.preview.commit,
-      ...(draft.preview.runtime === 'trusted' ? { trust: true } : {}),
+      ...(needsTrust(draft.preview) ? { trust: true } : {}),
       ...(draft.listing.marketplace === undefined ? {} : { marketplace: draft.listing.marketplace }),
     })
     if (!result.ok) {

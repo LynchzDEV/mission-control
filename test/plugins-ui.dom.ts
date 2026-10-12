@@ -289,6 +289,31 @@ test('a wildcard network permission reads as any address ending in that domain',
   await flush()
 })
 
+test('a plugin that adds agents, skills or flows lists them and needs trust before it installs', async () => {
+  addLinkReply = { status: 200, body: { kind: 'plugin', ref: 'v0.1.0', manifest: { id: 'card-pipeline', name: 'Card pipeline', version: '0.1.0', contributes: { agents: ['agents/biz-gate.md'], skills: ['skills/card-refine'], flows: ['flows/card-pipeline.json'] } }, commit: 'abc125', permissions: { settings: true }, runtime: 'isolated' } }
+  dispatchEvent(new CustomEvent('quiet:show', { detail: 'marketplace' }))
+  await flush(4)
+  buttonNamed('Add from a link', byId('marketplace')).click()
+  await flush()
+  const link = byId('marketplace').querySelector('input[aria-label="Plugin or marketplace link"]') as HTMLInputElement
+  link.value = 'https://github.com/LynchzDEV/mc-plugin-card-pipeline'
+  buttonNamed('Add', byId('marketplace')).click()
+  await flush(4)
+  const dialog = byId('marketplace').querySelector('.mk-dialog') as HTMLElement
+  expect(dialog.textContent).toContain('Add the agent agents/biz-gate.md to your engines')
+  expect(dialog.textContent).toContain('Add the skill skills/card-refine to your engines')
+  expect(dialog.textContent).toContain('Add the Studio flow flows/card-pipeline.json')
+  const install = buttonNamed('Install', dialog)
+  expect(install.disabled).toBe(true)
+  const trust = dialog.querySelector('input[role="switch"]') as HTMLInputElement
+  trust.click()
+  expect(install.disabled).toBe(false)
+  sent.length = 0
+  install.click()
+  await flush(4)
+  expect(sent.find(request => request.url === '/api/plugins/install')!.body).toMatchObject({ commit: 'abc125', trust: true })
+})
+
 test('a marketplace link is added and its listing loads; a bad link says why', async () => {
   addLinkReply = { status: 200, body: { kind: 'marketplace' } }
   dispatchEvent(new CustomEvent('quiet:show', { detail: 'marketplace' }))
