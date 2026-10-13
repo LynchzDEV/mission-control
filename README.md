@@ -4,12 +4,12 @@
 
 Mission Control is a workspace that runs your AI coding agents from one chat. It isn't tied to one vendor: bring Claude Code, Codex, Grok, GLM (through any Anthropic-compatible endpoint), or any ACP, OpenCode or headless-CLI agent you add under **Studio → Manage AIs → Add an AI**. Extend it with plugin add-ons from a git marketplace, or write your own with the plugin SDK (see [Plugins](#plugins)).
 
-You describe the work in a chat. The chat answers directly, or spins up agents in isolated git worktrees, has a *different* AI family review every change, and lands it on your branch. Live terminals, a workflow Studio and your whole history sit in the same window.
+You describe the work in a chat. The chat answers directly, or spins up agents in isolated git worktrees, has a *different* AI family review each code change it makes, and lands it on your branch. (Jobs you start outside the chat, for example with `mctl job new`, skip that automatic review.) Live terminals, a workflow Studio and your whole history sit in the same window.
 
 **What you get:**
 - **A CLI for people and agents.** `mctl` drives a running Mission Control from a shell: `mctl status`, `mctl job new "…" --follow`, `mctl attention`, `mctl runs`, `mctl plugin add <git url>`. See [Command line](#command-line).
 - **Describe a workflow, get a draft.** In Studio, type what you want into **Describe your workflow** and an AI drafts the steps on an editable canvas. Or start from the default (plan → verify → execute → cross-family review), a template, or scratch.
-- **Skills set up for you.** On start, Mission Control links its bundled skills into `~/.claude/skills`, loads the agents, skills and flows that installed plugins contribute, and mirrors Claude's global instructions, skills and agents to Codex so both follow the same rules.
+- **Skills set up for you.** On start, Mission Control links its bundled `mc-dispatch` skill into `~/.claude/skills`, loads the agents, skills and flows that installed plugins contribute, and mirrors Claude's global instructions, skills and agents to Codex so both follow the same rules.
 
 **Example default setup:** Claude Code leads the chat, GLM via z.ai handles cheaper fan-out work, and Codex CLI reviews from the outside. Swap any of them for the agents you already use.
 
@@ -19,7 +19,6 @@ State lives in plain JSON files. No database, no build step.
 
 Video (MP4): [docs/images/demo.mp4](docs/images/demo.mp4)
 
-## Quickstart` section)
 
 ## Quickstart
 
@@ -196,11 +195,11 @@ bun start
 Then open `https://my-box.your-tailnet.ts.net` from any device on your tailnet. Proxied requests are accepted only when the host is a `*.ts.net` name listed in `MISSION_CONTROL_ALLOWED_HOSTS`, the connection comes from loopback (Tailscale on the same machine), and the Tailscale login is listed in `MISSION_CONTROL_ALLOWED_USERS`. Anything else that arrives through a proxy is refused, so a generic reverse proxy (nginx, Caddy, etc.) won't work today, even with auth in front of it. Turn sharing off with `tailscale serve --https=443 off`.
 
 > [!WARNING]
-> Mission Control gives **full terminal and agent access** to the machine it runs on: shells, your repos, and every credential the AIs use. Never expose it to the public internet, and never use `tailscale funnel` for it. Keep it on a private network, behind authentication you control, for users you trust.
+> Mission Control gives **full terminal and agent access** to the machine it runs on: shells, your repos, and every credential the AIs use. Never expose it to the public internet, and never use `tailscale funnel` for it. Keep it inside your tailnet, with access limited to the Tailscale identities listed in `MISSION_CONTROL_ALLOWED_USERS`, for users you trust.
 
 ## Security
 
-- **Network binding.** The server binds `127.0.0.1` by default. A Host / Origin / Fetch-Metadata guard stops web pages from other origins from reading or driving it. Anyone who can open a local connection on this machine has full control, including other OS user accounts and the agent jobs Mission Control spawns.
+- **Network binding.** The server always binds `127.0.0.1`. A Host / Origin / Fetch-Metadata guard stops web pages from other origins from reading or driving it. Anyone who can open a local connection on this machine has full control, including other OS user accounts and the agent jobs Mission Control spawns.
 - **Credentials** live in the config directory (`0700` folders, `0600` files) and reach the AIs only through their environment. The API token, for scripts and the skill, can be revealed or rotated from the lock button; it grants nothing extra to local callers.
 - **Folders.** Jobs and terminals only run in directories that resolve, after symlinks, under your home folder.
 - **Plugins.** Plugin routes accept loopback callers only and never accept the API token. Isolated plugins are confined by the OS sandbox and a per-plugin network proxy; trusted plugins have full access and install only after you confirm.
