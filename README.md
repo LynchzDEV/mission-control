@@ -6,6 +6,11 @@ Mission Control is a workspace that runs your AI coding agents from one chat. It
 
 You describe the work in a chat. The chat answers directly, or spins up agents in isolated git worktrees, has a *different* AI family review every change, and lands it on your branch. Live terminals, a workflow Studio and your whole history sit in the same window.
 
+**What you get:**
+- **A CLI for people and agents.** `mctl` drives a running Mission Control from a shell: `mctl status`, `mctl job new "…" --follow`, `mctl attention`, `mctl runs`, `mctl plugin add <git url>`. See [Command line](#command-line).
+- **Describe a workflow, get a draft.** In Studio, type what you want into **Describe your workflow** and an AI drafts the steps on an editable canvas. Or start from the default (plan → verify → execute → cross-family review), a template, or scratch.
+- **Skills set up for you.** On start, Mission Control links its bundled skills into `~/.claude/skills`, loads the agents, skills and flows that installed plugins contribute, and mirrors Claude's global instructions, skills and agents to Codex so both follow the same rules.
+
 **Example default setup:** Claude Code leads the chat, GLM via z.ai handles cheaper fan-out work, and Codex CLI reviews from the outside. Swap any of them for the agents you already use.
 
 State lives in plain JSON files. No database, no build step.
@@ -39,7 +44,7 @@ Open http://127.0.0.1:7777. On your first message, Mission Control asks **where 
 | Claude Code | Nothing more to do once `claude` is installed and signed in. It's the default chat AI. |
 | GLM | **Studio** (top right) → Manage AIs → GLM: paste the z.ai base URL `https://api.z.ai/api/anthropic` and your API key |
 | Codex | `codex login` once in any terminal |
-| Grok | Install the Grok CLI and sign in, then Studio → Manage AIs → Add an AI → Advanced connection settings: Adapter **ACP coding agent**, Executable `grok`, Arguments `agent` and `stdio` (one per line). Mission Control asks the agent for its model list. |
+| Grok (Grok Build) | Install the `grok` CLI and sign in, then **Studio** → Manage AIs → **Add an AI** → **Grok Build** (preset: ACP agent · `grok`) → **Save connection**, then **Check connection**. Mission Control reads its model list and weekly usage. |
 | Others | Studio → Manage AIs → Add an AI (ACP agent, OpenCode, or a headless CLI) |
 
 Check what's connected: `bun cli/mctl.ts status` (or `mctl status` after `bun link`, with `~/.bun/bin` on your PATH).
