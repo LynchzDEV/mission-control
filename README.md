@@ -2,7 +2,7 @@
 
 **A simple cockpit for any AI coding agent, extensible with plugins.**
 
-Mission Control is a workspace that runs your AI coding agents from one chat. It isn't tied to one vendor: bring Claude Code, Codex, GLM (through any Anthropic-compatible endpoint), or any ACP, OpenCode or headless-CLI agent you add under **Studio → Manage AIs → Add an AI**. Extend it with plugin add-ons from a git marketplace, or write your own with the plugin SDK (see [Plugins](#plugins)).
+Mission Control is a workspace that runs your AI coding agents from one chat. It isn't tied to one vendor: bring Claude Code, Codex, Grok, GLM (through any Anthropic-compatible endpoint), or any ACP, OpenCode or headless-CLI agent you add under **Studio → Manage AIs → Add an AI**. Extend it with plugin add-ons from a git marketplace, or write your own with the plugin SDK (see [Plugins](#plugins)).
 
 You describe the work in a chat. The chat answers directly, or spins up agents in isolated git worktrees, has a *different* AI family review every change, and lands it on your branch. Live terminals, a workflow Studio and your whole history sit in the same window.
 
@@ -39,6 +39,7 @@ Open http://127.0.0.1:7777. On your first message, Mission Control asks **where 
 | Claude Code | Nothing more to do once `claude` is installed and signed in. It's the default chat AI. |
 | GLM | **Studio** (top right) → Manage AIs → GLM: paste the z.ai base URL `https://api.z.ai/api/anthropic` and your API key |
 | Codex | `codex login` once in any terminal |
+| Grok | Install the Grok CLI and sign in, then Studio → Manage AIs → Add an AI → Advanced connection settings: Adapter **ACP coding agent**, Executable `grok`, Arguments `agent` and `stdio` (one per line). Mission Control asks the agent for its model list. |
 | Others | Studio → Manage AIs → Add an AI (ACP agent, OpenCode, or a headless CLI) |
 
 Check what's connected: `bun cli/mctl.ts status` (or `mctl status` after `bun link`, with `~/.bun/bin` on your PATH).
