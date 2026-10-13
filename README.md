@@ -1,10 +1,14 @@
 # Mission Control
 
-**One chat that runs your coding agents.**
+**A simple cockpit for any AI coding agent, extensible with plugins.**
 
-Mission Control is a local workspace for AI coding agents: Claude Code, GLM (through any Anthropic-compatible endpoint), OpenAI Codex, and any ACP, OpenCode or headless-CLI agent you connect. You describe the work in a chat. The chat answers directly, or spins up agents in isolated git worktrees, has a *different* AI family review every change, and lands it on your branch. Live terminals, a workflow Studio and your whole history sit in the same window.
+Mission Control is a workspace that runs your AI coding agents from one chat. It isn't tied to one vendor: bring Claude Code, Codex, GLM (through any Anthropic-compatible endpoint), or any ACP, OpenCode or headless-CLI agent you add under **Studio → Manage AIs → Add an AI**. Extend it with plugin add-ons from a git marketplace, or write your own with the plugin SDK (see [Plugins](#plugins)).
 
-It runs on your machine, binds to `127.0.0.1`, and keeps its state in plain JSON files. No database, no cloud service, no build step.
+You describe the work in a chat. The chat answers directly, or spins up agents in isolated git worktrees, has a *different* AI family review every change, and lands it on your branch. Live terminals, a workflow Studio and your whole history sit in the same window.
+
+**Example default setup:** Claude Code leads the chat, GLM via z.ai handles cheaper fan-out work, and Codex CLI reviews from the outside. Swap any of them for the agents you already use.
+
+State lives in plain JSON files. No database, no build step.
 
 ![Mission Control: one sentence in the chat, a team of AI agents does the work, and a different AI reviews it before it lands](docs/images/demo.gif)
 
@@ -14,7 +18,7 @@ It runs on your machine, binds to `127.0.0.1`, and keeps its state in plain JSON
 
 **You need:**
 - [Bun](https://bun.sh) 1.2+ and git
-- At least one AI CLI, installed and signed in. Chat uses **Claude Code** by default:
+- At least one agent CLI installed and signed in (e.g. Claude Code). Chat uses **Claude Code** by default:
   - Claude Code: install it (https://docs.anthropic.com/en/docs/claude-code), then run `claude` once to sign in
   - Codex (optional, the cross-family reviewer): install the Codex CLI, then `codex login`
   - GLM (optional): a z.ai API key, see below
@@ -33,7 +37,7 @@ Open http://127.0.0.1:7777. On your first message, Mission Control asks **where 
 | AI | Setup |
 |---|---|
 | Claude Code | Nothing more to do once `claude` is installed and signed in. It's the default chat AI. |
-| GLM | **Studio** (top right) → Manage AIs → GLM: paste the z.ai base URL `<MAINTAINER: exact URL>` and your API key |
+| GLM | **Studio** (top right) → Manage AIs → GLM: paste the z.ai base URL `https://api.z.ai/api/anthropic` and your API key |
 | Codex | `codex login` once in any terminal |
 | Others | Studio → Manage AIs → Add an AI (ACP agent, OpenCode, or a headless CLI) |
 
@@ -167,10 +171,10 @@ On the same occasions, Mission Control translates Claude's global instructions, 
 
 ## Security
 
-- **Local only.** The server binds `127.0.0.1`. A Host / Origin / Fetch-Metadata guard stops web pages from other origins from reading or driving it. Anyone who can open a local connection on this machine has full control, including other OS user accounts and the agent jobs Mission Control spawns.
+- **Network binding.** The server binds `127.0.0.1` by default. A Host / Origin / Fetch-Metadata guard stops web pages from other origins from reading or driving it. Anyone who can open a local connection on this machine has full control, including other OS user accounts and the agent jobs Mission Control spawns.
 - **Credentials** live in the config directory (`0700` folders, `0600` files) and reach the AIs only through their environment. The API token, for scripts and the skill, can be revealed or rotated from the lock button; it grants nothing extra to local callers.
 - **Folders.** Jobs and terminals only run in directories that resolve, after symlinks, under your home folder.
-- **Plugins.** Plugin routes are local only and never accept the API token. Isolated plugins are confined by the OS sandbox and a per-plugin network proxy; trusted plugins have full access and install only after you confirm.
+- **Plugins.** Plugin routes accept loopback callers only and never accept the API token. Isolated plugins are confined by the OS sandbox and a per-plugin network proxy; trusted plugins have full access and install only after you confirm.
 - **Model output** shown in the chat is sanitized: no scripts, styles, forms, embedded images or element ids from a reply reach the page.
 
 ## How it is built
