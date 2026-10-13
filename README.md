@@ -169,6 +169,27 @@ mctl queue add clickup-board 86d4ccpu2 --repo ~/klangtech   # a folder of repos:
 
 On the same occasions, Mission Control translates Claude's global instructions, skills and agents for Codex, so both AIs follow the same rules. Codex-incompatible pieces are skipped, and any personal Codex files it replaces are kept under `~/.codex/backup/`.
 
+## Remote access
+
+Mission Control runs on any machine or server you can install Bun on: a laptop, a home server, a cloud VM, or WSL2 on Windows (for example, `bun start` inside WSL on port 7777). The server always binds `127.0.0.1`, so nothing is reachable from outside until you put something in front of it.
+
+The supported way in is [Tailscale Serve](https://tailscale.com/kb/1242/tailscale-serve), which keeps it inside your private tailnet over HTTPS:
+
+```sh
+# on the machine running Mission Control
+tailscale serve --bg 7777
+
+# tell Mission Control which Tailscale name and users to accept
+MISSION_CONTROL_ALLOWED_HOSTS=my-box.your-tailnet.ts.net \
+MISSION_CONTROL_ALLOWED_USERS=you@example.com \
+bun start
+```
+
+Then open `https://my-box.your-tailnet.ts.net` from any device on your tailnet. Proxied requests are accepted only when the host is a `*.ts.net` name listed in `MISSION_CONTROL_ALLOWED_HOSTS`, the connection comes from loopback (Tailscale on the same machine), and the Tailscale login is listed in `MISSION_CONTROL_ALLOWED_USERS`. Anything else that arrives through a proxy is refused, so a generic reverse proxy (nginx, Caddy, etc.) won't work today, even with auth in front of it. Turn sharing off with `tailscale serve --https=443 off`.
+
+> [!WARNING]
+> Mission Control gives **full terminal and agent access** to the machine it runs on: shells, your repos, and every credential the AIs use. Never expose it to the public internet, and never use `tailscale funnel` for it. Keep it on a private network, behind authentication you control, for users you trust.
+
 ## Security
 
 - **Network binding.** The server binds `127.0.0.1` by default. A Host / Origin / Fetch-Metadata guard stops web pages from other origins from reading or driving it. Anyone who can open a local connection on this machine has full control, including other OS user accounts and the agent jobs Mission Control spawns.
