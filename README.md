@@ -8,27 +8,46 @@ It runs on your machine, binds to `127.0.0.1`, and keeps its state in plain JSON
 
 ![Mission Control: one sentence in the chat, a team of AI agents does the work, and a different AI reviews it before it lands](docs/images/demo.gif)
 
+## Quickstart` section)
+
 ## Quickstart
 
-Requires [Bun](https://bun.sh) 1.2 or newer.
-
-On Windows, run it inside WSL2: see [Install on Windows](docs/install-windows.md).
+**You need:**
+- [Bun](https://bun.sh) 1.2+ and git
+- At least one AI CLI, installed and signed in. Chat uses **Claude Code** by default:
+  - Claude Code: install it (https://docs.anthropic.com/en/docs/claude-code), then run `claude` once to sign in
+  - Codex (optional, the cross-family reviewer): install the Codex CLI, then `codex login`
+  - GLM (optional): a z.ai API key, see below
+- macOS or Linux. On Windows, use WSL2: see [Install on Windows](docs/install-windows.md).
 
 ```sh
 git clone https://github.com/LynchzDEV/mission-control.git
 cd mission-control
 bun install
-bun start
+bun start            # port taken? MISSION_CONTROL_PORT=7778 bun start
 ```
 
-Open [http://127.0.0.1:7777](http://127.0.0.1:7777), then connect the AIs you use:
+Open http://127.0.0.1:7777. On your first message, Mission Control asks **where your projects live**. Give it a folder under your home directory (for example `~/code`).
 
+### Connect your AIs
 | AI | Setup |
 |---|---|
-| Claude Code | Works as soon as `claude` is installed and signed in |
-| GLM | Studio → Manage AIs → GLM: paste your z.ai base URL and token |
-| Codex | Run `codex login` once in any terminal |
+| Claude Code | Nothing more to do once `claude` is installed and signed in. It's the default chat AI. |
+| GLM | **Studio** (top right) → Manage AIs → GLM: paste the z.ai base URL `<MAINTAINER: exact URL>` and your API key |
+| Codex | `codex login` once in any terminal |
 | Others | Studio → Manage AIs → Add an AI (ACP agent, OpenCode, or a headless CLI) |
+
+Check what's connected: `bun cli/mctl.ts status` (or `mctl status` after `bun link`, with `~/.bun/bin` on your PATH).
+
+> If the first reply fails with `Claude Code native binary not found`, Claude Code isn't installed or isn't on PATH. Install it, or pick another AI with the AI chip.
+
+### Just looking? Try it with no accounts
+```sh
+MC_FAKE_ENGINES=1 MISSION_CONTROL_CONFIG_DIR=$(mktemp -d) bun start
+```
+This swaps every AI for harmless stand-ins so you can click through chat, agents, Flow and Studio.
+
+> Heads-up: Mission Control links a Claude Code skill into `~/.claude/skills/` and mirrors your Claude instructions into `~/.codex/` (backing up anything it replaces). State lives in `~/.config/mission-control`.
 
 ## A tour
 
