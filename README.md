@@ -1,34 +1,65 @@
 # Mission Control
 
-**One chat that runs your coding agents.**
+**A simple cockpit for any AI coding agent, extensible with plugins.**
 
-Mission Control is a local workspace for AI coding agents: Claude Code, GLM (through any Anthropic-compatible endpoint), OpenAI Codex, and any ACP, OpenCode or headless-CLI agent you connect. You describe the work in a chat. The chat answers directly, or spins up agents in isolated git worktrees, has a *different* AI family review every change, and lands it on your branch. Live terminals, a workflow Studio and your whole history sit in the same window.
+Mission Control is a workspace that runs your AI coding agents from one chat. It isn't tied to one vendor: bring Claude Code, Codex, Grok, GLM (through any Anthropic-compatible endpoint), or any ACP, OpenCode or headless-CLI agent you add under **Studio → Manage AIs → Add an AI**. Extend it with plugin add-ons from a git marketplace, or write your own with the plugin SDK (see [Plugins](#plugins)).
 
-It runs on your machine, binds to `127.0.0.1`, and keeps its state in plain JSON files. No database, no cloud service, no build step.
+You describe the work in a chat. The chat answers directly, or spins up agents in isolated git worktrees, has a *different* AI family review every change, and lands it on your branch. Live terminals, a workflow Studio and your whole history sit in the same window.
+
+**What you get:**
+- **A CLI for people and agents.** `mctl` drives a running Mission Control from a shell: `mctl status`, `mctl job new "…" --follow`, `mctl attention`, `mctl runs`, `mctl plugin add <git url>`. See [Command line](#command-line).
+- **Describe a workflow, get a draft.** In Studio, type what you want into **Describe your workflow** and an AI drafts the steps on an editable canvas. Or start from the default (plan → verify → execute → cross-family review), a template, or scratch.
+- **Skills set up for you.** On start, Mission Control links its bundled skills into `~/.claude/skills`, loads the agents, skills and flows that installed plugins contribute, and mirrors Claude's global instructions, skills and agents to Codex so both follow the same rules.
+
+**Example default setup:** Claude Code leads the chat, GLM via z.ai handles cheaper fan-out work, and Codex CLI reviews from the outside. Swap any of them for the agents you already use.
+
+State lives in plain JSON files. No database, no build step.
 
 ![Mission Control: one sentence in the chat, a team of AI agents does the work, and a different AI reviews it before it lands](docs/images/demo.gif)
 
+Video (MP4): [docs/images/demo.mp4](docs/images/demo.mp4)
+
+## Quickstart` section)
+
 ## Quickstart
 
-Requires [Bun](https://bun.sh) 1.2 or newer.
-
-On Windows, run it inside WSL2: see [Install on Windows](docs/install-windows.md).
+**You need:**
+- [Bun](https://bun.sh) 1.2+ and git
+- At least one agent CLI installed and signed in (e.g. Claude Code). Chat uses **Claude Code** by default:
+  - Claude Code: install it (https://docs.anthropic.com/en/docs/claude-code), then run `claude` once to sign in
+  - Codex (optional, the cross-family reviewer): install the Codex CLI, then `codex login`
+  - GLM (optional): a z.ai API key, see below
+- macOS or Linux. On Windows, use WSL2: see [Install on Windows](docs/install-windows.md).
 
 ```sh
 git clone https://github.com/LynchzDEV/mission-control.git
 cd mission-control
 bun install
-bun start
+bun start            # port taken? MISSION_CONTROL_PORT=7778 bun start
 ```
 
-Open [http://127.0.0.1:7777](http://127.0.0.1:7777), then connect the AIs you use:
+Open http://127.0.0.1:7777. On your first message, Mission Control asks **where your projects live**. Give it a folder under your home directory (for example `~/code`).
 
+### Connect your AIs
 | AI | Setup |
 |---|---|
-| Claude Code | Works as soon as `claude` is installed and signed in |
-| GLM | Studio → Manage AIs → GLM: paste your z.ai base URL and token |
-| Codex | Run `codex login` once in any terminal |
+| Claude Code | Nothing more to do once `claude` is installed and signed in. It's the default chat AI. |
+| GLM | **Studio** (top right) → Manage AIs → GLM: paste the z.ai base URL `https://api.z.ai/api/anthropic` and your API key |
+| Codex | `codex login` once in any terminal |
+| Grok (Grok Build) | Install the `grok` CLI and sign in, then **Studio** → Manage AIs → **Add an AI** → **Grok Build** (preset: ACP agent · `grok`) → **Save connection**, then **Check connection**. Mission Control reads its model list and weekly usage. |
 | Others | Studio → Manage AIs → Add an AI (ACP agent, OpenCode, or a headless CLI) |
+
+Check what's connected: `bun cli/mctl.ts status` (or `mctl status` after `bun link`, with `~/.bun/bin` on your PATH).
+
+> If the first reply fails with `Claude Code native binary not found`, Claude Code isn't installed or isn't on PATH. Install it, or pick another AI with the AI chip.
+
+### Just looking? Try it with no accounts
+```sh
+MC_FAKE_ENGINES=1 MISSION_CONTROL_CONFIG_DIR=$(mktemp -d) bun start
+```
+This swaps every AI for harmless stand-ins so you can click through chat, agents, Flow and Studio.
+
+> Heads-up: Mission Control links a Claude Code skill into `~/.claude/skills/` and mirrors your Claude instructions into `~/.codex/` (backing up anything it replaces). State lives in `~/.config/mission-control`.
 
 ## A tour
 
@@ -146,12 +177,33 @@ mctl queue add clickup-board 86d4ccpu2 --repo ~/klangtech   # a folder of repos:
 
 On the same occasions, Mission Control translates Claude's global instructions, skills and agents for Codex, so both AIs follow the same rules. Codex-incompatible pieces are skipped, and any personal Codex files it replaces are kept under `~/.codex/backup/`.
 
+## Remote access
+
+Mission Control runs on any machine or server you can install Bun on: a laptop, a home server, a cloud VM, or WSL2 on Windows (for example, `bun start` inside WSL on port 7777). The server always binds `127.0.0.1`, so nothing is reachable from outside until you put something in front of it.
+
+The supported way in is [Tailscale Serve](https://tailscale.com/kb/1242/tailscale-serve), which keeps it inside your private tailnet over HTTPS:
+
+```sh
+# on the machine running Mission Control
+tailscale serve --bg 7777
+
+# tell Mission Control which Tailscale name and users to accept
+MISSION_CONTROL_ALLOWED_HOSTS=my-box.your-tailnet.ts.net \
+MISSION_CONTROL_ALLOWED_USERS=you@example.com \
+bun start
+```
+
+Then open `https://my-box.your-tailnet.ts.net` from any device on your tailnet. Proxied requests are accepted only when the host is a `*.ts.net` name listed in `MISSION_CONTROL_ALLOWED_HOSTS`, the connection comes from loopback (Tailscale on the same machine), and the Tailscale login is listed in `MISSION_CONTROL_ALLOWED_USERS`. Anything else that arrives through a proxy is refused, so a generic reverse proxy (nginx, Caddy, etc.) won't work today, even with auth in front of it. Turn sharing off with `tailscale serve --https=443 off`.
+
+> [!WARNING]
+> Mission Control gives **full terminal and agent access** to the machine it runs on: shells, your repos, and every credential the AIs use. Never expose it to the public internet, and never use `tailscale funnel` for it. Keep it on a private network, behind authentication you control, for users you trust.
+
 ## Security
 
-- **Local only.** The server binds `127.0.0.1`. A Host / Origin / Fetch-Metadata guard stops web pages from other origins from reading or driving it. Anyone who can open a local connection on this machine has full control, including other OS user accounts and the agent jobs Mission Control spawns.
+- **Network binding.** The server binds `127.0.0.1` by default. A Host / Origin / Fetch-Metadata guard stops web pages from other origins from reading or driving it. Anyone who can open a local connection on this machine has full control, including other OS user accounts and the agent jobs Mission Control spawns.
 - **Credentials** live in the config directory (`0700` folders, `0600` files) and reach the AIs only through their environment. The API token, for scripts and the skill, can be revealed or rotated from the lock button; it grants nothing extra to local callers.
 - **Folders.** Jobs and terminals only run in directories that resolve, after symlinks, under your home folder.
-- **Plugins.** Plugin routes are local only and never accept the API token. Isolated plugins are confined by the OS sandbox and a per-plugin network proxy; trusted plugins have full access and install only after you confirm.
+- **Plugins.** Plugin routes accept loopback callers only and never accept the API token. Isolated plugins are confined by the OS sandbox and a per-plugin network proxy; trusted plugins have full access and install only after you confirm.
 - **Model output** shown in the chat is sanitized: no scripts, styles, forms, embedded images or element ids from a reply reach the page.
 
 ## How it is built
