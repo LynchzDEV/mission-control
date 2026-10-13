@@ -17,6 +17,8 @@ State lives in plain JSON files. No database, no build step.
 
 ![Mission Control: one sentence in the chat, a team of AI agents does the work, and a different AI reviews it before it lands](docs/images/demo.gif)
 
+Full-speed video: [docs/images/demo.mp4](docs/images/demo.mp4)
+
 ## Quickstart` section)
 
 ## Quickstart
