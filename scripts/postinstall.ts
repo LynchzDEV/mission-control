@@ -75,6 +75,7 @@ export type PostinstallResult = {
   skipped: string[]
   linked: string[]
   movedAside: string[]
+  removed: string[]
 }
 
 function describe(error: unknown): string {
@@ -85,6 +86,7 @@ function mergeSkillInstall(into: PostinstallResult, skills: SkillInstallResult):
   into.linked.push(...skills.linked)
   into.movedAside.push(...skills.movedAside)
   into.skipped.push(...skills.skipped)
+  into.removed.push(...skills.removed)
 }
 
 async function firstExistingFile(candidates: string[]): Promise<string | null> {
@@ -132,7 +134,7 @@ async function copyGroup(
 }
 
 export async function runPostinstall(): Promise<PostinstallResult> {
-  const result: PostinstallResult = { copied: [], skipped: [], linked: [], movedAside: [] }
+  const result: PostinstallResult = { copied: [], skipped: [], linked: [], movedAside: [], removed: [] }
   await copyGroup(ASSETS, VENDOR_OUT, result)
   mergeSkillInstall(result, await installSkills())
   const assets = await syncEngineAssets()
@@ -146,11 +148,13 @@ if (import.meta.main) {
     skipped: [`postinstall aborted (${describe(error)})`],
     linked: [],
     movedAside: [],
+    removed: [],
   }))
 
   for (const entry of result.copied) console.log(`postinstall: copied ${entry}`)
   for (const entry of result.linked) console.log(`postinstall: linked skill ${basename(entry)} -> ${entry}`)
   for (const entry of result.movedAside) console.log(`postinstall: moved aside ${entry}`)
+  for (const entry of result.removed) console.log(`postinstall: removed stale skill link ${entry}`)
   for (const entry of result.skipped) console.log(`postinstall: skipped ${entry}`)
   console.log(
     `postinstall: ${result.copied.length} copied, ${result.linked.length} linked, ` +

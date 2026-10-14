@@ -354,7 +354,7 @@ export function createWorkflowStore(base = configDir(), options: WorkflowStoreOp
       const saved = await policy(latest.revision)
       return saved.coreRules === CORE_RULES && saved.implementationRules === WORKER_CLAUDE_MD ? saved : savePolicy(saved.template)
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    return savePolicy(await readFile(join(import.meta.dir, '../prompts/mc-dispatch.md'), 'utf8'))
+    return savePolicy(await readFile(join(import.meta.dir, '../prompts/skd-dispatch.md'), 'utf8'))
   }
   async function policyRevisions(): Promise<PolicyRevision[]> {
     await policy()

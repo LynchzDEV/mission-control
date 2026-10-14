@@ -13,7 +13,7 @@ describe('claudeOnlyScore', () => {
     expect(claudeOnlyScore('')).toBe(0)
   })
   test('detects every Claude mechanism', () => {
-    for (const token of ['AskUserQuestion', 'Agent tool', 'subagent', 'subagent_type', 'run_in_background', 'superpowers', 'ExitPlanMode', 'EnterPlanMode', 'plan mode', 'TodoWrite', 'claude-in-chrome', 'mcp__browser', 'Skill tool', 'hook', 'hooks', 'PreToolUse', 'PostToolUse', 'SessionStart', 'settings.json', 'mc-dispatch', 'cockpit-first', 'spawn an agent']) {
+    for (const token of ['AskUserQuestion', 'Agent tool', 'subagent', 'subagent_type', 'run_in_background', 'superpowers', 'ExitPlanMode', 'EnterPlanMode', 'plan mode', 'TodoWrite', 'claude-in-chrome', 'mcp__browser', 'Skill tool', 'hook', 'hooks', 'PreToolUse', 'PostToolUse', 'SessionStart', 'settings.json', 'skd-dispatch', 'mc-dispatch', 'cockpit-first', 'spawn an agent']) {
       expect(CLAUDE_ONLY_PATTERNS.some(pattern => pattern.test(token))).toBe(true)
     }
   })
@@ -52,7 +52,7 @@ describe('translateInstructions', () => {
 
 describe('translateSkill', () => {
   test('skips every excluded name even with clean bodies', () => {
-    for (const name of ['mc-dispatch', 'configure-ecc', 'daily-retro', 'graphify', 'agent-sort', 'skill-scout', 'skill-stocktake', 'strategic-compact', 'iterative-retrieval', 'continuous-learning', 'continuous-learning-v2']) expect(translateSkill(skill(name, 'Clean body'))).toBeNull()
+    for (const name of ['skd-dispatch', 'mc-dispatch', 'configure-ecc', 'daily-retro', 'graphify', 'agent-sort', 'skill-scout', 'skill-stocktake', 'strategic-compact', 'iterative-retrieval', 'continuous-learning', 'continuous-learning-v2']) expect(translateSkill(skill(name, 'Clean body'))).toBeNull()
   })
   test('rejects residual machinery over 30% of non-empty body lines', () => {
     expect(translateSkill(skill('helper', tenLines(6)))).toBeNull()
@@ -69,7 +69,7 @@ describe('translateSkill', () => {
   test('handles absent, malformed, quoted and CRLF front matter', () => {
     expect(translateSkill('Plain body')).toContain('skills/unknown -->')
     expect(translateSkill('---\nname: [\n---\nBody')).toBeNull()
-    expect(translateSkill('---\r\nname: "mc-dispatch"\r\n---\r\nBody')).toBeNull()
+    expect(translateSkill('---\r\nname: "skd-dispatch"\r\n---\r\nBody')).toBeNull()
     expect(translateSkill('---\r\nname: review\r\n---\r\nBody')).toStartWith('---\r\nname: review\r\n---\r\n')
   })
 })

@@ -1,4 +1,4 @@
-# Mission Control assignment
+# Shikidan assignment
 
 {{core_rules}}
 

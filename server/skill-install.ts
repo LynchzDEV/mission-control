@@ -1,11 +1,12 @@
-import { lstat, mkdir, readdir, realpath, rename, symlink, unlink } from 'node:fs/promises'
+import { lstat, mkdir, readdir, readlink, realpath, rename, symlink, unlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 
 export type SkillInstallResult = {
   linked: string[]
   movedAside: string[]
   skipped: string[]
+  removed: string[]
 }
 
 export type SkillInstallOptions = {
@@ -19,7 +20,7 @@ export function repoSkillsDir(root?: string): string {
 }
 
 export function claudeSkillsDir(home?: string): string {
-  return join(home ?? homedir(), '.claude', 'skills')
+  return join(home ?? process.env.HOME ?? homedir(), '.claude', 'skills')
 }
 
 function describe(error: unknown): string {
@@ -38,7 +39,7 @@ function lstatOrNull(path: string): Promise<Awaited<ReturnType<typeof lstat>> | 
 }
 
 export async function installSkills(opts: SkillInstallOptions = {}): Promise<SkillInstallResult> {
-  const result: SkillInstallResult = { linked: [], movedAside: [], skipped: [] }
+  const result: SkillInstallResult = { linked: [], movedAside: [], skipped: [], removed: [] }
   const sourceDir = repoSkillsDir(opts.repoRoot)
   const targetDir = opts.targetDir ?? claudeSkillsDir()
   const backupDir = join(dirname(targetDir), 'skills-backup')
@@ -74,7 +75,7 @@ export async function installSkills(opts: SkillInstallOptions = {}): Promise<Ski
         await unlink(target)
       } else if (info !== null) {
         await mkdir(backupDir, { recursive: true, mode: 0o700 })
-        const aside = join(backupDir, `${entry.name}.pre-mission-control-${now()}`)
+        const aside = join(backupDir, `${entry.name}.pre-shikidan-${now()}`)
         await rename(target, aside)
         result.movedAside.push(aside)
       }
@@ -84,11 +85,29 @@ export async function installSkills(opts: SkillInstallOptions = {}): Promise<Ski
       result.skipped.push(`${entry.name} — ${describe(error)}`)
     }
   }
+  await removeDanglingRepoLinks(targetDir, sourceDir, result)
   return result
+}
+
+async function removeDanglingRepoLinks(targetDir: string, sourceDir: string, result: SkillInstallResult): Promise<void> {
+  const roots = [resolve(sourceDir), (await realOrNull(sourceDir)) ?? resolve(sourceDir)].map(root => root + sep)
+  for (const name of await readdir(targetDir).catch(() => [] as string[])) {
+    const target = join(targetDir, name)
+    try {
+      if (!(await lstat(target)).isSymbolicLink()) continue
+      const pointsTo = resolve(targetDir, await readlink(target))
+      if (!roots.some(root => pointsTo.startsWith(root)) || (await realOrNull(target)) !== null) continue
+      await unlink(target)
+      result.removed.push(target)
+    } catch (error) {
+      result.skipped.push(`${name} — ${describe(error)}`)
+    }
+  }
 }
 
 export function describeSkillInstall(result: SkillInstallResult): string {
   const linked = result.linked.map((path) => basename(path)).join(', ')
   const aside = result.movedAside.length > 0 ? `, moved aside ${result.movedAside.length}` : ''
-  return `linked ${linked || 'nothing'}${aside}`
+  const removed = result.removed.length > 0 ? `, removed stale ${result.removed.map((path) => basename(path)).join(', ')}` : ''
+  return `linked ${linked || 'nothing'}${aside}${removed}`
 }

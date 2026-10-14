@@ -1,9 +1,9 @@
 ---
-name: mc-dispatch
-description: COCKPIT-FIRST implementation routing. Use for ANY implementation request — create/build/write/fix/add CODE that ships (features, fixes, scripts, pages) — whenever Mission Control is running (curl -s -o /dev/null -w '%{http_code}' ${MC_URL:-http://127.0.0.1:7777}/api/health returns 200 — or 401 on pre-2026-09 builds; both mean UP, anything else means down). NOT for analysis output — scans, audits, reports, docs-vs-reality checks, codebase Q&A go to native Explore/read-only agents (writing the report file does NOT make it implementation); post a plan label to the cockpit for visibility instead. NEVER dispatch a user's meta/routing question as a job prompt — answer it. The session stays orchestrator (plan → post plan → dispatch → review); the labor runs as a cockpit job (engine per GET /api/roles: `execute` for jobs, `review` for cross-review) so the user sees it in the session flow, agents panel, and review queue. Also triggers on "dispatch to glm", "send to codex", "/mc-dispatch". Skip only when the cockpit is not running, or the work is judgment/prod-critical per the dispatch table.
+name: skd-dispatch
+description: COCKPIT-FIRST implementation routing. Use for ANY implementation request — create/build/write/fix/add CODE that ships (features, fixes, scripts, pages) — whenever Shikidan is running (curl -s -o /dev/null -w '%{http_code}' ${SKD_URL:-${MC_URL:-http://127.0.0.1:7777}}/api/health returns 200 — or 401 on pre-2026-09 builds; both mean UP, anything else means down). NOT for analysis output — scans, audits, reports, docs-vs-reality checks, codebase Q&A go to native Explore/read-only agents (writing the report file does NOT make it implementation); post a plan label to the cockpit for visibility instead. NEVER dispatch a user's meta/routing question as a job prompt — answer it. The session stays orchestrator (plan → post plan → dispatch → review); the labor runs as a cockpit job (engine per GET /api/roles: `execute` for jobs, `review` for cross-review) so the user sees it in the session flow, agents panel, and review queue. Also triggers on "dispatch to glm", "send to codex", "/skd-dispatch". Skip only when the cockpit is not running, or the work is judgment/prod-critical per the dispatch table.
 ---
 
-# mc-dispatch — cross-engine dispatch via Mission Control
+# skd-dispatch — cross-engine dispatch via Shikidan
 
 ## ARE YOU THE WORKER? (read first)
 
@@ -11,8 +11,8 @@ Cockpit jobs run the same `claude` binary as your interactive sessions, so
 they load this CLAUDE.md, this skill, and every hook. If ANY of these hold,
 you are the dispatched labor, not the orchestrator:
 
-- `$MC_JOB_ID` is set in your environment
-- your prompt says "You are a Mission Control worker job" / "do NOT dispatch"
+- `$SKD_JOB_ID` (or `$MC_JOB_ID` from a cockpit started before Shikidan) is set in your environment
+- your prompt says "You are a Shikidan worker job" / "do NOT dispatch"
 - you are running headless (`-p` / print mode) inside a repo with a spec-shaped prompt
 
 Then: implement directly in the working tree, never post a plan, never call
@@ -23,20 +23,20 @@ cfb3ddde) and nothing lands in the parent's diff.
 ## Versioned workflow entry
 
 This linked skill is a stable entry point. Never write a run's workflow or
-instructions into this shared file. Mission Control composes the versioned
+instructions into this shared file. Shikidan composes the versioned
 core prompt, selected blueprint, and current assignment for each node.
 
-Use the terminal-provided `MC_URL` and `MISSION_CONTROL_CONFIG_DIR` for this
-service. Never send a terminal from one MC instance to another instance.
-When `MC_TERMINAL_ID` is present, start `POST /api/studio/runs` with
+Use the terminal-provided `SKD_URL` and `SKD_CONFIG_DIR` for this
+service. Never send a terminal from one Shikidan instance to another instance.
+When `SKD_TERMINAL_ID` is present, start `POST /api/studio/runs` with
 `terminalId`, the git repo the task targets as `cwd` (the terminal directory,
 or a repo inside it when the terminal is opened on a folder of repos), `label`, and the complete
 user `request`. The server uses that terminal’s pinned workflow.
-`MC_WORKFLOW_ID` and `MC_WORKFLOW_REVISION` identify the selection; do not
+`SKD_WORKFLOW_ID` and `SKD_WORKFLOW_REVISION` identify the selection; do not
 replace it with a newer global default. To choose another workflow or
 version, open a new terminal with that selection.
 
-Outside an MC terminal, read `GET /api/studio/workflows` after authenticating.
+Outside a Shikidan terminal, read `GET /api/studio/workflows` after authenticating.
 Use its `selected` workflow unless the user named another saved blueprint.
 Start `POST /api/studio/runs` with `cwd`, `label`, and the complete user
 `request`; include `workflowId` and `revision` for an explicit selection.
@@ -57,7 +57,7 @@ a reason to bypass the workflow. Core policy and connection settings are
 edited through Studio, separately from blueprint editing. Worker jobs must
 never call these orchestration endpoints.
 
-Mission Control (the local cockpit at `$MC_URL`) runs jobs on other
+Shikidan (the local cockpit at `$SKD_URL`) runs jobs on other
 engines: `glm` (GLM-5.3-Flash via z.ai — bulk implementation labor) and `codex`
 (Codex CLI — cross-family review / overflow). Dispatching through it (instead of
 raw `ccglm`/`codex exec`) gets you: session-flow tracking, live logs, diff-stat
@@ -65,17 +65,25 @@ capture, and the review queue.
 
 ## Auth
 
-Set `MC_URL=${MC_URL:-http://127.0.0.1:7777}` when the terminal has not supplied it.
-Token lives in `${MISSION_CONTROL_CONFIG_DIR:-$HOME/.config/mission-control}/secrets.json` field `apiToken` (starts
+Set these when the terminal has not supplied them:
+
+```sh
+# ponytail: MC_* fallbacks for a cockpit started before Shikidan, drop once every install runs it
+SKD_URL=${SKD_URL:-${MC_URL:-http://127.0.0.1:7777}}
+SKD_TERMINAL_ID=${SKD_TERMINAL_ID:-${MC_TERMINAL_ID:-}}
+```
+
+Token lives in `secrets.json` in `$SKD_CONFIG_DIR` (default `~/.config/shikidan`) field `apiToken` (starts
 `mct_`). It is LAZY-GENERATED: if the field is absent, fire one throwaway Bearer
-request first (`curl -s -o /dev/null -H "Authorization: Bearer probe" $MC_URL/api/flow`)
+request first (`curl -s -o /dev/null -H "Authorization: Bearer probe" $SKD_URL/api/flow`)
 and re-read the file — never conclude the feature is missing from an absent key. Read it with a scoped jq/python read — NEVER print it:
 
 ```sh
-MC_TOKEN=$(python3 -c 'import json,os;print(json.load(open(os.path.join(os.environ.get("MISSION_CONTROL_CONFIG_DIR",os.path.expanduser("~/.config/mission-control")),"secrets.json")))["apiToken"])')
+# ponytail: MISSION_CONTROL_CONFIG_DIR and ~/.config/mission-control fallbacks, drop with the MC_* ones above
+SKD_TOKEN=$(python3 -c 'import json,os;e=os.environ;c=os.path.expanduser("~/.config");d=e.get("SKD_CONFIG_DIR") or e.get("MISSION_CONTROL_CONFIG_DIR") or next((p for p in (c+"/shikidan",c+"/mission-control") if os.path.isdir(p)),c+"/shikidan");print(json.load(open(os.path.join(d,"secrets.json")))["apiToken"])')
 ```
 
-All calls: `-H "Authorization: Bearer $MC_TOKEN"`. Scope covers /api/jobs*,
+All calls: `-H "Authorization: Bearer $SKD_TOKEN"`. Scope covers /api/jobs*,
 /api/flow, /api/quota, /api/meta, /api/roles, /api/models, read-only Studio
 workflow/policy endpoints, and Studio run start/read/stop/retry. It cannot
 edit blueprints, core policy, or agent connections.
@@ -86,7 +94,7 @@ The cockpit Settings page maps `plan | execute | review` to engines. READ IT
 FIRST — never hardcode glm/codex:
 
 ```sh
-ROLES=$(curl -s -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/roles)   # {"plan":{"engine":"claude","model":null},"execute":{"engine":"glm","model":null},"review":{"engine":"codex","model":null}}
+ROLES=$(curl -s -H "Authorization: Bearer $SKD_TOKEN" $SKD_URL/api/roles)   # {"plan":{"engine":"claude","model":null},"execute":{"engine":"glm","model":null},"review":{"engine":"codex","model":null}}
 EXEC_ENGINE=$(printf '%s' "$ROLES" | python3 -c "import json,sys;print(json.load(sys.stdin)['execute']['engine'])")
 EXEC_MODEL=$(printf '%s' "$ROLES" | python3 -c "import json,sys;print(json.load(sys.stdin)['execute']['model'] or '')")
 REVIEW_ENGINE=$(printf '%s' "$ROLES" | python3 -c "import json,sys;print(json.load(sys.stdin)['review']['engine'])")
@@ -125,7 +133,7 @@ CLAUDE.md `orchestrator-agent-background-default` clause 3 — do not probe
 cockpit health or dispatch first. This does not weaken the default for any
 spec'd/dispatchable chunk. [daily-retro 2026-09-24 E01]
 
-Exception — this repo is mission-control itself: for work on mission-control's
+Exception — this repo is Shikidan itself (the shiki repo): for work on Shikidan's
 own codebase, the cockpit-first default does not apply — not to
 implementation, and not to plan or branch review either. Build and review in
 the main session or with native Claude Code agents (Agent tool, explicit
@@ -148,12 +156,12 @@ repo-identity check at dispatch time. [daily-retro 2026-09-28 E10]
 | Scan / audit / report / docs-vs-reality / codebase Q&A (report file included) | native Explore/read-only agent + cockpit plan label, NOT a glm job |
 | User's meta/routing/process question | answer it in prose — NEVER a job prompt |
 
-Workers run on a slim profile (glm: `CLAUDE_CONFIG_DIR=~/.config/mission-control/worker-claude`,
+Workers run on a slim profile (glm: `CLAUDE_CONFIG_DIR=~/.config/shikidan/worker-claude`,
 codex: `CODEX_HOME=.../worker-codex`): no global CLAUDE.md, agents, skills,
 hooks or plugins — measured 91k → ~20k tokens and 12s → 3s per turn. The prompt
 is the worker's whole world and MUST open with the line
-`You are a Mission Control worker job: implement directly in this tree, do NOT
-dispatch, do NOT post plans, do NOT invoke mc-dispatch.` (belt and braces
+`You are a Shikidan worker job: implement directly in this tree, do NOT
+dispatch, do NOT post plans, do NOT invoke skd-dispatch.` (belt and braces
 against the cockpit-first rule if a worker ever runs on the full profile).
 Check peak first: `GET /api/quota` → `peak.peak` true means 2× GLM credits
 (Mon–Fri 13:00–17:00 Thai); prefer deferring bulk fleets during peak.
@@ -170,8 +178,8 @@ turns plus a review round each.
 
 A spec is a numbered execution plan. Its parts, in this order:
 
-1. Header: `You are a Mission Control worker job: implement directly in this
-   tree, do NOT dispatch, do NOT post plans, do NOT invoke mc-dispatch. Execute
+1. Header: `You are a Shikidan worker job: implement directly in this
+   tree, do NOT dispatch, do NOT post plans, do NOT invoke skd-dispatch. Execute
    the steps below exactly; do not redesign. If a step cannot be done as
    written, stop and report which one.`
 2. Repo, stack, base branch, ClickUp id.
@@ -338,14 +346,14 @@ Post the plan for the ticket — the cockpit renders it as the
 session's node graph (one node per step, assignee-colored, live states):
 
 ```sh
-curl -s -X POST $MC_URL/api/flow/<label>/plan \
-  -H "Authorization: Bearer $MC_TOKEN" -H 'content-type: application/json' \
+curl -s -X POST $SKD_URL/api/flow/<label>/plan \
+  -H "Authorization: Bearer $SKD_TOKEN" -H 'content-type: application/json' \
   -d '{"steps":[{"title":"<step>","assignee":"claude|glm|codex|user","status":"pending|active|done"}],"next":"<what happens after>"}'
 ```
 
 - steps ≤32, non-empty; POST replaces the whole plan (last-write-wins)
 - as work progresses, PATCH single steps (0-based):
-  `curl -s -X PATCH .../api/flow/<label>/plan/<i> -H "Authorization: Bearer $MC_TOKEN" -H 'content-type: application/json' -d '{"status":"done"}'`
+  `curl -s -X PATCH .../api/flow/<label>/plan/<i> -H "Authorization: Bearer $SKD_TOKEN" -H 'content-type: application/json' -d '{"status":"done"}'`
 - keep the plan honest: mark your own steps active/done as you do them; the
   dispatched job's live activity feed shows automatically (no action needed)
 
@@ -368,9 +376,9 @@ twenty decisions is where "data in a migration" gets caught, not commit 12.
 ### Multi-task plan → the plan runner (default)
 
 ```sh
-curl -s -X POST "$MC_URL/api/flow/<label>/run" \
-  -H "Authorization: Bearer $MC_TOKEN" -H 'content-type: application/json' \
-  -d '{"engine":"'"$EXEC_ENGINE"'","model":"'"$EXEC_MODEL"'","cwd":"<ABS_PATH_GIT_REPO>","terminalId":"'"${MC_TERMINAL_ID:-}"'",
+curl -s -X POST "$SKD_URL/api/flow/<label>/run" \
+  -H "Authorization: Bearer $SKD_TOKEN" -H 'content-type: application/json' \
+  -d '{"engine":"'"$EXEC_ENGINE"'","model":"'"$EXEC_MODEL"'","cwd":"<ABS_PATH_GIT_REPO>","terminalId":"'"${SKD_TERMINAL_ID:-}"'",
        "preamble":"<header + repo line + Decisions + Preserve + Constraints + acceptance baseline>",
        "tasks":[{"title":"<task 1 title>","prompt":"<task 1 step body with exact path, signature, code, commit message>"}, ...]}'
 ```
@@ -392,14 +400,14 @@ curl -s -X POST "$MC_URL/api/flow/<label>/run" \
 ### Single task → one job
 
 ```sh
-curl -s -X POST $MC_URL/api/jobs \
-  -H "Authorization: Bearer $MC_TOKEN" -H 'content-type: application/json' \
-  -d '{"engine":"'"$EXEC_ENGINE"'","model":"'"$EXEC_MODEL"'","cwd":"<ABS_PATH_GIT_REPO>","worktree":true,"label":"<kebab-ticket-name>","prompt":"<SELF-CONTAINED SPEC>","terminalId":"'"${MC_TERMINAL_ID:-}"'"}'
+curl -s -X POST $SKD_URL/api/jobs \
+  -H "Authorization: Bearer $SKD_TOKEN" -H 'content-type: application/json' \
+  -d '{"engine":"'"$EXEC_ENGINE"'","model":"'"$EXEC_MODEL"'","cwd":"<ABS_PATH_GIT_REPO>","worktree":true,"label":"<kebab-ticket-name>","prompt":"<SELF-CONTAINED SPEC>","terminalId":"'"${SKD_TERMINAL_ID:-}"'"}'
 ```
 
 - `cwd` is the repo root under $HOME; the cockpit makes `.worktree/<label>` itself; land with `POST /api/jobs/<id>/land` after review (cherry-pick, never merge).
-- `terminalId`: always pass `$MC_TERMINAL_ID` as shown — set automatically when the
-  session runs inside a Mission Control terminal; empty elsewhere (harmless). It ties
+- `terminalId`: always pass `$SKD_TERMINAL_ID` as shown — set automatically when the
+  session runs inside a Shikidan terminal; empty elsewhere (harmless). It ties
   the job to the dispatching terminal so the cockpit's agents panel can scope per-terminal.
 - `label` = the ticket name; it becomes the session in the cockpit's flow graph —
   reuse the SAME label for follow-up jobs (codex review of the same ticket) so
@@ -409,10 +417,10 @@ curl -s -X POST $MC_URL/api/jobs \
 ## Monitor
 
 ```sh
-curl -s -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/jobs            # {jobs:[...]} newest first
-curl -s -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/jobs/<id>/log   # full log
-curl -s -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/flow            # plans + stages + currentActivity per label
-curl -s -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/jobs/<id>/activity  # live feed: what the model is doing now
+curl -s -H "Authorization: Bearer $SKD_TOKEN" $SKD_URL/api/jobs            # {jobs:[...]} newest first
+curl -s -H "Authorization: Bearer $SKD_TOKEN" $SKD_URL/api/jobs/<id>/log   # full log
+curl -s -H "Authorization: Bearer $SKD_TOKEN" $SKD_URL/api/flow            # plans + stages + currentActivity per label
+curl -s -H "Authorization: Bearer $SKD_TOKEN" $SKD_URL/api/jobs/<id>/activity  # live feed: what the model is doing now
 ```
 
 Poll `/api/jobs` until the job's `status` is `done`/`failed` (spawn a background
@@ -423,7 +431,7 @@ Time budget — a small ticket (UI tweak, one endpoint, a fix) should finish in
 5–10 min on the slim profile:
 - at 10 min, read `/api/jobs/<id>/activity`; if it is looping (re-reading the
   same files, re-running the full suite, retrying a failing command), kill it:
-  `curl -s -X POST -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/jobs/<id>/kill`
+  `curl -s -X POST -H "Authorization: Bearer $SKD_TOKEN" $SKD_URL/api/jobs/<id>/kill`
   then re-dispatch with a tighter spec (name the exact file + change).
 - 20 min without a diff on a small ticket = wrong spec, not a slow model. Stop
   and rewrite; do not wait it out.
@@ -434,9 +442,9 @@ Every job is a resumable thread (claude/glm via `--resume`, codex via `exec resu
 To steer or follow up without re-dispatching:
 
 ```sh
-curl -s -X POST $MC_URL/api/jobs/<id>/reply -H "Authorization: Bearer $MC_TOKEN" \
+curl -s -X POST $SKD_URL/api/jobs/<id>/reply -H "Authorization: Bearer $SKD_TOKEN" \
   -H 'content-type: application/json' -d '{"message":"<follow-up instruction>"}'   # → new chained job, same context
-curl -s -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/jobs/<id>/thread   # full ordered transcript: user/thinking/tool(+input,+result)/text/result
+curl -s -H "Authorization: Bearer $SKD_TOKEN" $SKD_URL/api/jobs/<id>/thread   # full ordered transcript: user/thinking/tool(+input,+result)/text/result
 ```
 
 Use reply for: "also add tests", "you missed X", "explain what you changed" — cheaper than a fresh spec, keeps the agent's context.
@@ -469,7 +477,7 @@ turned 10-minute UI tickets into 2-hour sessions. Replace it with:
    has exactly one commit per task however many review rounds ran. Migration
    files keep their filename and timestamp through the squash.
 4. Verified good → commit per the repo's rules yourself, then mark it:
-   `curl -s -X POST -H "Authorization: Bearer $MC_TOKEN" $MC_URL/api/jobs/<id>/reviewed`
+   `curl -s -X POST -H "Authorization: Bearer $SKD_TOKEN" $SKD_URL/api/jobs/<id>/reviewed`
    → flow shows MERGED, review counter drops.
 5. Verification proportional to risk: browser/Playwright checks for UI the user
    will click; curl for endpoints; nothing beyond `bun test` for internal
@@ -490,7 +498,7 @@ checkout that sits on the trunk; the main checkout only tracks origin.
    run the repo's gate once, then `git push origin HEAD:<trunk>`
    (fast-forward only; the local branch is a scratch handle, never pushed).
 3. **Clean up right after the push:** run
-   `~/.claude/skills/mc-dispatch/scripts/prune-worktrees <repo>`. It removes
+   `~/.claude/skills/skd-dispatch/scripts/prune-worktrees <repo>`. It removes
    only worktrees that are clean, whose commits are all on `origin/main`,
    `origin/master` or origin's default branch (patch-equivalent, so rebased
    commits count), and that no running process is inside. It never touches
@@ -502,15 +510,15 @@ checkout that sits on the trunk; the main checkout only tracks origin.
    runs over the whole repo, so a tree left behind by an earlier task is
    removed at the next push to that repo; the push is the trigger.
 
-Starting a Mission Control server inside a worktree re-points
-`~/.claude/skills/mc-dispatch` at that worktree. After such a session, check
-`readlink ~/.claude/skills/mc-dispatch` and point it back at the main checkout
-(`ln -sfn <mission-control>/skills/mc-dispatch ~/.claude/skills/mc-dispatch`).
+Starting a Shikidan server inside a worktree re-points
+`~/.claude/skills/skd-dispatch` at that worktree. After such a session, check
+`readlink ~/.claude/skills/skd-dispatch` and point it back at the main checkout
+(`ln -sfn <shiki checkout>/skills/skd-dispatch ~/.claude/skills/skd-dispatch`).
 
 ## Failure modes
 
 - Connection refused → cockpit not running: tell the user to `bun run start` in
-  mission-control; do NOT fall back to raw ccglm silently.
+  the shiki checkout; do NOT fall back to raw ccglm silently.
 - 400 "engine environment is not configured" → z.ai token missing in cockpit
   Settings — surface to user.
 - 401 → token rotated; re-read secrets.json.

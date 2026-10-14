@@ -1,11 +1,12 @@
 import { parse } from 'yaml'
 
+// ponytail: legacy mc-dispatch skill name still in ~/.claude docs and links, drop once none mention it
 export const CLAUDE_ONLY_PATTERNS: RegExp[] = [
   /AskUserQuestion/i, /\bAgent tool\b/i, /subagent(?:_type)?/i,
   /run_in_background/i, /superpowers/i, /ExitPlanMode|EnterPlanMode|plan mode/i,
   /TodoWrite/i, /claude-in-chrome/i, /mcp__[a-z]/i, /Skill tool/i,
   /\bhooks?\b/i, /PreToolUse|PostToolUse|SessionStart|settings\.json/i,
-  /mc-dispatch/i, /cockpit-first/i, /spawn an agent/i,
+  /(?:skd|mc)-dispatch/i, /cockpit-first/i, /spawn an agent/i,
 ]
 
 export const TRANSLATION_MARKER = '<!-- translated for Codex by Shikidan;'
@@ -18,8 +19,9 @@ Generated from ~/.claude/CLAUDE.md by Shikidan — edit the source, not this fil
 - When launched by Shikidan (SKD_JOB_ID set) you are the worker: implement in this tree, never dispatch or post plans.
 `
 
+// ponytail: legacy mc-dispatch skill folder, drop once ~/.claude/skills has no mc-dispatch link
 const SKIP = new Set([
-  'mc-dispatch', 'configure-ecc', 'daily-retro', 'graphify', 'agent-sort',
+  'skd-dispatch', 'mc-dispatch', 'configure-ecc', 'daily-retro', 'graphify', 'agent-sort',
   'skill-scout', 'skill-stocktake', 'strategic-compact', 'iterative-retrieval',
   'continuous-learning', 'continuous-learning-v2',
 ])

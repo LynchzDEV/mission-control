@@ -267,20 +267,20 @@ test('a skill translated before Shikidan is replaced without a backup', async ()
 })
 
 test('omits excluded skills and removes stale skill symlinks while preserving real directories', async () => {
-  for (const name of ['mc-dispatch', 'graphify', 'daily-retro', 'helper']) {
+  for (const name of ['skd-dispatch', 'graphify', 'daily-retro', 'helper']) {
     const source = join(claudeDir, 'skills', name)
     await mkdir(source)
     await writeFile(join(source, 'SKILL.md'), `---\nname: ${name}\n---\n${name === 'helper' ? 'superpowers\nmcp__tools\nTodoWrite' : 'Clean body'}`)
   }
   await mkdir(join(codexDir, 'skills', 'daily-retro'), { recursive: true })
   await writeFile(join(codexDir, 'skills', 'daily-retro', 'SKILL.md'), 'Personal')
-  await symlink(join(claudeDir, 'skills', 'mc-dispatch'), join(codexDir, 'skills', 'mc-dispatch'))
+  await symlink(join(claudeDir, 'skills', 'skd-dispatch'), join(codexDir, 'skills', 'skd-dispatch'))
   const result = await sync()
   expect(result.skipped).toHaveLength(4)
   expect(result.skipped.every(reason => reason.endsWith(' — claude-only'))).toBe(true)
   expect(await readdir(join(codexDir, 'skills'))).toEqual(['daily-retro'])
   expect(await readFile(join(codexDir, 'skills', 'daily-retro', 'SKILL.md'), 'utf8')).toBe('Personal')
-  expect(await readFile(join(claudeDir, 'skills', 'mc-dispatch', 'SKILL.md'), 'utf8')).toContain('Clean body')
+  expect(await readFile(join(claudeDir, 'skills', 'skd-dispatch', 'SKILL.md'), 'utf8')).toContain('Clean body')
 })
 
 test('skips dispatcher agents and only removes TOML with the exact name and marker lines', async () => {

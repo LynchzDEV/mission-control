@@ -148,7 +148,7 @@ async function publicDirExists(): Promise<boolean> {
   }
 }
 
-// Health is deliberately public: probes (mc-dispatch skill, double-bind check) read liveness only.
+// Health is deliberately public: probes (skd-dispatch skill, double-bind check) read liveness only.
 function healthApi() {
   return new Elysia().get('/api/health', () => ({ ok: true }))
 }
@@ -160,7 +160,7 @@ export async function createApp(): Promise<Elysia> {
   if (assets.linked.length > 0 || assets.written.length > 0 || assets.movedAside.length > 0) {
     console.error(`codex assets — linked ${assets.linked.length}, written ${assets.written.length}, moved aside ${assets.movedAside.length}, skipped ${assets.skipped.length}`)
   }
-  if (skills.linked.length > 0 || skills.movedAside.length > 0) {
+  if (skills.linked.length > 0 || skills.movedAside.length > 0 || skills.removed.length > 0) {
     console.error(`skills: ${describeSkillInstall(skills)} -> ${claudeSkillsDir()}`)
   }
   const workflowStore = createWorkflowStore(undefined, { pluginFlows: listedPluginFlows })
