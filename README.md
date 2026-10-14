@@ -147,6 +147,17 @@ Shikidan needs no config file. These environment variables change its behaviour:
 
 By default it logs jobs starting and finishing, requests that change something, and every failed request. The chat and sidebar poll in the background every few seconds, so ordinary reads stay quiet unless you run `SKD_LOG=verbose bun start`. Request bodies and query strings are never printed.
 
+## Upgrading from Mission Control
+
+Pull and restart; nothing has to be moved by hand.
+
+- **Settings and data**: on its first start Shikidan moves `~/.config/mission-control` to `~/.config/shikidan` and leaves a link at the old path. If `~/.config/shikidan` already exists it is used and the old folder is left alone.
+- **Environment**: the old `MISSION_CONTROL_*` and `MC_*` names still work, and `SKD_*` wins when both are set. Jobs, terminals and plugins are given both names.
+- **History**: browser settings (theme, layout, last project) carry over once, and job logs, runs and repo session folders (`.mission-control/`) from before the rename still read.
+- **Skill**: the skill is now `skd-dispatch`. The next start links it and removes the stale `mc-dispatch` link; rename `mc-dispatch` in your own notes, such as `~/.claude/CLAUDE.md`.
+- **CLI**: the command is now `shiki`. Run `bun link` again; an old `mctl` link points at a file that no longer exists.
+- **Windows**: re-run `install-autostart.ps1`. It replaces the `Mission Control` task with `Shikidan`, and keeps using `~/mission-control` when that is where your clone is.
+
 ## Command line
 
 `shiki` drives a running Shikidan from a shell, for people and for AI agents. Install it once with `bun link` in the repo, then run `shiki` (banner, version and every command) or `shiki <group> --help`, e.g. `shiki job --help`. `shiki --version` prints the version. For the manual page, link it once with `mkdir -p ~/.local/share/man/man1 && ln -sfn "$PWD/man/shiki.1" ~/.local/share/man/man1/shiki.1`, then `man shiki`.
