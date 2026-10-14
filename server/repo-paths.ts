@@ -26,9 +26,9 @@ export async function shapeRepoProblems(shape: FlowShape, workspace: string): Pr
   const listing = await listFolderRepos(folder)
   const available = listing.ok ? listing.repos : []
   const wrong = shape.paths.flatMap(path => path.files).filter(file => !available.includes(repoOf(file)))
-  if (wrong.length > 0) return wrong.map(file => `MC_SHAPE file ${file} must start with one of the repos in ${folder}: ${available.join(', ')}`)
+  if (wrong.length > 0) return wrong.map(file => `SKD_SHAPE file ${file} must start with one of the repos in ${folder}: ${available.join(', ')}`)
   const all = new Set([...repos, ...shapeRepoNames(shape)])
-  return all.size > MAX_QUEUE_REPOS ? [`MC_SHAPE needs more than ${MAX_QUEUE_REPOS} repos`] : []
+  return all.size > MAX_QUEUE_REPOS ? [`SKD_SHAPE needs more than ${MAX_QUEUE_REPOS} repos`] : []
 }
 
 export async function shapeRulesFor(workspace: string): Promise<string> {

@@ -64,7 +64,7 @@ describe('translateSkill', () => {
     const result = translateSkill(skill('review', body))!
     expect(result).toStartWith('---\nname: review\ndescription: Use the Skill tool\n---\n')
     expect(result).toContain('a plain-text question, then stop')
-    expect(result).toEndWith('<!-- translated for Codex by Mission Control; source ~/.claude/skills/review -->\n')
+    expect(result).toEndWith('<!-- translated for Codex by Shikidan; source ~/.claude/skills/review -->\n')
   })
   test('handles absent, malformed, quoted and CRLF front matter', () => {
     expect(translateSkill('Plain body')).toContain('skills/unknown -->')

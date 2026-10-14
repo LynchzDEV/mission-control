@@ -1086,7 +1086,7 @@ describe('bridge control channel', () => {
   test('a bridge child that ignores SIGTERM is killed even after the bridge exited', async () => {
     const project = join(home, 'project')
     await mkdir(project)
-    const script = `sh -c 'trap "" TERM; sleep 60' & child=$!; echo "{\\"type\\":\\"mc_child\\",\\"mc\\":true,\\"pid\\":$child}"; sleep 0.3`
+    const script = `sh -c 'trap "" TERM; sleep 60' & child=$!; echo "{\\"type\\":\\"skd_child\\",\\"skd\\":true,\\"pid\\":$child}"; sleep 0.3`
     const resolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', script], env: {} })
     const manager = createJobManager({ home, processInfo: claudeProcess })
     const result = await manager.createJob({ engine: 'claude', cwd: project, prompt: 'hi', label: 'Chat', purpose: 'chat' }, resolver)
@@ -1138,7 +1138,7 @@ describe('bridge control channel', () => {
       await mkdir(join(home, 'project'), { recursive: true })
       await mkdir(join(configDir, LOGS_DIR), { recursive: true })
       await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(adoptedBridgeRecord('adopted-bridge-2'))}\n`)
-      await writeFile(join(configDir, LOGS_DIR, 'adopted-bridge-2.log'), `${JSON.stringify({ type: 'mc_child', mc: true, pid: childPid, startedAt: Date.now() })}\n{"type":"result","subtype":"success","is_error":false}\n`)
+      await writeFile(join(configDir, LOGS_DIR, 'adopted-bridge-2.log'), `${JSON.stringify({ type: 'skd_child', skd: true, pid: childPid, startedAt: Date.now() })}\n{"type":"result","subtype":"success","is_error":false}\n`)
       const manager = createJobManager({ home, processInfo: async (pid) => { asked.push(pid); return { command: '/bin/sleep 60', startedAt: Date.now() } } })
       await waitForStatus(manager, 'adopted-bridge-2', 5000)
       await new Promise((resolve) => setTimeout(resolve, 600))
@@ -1156,7 +1156,7 @@ describe('bridge control channel', () => {
       await mkdir(join(home, 'project'), { recursive: true })
       await mkdir(join(configDir, LOGS_DIR), { recursive: true })
       await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(adoptedBridgeRecord('adopted-bridge-3'))}\n`)
-      await writeFile(join(configDir, LOGS_DIR, 'adopted-bridge-3.log'), `${JSON.stringify({ type: 'mc_child', mc: true, pid: child.pid })}\n`)
+      await writeFile(join(configDir, LOGS_DIR, 'adopted-bridge-3.log'), `${JSON.stringify({ type: 'skd_child', skd: true, pid: child.pid })}\n`)
       const manager = createJobManager({ home, processInfo: async () => ({ command: '/usr/local/bin/claude --print', startedAt: Date.now() - 60_000 }) })
       await waitForStatus(manager, 'adopted-bridge-3', 5000)
       await new Promise((resolve) => setTimeout(resolve, 600))
@@ -1200,7 +1200,7 @@ describe('bridge control channel', () => {
     await mkdir(join(home, 'project'), { recursive: true })
     await mkdir(join(configDir, LOGS_DIR), { recursive: true })
     await writeFile(join(configDir, JOBS_FILE), `${JSON.stringify(running)}\n`)
-    await writeFile(join(configDir, LOGS_DIR, 'adopted-bridge-1.log'), `${JSON.stringify({ type: 'mc_child', mc: true, pid: childPid })}\n{"type":"result","subtype":"success","is_error":false}\n`)
+    await writeFile(join(configDir, LOGS_DIR, 'adopted-bridge-1.log'), `${JSON.stringify({ type: 'skd_child', skd: true, pid: childPid })}\n{"type":"result","subtype":"success","is_error":false}\n`)
     createJobManager({ home, processInfo: claudeProcess })
     expect(await waitPidGone(childPid, 8000)).toBe(true)
   }, 20000)
@@ -1208,7 +1208,7 @@ describe('bridge control channel', () => {
   test('a settled chat turn merges allow_always rules into the chat root', async () => {
     const project = join(home, 'project')
     await mkdir(project)
-    const script = `echo '{"type":"mc_permission_resolved","mc":true,"requestId":"r1","decision":"allow_always","rules":["Bash(bun test:*)"]}' && echo '{"type":"mc_permission_resolved","mc":true,"requestId":"r2","decision":"allow_always","rules":["Bash(bun test:*)","Read(//tmp/x.md)"]}'`
+    const script = `echo '{"type":"skd_permission_resolved","skd":true,"requestId":"r1","decision":"allow_always","rules":["Bash(bun test:*)"]}' && echo '{"type":"skd_permission_resolved","skd":true,"requestId":"r2","decision":"allow_always","rules":["Bash(bun test:*)","Read(//tmp/x.md)"]}'`
     const resolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', script], env: {} })
     const manager = createJobManager({ home })
     const root = await manager.createJob({ engine: 'claude', cwd: project, prompt: 'hi', label: 'Chat', purpose: 'chat' }, resolver)

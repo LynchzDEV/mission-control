@@ -10,6 +10,7 @@ import { PluginBusyError, withPluginLock } from './locks'
 import type { PluginContributions, SettingField } from './manifest'
 import { getSetting } from './settings'
 import { getInstalled, listInstalled, pluginFolder, saveInstalled, type InstalledPlugin } from './store'
+import { legacyNamed } from '../legacy-name'
 
 const SKILL_MARKER_FILE = '.mc-plugin'
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n/
@@ -41,7 +42,7 @@ export function mctlCommand(): string {
 }
 
 function agentMarker(pluginId: string): string {
-  return `<!-- installed by mission-control plugin ${pluginId} -->`
+  return `<!-- installed by shikidan plugin ${pluginId} -->`
 }
 
 export function fillTemplate(text: string, path: string, context: FillContext): FillResult {
@@ -120,7 +121,8 @@ async function ownedBy(pluginId: string, path: string): Promise<boolean> {
   if (info === null) return false
   if (info.isDirectory()) return (await readFile(join(path, SKILL_MARKER_FILE), 'utf8').catch(() => '')).trim() === pluginId
   if (!info.isFile()) return false
-  return (await readFile(path, 'utf8')).includes(agentMarker(pluginId))
+  const text = await readFile(path, 'utf8')
+  return text.includes(agentMarker(pluginId)) || text.includes(legacyNamed(agentMarker(pluginId)))
 }
 
 export async function applyContributions(source: ContributionSource, targets: string[], previous: string[]): Promise<ApplyResult> {

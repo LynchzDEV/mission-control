@@ -10,4 +10,4 @@
 {"type":"assistant","message":{"id":"msg_5","content":[{"type":"tool_use","id":"tu_5","name":"Bash","input":{"command":"git push","description":"Push the branch"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu_5","is_error":true,"content":"Exit code 1\n! [rejected] main -> main (non-fast-forward)\nhint: Updates were rejected because the tip of your current branch is behind"}]}}
 {"type":"assistant","message":{"id":"msg_6","content":[{"type":"text","text":"Six tools ran. The tests pass, but the push was rejected — the remote has newer commits, so it needs a pull first. The fix itself is one guard:\n\n```ts\nconst inRail = (row: Row): boolean => row.item.kind === 'chat' || row.state === 'live'\n```\n\nI can pull and re-push on your word."}]}}
-{"type":"result","subtype":"success","is_error":false,"result":"MC_RESULT {\"outcome\":\"pass\",\"summary\":\"Fixture tools turn finished\",\"evidence\":[\"fixture:tools\"]}"}
+{"type":"result","subtype":"success","is_error":false,"result":"SKD_RESULT {\"outcome\":\"pass\",\"summary\":\"Fixture tools turn finished\",\"evidence\":[\"fixture:tools\"]}"}

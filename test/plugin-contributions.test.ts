@@ -99,7 +99,7 @@ describe('applyContributions', () => {
     for (const target of targets) {
       const agent = await readFile(join(target, 'agents', 'biz-gate.md'), 'utf8')
       expect(agent).toContain('Repos live in /work/repos. Run bun /mc/cli/mctl.ts plugin call x.')
-      expect(agent).toContain('<!-- installed by mission-control plugin card-pipeline -->')
+      expect(agent).toContain('<!-- installed by shikidan plugin card-pipeline -->')
       expect(agent.startsWith('---\nname: biz-gate\n')).toBe(true)
       expect(await readFile(join(target, 'skills', 'card-refine', 'SKILL.md'), 'utf8')).toContain('Footer: [bot]')
       expect(await readFile(join(target, 'skills', 'card-refine', 'docs', 'notes.md'), 'utf8')).toBe('Folder /work/repos\n')
@@ -115,6 +115,14 @@ describe('applyContributions', () => {
     expect(result).toEqual({ ok: false, error: `${join(targets[1]!, 'agents', 'biz-gate.md')} already exists and was not installed by this plugin` })
     expect(await readFile(join(targets[1]!, 'agents', 'biz-gate.md'), 'utf8')).toBe('my own agent\n')
     expect(await exists(join(targets[0]!, 'agents', 'biz-gate.md'))).toBe(false)
+  })
+
+  test('an agent installed before Shikidan still counts as its own', async () => {
+    await mkdir(join(targets[1]!, 'agents'), { recursive: true })
+    await writeFile(join(targets[1]!, 'agents', 'biz-gate.md'), '---\nname: biz-gate\n---\n<!-- installed by mission-control plugin card-pipeline -->\nold\n')
+    const result = await applyContributions(source(), targets, [])
+    expect(result.ok).toBe(true)
+    expect(await readFile(join(targets[1]!, 'agents', 'biz-gate.md'), 'utf8')).toContain('<!-- installed by shikidan plugin card-pipeline -->')
   })
 
   test('re-applying replaces its own files and removes ones no longer contributed', async () => {

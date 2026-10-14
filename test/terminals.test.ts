@@ -74,8 +74,8 @@ test('terminals independently pin default or custom workflows and inherit their 
   expect(originalDefault.terminal.workflow?.id).toBe('default')
   expect(registry.get(chosen.terminal.id)?.workflow?.revision).toBe(custom.revision)
   expect(registry.get(standard.terminal.id)?.workflow?.id).toBe('default')
-  registry.write(chosen.terminal.id, 'printf "__MC_ENV__%s\\n" "$SKD_URL|$SKD_WORKFLOW_ID|$SKD_WORKFLOW_REVISION|$SKD_CONFIG_DIR"\r')
-  await waitFor(() => registry.replay(chosen.terminal.id).includes(`__MC_ENV__http://127.0.0.1:7778|research|${custom.revision}|${configDir}`))
+  registry.write(chosen.terminal.id, 'printf "__SKD_ENV__%s\\n" "$SKD_URL|$SKD_WORKFLOW_ID|$SKD_WORKFLOW_REVISION|$SKD_CONFIG_DIR"\r')
+  await waitFor(() => registry.replay(chosen.terminal.id).includes(`__SKD_ENV__http://127.0.0.1:7778|research|${custom.revision}|${configDir}`))
   const count = registry.list().length
   expect((await registry.createTerminal({ engine: 'claude', cwd: repo, workflowId: 'missing' })).ok).toBe(false)
   expect(registry.list()).toHaveLength(count)

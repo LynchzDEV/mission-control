@@ -12,7 +12,7 @@ import type { TerminalRecord } from '../server/terminals'
 import { mcUrl } from '../server/secrets'
 
 let dir: string, repo: string, manager: JobManager, runner: WorkflowRunner, settledRuns: WorkflowRun[]
-const report = (outcome = 'pass') => JSON.stringify({ type: 'result', result: `MC_RESULT ${JSON.stringify({ outcome, summary: 'Completed fixture', evidence: ['fixture assertion'] })}` })
+const report = (outcome = 'pass') => JSON.stringify({ type: 'result', result: `SKD_RESULT ${JSON.stringify({ outcome, summary: 'Completed fixture', evidence: ['fixture assertion'] })}` })
 const resolver: EngineResolver = () => ({ cmd: '/bin/echo', args: [report()], env: {} })
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-workflow-runner-'))
@@ -1181,7 +1181,7 @@ test('an In Session plan waits for the terminal AI, creates no job, and its repo
 
 test('a failed plan check sends the plan back to the session with the findings in its prompt', async () => {
   let calls = 0
-  const rejectOnce = JSON.stringify({ type: 'result', result: `MC_RESULT ${JSON.stringify({ outcome: 'fail', summary: 'Plan misses the migration', evidence: [] })}` })
+  const rejectOnce = JSON.stringify({ type: 'result', result: `SKD_RESULT ${JSON.stringify({ outcome: 'fail', summary: 'Plan misses the migration', evidence: [] })}` })
   const { sessionSteps, owner, begin } = await sessionRunner(() => ({ cmd: '/bin/echo', args: [calls++ === 0 ? rejectOnce : report()], env: {} }))
   const approved = await begin()
   await runner.report(approved.id, 'plan', planReport, owner)
@@ -1493,14 +1493,14 @@ const csvShape = {
     { id: 'ui', title: 'UI', files: ['client/export.ts'], steps: [{ title: 'Build UI', instructions: 'Add the button' }] },
   ],
 }
-const shaped = (shape: unknown) => `THE PLAN\nMC_SHAPE ${JSON.stringify(shape)}`
+const shaped = (shape: unknown) => `THE PLAN\nSKD_SHAPE ${JSON.stringify(shape)}`
 const overlappingShape = { ...csvShape, paths: [csvShape.paths[0]!, { ...csvShape.paths[1]!, files: ['server/'] }] }
 const nodeIds = (run: WorkflowRun) => run.attempts.map(attempt => attempt.nodeId)
 const shapingPlanner = (shape: unknown, failReviewOnce = false): EngineResolver => {
   let reviews = 0
   return ({ prompt }) => {
     const failing = failReviewOnce && prompt.includes('Independently review') && reviews++ === 0
-    const text = `${prompt.includes('flowShapeRules') ? `MC_SHAPE ${JSON.stringify(shape)}\n` : ''}MC_RESULT ${JSON.stringify({ outcome: failing ? 'fail' : 'pass', summary: 'Completed fixture', evidence: ['fixture assertion'] })}`
+    const text = `${prompt.includes('flowShapeRules') ? `SKD_SHAPE ${JSON.stringify(shape)}\n` : ''}SKD_RESULT ${JSON.stringify({ outcome: failing ? 'fail' : 'pass', summary: 'Completed fixture', evidence: ['fixture assertion'] })}`
     return { cmd: '/bin/echo', args: [JSON.stringify({ type: 'result', result: text })], env: {} }
   }
 }
@@ -1510,7 +1510,7 @@ test('an In Session plan that splits files between two paths is refused and keep
   const approved = await begin()
   expect(approved.attempts[0]!.prompt).toContain('flowShapeRules')
   await expect(runner.report(approved.id, 'plan', { ...planReport, output: shaped(overlappingShape) }, owner)).rejects.toThrow('API and UI both own server/export.ts')
-  await expect(runner.report(approved.id, 'plan', { ...planReport, output: 'THE PLAN\nMC_SHAPE {oops' }, owner)).rejects.toThrow('MC_SHAPE is not valid JSON')
+  await expect(runner.report(approved.id, 'plan', { ...planReport, output: 'THE PLAN\nSKD_SHAPE {oops' }, owner)).rejects.toThrow('SKD_SHAPE is not valid JSON')
   expect(runner.get(approved.id)!.attempts).toEqual([expect.objectContaining({ nodeId: 'plan', status: 'running' })])
 })
 
@@ -1624,7 +1624,7 @@ test('a session change that adds commands waits for approval even with approval 
 
 const STEP_SESSION = 'step-session'
 const sessionLine = JSON.stringify({ type: 'system', subtype: 'init', session_id: STEP_SESSION })
-const waitingLine = JSON.stringify({ type: 'result', result: 'Waiting for the completion notification, then I will report with MC_RESULT' })
+const waitingLine = JSON.stringify({ type: 'result', result: 'Waiting for the completion notification, then I will report with SKD_RESULT' })
 const lines = (...output: string[]) => ({ cmd: '/usr/bin/printf', args: [`${output.map(() => '%s\n').join('')}`, ...output], env: {} })
 type StepCall = { prompt: string; resumeSessionId?: string; step?: boolean }
 function backgroundWaiter(resumed: (calls: StepCall[]) => ReturnType<EngineResolver>, first: () => ReturnType<EngineResolver> = () => lines(sessionLine, waitingLine)): { resolver: EngineResolver; calls: StepCall[] } {
@@ -1651,12 +1651,12 @@ test('a step that ends its turn waiting on background work is resumed once and t
   const [first, resumed] = manager.listJobs().sort((a, b) => a.startedAt - b.startedAt)
   expect(manager.listJobs()).toHaveLength(2)
   expect(calls[1]).toMatchObject({ resumeSessionId: STEP_SESSION, step: true })
-  expect(calls[1]!.prompt).toContain('Your last turn ended without the MC_RESULT line')
+  expect(calls[1]!.prompt).toContain('Your last turn ended without the SKD_RESULT line')
   expect(done.attempts[0]).toMatchObject({ jobId: resumed!.id, nudgedFrom: first!.id })
   expect(resumed).toMatchObject({ workflowRunId: run.id, workflowNodeId: 'build', workflowAttempt: 0 })
 })
 
-test('a step that ends twice without MC_RESULT blocks with its last words and is not nudged again', async () => {
+test('a step that ends twice without SKD_RESULT blocks with its last words and is not nudged again', async () => {
   const { resolver: waiter } = backgroundWaiter(() => lines(sessionLine, JSON.stringify({ type: 'result', result: 'Still waiting on the suite in the background' })))
   const store = build(waiter)
   const graph = await singleStep(store)
@@ -1664,7 +1664,7 @@ test('a step that ends twice without MC_RESULT blocks with its last words and is
   const done = await finished(run.id)
   expect(done.status).toBe('blocked')
   expect(done.attempts).toHaveLength(1)
-  expect(done.attempts[0]!.result?.summary).toBe('Agent ended twice without MC_RESULT; last words: Still waiting on the suite in the background')
+  expect(done.attempts[0]!.result?.summary).toBe('Agent ended twice without SKD_RESULT; last words: Still waiting on the suite in the background')
   expect(manager.listJobs()).toHaveLength(2)
 })
 
@@ -1741,8 +1741,8 @@ test('a nudged step keeps the first job\'s answer ahead of the resumed reply and
   expect(done.status).toBe('done')
   const output = done.attempts[0]!.output
   expect(output.indexOf('PLAN-BODY step 1 do X')).toBeGreaterThan(-1)
-  expect(output.indexOf('PLAN-BODY step 1 do X')).toBeLessThan(output.indexOf('MC_RESULT'))
-  expect(calls[1]!.prompt).toContain('Give your complete final answer again (for a plan: the whole plan and any MC_SHAPE line), ending with exactly one MC_RESULT line.')
+  expect(output.indexOf('PLAN-BODY step 1 do X')).toBeLessThan(output.indexOf('SKD_RESULT'))
+  expect(calls[1]!.prompt).toContain('Give your complete final answer again (for a plan: the whole plan and any SKD_SHAPE line), ending with exactly one SKD_RESULT line.')
 })
 
 test('a plan step nudged after writing its split still proposes the split, and a nudged path step resumes in its own path workspace', async () => {
@@ -1754,7 +1754,7 @@ test('a plan step nudged after writing its split still proposes the split, and a
     const checking = prompt.includes('Verify the upstream plan') || prompt.includes('Independently review')
     const stage = prompt.includes('flowShapeRules') ? 'plan' : prompt.includes('Add the endpoint') && !checking ? 'api' : 'other'
     if (resumeSessionId === undefined && waits.delete(stage)) {
-      const answer = stage === 'plan' ? `THE PLAN\nMC_SHAPE ${JSON.stringify(csvShape)}\nWaiting for the background check` : 'Endpoint added; waiting for the background suite'
+      const answer = stage === 'plan' ? `THE PLAN\nSKD_SHAPE ${JSON.stringify(csvShape)}\nWaiting for the background check` : 'Endpoint added; waiting for the background suite'
       return lines(sessionLine, JSON.stringify({ type: 'result', result: answer }))
     }
     return lines(sessionLine, report())
@@ -1878,7 +1878,7 @@ test('a second miss with no closing words blocks without an empty last-words cla
   const graph = await singleStep(store)
   const run = await runner.start({ workflowId: graph.id, cwd: repo, request: 'Run the suite', label: 'nudge-silent' })
   const done = await finished(run.id)
-  expect(done.attempts[0]!.result?.summary).toBe('Agent ended twice without MC_RESULT')
+  expect(done.attempts[0]!.result?.summary).toBe('Agent ended twice without SKD_RESULT')
 })
 
 async function settledAs(store: ReturnType<typeof build>, status: 'blocked' | 'failed'): Promise<string> {

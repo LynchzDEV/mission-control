@@ -20,7 +20,7 @@ beforeEach(async () => {
   bridgeCalls = 0
   endpoint = () => Response.json({ data: [{ id: 'llama3' }, { id: 'qwen3' }] })
   const fetchImpl = Object.assign(async () => endpoint(), { preconnect: () => {} }) as unknown as typeof fetch
-  discovery = createModelDiscovery({ base: dir, fetchImpl, background: false, now: () => 5000, bridge: async () => { bridgeCalls++; return [{ type: 'mc_models', models: ['grok-4.7', 'grok-4.5'], current: 'grok-4.7' }] } })
+  discovery = createModelDiscovery({ base: dir, fetchImpl, background: false, now: () => 5000, bridge: async () => { bridgeCalls++; return [{ type: 'skd_models', models: ['grok-4.7', 'grok-4.5'], current: 'grok-4.7' }] } })
   const store = createWorkflowStore(dir)
   const runner = createWorkflowRunner({ manager: createJobManager(), resolver: fakeEchoResolver, store, requireApproval: async () => true })
   app = new Elysia().use(studioRoutes(store, runner, undefined, undefined, undefined, discovery))

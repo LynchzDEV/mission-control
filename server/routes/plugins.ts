@@ -30,8 +30,9 @@ const optionalText = (value: unknown): string | undefined => (typeof value === '
 
 const PUBLIC_DIR = resolve(import.meta.dir, '..', '..', 'public')
 
+// ponytail: legacy window.__MC_PLUGIN__ and MC_PLUGIN_* env, drop after plugins move to skd-plugin-sdk
 function frameHtml(id: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plugin-frame/${id}/ui.css"></head><body><div id="root"></div><script>window.__MC_PLUGIN__={id:"${id}",runtime:"isolated"}</script><script src="/plugin-frame/${id}/screen.js"></script></body></html>`
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plugin-frame/${id}/ui.css"></head><body><div id="root"></div><script>window.__SKD_PLUGIN__=window.__MC_PLUGIN__={id:"${id}",runtime:"isolated"}</script><script src="/plugin-frame/${id}/screen.js"></script></body></html>`
 }
 
 function frameCsp(host: string): string {

@@ -7,6 +7,9 @@ export type LiveFeed = {
 
 export type LiveState = { delta: string; partial: boolean }
 
+// ponytail: legacy mc_permission_request in job logs written before Shikidan, drop with server/log-events.ts
+const LEGACY_PERMISSION_REQUEST = 'mc_permission_request'
+
 type LineShape = { type?: unknown; event?: { type?: unknown; delta?: { type?: unknown; text?: unknown } } }
 
 export function applyLiveLine(state: LiveState, line: string): { state: LiveState; refresh: boolean } {
@@ -24,7 +27,7 @@ export function applyLiveLine(state: LiveState, line: string): { state: LiveStat
     return { state, refresh: false }
   }
   if (shape.type === 'assistant') return { state: { delta: '', partial: false }, refresh: true }
-  if (shape.type === 'user' || shape.type === 'result' || shape.type === 'mc_permission_request') return { state, refresh: true }
+  if (shape.type === 'user' || shape.type === 'result' || shape.type === 'skd_permission_request' || shape.type === LEGACY_PERMISSION_REQUEST) return { state, refresh: true }
   return { state, refresh: false }
 }
 

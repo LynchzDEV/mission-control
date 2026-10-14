@@ -13,6 +13,7 @@ import { readConfig } from '../secrets'
 import { eventStreamResponse, type RunEvents } from '../run-events'
 import { scopeSnapshot, versionView } from '../run-view'
 import type { JobRecord } from '../jobs'
+import { logEvent } from '../log-events'
 
 const changeBody = z.object({ graph: z.unknown(), reason: z.string().trim().min(1).max(500), scopeGrew: z.boolean().optional() })
 const sessionBody = z.object({ chat: z.string().min(1).max(200).optional(), terminalId: identifier.optional(), version: z.number().int().min(1).optional() }).default({})
@@ -104,7 +105,7 @@ export function studioRoutes(store: WorkflowStore, runner: WorkflowRunner, build
       const connection = await connections.get(params.id)
       if (connection.adapter === 'cli') throw new Error('CLI connections do not advertise protocol capabilities')
       const events = await spawnBridge({ connection, prompt: '', probe: true }, PROBE_TIMEOUT_MS)
-      return events.find(event => event.type === 'mc_capabilities') ?? { error: 'Agent did not advertise capabilities' }
+      return events.find(event => event.type === logEvent('capabilities')) ?? { error: 'Agent did not advertise capabilities' }
     })
     .get('/api/studio/events', ({ query, request }) => {
       if (!events || !jobs) throw new Error('Live updates unavailable')

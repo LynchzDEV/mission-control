@@ -27,6 +27,7 @@ import { findEditCall, serializeTurnUndo, UNDO_ALREADY, UNDO_CHANGED, UNDO_UNSUP
 import { readRoles } from './roles'
 import { assembleThread, replySessionId, threadChain, threadIsRunning, threadRootOf } from '../threads'
 import { buildTurnTree, forkPointUuid, nearestSessionId, newestLeaf, type TurnTree } from '../thread-tree'
+import { isLogEvent, mentionsLogEvent } from '../log-events'
 
 export const SSE_TAIL_BYTES = 4096
 export const HEARTBEAT_MS = 15_000
@@ -151,10 +152,10 @@ async function chatUsage(chain: readonly JobRecord[], manager: JobManager, engin
   for (const turn of chain) {
     const log = await readRedactedLog(manager.logPath(turn.id))
     for (const line of log.split('\n')) {
-      if (!line.includes('"mc_context"') && !line.includes('"total_cost_usd"')) continue
+      if (!mentionsLogEvent(line, 'context') && !line.includes('"total_cost_usd"')) continue
       try {
         const parsed = JSON.parse(line) as { type?: string; percentage?: unknown; total_cost_usd?: unknown }
-        if (parsed.type === 'mc_context' && typeof parsed.percentage === 'number' && Number.isFinite(parsed.percentage)) contextPercent = parsed.percentage
+        if (isLogEvent(parsed.type, 'context') && typeof parsed.percentage === 'number' && Number.isFinite(parsed.percentage)) contextPercent = parsed.percentage
         if (parsed.type === 'result' && typeof parsed.total_cost_usd === 'number' && Number.isFinite(parsed.total_cost_usd)) costUsd = parsed.total_cost_usd
       } catch {
         // a torn line mid-write is skipped
@@ -267,15 +268,15 @@ function chatPatch(body: Record<string, unknown>, root: JobRecord): ChatJobPatch
 function logHasPendingPermission(log: string, requestId: string): boolean {
   let pending = false
   for (const line of log.split('\n')) {
-    if (!line.includes('"mc_permission_request"') && !line.includes('"mc_permission_resolved"')) continue
+    if (!mentionsLogEvent(line, 'permission_request') && !mentionsLogEvent(line, 'permission_resolved')) continue
     let parsed: Record<string, unknown>
     try {
       parsed = JSON.parse(line) as Record<string, unknown>
     } catch {
       continue
     }
-    if (parsed.type === 'mc_permission_request' && parsed.requestId === requestId) pending = true
-    if (parsed.type === 'mc_permission_resolved' && parsed.requestId === requestId) pending = false
+    if (isLogEvent(parsed.type, 'permission_request') && parsed.requestId === requestId) pending = true
+    if (isLogEvent(parsed.type, 'permission_resolved') && parsed.requestId === requestId) pending = false
   }
   return pending
 }
@@ -721,10 +722,10 @@ export function jobsRoutes(manager: JobManager, resolver: EngineResolver, option
       for (const turn of threadChain(manager.listJobs(), threadRootOf(job))) {
         const log = await readRedactedLog(manager.logPath(turn.id))
         for (const line of log.split('\n')) {
-          if (!line.includes('"mc_commands"')) continue
+          if (!mentionsLogEvent(line, 'commands')) continue
           try {
             const parsed = JSON.parse(line) as { type?: string; commands?: unknown }
-            if (parsed.type === 'mc_commands' && Array.isArray(parsed.commands)) {
+            if (isLogEvent(parsed.type, 'commands') && Array.isArray(parsed.commands)) {
               commands = parsed.commands.filter((command): command is { name: string; description: string; argumentHint: string } => {
                 const candidate = command as { name?: unknown; description?: unknown; argumentHint?: unknown }
                 return typeof candidate.name === 'string' && candidate.name !== '' && typeof candidate.description === 'string' && typeof candidate.argumentHint === 'string'

@@ -16,6 +16,7 @@ import type {
   SpawnOptions,
   SpawnedProcess,
 } from '@anthropic-ai/claude-agent-sdk'
+import { logEvent } from './log-events'
 
 export type ChatPermissionMode = 'settings' | 'ask' | 'acceptEdits' | 'plan' | 'bypass'
 
@@ -98,7 +99,7 @@ export function makeSpawner(write: (line: object) => void, onStderr: (text: stri
   return (options) => {
     const child = spawn(options.command, options.args, { cwd: options.cwd, env: options.env, signal: options.signal, stdio: ['pipe', 'pipe', 'pipe'] })
     child.stderr?.on('data', (chunk: Buffer) => onStderr(chunk.toString()))
-    write({ type: 'mc_child', mc: true, pid: child.pid, startedAt: Date.now() })
+    write({ type: logEvent('child'), skd: true, pid: child.pid, startedAt: Date.now() })
     return child as unknown as SpawnedProcess
   }
 }
@@ -170,12 +171,12 @@ function createControlHub(controls: AsyncIterable<BridgeControl>, signal: AbortS
 
 export function createPermissionHandler(write: (line: object) => void, hub: ControlHub, waitMs: (ms: number) => Promise<void>): CanUseTool {
   const resolved = (requestId: string, decision: string, reason?: string, rules?: string[]): void => {
-    write({ type: 'mc_permission_resolved', mc: true, requestId, decision, ...(rules === undefined ? {} : { rules }), ...(reason === undefined ? {} : { reason }) })
+    write({ type: logEvent('permission_resolved'), skd: true, requestId, decision, ...(rules === undefined ? {} : { rules }), ...(reason === undefined ? {} : { reason }) })
   }
   return (toolName, input, options) => {
     write({
-      type: 'mc_permission_request',
-      mc: true,
+      type: logEvent('permission_request'),
+      skd: true,
       requestId: options.requestId,
       toolUseID: options.toolUseID,
       toolName,
@@ -262,7 +263,7 @@ export async function runBridge(launch: BridgeLaunch, deps: BridgeDeps): Promise
   let stderrTail = ''
   const onStderr = (text: string): void => {
     stderrTail = (stderrTail + text).slice(-STDERR_TAIL_BYTES)
-    write({ type: 'mc_stderr', mc: true, text })
+    write({ type: logEvent('stderr'), skd: true, text })
   }
   let child = null as SpawnedProcess | null
   const spawner = makeSpawner(write, onStderr)
@@ -291,15 +292,15 @@ export async function runBridge(launch: BridgeLaunch, deps: BridgeDeps): Promise
         if (!initSeen && message.type === 'system' && message.subtype === 'init') {
           initSeen = true
           pendingInfo.push(raceInfo(q.supportedCommands(), waitMs, (commands) => write({
-            type: 'mc_commands',
-            mc: true,
+            type: logEvent('commands'),
+            skd: true,
             commands: commands.map((command) => ({ name: command.name, description: command.description, argumentHint: command.argumentHint })),
           })))
         }
         if (message.type === 'result') {
           await raceInfo(q.getContextUsage({ detail: 'summary' }), waitMs, (usage) => write({
-            type: 'mc_context',
-            mc: true,
+            type: logEvent('context'),
+            skd: true,
             percentage: usage.percentage,
             totalTokens: usage.totalTokens,
             maxTokens: usage.maxTokens,

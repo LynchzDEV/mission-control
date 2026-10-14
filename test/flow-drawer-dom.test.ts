@@ -581,7 +581,7 @@ test('watching with a job named shows that job first', () => {
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })
 
-test('a watched job that was resumed after ending without MC_RESULT follows to the resumed job', () => {
+test('a watched job that was resumed after ending without SKD_RESULT follows to the resumed job', () => {
   stageSize.width = 1000
   const shown = watchedJobs()
   const stream = watchRun({ runId: 'W5', jobId: 'job-build' })

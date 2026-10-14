@@ -1104,7 +1104,7 @@ describe('chat jobs', () => {
 })
 
 describe('POST /api/jobs/:id/permission', () => {
-  const requestLine = '{"type":"mc_permission_request","mc":true,"requestId":"r1","toolName":"Bash","title":"Claude wants to run a command","description":"To check","decisionReason":"","suppressAlways":false,"input":{"command":"bun test"}}'
+  const requestLine = '{"type":"skd_permission_request","skd":true,"requestId":"r1","toolName":"Bash","title":"Claude wants to run a command","description":"To check","decisionReason":"","suppressAlways":false,"input":{"command":"bun test"}}'
   const askResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', `printf '%s\\n' '${requestLine}'; cat`], env: {}, control: true })
 
   test('rejects a bad body with 400 and an unknown job with 404', async () => {
@@ -1136,7 +1136,7 @@ describe('POST /api/jobs/:id/permission', () => {
     const { id } = (await created.json()) as { id: string }
     for (let attempt = 0; attempt < 50; attempt++) {
       const log = await readFile(manager.logPath(id), 'utf8').catch(() => '')
-      if (log.includes('mc_permission_request')) break
+      if (log.includes('skd_permission_request')) break
       await new Promise((resolve) => setTimeout(resolve, 40))
     }
     const allowed = await app.handle(post(`/api/jobs/${id}/permission`, { requestId: 'r1', decision: 'allow_once' }))
@@ -1147,7 +1147,7 @@ describe('POST /api/jobs/:id/permission', () => {
       if (log.includes('"decision":"allow_once"')) break
       await new Promise((resolve) => setTimeout(resolve, 40))
     }
-    await appendFile(manager.logPath(id), '{"type":"mc_permission_resolved","mc":true,"requestId":"r1","decision":"allow_once"}\n')
+    await appendFile(manager.logPath(id), '{"type":"skd_permission_resolved","skd":true,"requestId":"r1","decision":"allow_once"}\n')
     expect((await app.handle(post(`/api/jobs/${id}/permission`, { requestId: 'r1', decision: 'deny' }))).status).toBe(409)
     await manager.killJob(id)
   })
@@ -1173,7 +1173,7 @@ describe('POST /api/jobs/:id/permission', () => {
     const { id } = (await created.json()) as { id: string }
     for (let attempt = 0; attempt < 50; attempt++) {
       const log = await readFile(manager.logPath(id), 'utf8').catch(() => '')
-      if (log.includes('mc_permission_request')) break
+      if (log.includes('skd_permission_request')) break
       await new Promise((resolve) => setTimeout(resolve, 40))
     }
     await attention.raise({ key: attentionKey.permission(id, 'r1'), kind: 'permission', title: 'ask-attention', detail: 'Claude wants to run a command', command: 'bun test', chatId: id, jobId: id, requestId: 'r1' })
@@ -1281,9 +1281,9 @@ describe('reply model and permission mode', () => {
 })
 
 describe('GET /api/jobs/:id/commands', () => {
-  test('returns the newest mc_commands line of the chat, or an empty list', async () => {
+  test('returns the newest skd_commands line of the chat, or an empty list', async () => {
     const manager = createJobManager()
-    const commandsResolver: EngineResolver = ({ prompt }) => ({ cmd: '/bin/sh', args: ['-c', `echo '{"type":"system","subtype":"init","session_id":"sess-cmds"}'; echo '{"type":"mc_commands","mc":true,"commands":[{"name":"review","description":"Review the current changes","argumentHint":""}]}'; echo "${prompt}"`], env: {} })
+    const commandsResolver: EngineResolver = ({ prompt }) => ({ cmd: '/bin/sh', args: ['-c', `echo '{"type":"system","subtype":"init","session_id":"sess-cmds"}'; echo '{"type":"skd_commands","skd":true,"commands":[{"name":"review","description":"Review the current changes","argumentHint":""}]}'; echo "${prompt}"`], env: {} })
     const app = buildApp(manager, commandsResolver)
     const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'cmd-chat', purpose: 'chat' }))
     const { id } = (await created.json()) as { id: string }
@@ -1537,7 +1537,7 @@ describe('thread usage meter', () => {
   test('reports the newest context percentage and cumulative cost for a claude chat', async () => {
     const usageResolver: EngineResolver = () => ({
       cmd: '/bin/sh',
-      args: ['-c', `printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-usage' })}'; printf '%s\\n' '${JSON.stringify({ type: 'mc_context', mc: true, percentage: 47, totalTokens: 94000, maxTokens: 200000 })}'; printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'first', total_cost_usd: 0.5 })}'`],
+      args: ['-c', `printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-usage' })}'; printf '%s\\n' '${JSON.stringify({ type: 'skd_context', skd: true, percentage: 47, totalTokens: 94000, maxTokens: 200000 })}'; printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'first', total_cost_usd: 0.5 })}'`],
       env: {},
     })
     const manager = createJobManager()
@@ -1549,10 +1549,24 @@ describe('thread usage meter', () => {
     expect(thread.usage).toEqual({ contextPercent: 47, costUsd: 0.5 })
   })
 
+  test('still reads the legacy mc_context line from a log written before Shikidan', async () => {
+    const legacyResolver: EngineResolver = () => ({
+      cmd: '/bin/sh',
+      args: ['-c', `printf '%s\\n' '${JSON.stringify({ type: 'mc_context', mc: true, percentage: 33, totalTokens: 66000, maxTokens: 200000 })}'; printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'old', total_cost_usd: 0.25 })}'`],
+      env: {},
+    })
+    const app = buildApp(createJobManager(), legacyResolver)
+    const created = await app.handle(post('/api/jobs', { engine: 'claude', cwd: repo, prompt: 'hi', label: 'legacy-usage-chat', purpose: 'chat' }))
+    const { id } = (await created.json()) as { id: string }
+    await pollUntilDone(app, id)
+    const thread = await (await app.handle(get(`/api/jobs/${id}/thread`))).json() as { usage: { contextPercent: number | null; costUsd: number | null } }
+    expect(thread.usage).toEqual({ contextPercent: 33, costUsd: 0.25 })
+  })
+
   test('a glm chat reports context but no cost, and the newest result wins', async () => {
     const usageResolver: EngineResolver = () => ({
       cmd: '/bin/sh',
-      args: ['-c', `printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-usage-2' })}'; printf '%s\\n' '${JSON.stringify({ type: 'mc_context', mc: true, percentage: 62, totalTokens: 124000, maxTokens: 200000 })}'; printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'a', total_cost_usd: 0.5 })}'; printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'b', total_cost_usd: 0.84 })}'`],
+      args: ['-c', `printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-usage-2' })}'; printf '%s\\n' '${JSON.stringify({ type: 'skd_context', skd: true, percentage: 62, totalTokens: 124000, maxTokens: 200000 })}'; printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'a', total_cost_usd: 0.5 })}'; printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'b', total_cost_usd: 0.84 })}'`],
       env: {},
     })
     const manager = createJobManager()

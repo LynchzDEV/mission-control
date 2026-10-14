@@ -1,3 +1,5 @@
+import { isLogEvent } from './log-events'
+
 export type ActivityKind = 'tool' | 'text' | 'thinking' | 'result' | 'error' | 'permission'
 
 export type PermissionState = 'pending' | 'allow_once' | 'allow_always' | 'deny' | 'cancelled'
@@ -337,12 +339,12 @@ function parseStream(logText: string, max: number, limits: Limits): ActivityEven
       pending = applyStreamEvent(pending, parsed.event)
       continue
     }
-    if (asString(parsed.type) === 'mc_permission_request') {
+    if (isLogEvent(asString(parsed.type), 'permission_request')) {
       const request = permissionRequestEvent(parsed)
       if (request !== null) events.push(withTs(request, readTimestamp(parsed)))
       continue
     }
-    if (asString(parsed.type) === 'mc_permission_resolved') {
+    if (isLogEvent(asString(parsed.type), 'permission_resolved')) {
       resolvePermissionEvent(events, parsed)
       continue
     }

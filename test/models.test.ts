@@ -125,7 +125,7 @@ describe('listModels', () => {
       await createConnectionStore(base).save({ id: 'grok', name: 'Grok', adapter: 'acp', command: 'grok', args: ['agent', 'stdio'], models: ['grok-custom'] })
       await createConnectionStore(base).save({ id: 'qwen', name: 'Qwen', adapter: 'acp', command: 'qwen', args: ['--acp'], models: ['qwen3-coder'] })
       const asked: string[] = []
-      const discovery = createModelDiscovery({ base, now: () => 1000, bridge: async input => { asked.push((input as { connection: { id: string } }).connection.id); return [{ type: 'mc_models', models: ['qwen-max'], current: null }] } })
+      const discovery = createModelDiscovery({ base, now: () => 1000, bridge: async input => { asked.push((input as { connection: { id: string } }).connection.id); return [{ type: 'skd_models', models: ['qwen-max'], current: null }] } })
       await discovery.write('grok', { models: ['grok-4.7'], current: 'grok-4.7', checkedAt: 1000, error: null })
       const lists = await listModels({ discovery, secrets: async () => ({ zaiAuthToken: null, zaiBaseUrl: 'https://api.example.com', apiToken: null }) })
       expect(lists.grok).toEqual(['grok-4.7', 'grok-custom'])

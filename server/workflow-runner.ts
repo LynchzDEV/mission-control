@@ -73,10 +73,13 @@ export function covers(reviewPath: string, implementPath: string): boolean {
   return reviewPath === implementPath || reviewPath === 'main' || implementPath.startsWith(`${reviewPath}.`)
 }
 
+// ponytail: legacy MC_RESULT from agents prompted before Shikidan, drop once no run predates it
+const RESULT_LINE = /(?:^|\n)(?:SKD|MC)_RESULT\s+(\{[^\n]*\})\s*$/
+
 export function readNodeResult(log: string): NodeResult | null {
   const messages = parseThread(log).filter(event => event.kind === 'text' || event.kind === 'result').map(event => event.detail)
   for (const message of messages.reverse()) {
-    const match = /(?:^|\n)MC_RESULT\s+(\{[^\n]*\})\s*$/.exec(message.trim())
+    const match = RESULT_LINE.exec(message.trim())
     if (!match) continue
     try { return resultSchema.parse(JSON.parse(match[1]!)) } catch { return null }
   }
@@ -204,7 +207,7 @@ function detached(node: WorkflowNode): WorkflowNode {
 }
 
 const ENTER_DELAY_MS = 150
-export const NUDGE_PROMPT = 'Your last turn ended without the MC_RESULT line. Anything you left running in the background was stopped when your turn ended. Re-run what you need in the foreground. Give your complete final answer again (for a plan: the whole plan and any MC_SHAPE line), ending with exactly one MC_RESULT line.'
+export const NUDGE_PROMPT = 'Your last turn ended without the SKD_RESULT line. Anything you left running in the background was stopped when your turn ended. Re-run what you need in the foreground. Give your complete final answer again (for a plan: the whole plan and any SKD_SHAPE line), ending with exactly one SKD_RESULT line.'
 const NUDGEABLE_ENGINES: ReadonlySet<string> = new Set(['claude', 'glm'])
 const LAST_WORDS_CHARS = 200
 const OUTPUT_CHARS = 64000
@@ -440,7 +443,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   }
   function lastWords(output: string): string {
     const words = output.slice(-LAST_WORDS_CHARS).trim()
-    return words ? `Agent ended twice without MC_RESULT; last words: ${words}` : 'Agent ended twice without MC_RESULT'
+    return words ? `Agent ended twice without SKD_RESULT; last words: ${words}` : 'Agent ended twice without SKD_RESULT'
   }
   function heldJobs(run: WorkflowRun): JobRecord[] {
     return run.attempts.flatMap(attempt => {
@@ -457,7 +460,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     await persist(run)
     const node = run.workflow.nodes.find(node => node.id === attempt.nodeId)!
     const created = await deps.manager.createJob({ ...stepJob(run, node, attempt, token, NUDGE_PROMPT), resumeSessionId: sessionId }, deps.resolver)
-    if (!created.ok) return accept(run, attempt, token, { outcome: 'blocked', summary: `Agent ended without MC_RESULT and could not be resumed: ${created.error}`, evidence: [] })
+    if (!created.ok) return accept(run, attempt, token, { outcome: 'blocked', summary: `Agent ended without SKD_RESULT and could not be resumed: ${created.error}`, evidence: [] })
     attempt.jobId = created.job.id
     await persist(run)
     settleIfFinished(run, created.job.id)
@@ -561,7 +564,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     }
     if (record.status === 'done' && !result && nudged) result = { outcome: 'blocked', summary: lastWords(own), evidence: [] }
     if (record.status !== 'done' && result?.outcome !== 'fail' && result?.outcome !== 'blocked') result = { outcome: 'blocked', summary: `Agent process failed (${record.exitCode ?? 'unknown exit'})`, evidence: [] }
-    if (!result || (result.outcome === 'pass' && !result.evidence.length)) result = { outcome: 'blocked', summary: 'Agent did not provide a valid MC_RESULT with evidence', evidence: [] }
+    if (!result || (result.outcome === 'pass' && !result.evidence.length)) result = { outcome: 'blocked', summary: 'Agent did not provide a valid SKD_RESULT with evidence', evidence: [] }
     if (result.outcome === 'pass' && kindOf(run, attempt) === 'plan') {
       const errors = await keepShape(run, attempt)
       if (errors.length) result = { ...result, evidence: [...result.evidence, `Flow shape ignored: ${errors.join('; ')}`] }

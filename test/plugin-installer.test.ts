@@ -675,7 +675,7 @@ describe('contributed agents, skills and flows', () => {
     const result = await installContributing()
     if (!result.ok) throw new Error(JSON.stringify(result))
     for (const target of targets) {
-      expect(await readFile(join(target, 'agents', 'biz-gate.md'), 'utf8')).toContain('<!-- installed by mission-control plugin fixture-plugin -->')
+      expect(await readFile(join(target, 'agents', 'biz-gate.md'), 'utf8')).toContain('<!-- installed by shikidan plugin fixture-plugin -->')
       expect(await readFile(join(target, 'skills', 'card-refine', 'SKILL.md'), 'utf8')).toContain('Run mctl.')
     }
     const saved = await getInstalled('fixture-plugin')

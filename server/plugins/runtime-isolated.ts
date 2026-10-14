@@ -18,6 +18,7 @@ import { errorMessage } from './errors'
 import type { CallOutcome } from './runtime-trusted'
 import { getSetting, setServerSetting } from './settings'
 import { pluginFolder, type InstalledPlugin } from './store'
+import { exportEnv } from '../env'
 
 export const IDLE_STOP_MS = 600000
 export const KILL_GRACE_MS = 2000
@@ -265,12 +266,11 @@ export function createIsolatedRuntime(installed: InstalledPlugin, deps: Isolated
     const env: Record<string, string> = {}
     if (typeof process.env.PATH === 'string' && process.env.PATH !== '') env.PATH = process.env.PATH
     Object.assign(env, {
-      MC_PLUGIN_SANDBOX_CONFIG: JSON.stringify(config),
-      MC_PLUGIN_COMMAND: command,
-      MC_PLUGIN_CWD: dataDir,
-      MC_PLUGIN_ID: installed.id,
-      MC_PLUGIN_DATA: dataDir,
-      MC_PLUGIN_KILL_GRACE_MS: String(killGraceMs),
+      SKD_PLUGIN_SANDBOX_CONFIG: JSON.stringify(config),
+      SKD_PLUGIN_COMMAND: command,
+      SKD_PLUGIN_CWD: dataDir,
+      SKD_PLUGIN_KILL_GRACE_MS: String(killGraceMs),
+      ...exportEnv({ PLUGIN_ID: installed.id, PLUGIN_DATA: dataDir }),
       CLAUDE_CODE_TMPDIR: tmpDir,
       BUN_TMPDIR: tmpDir,
     })
@@ -281,7 +281,7 @@ export function createIsolatedRuntime(installed: InstalledPlugin, deps: Isolated
       plugin: {
         serverBundle,
         dataDir,
-        env: { MC_PLUGIN_RUNTIME: 'isolated', MC_PLUGIN_ID: installed.id, MC_PLUGIN_DATA: dataDir },
+        env: exportEnv({ PLUGIN_RUNTIME: 'isolated', PLUGIN_ID: installed.id, PLUGIN_DATA: dataDir }),
       },
     })
     const gen: Generation = {

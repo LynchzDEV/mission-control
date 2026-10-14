@@ -10,6 +10,7 @@ import { pathWithFallbackDirs, PARENT_CLAUDE_SESSION_VARS, resolveBinary } from 
 import { mcpSchema } from './workflows'
 import { parseThread, parseSessionId, reportedJobOutcome } from './activity'
 import { modelsFromSession } from './model-discovery'
+import { logEvent } from './log-events'
 
 const launchSchema = z.object({ connection: connectionSchema, prompt: z.string().max(500000), model: z.string().optional(), resumeSessionId: z.string().optional(), mcpServers: z.array(mcpSchema).default([]), probe: z.boolean().default(false), discoverModels: z.boolean().default(false), readOnly: z.boolean().default(false) })
 const OUTPUT_LIMIT = 2_000_000
@@ -138,10 +139,10 @@ export async function runAgentBridge(raw: unknown): Promise<number> {
         if (!init.authMethods?.some(method => method.id === connection.authMethod)) throw new Error('Configured authentication method is not advertised by this agent')
         await agent.request('authenticate', { methodId: connection.authMethod }, { cancellationSignal: handshake })
       }
-      if (input.probe) { emit({ type: 'mc_capabilities', capabilities: init.agentCapabilities, authMethods: init.authMethods, agentInfo: init.agentInfo }); return 0 }
+      if (input.probe) { emit({ type: logEvent('capabilities'), capabilities: init.agentCapabilities, authMethods: init.authMethods, agentInfo: init.agentInfo }); return 0 }
       if (input.discoverModels) {
         const session = await agent.request<'session/new'>('session/new', { cwd: tmpdir(), mcpServers: [] }, { cancellationSignal: handshake })
-        emit({ type: 'mc_models', ...modelsFromSession(session) })
+        emit({ type: logEvent('models'), ...modelsFromSession(session) })
         if (init.agentCapabilities?.sessionCapabilities?.close) await agent.request('session/close', { sessionId: session.sessionId }, { cancellationSignal: handshake }).catch(() => {})
         return 0
       }
@@ -170,7 +171,7 @@ export async function runAgentBridge(raw: unknown): Promise<number> {
       clearTimeout(setupTimer)
       const result = await agent.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: input.prompt }] })
       const success = result.stopReason === 'end_turn' && !denied
-      emit({ type: 'result', session_id: sessionId, is_error: !success, result: denied ? 'MC_RESULT {"outcome":"blocked","summary":"Tool approval required","evidence":[]}' : text, subtype: success ? 'success' : 'error', stopReason: result.stopReason })
+      emit({ type: 'result', session_id: sessionId, is_error: !success, result: denied ? 'SKD_RESULT {"outcome":"blocked","summary":"Tool approval required","evidence":[]}' : text, subtype: success ? 'success' : 'error', stopReason: result.stopReason })
       return success ? 0 : 2
     })
   } catch (error) {

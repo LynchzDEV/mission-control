@@ -26,7 +26,7 @@ test('runRequest points at the context, lists answers, and explains how to ask',
   expect(text).toContain('Work on "Login copy" (https://x/t/1).')
   expect(text).toContain('Read the task context in /wt/.shikidan/context/clickup-board/item.md.')
   expect(text).toContain('The requester answered your earlier questions: read /wt/a1.md.')
-  expect(text).toContain('MC_RESULT blocked')
+  expect(text).toContain('SKD_RESULT blocked')
   expect(runRequest({ title: 'T', url: 'u', contextPath: '/c.md', answerPaths: [] })).not.toContain('answered')
 })
 

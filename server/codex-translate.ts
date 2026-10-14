@@ -8,6 +8,8 @@ export const CLAUDE_ONLY_PATTERNS: RegExp[] = [
   /mc-dispatch/i, /cockpit-first/i, /spawn an agent/i,
 ]
 
+export const TRANSLATION_MARKER = '<!-- translated for Codex by Shikidan;'
+
 export const CODEX_INSTRUCTIONS_HEADER = `# Codex Global Instructions
 Generated from ~/.claude/CLAUDE.md by Shikidan — edit the source, not this file.
 - You run with approval_policy=never and sandbox_mode=danger-full-access: act, do not ask for permission.
@@ -82,7 +84,7 @@ export function translateSkill(skillMd: string): string | null {
   if (SKIP.has(name)) return null
   const body = rewrite(skillMd.slice(prefix.length))
   if (mostlyClaudeOnly(body)) return null
-  return `${prefix}${body.trimEnd()}\n\n<!-- translated for Codex by Mission Control; source ~/.claude/skills/${name} -->\n`
+  return `${prefix}${body.trimEnd()}\n\n${TRANSLATION_MARKER} source ~/.claude/skills/${name} -->\n`
 }
 
 export function translateAgentBody(body: string): string | null {

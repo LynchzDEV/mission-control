@@ -147,8 +147,8 @@ async function waitFor(predicate: () => boolean, timeoutMs = 3000): Promise<void
 }
 
 async function answerFakeAsk(h: Harness, decision: BridgeControl['decision']): Promise<void> {
-  await waitFor(() => byType(h, 'mc_permission_request').length > 0)
-  const request = byType(h, 'mc_permission_request')[0]
+  await waitFor(() => byType(h, 'skd_permission_request').length > 0)
+  const request = byType(h, 'skd_permission_request')[0]
   h.controls.push({ type: 'permission', requestId: String(request.requestId), decision })
 }
 
@@ -169,7 +169,7 @@ describe('always-allow rules', () => {
     h.controls.push(allow('allow_always'))
     const suggestions: PermissionUpdate[] = [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'bun test:*' }], behavior: 'allow', destination: 'localSettings' }]
     const code = await bridgeRun(baseLaunch(), h, permissionQuery('Bash', { command: 'x' }, { suggestions }, decisions))
-    expect(byType(h, 'mc_permission_resolved')[0]).toMatchObject({ decision: 'allow_always', rules: ['Bash(bun test:*)'] })
+    expect(byType(h, 'skd_permission_resolved')[0]).toMatchObject({ decision: 'allow_always', rules: ['Bash(bun test:*)'] })
     expect(decisions[0]).toMatchObject({ behavior: 'allow', updatedPermissions: [{ type: 'addRules', destination: 'session' }] })
     expect(code).toBe(0)
   })
@@ -178,7 +178,7 @@ describe('always-allow rules', () => {
     const h = harness()
     h.controls.push(allow('allow_always'))
     await bridgeRun(baseLaunch(), h, permissionQuery('Bash', { command: 'ls -la' }, {}, []))
-    expect(byType(h, 'mc_permission_resolved')[0]).toMatchObject({ rules: ['Bash(ls -la)'] })
+    expect(byType(h, 'skd_permission_resolved')[0]).toMatchObject({ rules: ['Bash(ls -la)'] })
   })
 
   test('a Bash command with a glob character is allowed once instead of becoming a wildcard rule', async () => {
@@ -186,7 +186,7 @@ describe('always-allow rules', () => {
       const h = harness()
       h.controls.push(allow('allow_always'))
       await bridgeRun(baseLaunch(), h, permissionQuery('Bash', { command }, {}, []))
-      expect(byType(h, 'mc_permission_resolved')[0]).toMatchObject({ decision: 'allow_always', rules: [], reason: 'no-rule' })
+      expect(byType(h, 'skd_permission_resolved')[0]).toMatchObject({ decision: 'allow_always', rules: [], reason: 'no-rule' })
     }
   })
 
@@ -194,15 +194,15 @@ describe('always-allow rules', () => {
     const write = harness()
     write.controls.push(allow('allow_always'))
     await bridgeRun(baseLaunch(), write, permissionQuery('Write', { file_path: '/Users/a/x.ts' }, {}, []))
-    expect(byType(write, 'mc_permission_resolved')[0]).toMatchObject({ rules: ['Edit(//Users/a/x.ts)'] })
+    expect(byType(write, 'skd_permission_resolved')[0]).toMatchObject({ rules: ['Edit(//Users/a/x.ts)'] })
     const read = harness()
     read.controls.push(allow('allow_always'))
     await bridgeRun(baseLaunch(), read, permissionQuery('Read', { file_path: '/Users/a/y.md' }, {}, []))
-    expect(byType(read, 'mc_permission_resolved')[0]).toMatchObject({ rules: ['Read(//Users/a/y.md)'] })
+    expect(byType(read, 'skd_permission_resolved')[0]).toMatchObject({ rules: ['Read(//Users/a/y.md)'] })
     const bare = harness()
     bare.controls.push(allow('allow_always'))
     await bridgeRun(baseLaunch(), bare, permissionQuery('Read', { pattern: 'x' }, {}, []))
-    expect(byType(bare, 'mc_permission_resolved')[0]).toMatchObject({ decision: 'allow_always', rules: [], reason: 'no-rule' })
+    expect(byType(bare, 'skd_permission_resolved')[0]).toMatchObject({ decision: 'allow_always', rules: [], reason: 'no-rule' })
   })
 
   test('launch allowedTools reach the query options', async () => {
@@ -219,8 +219,8 @@ describe('permission round trip through the fake engine', () => {
     const running = bridgeRun(baseLaunch({ prompt: 'fixture:permission' }), h, fakeQuery(FIXTURES))
     await answerFakeAsk(h, 'allow_once')
     const code = await running
-    expect(byType(h, 'mc_permission_request')[0]).toMatchObject({ mc: true, toolName: 'Bash', title: 'Claude wants to run a command' })
-    expect(byType(h, 'mc_permission_resolved')[0]).toMatchObject({ decision: 'allow_once' })
+    expect(byType(h, 'skd_permission_request')[0]).toMatchObject({ skd: true, toolName: 'Bash', title: 'Claude wants to run a command' })
+    expect(byType(h, 'skd_permission_resolved')[0]).toMatchObject({ decision: 'allow_once' })
     const toolResult = h.lines.find((line) => line.type === 'user' && JSON.stringify(line).includes('tool_result'))
     expect(JSON.stringify(toolResult)).toContain('"content":"ok"')
     expect(JSON.stringify(toolResult)).toContain('"is_error":false')
@@ -233,7 +233,7 @@ describe('permission round trip through the fake engine', () => {
     const running = bridgeRun(baseLaunch({ prompt: 'fixture:permission' }), h, fakeQuery(FIXTURES))
     await answerFakeAsk(h, 'deny')
     await running
-    expect(byType(h, 'mc_permission_resolved')[0]).toMatchObject({ decision: 'deny' })
+    expect(byType(h, 'skd_permission_resolved')[0]).toMatchObject({ decision: 'deny' })
     const toolResult = h.lines.find((line) => line.type === 'user' && JSON.stringify(line).includes('tool_result'))
     expect(JSON.stringify(toolResult)).toContain('"is_error":true')
     expect(JSON.stringify(toolResult)).toContain('declined this in Shikidan')
@@ -244,7 +244,7 @@ describe('permission round trip through the fake engine', () => {
     const h = harness()
     h.controls.push(allow('allow_always'))
     await bridgeRun(baseLaunch(), h, permissionQuery('Bash', { command: 'ls' }, { suppressAlwaysAllowRule: true }, decisions))
-    expect(byType(h, 'mc_permission_resolved')[0]).toMatchObject({ decision: 'allow_once' })
+    expect(byType(h, 'skd_permission_resolved')[0]).toMatchObject({ decision: 'allow_once' })
     expect(decisions[0]).not.toHaveProperty('updatedPermissions')
   })
 
@@ -252,7 +252,7 @@ describe('permission round trip through the fake engine', () => {
     const h = harness()
     h.controls.end()
     await bridgeRun(baseLaunch({ prompt: 'fixture:permission' }), h, fakeQuery(FIXTURES))
-    expect(byType(h, 'mc_permission_resolved')[0]).toMatchObject({ decision: 'cancelled', reason: 'restart' })
+    expect(byType(h, 'skd_permission_resolved')[0]).toMatchObject({ decision: 'cancelled', reason: 'restart' })
     const toolResult = h.lines.find((line) => line.type === 'user' && JSON.stringify(line).includes('tool_result'))
     expect(JSON.stringify(toolResult)).toContain('Shikidan restarted')
   })
@@ -260,7 +260,7 @@ describe('permission round trip through the fake engine', () => {
   test('a ten minute silence cancels with reason timeout', async () => {
     const h = harness()
     await bridgeRun(baseLaunch({ prompt: 'fixture:permission' }), h, fakeQuery(FIXTURES), { waitMs: async () => {} })
-    expect(byType(h, 'mc_permission_resolved')[0]).toMatchObject({ decision: 'cancelled', reason: 'timeout' })
+    expect(byType(h, 'skd_permission_resolved')[0]).toMatchObject({ decision: 'cancelled', reason: 'timeout' })
   })
 })
 
@@ -316,8 +316,8 @@ describe('stop and failure', () => {
     }
     const code = await bridgeRun(baseLaunch(), h, failing)
     expect(code).toBe(1)
-    expect(byType(h, 'mc_child')[0]).toMatchObject({ mc: true })
-    expect(byType(h, 'mc_stderr').map((line) => line.text).join('')).toContain('e1')
+    expect(byType(h, 'skd_child')[0]).toMatchObject({ skd: true })
+    expect(byType(h, 'skd_stderr').map((line) => line.text).join('')).toContain('e1')
     expect(h.lines.at(-1)).toMatchObject({ type: 'result', is_error: true, result: 'boom\ne1' })
   })
 })
@@ -390,7 +390,7 @@ describe('makeSpawner', () => {
     const spawner = makeSpawner((line) => lines.push(line as Line), (text) => stderr.push(text))
     const child = spawner({ command: '/bin/sh', args: ['-c', 'echo e1 >&2'], cwd: process.cwd(), env: { ...process.env } } as never)
     await new Promise((resolve) => setTimeout(resolve, 250))
-    expect(lines[0]).toMatchObject({ type: 'mc_child', mc: true })
+    expect(lines[0]).toMatchObject({ type: 'skd_child', skd: true })
     expect(typeof lines[0].pid).toBe('number')
     expect(Math.abs(Number(lines[0].startedAt) - Date.now())).toBeLessThan(5000)
     expect(stderr.join('')).toContain('e1')
@@ -402,12 +402,12 @@ describe('bridge info lines', () => {
   test('commands and context arrive after init and result', async () => {
     const h = harness()
     const code = await bridgeRun(baseLaunch({ prompt: 'fixture:tools' }), h, fakeQuery(FIXTURES))
-    const commands = byType(h, 'mc_commands')[0]
+    const commands = byType(h, 'skd_commands')[0]
     expect((commands?.commands as Array<{ name: string }>).map((command) => command.name)).toEqual(['review', 'compact', 'init'])
-    expect(byType(h, 'mc_context')[0]).toMatchObject({ percentage: 62, totalTokens: 124_000, maxTokens: 200_000 })
+    expect(byType(h, 'skd_context')[0]).toMatchObject({ percentage: 62, totalTokens: 124_000, maxTokens: 200_000 })
     expect(code).toBe(0)
     const commandsIndex = h.lines.indexOf(commands)
-    const contextIndex = h.lines.findIndex((line) => line.type === 'mc_context')
+    const contextIndex = h.lines.findIndex((line) => line.type === 'skd_context')
     const resultIndex = h.lines.findIndex((line) => line.type === 'result')
     expect(resultIndex).toBeGreaterThan(-1)
     expect(contextIndex).toBeGreaterThan(resultIndex)
@@ -420,6 +420,6 @@ describe('bridge info lines', () => {
       waitMs: async () => {},
     })
     expect(code).toBe(0)
-    expect(byType(h, 'mc_commands')).toHaveLength(0)
+    expect(byType(h, 'skd_commands')).toHaveLength(0)
   })
 })

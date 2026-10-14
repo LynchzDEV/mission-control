@@ -226,7 +226,7 @@ describe('plugin frame routes', () => {
       "default-src 'none'; script-src http://127.0.0.1:7777 'unsafe-inline'; style-src http://127.0.0.1:7777 'unsafe-inline'; img-src http://127.0.0.1:7777 data:; connect-src 'none'; frame-ancestors http://127.0.0.1:7777",
     )
     expect(await response.text()).toBe(
-      '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plugin-frame/fixture-plugin/ui.css"></head><body><div id="root"></div><script>window.__MC_PLUGIN__={id:"fixture-plugin",runtime:"isolated"}</script><script src="/plugin-frame/fixture-plugin/screen.js"></script></body></html>',
+      '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plugin-frame/fixture-plugin/ui.css"></head><body><div id="root"></div><script>window.__SKD_PLUGIN__=window.__MC_PLUGIN__={id:"fixture-plugin",runtime:"isolated"}</script><script src="/plugin-frame/fixture-plugin/screen.js"></script></body></html>',
     )
   })
 
@@ -439,10 +439,14 @@ describe('isolated runtime under the real sandbox (macOS only)', () => {
       expect(marker.body.result).toBeNull()
       const home = await callResult(app, 'fixture-plugin', 'readEnv', { key: 'HOME' })
       expect(home.body.result).toBeNull()
-      const runtime = await callResult(app, 'fixture-plugin', 'readEnv', { key: 'MC_PLUGIN_RUNTIME' })
+      const runtime = await callResult(app, 'fixture-plugin', 'readEnv', { key: 'SKD_PLUGIN_RUNTIME' })
       expect(runtime.body.result).toBe('isolated')
-      const data = await callResult(app, 'fixture-plugin', 'readEnv', { key: 'MC_PLUGIN_DATA' })
+      const data = await callResult(app, 'fixture-plugin', 'readEnv', { key: 'SKD_PLUGIN_DATA' })
       expect(data.body.result).toBe(pluginDataDir(await installedPlugin('fixture-plugin')))
+      const legacyRuntime = await callResult(app, 'fixture-plugin', 'readEnv', { key: 'MC_PLUGIN_RUNTIME' })
+      expect(legacyRuntime.body.result).toBe('isolated')
+      const legacyData = await callResult(app, 'fixture-plugin', 'readEnv', { key: 'MC_PLUGIN_DATA' })
+      expect(legacyData.body.result).toBe(pluginDataDir(await installedPlugin('fixture-plugin')))
     } finally {
       delete process.env.SKD_TEST_HOST_ONLY_MARKER
     }

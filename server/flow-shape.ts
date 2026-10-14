@@ -27,15 +27,18 @@ function normalise(file: string): string {
 }
 
 function schemaErrors(error: z.ZodError): string[] {
-  return error.issues.map(issue => `MC_SHAPE ${issue.path.join('.') || 'value'}: ${issue.message}`)
+  return error.issues.map(issue => `SKD_SHAPE ${issue.path.join('.') || 'value'}: ${issue.message}`)
 }
 
+// ponytail: legacy MC_SHAPE from plans written before Shikidan, drop once no run predates it
+const SHAPE_PREFIXES = ['SKD_SHAPE ', 'MC_SHAPE ']
+
 export function readShape(output: string): { shape: FlowShape } | { errors: string[] } | null {
-  const lines = output.split('\n').map(line => line.trim()).filter(line => line.startsWith('MC_SHAPE '))
+  const lines = output.split('\n').map(line => line.trim()).filter(line => SHAPE_PREFIXES.some(prefix => line.startsWith(prefix)))
   const last = lines.at(-1)
   if (!last) return null
   let value: unknown
-  try { value = JSON.parse(last.slice('MC_SHAPE '.length)) } catch { return { errors: ['MC_SHAPE is not valid JSON'] } }
+  try { value = JSON.parse(last.slice(last.indexOf(' ') + 1)) } catch { return { errors: ['SKD_SHAPE is not valid JSON'] } }
   const parsed = shapeSchema.safeParse(value)
   return parsed.success ? { shape: parsed.data } : { errors: schemaErrors(parsed.error) }
 }
@@ -71,7 +74,7 @@ export function checkShape(value: unknown, workflow: Workflow): string[] {
   if (!parsed.success) return schemaErrors(parsed.error)
   const shape = parsed.data
   const ids = shape.paths.map(path => path.id)
-  if (new Set(ids).size !== ids.length) return ['MC_SHAPE path ids must be unique']
+  if (new Set(ids).size !== ids.length) return ['SKD_SHAPE path ids must be unique']
   const errors = overlaps(shape)
   if (errors.length) return errors
   if (!shapeTarget(workflow)) return ['This flow cannot take a shape; it needs one build step between Verify plan and a review']
@@ -105,8 +108,8 @@ export function shapeGraph(workflow: Workflow, shape: FlowShape, repos?: readonl
   return { ...workflow, nodes: [...nodes, ...pathNodes, join], edges: [...kept, ...pathEdges, ...joinEdges] }
 }
 
-export const FLOW_SHAPE_RULES = 'Flow shape. After your plan, decide whether the work splits into parallel paths. Split only when all of these hold: the work has 2 to 4 parts that can each be built and tested on their own; each part owns its own files and no file or folder is listed by two parts; and everything the parts share (API shape, types, names, data format) is written in the contract, so no part has to guess what another decided. Otherwise do not split. Most tasks should stay one straight path; a split that saves little is not worth the merge risk. To split, put one line just before your MC_RESULT line: MC_SHAPE {"contract":"...","paths":[{"id":"api","title":"API","files":["..."],"steps":[{"title":"...","instructions":"..."}]}]}. Each path has 1 to 3 steps: the first builds, later steps check that path\'s own work and send it back to the first step when they fail. List files as repo-relative paths or folders, no wildcards. Shikidan turns this into parallel paths that meet at a join before review, and asks the user to approve the split.'
-export const FLOW_SHAPE_CHECK = 'The plan proposes a split (MC_SHAPE). Also check it: fail if any part needs a file another part owns, if the parts depend on anything missing from the contract, or if the work is too small or too connected to be worth splitting. Name the problem.'
+export const FLOW_SHAPE_RULES = 'Flow shape. After your plan, decide whether the work splits into parallel paths. Split only when all of these hold: the work has 2 to 4 parts that can each be built and tested on their own; each part owns its own files and no file or folder is listed by two parts; and everything the parts share (API shape, types, names, data format) is written in the contract, so no part has to guess what another decided. Otherwise do not split. Most tasks should stay one straight path; a split that saves little is not worth the merge risk. To split, put one line just before your SKD_RESULT line: SKD_SHAPE {"contract":"...","paths":[{"id":"api","title":"API","files":["..."],"steps":[{"title":"...","instructions":"..."}]}]}. Each path has 1 to 3 steps: the first builds, later steps check that path\'s own work and send it back to the first step when they fail. List files as repo-relative paths or folders, no wildcards. Shikidan turns this into parallel paths that meet at a join before review, and asks the user to approve the split.'
+export const FLOW_SHAPE_CHECK = 'The plan proposes a split (SKD_SHAPE). Also check it: fail if any part needs a file another part owns, if the parts depend on anything missing from the contract, or if the work is too small or too connected to be worth splitting. Name the problem.'
 
 export function shapeNotes(workflow: Workflow, node: WorkflowNode, upstreamOutputs: string[], repoRules = ''): { flowShapeRules?: string; flowShapeCheck?: string } {
   if (!shapeTarget(workflow)) return {}

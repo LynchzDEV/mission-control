@@ -24,7 +24,7 @@ describe('live text feed', () => {
   })
 
   test('result, user and permission lines schedule a refresh without touching the delta', () => {
-    for (const type of ['user', 'result', 'mc_permission_request']) {
+    for (const type of ['user', 'result', 'skd_permission_request', 'mc_permission_request']) {
       const outcome = applyLiveLine({ delta: 'kept', partial: true }, `{"type":"${type}"}`)
       expect(outcome).toEqual({ state: { delta: 'kept', partial: true }, refresh: true })
     }
