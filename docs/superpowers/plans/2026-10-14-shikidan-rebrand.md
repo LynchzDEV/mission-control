@@ -49,7 +49,7 @@ Running installs must survive the upgrade: the WSL PC is started by the Windows 
 - `~/.claude/CLAUDE.md` changes `mc-dispatch` to `skd-dispatch`, in the hand-written section only. The edit lands in the same push as 2a, not before.
 - The GitHub renames come last. Each one is confirmed just before it runs.
 - Phases 1 and 2 are pushed together.
-- Phase 1 leftovers that Phase 2 finalises:
+- Phase 1 already renamed these in the docs (0e3f262); Phase 2 code must write the same names:
   - log file → `~/shiki.log`
   - backup suffix → `.pre-shikidan-<ts>`
   - sysctl file → `60-shikidan-userns.conf`
@@ -96,7 +96,7 @@ Running installs must survive the upgrade: the WSL PC is started by the Windows 
    - Default clone `~/shiki`, task `Shikidan`, log `~/shiki.log`, sysctl file `60-shikidan-userns.conf`.
    - `install-autostart.ps1` unregisters an existing `Mission Control` task before registering the new one.
    - `setup.sh` accepts an existing `~/mission-control` clone without moving it.
-8. **Doc leftovers.** Bring the Phase 1 leftovers above in line with the code, and give `README.md` a short "Upgrading from Mission Control" note.
+8. **Upgrade note.** Add a short "Upgrading from Mission Control" note to `README.md`, and check that the docs still match the code.
 
 Exit condition: all units committed, no new test or typecheck failures, and `grep -rIiE "mission.?control|mctl|mc-dispatch|\bMC_[A-Z]|\bmc_[a-z]|'mc\." server client cli scripts public prompts skills test` shows only the compatibility reads, each with a `ponytail:` comment that names the cleanup.
 
