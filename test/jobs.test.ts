@@ -28,7 +28,7 @@ let outside: string
 const echoResolver: EngineResolver = ({ prompt }) => ({ cmd: 'echo', args: [prompt], env: {} })
 const failResolver: EngineResolver = () => ({
   cmd: 'ls',
-  args: ['/definitely-does-not-exist-mission-control-jobs-test'],
+  args: ['/definitely-does-not-exist-shikidan-jobs-test'],
   env: {},
 })
 const sleepResolver: EngineResolver = () => ({ cmd: 'sleep', args: ['30'], env: {} })

@@ -48,7 +48,7 @@ export async function linkFixture(repo: string, name: string, target: string, op
 export async function createPluginRepo(repo: string, manifest: Record<string, unknown>, options: FixtureOptions & { manifestName?: string } = {}): Promise<string> {
   await mkdir(repo, { recursive: true })
   await fixtureGit(['init', '-q', '-b', 'main'], repo)
-  await fixtureGit(['config', 'user.email', 'mission-control-test@example.com'], repo)
+  await fixtureGit(['config', 'user.email', 'shikidan-test@example.com'], repo)
   await fixtureGit(['config', 'user.name', 'Shikidan Test'], repo)
   await writeFiles(repo, { [options.manifestName ?? 'mc-plugin.json']: `${JSON.stringify(manifest, null, 2)}\n`, ...(options.files ?? {}) })
   await fixtureGit(['add', '.'], repo)
