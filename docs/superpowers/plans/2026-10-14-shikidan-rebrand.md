@@ -105,8 +105,18 @@ Exit condition: all units committed, no new test or typecheck failures, and `gre
 - **2b:** each `.plugins-dev` repo gets its own commit.
   - SDK: reads `SKD_PLUGIN_*`/`__SKD_PLUGIN__` first, then the old names.
   - Package names `skd-plugin-*`; `schema/mc-plugin.schema.json` → `skd-plugin.schema.json`, with the old schema path still resolving.
-- **2c:** `gh repo rename` for the 5 repos (one confirmation each), then `git remote set-url` in every checkout and `.worktree/*`, then update the marketplace URLs.
-- **2d:** main session, at push time: the `~/.claude/CLAUDE.md` rows `mc-dispatch` → `skd-dispatch`, and the `~/.claude/skills` link check.
+- **2b status (2026-10-14, local, not pushed):** done in `.plugins-dev/skd-*`.
+  - The SDK is rebased onto GitHub `main`. `v0.2.0` was already published there (pluginApi 2 contributes), so the rename ships as **v0.3.0**; the tag exists locally only.
+  - There is a sixth repo, `mc-plugin-card-pipeline`, cloned to `.plugins-dev/skd-plugin-card-pipeline`. The marketplace commit is rebased onto the GitHub card-pipeline listings.
+  - Names the host reads stay as they are for now: the `mc-plugin.json` manifest file, `{{mc:mctl}}`, `.mc-plugin`, `.mc-build`.
+- **2c:** `gh repo rename` for the 6 repos (`mission-control`, `mc-plugin-sdk`, `mc-plugin-template`, `mc-plugin-clickup`, `mc-plugin-card-pipeline`, `mc-marketplace`), one confirmation each. Then `git remote set-url` in every checkout and `.worktree/*`. After that:
+  - Push SDK `main` + tag `v0.3.0`.
+  - Switch the template, ClickUp and card-pipeline plugins to `"@shikidan/plugin-sdk": "github:LynchzDEV/skd-plugin-sdk#v0.3.0"` (dependency, imports, `bun.lock`).
+  - Update the README repo URLs and the `marketplace.json` repo URLs.
+- **2d (done 2026-10-14):**
+  - `~/.claude/CLAUDE.md` dispatch row now says `skd-dispatch`.
+  - `~/.claude/skills/skd-dispatch` links to this repo; the dangling `mc-dispatch` link is removed.
+  - The global `shiki` command comes from `bun link`; the `mctl` link is removed.
 
 ## Phase 3: landing page
 
