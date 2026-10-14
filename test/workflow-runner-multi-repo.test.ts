@@ -20,7 +20,7 @@ const echo: EngineResolver = () => ({ cmd: '/bin/echo', args: [passing()], env: 
 beforeEach(async () => {
   dir = await mkdtemp(join(homedir(), 'mc-multi-runner-config-'))
   parent = await mkdtemp(join(homedir(), 'mc-multi-runner-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  process.env.SKD_CONFIG_DIR = dir
   for (const name of ['a', 'b', 'c']) await repoAt(join(parent, name))
   workspace = (await prepareRepoWorkspace(parent, ['a', 'b'], 'queue-split-1-a8c0')).worktree
 })
@@ -28,7 +28,7 @@ afterEach(async () => {
   for (const run of runner?.list() ?? []) if (run.status === 'running') await runner.stop(run.id)
   for (const job of manager?.listJobs() ?? []) if (job.status === 'running') await manager.killJob(job.id)
   for (let i = 0; i < 200 && manager?.listJobs().some(job => job.status === 'running'); i++) await Bun.sleep(20)
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(dir, { recursive: true, force: true })
   await rm(parent, { recursive: true, force: true })
 })

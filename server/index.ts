@@ -55,6 +55,7 @@ import { syncEngineAssets } from './engine-assets'
 import { listedPluginFlows, refreshAllContributions } from './plugins/contributions'
 import { ShellPage } from './views/shell'
 import { jobLine, log, requestLine, shouldLogRequest } from './server-log'
+import { readEnv } from './env'
 
 const ROOT = resolve(import.meta.dir, '..')
 const CLIENT_DIR = join(ROOT, 'client')
@@ -251,7 +252,7 @@ export async function createApp(): Promise<Elysia> {
   void outcomeLedger.prune(OUTCOME_RETENTION_MS).catch(error => console.error('Outcome prune failed', error))
 
   const requestStarts = new WeakMap<Request, number>()
-  const verboseLog = process.env.MC_LOG === 'verbose'
+  const verboseLog = readEnv('LOG') === 'verbose'
   const app = new Elysia()
     .onRequest(({ request }) => { requestStarts.set(request, performance.now()) })
     .onAfterResponse(({ request, set }) => {

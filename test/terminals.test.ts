@@ -28,8 +28,8 @@ let registry: TerminalRegistry
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-terminals-config-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
-  process.env.MC_FAKE_ENGINES = '1'
+  process.env.SKD_CONFIG_DIR = configDir
+  process.env.SKD_FAKE_ENGINES = '1'
 
   repo = await mkdtemp(join(homedir(), 'mc-terminals-scratch-'))
   await initScratchGitRepo(repo)
@@ -40,9 +40,9 @@ beforeEach(async () => {
 
 afterEach(async () => {
   registry.shutdown()
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
-  delete process.env.MC_FAKE_ENGINES
-  delete process.env.MISSION_CONTROL_PORT
+  delete process.env.SKD_CONFIG_DIR
+  delete process.env.SKD_FAKE_ENGINES
+  delete process.env.SKD_PORT
   await rm(configDir, { recursive: true, force: true })
   await rm(repo, { recursive: true, force: true })
   await rm(plain, { recursive: true, force: true })
@@ -57,7 +57,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void
 }
 
 test('terminals independently pin default or custom workflows and inherit their own service address', async () => {
-  process.env.MISSION_CONTROL_PORT = '7778'
+  process.env.SKD_PORT = '7778'
   const store = createWorkflowStore()
   const custom = await store.save({ ...defaultWorkflow(), id: 'research', name: 'Research workflow' })
   const standard = await registry.createTerminal({ engine: 'claude', cwd: repo })
@@ -74,7 +74,7 @@ test('terminals independently pin default or custom workflows and inherit their 
   expect(originalDefault.terminal.workflow?.id).toBe('default')
   expect(registry.get(chosen.terminal.id)?.workflow?.revision).toBe(custom.revision)
   expect(registry.get(standard.terminal.id)?.workflow?.id).toBe('default')
-  registry.write(chosen.terminal.id, 'printf "__MC_ENV__%s\\n" "$MC_URL|$MC_WORKFLOW_ID|$MC_WORKFLOW_REVISION|$MISSION_CONTROL_CONFIG_DIR"\r')
+  registry.write(chosen.terminal.id, 'printf "__MC_ENV__%s\\n" "$SKD_URL|$SKD_WORKFLOW_ID|$SKD_WORKFLOW_REVISION|$SKD_CONFIG_DIR"\r')
   await waitFor(() => registry.replay(chosen.terminal.id).includes(`__MC_ENV__http://127.0.0.1:7778|research|${custom.revision}|${configDir}`))
   const count = registry.list().length
   expect((await registry.createTerminal({ engine: 'claude', cwd: repo, workflowId: 'missing' })).ok).toBe(false)

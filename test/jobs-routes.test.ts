@@ -28,14 +28,14 @@ let repo: string
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-jobs-routes-config-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
 
   repo = await mkdtemp(join(homedir(), 'mc-jobs-routes-scratch-'))
   await initScratchGitRepo(repo)
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
   await rm(repo, { recursive: true, force: true })
 })
@@ -112,8 +112,8 @@ describe('POST /api/jobs', () => {
     expect(await log.text()).toContain('hello-from-route')
   })
 
-  test('passes MC_JOB_ID in the spawned process env', async () => {
-    const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "job=$MC_JOB_ID"'], env: {} })
+  test('passes SKD_JOB_ID and the legacy MC_JOB_ID in the spawned process env', async () => {
+    const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "job=$SKD_JOB_ID legacy=$MC_JOB_ID"'], env: {} })
     const app = buildApp(createJobManager(), envResolver)
 
     const created = await app.handle(
@@ -126,7 +126,7 @@ describe('POST /api/jobs', () => {
     expect(finished.status).toBe('done')
 
     const log = await app.handle(get(`/api/jobs/${job.id}/log`))
-    expect(await log.text()).toContain(`job=${job.id}`)
+    expect(await log.text()).toContain(`job=${job.id} legacy=${job.id}`)
   })
 
   test('passes an optional model to the resolver and stores it on the record', async () => {
@@ -636,7 +636,7 @@ describe('safeEnqueue', () => {
 describe('mounted in the real app', () => {
   test('createApp wires the jobs routes behind the local-access guard', async () => {
     configDir = await mkdtemp(join(tmpdir(), 'mc-jobs-routes-config-'))
-    process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+    process.env.SKD_CONFIG_DIR = configDir
     const app = await createApp()
 
     const rebound = await app.handle(get('/api/jobs', REBIND))
@@ -780,7 +780,7 @@ describe('chat jobs', () => {
   })
 
   test('a chat job gets the cockpit address and its chat id in its env', async () => {
-    const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "chat=$MC_CHAT_ID url=$MC_URL token=${#MC_TOKEN}"'], env: {} })
+    const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "chat=$SKD_CHAT_ID url=$SKD_URL token=${#SKD_TOKEN}"'], env: {} })
     const app = buildApp(createJobManager({ home: homedir() }), envResolver)
     const root = await (await post(app, chatBody())).json()
     await pollUntilDone(app, root.id)
@@ -857,7 +857,7 @@ describe('chat jobs', () => {
 
   test('the API token a chat job carries is redacted from its served log', async () => {
     const token = await readApiToken()
-    const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "token=$MC_TOKEN"'], env: {} })
+    const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "token=$SKD_TOKEN"'], env: {} })
     const app = buildApp(createJobManager({ home: homedir() }), envResolver)
     const root = await (await post(app, chatBody())).json()
     await pollUntilDone(app, root.id)
@@ -883,7 +883,7 @@ describe('chat jobs', () => {
 
   test('the log stream redacts the API token', async () => {
     const token = await readApiToken()
-    const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "token=$MC_TOKEN"'], env: {} })
+    const envResolver: EngineResolver = () => ({ cmd: '/bin/sh', args: ['-c', 'echo "token=$SKD_TOKEN"'], env: {} })
     const app = buildApp(createJobManager({ home: homedir() }), envResolver)
     const root = await (await post(app, chatBody())).json()
     await pollUntilDone(app, root.id)

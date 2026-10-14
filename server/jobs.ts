@@ -18,6 +18,7 @@ import { workspaceDiffStat, workspaceRepos } from './repo-workspace'
 import { validateWorkspaceCwd } from './workspace'
 import { git, prepareWorktree, worktreeBranch } from './job-worktrees'
 import type { EngineResolver, EngineResolverParams, EngineSpawn } from './jobs-engine-iface'
+import { exportEnv } from './env'
 
 export const JOBS_FILE = 'jobs.jsonl'
 export const LOGS_DIR = 'logs'
@@ -714,12 +715,12 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
 
   async function chatSpawnEnv(params: CreateJobParams, id: string): Promise<Record<string, string>> {
     if (params.purpose !== 'chat') return {}
-    return {
-      MC_URL: `http://127.0.0.1:${listenTarget().port}`,
-      MC_TOKEN: await readApiToken(),
-      MC_CHAT_ID: params.threadRoot ?? id,
-      MISSION_CONTROL_CONFIG_DIR: dir,
-    }
+    return exportEnv({
+      URL: `http://127.0.0.1:${listenTarget().port}`,
+      TOKEN: await readApiToken(),
+      CHAT_ID: params.threadRoot ?? id,
+      CONFIG_DIR: dir,
+    })
   }
 
   function chatRecordFields(params: CreateJobParams, edit: boolean | undefined): Partial<JobRecord> {
@@ -785,7 +786,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       try {
         proc = Bun.spawn([spawnSpec.cmd, ...spawnSpec.args], {
           cwd,
-          env: { ...process.env, ...spawnSpec.env, MC_JOB_ID: id, ...chatEnv },
+          env: { ...process.env, ...spawnSpec.env, ...exportEnv({ JOB_ID: id }), ...chatEnv },
           stdin: spawnSpec.control === true || spawnSpec.stdin !== undefined ? 'pipe' : 'ignore',
           stdout: logFd,
           stderr: logFd,

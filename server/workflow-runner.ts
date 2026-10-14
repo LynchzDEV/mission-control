@@ -21,6 +21,7 @@ import { pathWorkspaceIntact, preparePathWorkspace, prepareRepoWorkspace, remove
 import { validateWorkspaceCwd } from './workspace'
 import { checkShape, readShape, shapeGraph, shapeNotes, shapeTarget, type FlowShape } from './flow-shape'
 import { atomicJson, composeWorkflowPrompt, draftRevision, forkSections, identifier, passTargets, sessionRules, type Outcome, type PolicyRevision, type WorkflowNode, type WorkflowRevision, type WorkflowStore } from './workflows'
+import { exportEnv } from './env'
 
 const jobId = z.string().min(1).max(200)
 const GIT_TIMEOUT = 120_000
@@ -514,7 +515,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   type Command = WorkflowNode['checks'][number]
   type Finished = { exitCode: number | null; output: string; timedOut: boolean }
   function spawnKillable(run: WorkflowRun, key: number, cwd: string, command: Command): { pid?: number; done: Promise<Finished> } {
-    const proc = spawn(resolveBinary(command.command), command.args, { cwd, env: { ...process.env, MC_WORKFLOW_RUN_ID: run.id }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+    const proc = spawn(resolveBinary(command.command), command.args, { cwd, env: { ...process.env, ...exportEnv({ WORKFLOW_RUN_ID: run.id }) }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
     const completion = new Promise<number | null>((resolveExit, reject) => { proc.once('error', reject); proc.once('exit', resolveExit) })
     let output = '', timedOut = false
     const collect = (chunk: Buffer) => { output = (output + chunk.toString()).slice(-16000) }

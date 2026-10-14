@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 
 import { createApp } from '../server/index'
 
-const scratch = process.env.MC_GOAL_SCRATCH ?? join(tmpdir(), 'mc-responsive-shots')
+const scratch = process.env.SKD_GOAL_SCRATCH ?? join(tmpdir(), 'mc-responsive-shots')
 const quiet = await Bun.file(join(import.meta.dir, '../public/quiet.css')).text()
 const plugins = await Bun.file(join(import.meta.dir, '../public/plugins.css')).text()
 const pluginUi = await Bun.file(join(import.meta.dir, '../public/plugin-ui.css')).text()
@@ -58,12 +58,12 @@ describe('real shell at phone, tablet and desktop widths', () => {
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'mc-responsive-'))
-    process.env.MISSION_CONTROL_CONFIG_DIR = dir
+    process.env.SKD_CONFIG_DIR = dir
     app = await createApp()
   })
 
   afterEach(async () => {
-    delete process.env.MISSION_CONTROL_CONFIG_DIR
+    delete process.env.SKD_CONFIG_DIR
     await rm(dir, { recursive: true, force: true })
   })
 

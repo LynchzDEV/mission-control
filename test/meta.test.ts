@@ -18,11 +18,11 @@ let configDir: string
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-meta-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
 })
 

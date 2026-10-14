@@ -23,28 +23,28 @@ let savedHosts: string | undefined
 let savedUsers: string | undefined
 
 beforeEach(() => {
-  savedHosts = process.env.MISSION_CONTROL_ALLOWED_HOSTS
-  savedUsers = process.env.MISSION_CONTROL_ALLOWED_USERS
-  process.env.MISSION_CONTROL_ALLOWED_HOSTS = HOST
-  process.env.MISSION_CONTROL_ALLOWED_USERS = USER
+  savedHosts = process.env.SKD_ALLOWED_HOSTS
+  savedUsers = process.env.SKD_ALLOWED_USERS
+  process.env.SKD_ALLOWED_HOSTS = HOST
+  process.env.SKD_ALLOWED_USERS = USER
 })
 
 afterEach(() => {
-  if (savedHosts === undefined) delete process.env.MISSION_CONTROL_ALLOWED_HOSTS
-  else process.env.MISSION_CONTROL_ALLOWED_HOSTS = savedHosts
-  if (savedUsers === undefined) delete process.env.MISSION_CONTROL_ALLOWED_USERS
-  else process.env.MISSION_CONTROL_ALLOWED_USERS = savedUsers
+  if (savedHosts === undefined) delete process.env.SKD_ALLOWED_HOSTS
+  else process.env.SKD_ALLOWED_HOSTS = savedHosts
+  if (savedUsers === undefined) delete process.env.SKD_ALLOWED_USERS
+  else process.env.SKD_ALLOWED_USERS = savedUsers
 })
 
 describe('allowedRemoteHosts', () => {
   test('is empty and remote access off when the variable is unset', () => {
-    delete process.env.MISSION_CONTROL_ALLOWED_HOSTS
+    delete process.env.SKD_ALLOWED_HOSTS
     expect(allowedRemoteHosts()).toEqual([])
     expect(remoteAccessEnabled()).toBe(false)
   })
 
   test('trims and lowercases Tailscale MagicDNS names', () => {
-    process.env.MISSION_CONTROL_ALLOWED_HOSTS = ` LynchzPC-WSL.Tail1234.TS.NET , other.tail1234.ts.net`
+    process.env.SKD_ALLOWED_HOSTS = ` LynchzPC-WSL.Tail1234.TS.NET , other.tail1234.ts.net`
     expect(allowedRemoteHosts()).toEqual([HOST, 'other.tail1234.ts.net'])
     expect(remoteAccessEnabled()).toBe(true)
   })
@@ -52,7 +52,7 @@ describe('allowedRemoteHosts', () => {
   test('ignores wildcards, IPs, ports, other domains and inner whitespace with one warning', () => {
     const warn = spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      process.env.MISSION_CONTROL_ALLOWED_HOSTS = `*.tail1234.ts.net,100.64.0.1,${HOST}:443,example.com,bad host.ts.net,ts.net,.ts.net,${HOST}`
+      process.env.SKD_ALLOWED_HOSTS = `*.tail1234.ts.net,100.64.0.1,${HOST}:443,example.com,bad host.ts.net,ts.net,.ts.net,${HOST}`
       expect(allowedRemoteHosts()).toEqual([HOST])
       expect(allowedRemoteHosts()).toEqual([HOST])
       expect(warn).toHaveBeenCalledTimes(1)
@@ -66,7 +66,7 @@ describe('allowedRemoteHosts', () => {
   test('only invalid entries leaves remote access off', () => {
     const warn = spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      process.env.MISSION_CONTROL_ALLOWED_HOSTS = 'example.com'
+      process.env.SKD_ALLOWED_HOSTS = 'example.com'
       expect(remoteAccessEnabled()).toBe(false)
       expect(localRequestAllowed(new Request('http://example.com/api/jobs', { headers: { 'tailscale-user-login': USER } }), '127.0.0.1')).toBe(false)
     } finally {
@@ -97,15 +97,15 @@ describe('localRequestAllowed for an allowed Tailscale host', () => {
   })
 
   test('refuses everyone when no users are allowed', () => {
-    delete process.env.MISSION_CONTROL_ALLOWED_USERS
+    delete process.env.SKD_ALLOWED_USERS
     expect(localRequestAllowed(remote(), '127.0.0.1')).toBe(false)
-    process.env.MISSION_CONTROL_ALLOWED_USERS = ' , '
+    process.env.SKD_ALLOWED_USERS = ' , '
     expect(localRequestAllowed(remote(), '127.0.0.1')).toBe(false)
   })
 
   test('refuses a host that is not allowed', () => {
     expect(localRequestAllowed(remote({ host: 'otherpc.tail1234.ts.net' }), '127.0.0.1')).toBe(false)
-    delete process.env.MISSION_CONTROL_ALLOWED_HOSTS
+    delete process.env.SKD_ALLOWED_HOSTS
     expect(localRequestAllowed(remote(), '127.0.0.1')).toBe(false)
   })
 

@@ -47,13 +47,13 @@ describe('terminal log', () => {
 describe('terminal registry with a log', () => {
   let repo: string
   beforeEach(async () => {
-    process.env.MC_FAKE_ENGINES = '1'
-    process.env.MISSION_CONTROL_CONFIG_DIR = dir
+    process.env.SKD_FAKE_ENGINES = '1'
+    process.env.SKD_CONFIG_DIR = dir
     repo = await mkdtemp(join(homedir(), 'mc-terminal-log-repo-'))
   })
   afterEach(async () => {
-    delete process.env.MC_FAKE_ENGINES
-    delete process.env.MISSION_CONTROL_CONFIG_DIR
+    delete process.env.SKD_FAKE_ENGINES
+    delete process.env.SKD_CONFIG_DIR
     await rm(repo, { recursive: true, force: true })
   })
 

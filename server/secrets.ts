@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { readEnv } from './env'
 
 export const DIR_MODE = 0o700
 export const FILE_MODE = 0o600
@@ -52,7 +53,7 @@ export type PublicSecretsView = {
 export type BindTarget = { hostname: '127.0.0.1'; port: number }
 
 export function listenTarget(): BindTarget {
-  const port = Number.parseInt(process.env.MISSION_CONTROL_PORT ?? '', 10)
+  const port = Number.parseInt(readEnv('PORT') ?? '', 10)
   return { hostname: '127.0.0.1', port: Number.isInteger(port) && port > 0 && port < 65536 ? port : 7777 }
 }
 
@@ -62,8 +63,8 @@ export function mcUrl(): string {
 }
 
 export function configDir(): string {
-  const override = process.env.MISSION_CONTROL_CONFIG_DIR
-  if (override !== undefined && override !== '') return override
+  const override = readEnv('CONFIG_DIR')
+  if (override !== undefined) return override
   return join(homedir(), '.config', 'mission-control')
 }
 

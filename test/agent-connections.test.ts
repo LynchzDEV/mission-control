@@ -31,7 +31,9 @@ test('CLI arguments substitute literal values without shell evaluation', () => {
 
 test('connections cannot override worker identity or embed credentials in endpoint URLs', () => {
   const base = { id: 'custom', name: 'Custom', adapter: 'acp', command: 'agent' }
+  expect(connectionSchema.safeParse({ ...base, env: { SKD_JOB_ID: 'MY_JOB_ID' } }).success).toBe(false)
   expect(connectionSchema.safeParse({ ...base, env: { MC_JOB_ID: 'MY_JOB_ID' } }).success).toBe(false)
+  expect(connectionSchema.safeParse({ ...base, env: { MISSION_CONTROL_CONFIG_DIR: 'MY_DIR' } }).success).toBe(false)
   expect(connectionSchema.safeParse({ ...base, adapter: 'opencode', models: ['local'], baseUrl: 'https://user:secret@example.com/v1' }).success).toBe(false)
 })
 

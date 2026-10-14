@@ -27,11 +27,11 @@ let dir: string
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-secrets-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  process.env.SKD_CONFIG_DIR = dir
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(dir, { recursive: true, force: true })
 })
 
@@ -209,15 +209,22 @@ describe('rotateApiToken', () => {
 
 describe('listenTarget', () => {
   test('is loopback on 7777 by default', () => {
-    delete process.env.MISSION_CONTROL_PORT
+    delete process.env.SKD_PORT
     expect(listenTarget()).toEqual({ hostname: '127.0.0.1', port: 7777 })
   })
 
-  test('honours MISSION_CONTROL_PORT and ignores junk', () => {
-    process.env.MISSION_CONTROL_PORT = '7781'
+  test('still honours the legacy MISSION_CONTROL_PORT', () => {
+    process.env.MISSION_CONTROL_PORT = '7782'
+    try {
+      expect(listenTarget().port).toBe(7782)
+    } finally { delete process.env.MISSION_CONTROL_PORT }
+  })
+
+  test('honours SKD_PORT and ignores junk', () => {
+    process.env.SKD_PORT = '7781'
     expect(listenTarget().port).toBe(7781)
-    process.env.MISSION_CONTROL_PORT = 'nope'
+    process.env.SKD_PORT = 'nope'
     expect(listenTarget().port).toBe(7777)
-    delete process.env.MISSION_CONTROL_PORT
+    delete process.env.SKD_PORT
   })
 })

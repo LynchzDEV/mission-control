@@ -18,7 +18,7 @@ let projectsDir: string
 const NOW = Date.parse('2026-09-28T00:00:00.000Z')
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-history-config-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
   projectsDir = await mkdtemp(join(tmpdir(), 'mc-history-projects-'))
   await writeSession(repo, 'sess-free', 'cli', 'Why is the build slow?')
   await writeSession(repo, 'sess-hook', 'sdk-cli', 'Summarize this shell command for a permission prompt')
@@ -26,7 +26,7 @@ beforeEach(async () => {
   await writeSession(repo, 'sess-chat', 'cli', 'chat turn transcript')
 })
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
   await rm(projectsDir, { recursive: true, force: true })
 })

@@ -14,13 +14,13 @@ let apiToken: string
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-models-route-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  process.env.SKD_CONFIG_DIR = dir
   app = await createApp()
   apiToken = await readApiToken()
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(dir, { recursive: true, force: true })
 })
 

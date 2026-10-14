@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import type { EngineName } from './engines'
 import { configDir } from './secrets'
+import { readEnv } from './env'
 
 export const WORKER_CLAUDE_MD = `# Mission Control worker
 You are a headless worker job spawned by Mission Control. The prompt is your whole spec.
@@ -58,7 +59,7 @@ export async function ensureWorkerProfiles(
 }
 
 export function fullAgentSetup(): boolean {
-  return process.env.MISSION_CONTROL_FULL_AGENT_SETUP === '1'
+  return readEnv('FULL_AGENT_SETUP') === '1'
 }
 
 export function workerEnv(engine: EngineName, dirs: { claude: string; codex: string }): Record<string, string> {

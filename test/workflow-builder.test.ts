@@ -12,13 +12,13 @@ let config: string, home: string, manager: JobManager
 beforeEach(async () => {
   config = await mkdtemp(join(tmpdir(), 'mc-builder-config-'))
   home = await mkdtemp(join(homedir(), 'mc-builder-work-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = config
+  process.env.SKD_CONFIG_DIR = config
   await writeConfig({ roles: { plan: {engine:'codex',model:null},execute:{engine:'claude',model:null},review:{engine:'codex',model:null} } })
   manager = createJobManager()
 })
 afterEach(async () => {
   for (const job of manager.listJobs()) if(job.status==='running') await manager.killJob(job.id)
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(config,{recursive:true,force:true}); await rm(home,{recursive:true,force:true})
 })
 const answer = () => ({workflow:{...defaultWorkflow(),id:'draft',name:'My workflow'},summary:'Created an implementation flow',setup:[]})

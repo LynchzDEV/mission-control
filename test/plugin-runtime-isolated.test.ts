@@ -26,14 +26,14 @@ let spawned: SupervisorProcess[] = []
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-plugin-isolated-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
   fixtureRoot = await mkdtemp(join(tmpdir(), 'mc-plugin-isolated-repos-'))
 })
 
 afterEach(async () => {
   for (const proc of spawned) proc.kill('SIGKILL')
   spawned = []
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
   await rm(fixtureRoot, { recursive: true, force: true })
 })
@@ -430,12 +430,12 @@ describe('isolated runtime under the real sandbox (macOS only)', () => {
   }, 15000)
 
   test.skipIf(process.platform !== 'darwin')('the sandboxed plugin inherits no host environment beyond its allowlist (macOS only)', async () => {
-    process.env.MC_TEST_HOST_ONLY_MARKER = 'host-side-secret'
+    process.env.SKD_TEST_HOST_ONLY_MARKER = 'host-side-secret'
     try {
       await installFixture('env-wall', offlineManifest(), isolatedFixtureServer({ readEnv: 'params => process.env[params.key] ?? null' }))
       const { app } = await runtimeApp({ spawnSupervisor: sandboxSpawner })
 
-      const marker = await callResult(app, 'fixture-plugin', 'readEnv', { key: 'MC_TEST_HOST_ONLY_MARKER' })
+      const marker = await callResult(app, 'fixture-plugin', 'readEnv', { key: 'SKD_TEST_HOST_ONLY_MARKER' })
       expect(marker.body.result).toBeNull()
       const home = await callResult(app, 'fixture-plugin', 'readEnv', { key: 'HOME' })
       expect(home.body.result).toBeNull()
@@ -444,7 +444,7 @@ describe('isolated runtime under the real sandbox (macOS only)', () => {
       const data = await callResult(app, 'fixture-plugin', 'readEnv', { key: 'MC_PLUGIN_DATA' })
       expect(data.body.result).toBe(pluginDataDir(await installedPlugin('fixture-plugin')))
     } finally {
-      delete process.env.MC_TEST_HOST_ONLY_MARKER
+      delete process.env.SKD_TEST_HOST_ONLY_MARKER
     }
   }, 15000)
 

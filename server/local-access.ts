@@ -1,3 +1,5 @@
+import { readEnv } from './env'
+
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
 const DATA_PATH_PREFIXES = ['/api/', '/ws/']
 const TAILSCALE_HOST_PATTERN = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$/
@@ -18,12 +20,12 @@ function listFromEnv(value: string | undefined): string[] {
 }
 
 export function allowedRemoteHosts(): string[] {
-  const raw = process.env.MISSION_CONTROL_ALLOWED_HOSTS
+  const raw = readEnv('ALLOWED_HOSTS')
   const entries = listFromEnv(raw)
   const ignored = entries.filter(entry => !TAILSCALE_HOST_PATTERN.test(entry))
   if (ignored.length > 0 && raw !== warnedHostsValue) {
     warnedHostsValue = raw ?? null
-    console.warn(`MISSION_CONTROL_ALLOWED_HOSTS ignores entries that are not Tailscale names (*.ts.net): ${ignored.join(', ')}`)
+    console.warn(`SKD_ALLOWED_HOSTS ignores entries that are not Tailscale names (*.ts.net): ${ignored.join(', ')}`)
   }
   return entries.filter(entry => TAILSCALE_HOST_PATTERN.test(entry))
 }
@@ -35,7 +37,7 @@ export function remoteAccessEnabled(): boolean {
 function allowedRemoteUser(request: Request): boolean {
   const login = request.headers.get('tailscale-user-login')?.trim().toLowerCase()
   if (login === undefined || login === '') return false
-  return listFromEnv(process.env.MISSION_CONTROL_ALLOWED_USERS).includes(login)
+  return listFromEnv(readEnv('ALLOWED_USERS')).includes(login)
 }
 
 export function proxied(request: Request): boolean {

@@ -16,12 +16,12 @@ let fixtureRoot: string
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-plugin-trusted-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
   fixtureRoot = await mkdtemp(join(tmpdir(), 'mc-plugin-trusted-repos-'))
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
   await rm(fixtureRoot, { recursive: true, force: true })
 })
@@ -303,7 +303,7 @@ describe('trusted update needs a restart', () => {
     expect(listed.plugins[0].restartRequired).toBe(true)
 
     const child = Bun.spawn([process.execPath, join(import.meta.dir, 'support', 'plugin-call.ts'), 'fixture-plugin', 'version'], {
-      env: { ...process.env, MISSION_CONTROL_CONFIG_DIR: configDir },
+      env: { ...process.env, SKD_CONFIG_DIR: configDir },
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -331,7 +331,7 @@ describe('trusted update needs a restart', () => {
     expect(listed.plugins[0].restartRequired).toBe(true)
 
     const child = Bun.spawn([process.execPath, join(import.meta.dir, 'support', 'plugin-call.ts'), 'fixture-plugin', 'version'], {
-      env: { ...process.env, MISSION_CONTROL_CONFIG_DIR: configDir },
+      env: { ...process.env, SKD_CONFIG_DIR: configDir },
       stdout: 'pipe',
       stderr: 'pipe',
     })

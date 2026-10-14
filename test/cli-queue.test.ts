@@ -9,11 +9,11 @@ let configDir: string
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-cli-queue-config-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
 })
 
@@ -34,7 +34,7 @@ function harness(reply: Reply = () => undefined, cwd = '/work/here') {
     },
     stdout: (chunk) => { out += chunk },
     stderr: (chunk) => { err += chunk },
-    env: { MISSION_CONTROL_CONFIG_DIR: configDir },
+    env: { SKD_CONFIG_DIR: configDir },
     stdin: async () => '',
     cwd,
   }

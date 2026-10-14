@@ -18,12 +18,12 @@ let fixtureRoot: string
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-plugin-install-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
   fixtureRoot = await mkdtemp(join(tmpdir(), 'mc-plugin-repos-'))
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
   await rm(fixtureRoot, { recursive: true, force: true })
 })

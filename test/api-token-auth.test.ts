@@ -19,8 +19,8 @@ let apiToken: string
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-api-token-config-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
-  process.env.MC_FAKE_ENGINES = '1'
+  process.env.SKD_CONFIG_DIR = configDir
+  process.env.SKD_FAKE_ENGINES = '1'
 
   repo = await mkdtemp(join(homedir(), 'mc-api-token-scratch-'))
   await initScratchGitRepo(repo)
@@ -30,8 +30,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
-  delete process.env.MC_FAKE_ENGINES
+  delete process.env.SKD_CONFIG_DIR
+  delete process.env.SKD_FAKE_ENGINES
   await rm(configDir, { recursive: true, force: true })
   await rm(repo, { recursive: true, force: true })
 })

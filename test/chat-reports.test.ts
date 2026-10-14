@@ -132,14 +132,14 @@ describe('createChatFlusher', () => {
 
   beforeEach(async () => {
     configDir = await mkdtemp(join(tmpdir(), 'mc-chat-reports-config-'))
-    process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+    process.env.SKD_CONFIG_DIR = configDir
     repo = await mkdtemp(join(homedir(), 'mc-chat-reports-scratch-'))
     await initScratchGitRepo(repo)
   })
 
   afterEach(async () => {
     mock.restore()
-    delete process.env.MISSION_CONTROL_CONFIG_DIR
+    delete process.env.SKD_CONFIG_DIR
     await rm(configDir, { recursive: true, force: true })
     await rm(repo, { recursive: true, force: true })
   })

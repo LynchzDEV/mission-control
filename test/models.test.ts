@@ -119,8 +119,8 @@ describe('listModels', () => {
 
   test('a connection reports discovered models first and starts a check when it has none', async () => {
     const base = await mkdtemp(join(tmpdir(), 'mc-models-connections-'))
-    const previous = process.env.MISSION_CONTROL_CONFIG_DIR
-    process.env.MISSION_CONTROL_CONFIG_DIR = base
+    const previous = process.env.SKD_CONFIG_DIR
+    process.env.SKD_CONFIG_DIR = base
     try {
       await createConnectionStore(base).save({ id: 'grok', name: 'Grok', adapter: 'acp', command: 'grok', args: ['agent', 'stdio'], models: ['grok-custom'] })
       await createConnectionStore(base).save({ id: 'qwen', name: 'Qwen', adapter: 'acp', command: 'qwen', args: ['--acp'], models: ['qwen3-coder'] })
@@ -133,8 +133,8 @@ describe('listModels', () => {
       await Bun.sleep(5)
       expect(asked).toEqual(['qwen'])
     } finally {
-      if (previous === undefined) delete process.env.MISSION_CONTROL_CONFIG_DIR
-      else process.env.MISSION_CONTROL_CONFIG_DIR = previous
+      if (previous === undefined) delete process.env.SKD_CONFIG_DIR
+      else process.env.SKD_CONFIG_DIR = previous
       await rm(base, { recursive: true, force: true })
     }
   })

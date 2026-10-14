@@ -17,7 +17,7 @@ const resolver: EngineResolver = () => ({ cmd: '/bin/echo', args: [report()], en
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-workflow-runner-'))
   repo = await mkdtemp(join(homedir(), 'mc-workflow-repo-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  process.env.SKD_CONFIG_DIR = dir
   await initScratchGitRepo(repo)
 })
 afterEach(async () => {
@@ -29,7 +29,7 @@ afterEach(async () => {
     await Bun.sleep(20)
   }
   for (const job of manager?.listJobs() ?? []) await runner.onJobSettled(job)
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(dir, { recursive: true, force: true })
   await rm(repo, { recursive: true, force: true })
 })
@@ -817,7 +817,7 @@ test('stop answers at once while an acceptance check is still running', async ()
 async function homeConfig() {
   await rm(dir, { recursive: true, force: true })
   dir = await mkdtemp(join(homedir(), 'mc-workflow-config-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  process.env.SKD_CONFIG_DIR = dir
 }
 const writes = (file: string, text: string, before = '') => [{ command: '/bin/sh', args: ['-c', `${before}echo ${text} > ${file}`] }]
 const overlapping: EngineResolver = ({ prompt }) => ({ cmd: '/bin/sh', args: ['-c', `${prompt.includes('SLOW') ? 'sleep 0.5; ' : ''}echo '${report()}'`], env: {} })

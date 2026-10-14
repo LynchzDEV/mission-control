@@ -7,8 +7,8 @@ import { readConfig } from '../server/secrets'
 
 let dir: string
 const local = (method: string, body?: unknown) => new Request('http://127.0.0.1:7777/api/flow-approval', { method, headers: { host: '127.0.0.1:7777', 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' }, body: body === undefined ? undefined : JSON.stringify(body) })
-beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'mc-flow-approval-')); process.env.MISSION_CONTROL_CONFIG_DIR = dir })
-afterEach(async () => { delete process.env.MISSION_CONTROL_CONFIG_DIR; await rm(dir, { recursive: true, force: true }) })
+beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'mc-flow-approval-')); process.env.SKD_CONFIG_DIR = dir })
+afterEach(async () => { delete process.env.SKD_CONFIG_DIR; await rm(dir, { recursive: true, force: true }) })
 
 test('flow approval defaults to on and can be turned off and back on', async () => {
   expect((await readConfig()).flowApproval).toBe(true)

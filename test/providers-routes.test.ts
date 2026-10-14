@@ -16,14 +16,14 @@ let app: Elysia
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-providers-route-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  process.env.SKD_CONFIG_DIR = dir
   app = await createApp()
   modelsCache.invalidate()
 })
 
 afterEach(async () => {
   modelsCache.invalidate()
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(dir, { recursive: true, force: true })
 })
 

@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
+import { readEnv } from '../server/env'
 import { BANNER } from './banner'
 import { ApiError, createClient, UnreachableError, type FetchLike } from './client'
 import { UsageError, type Command, type Context, type OptionSpec, type OptionValues } from './command'
@@ -31,7 +32,7 @@ export type MainDeps = {
 export const COMMANDS: Command[] = [...systemCommands, ...jobCommands, ...studioCommands, ...pluginCommands, ...clickupCommands, ...queueCommands]
 
 const GLOBAL_OPTIONS: Record<string, OptionSpec> = {
-  url: { type: 'string', description: `Mission Control URL (default: $MC_URL, then ${DEFAULT_URL})`, placeholder: 'URL' },
+  url: { type: 'string', description: `Mission Control URL (default: $SKD_URL, then ${DEFAULT_URL})`, placeholder: 'URL' },
   json: { type: 'boolean', description: 'print the server JSON as one document (NDJSON for follow)' },
   help: { type: 'boolean', short: 'h', description: 'show help' },
   version: { type: 'boolean', short: 'v', description: 'print the mctl version' },
@@ -41,7 +42,7 @@ const OUT_OF_SCOPE = 'Not covered here (use the browser): secrets reveal/rotate/
 
 const EXIT_CODES = 'Exit codes: 0 ok, 1 API error, 2 usage error, 3 Mission Control unreachable.'
 
-const ENVIRONMENT = 'Environment: MC_URL (server URL), MC_TOKEN (API token; default: apiToken in secrets.json, needed only for non-local URLs).'
+const ENVIRONMENT = 'Environment: SKD_URL (server URL), SKD_TOKEN (API token; default: apiToken in secrets.json, needed only for non-local URLs).'
 
 type ParseConfig = Parameters<typeof parseArgs>[0] & {}
 type ParseOptions = NonNullable<ParseConfig['options']>
@@ -108,13 +109,14 @@ function isGroup(word: string | undefined): boolean {
 }
 
 function configDirFor(env: Record<string, string | undefined>): string {
-  const override = env.MISSION_CONTROL_CONFIG_DIR
-  if (override !== undefined && override !== '') return override
+  const override = readEnv('CONFIG_DIR', env)
+  if (override !== undefined) return override
   return join(env.HOME ?? homedir(), '.config', 'mission-control')
 }
 
 export async function resolveToken(env: Record<string, string | undefined>): Promise<string | null> {
-  if (env.MC_TOKEN !== undefined && env.MC_TOKEN !== '') return env.MC_TOKEN
+  const token = readEnv('TOKEN', env)
+  if (token !== undefined) return token
   try {
     const parsed = JSON.parse(await readFile(join(configDirFor(env), 'secrets.json'), 'utf8')) as { apiToken?: unknown }
     return typeof parsed.apiToken === 'string' && parsed.apiToken !== '' ? parsed.apiToken : null
@@ -174,7 +176,7 @@ async function dispatch(argv: string[], deps: MainDeps): Promise<number> {
   }
 
   const args = bindArgs(command, parsed.positionals.slice(command.path.length))
-  const url = typeof parsed.values.url === 'string' ? parsed.values.url : deps.env.MC_URL || DEFAULT_URL
+  const url = typeof parsed.values.url === 'string' ? parsed.values.url : readEnv('URL', deps.env) ?? DEFAULT_URL
   const client = createClient({ url, token: await resolveToken(deps.env), fetch: deps.fetch })
   const ctx: Context = {
     client,

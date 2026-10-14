@@ -50,7 +50,7 @@ async function waitForStatus(
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-jobs-config-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
 
   testRoot = await mkdtemp(join(tmpdir(), 'mc-jobs-root-'))
   home = join(testRoot, 'home')
@@ -60,7 +60,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
   await rm(testRoot, { recursive: true, force: true })
 })

@@ -9,11 +9,11 @@ let configDir: string
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-cli-commands-config-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
 })
 
@@ -46,7 +46,7 @@ function harness(respond: (method: string, path: string) => Response = cannedRes
     },
     stdout: (chunk) => { out += chunk },
     stderr: (chunk) => { err += chunk },
-    env: { MISSION_CONTROL_CONFIG_DIR: configDir },
+    env: { SKD_CONFIG_DIR: configDir },
     stdin: async () => stdin,
     cwd: '/work/here',
   }
@@ -344,7 +344,7 @@ describe('help', () => {
   test('root help lists every group and the out-of-scope footer', async () => {
     const h = harness()
     expect(await main(['--help'], h.deps)).toBe(0)
-    for (const word of ['status', 'jobs', 'job new', 'job follow', 'run start', 'terminal new', 'flow-approval set', '--json', 'MC_URL', 'Not covered']) {
+    for (const word of ['status', 'jobs', 'job new', 'job follow', 'run start', 'terminal new', 'flow-approval set', '--json', 'SKD_URL', 'Not covered']) {
       expect(h.out()).toContain(word)
     }
     expect(h.calls).toEqual([])

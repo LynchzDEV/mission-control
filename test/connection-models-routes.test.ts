@@ -16,7 +16,7 @@ const grok = { id: 'grok', name: 'Grok', adapter: 'acp', command: 'grok', args: 
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-connection-models-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  process.env.SKD_CONFIG_DIR = dir
   bridgeCalls = 0
   endpoint = () => Response.json({ data: [{ id: 'llama3' }, { id: 'qwen3' }] })
   const fetchImpl = Object.assign(async () => endpoint(), { preconnect: () => {} }) as unknown as typeof fetch
@@ -26,7 +26,7 @@ beforeEach(async () => {
   app = new Elysia().use(studioRoutes(store, runner, undefined, undefined, undefined, discovery))
 })
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(dir, { recursive: true, force: true })
 })
 function call(path: string, method = 'GET', body?: unknown) {

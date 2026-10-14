@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { AgentConnection } from './agent-connections'
 import { configDir } from './secrets'
 import { atomicJson, identifier } from './workflows'
+import { readEnv } from './env'
 
 export type DiscoveryState = { models: string[]; current: string | null; checkedAt: number; error: string | null }
 export type BridgeEvent = Record<string, unknown>
@@ -171,7 +172,7 @@ export function onDiscoveryUpdate(listener: () => void): void {
 export function modelDiscovery(base = configDir()): ModelDiscovery {
   const existing = shared.get(base)
   if (existing) return existing
-  const created = createModelDiscovery({ base, background: process.env.MC_MODEL_DISCOVERY !== 'off', onUpdate: () => { for (const listener of updateListeners) listener() } })
+  const created = createModelDiscovery({ base, background: readEnv('MODEL_DISCOVERY') !== 'off', onUpdate: () => { for (const listener of updateListeners) listener() } })
   shared.set(base, created)
   return created
 }
