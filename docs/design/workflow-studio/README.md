@@ -1,6 +1,6 @@
 # Workflow Studio design comparison
 
-Unapproved design exploration using the visualize-me skill. This is a standalone Vite/React preview, not a change to Mission Control's running UI.
+Unapproved design exploration using the visualize-me skill. This is a standalone Vite/React preview, not a change to Shikidan's running UI.
 
 `npm run dev` serves the preview at http://localhost:51943 with live reload. Run this command from `docs/design/workflow-studio`.
 

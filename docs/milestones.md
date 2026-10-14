@@ -1,13 +1,13 @@
 # Milestones
 
-Shipped: Mission Control 2.0 (tag `v2.0`, plan `docs/superpowers/plans/2026-09-24-v2-roadmap.md`), `mctl` 0.1.0 (tag `mctl-v0.1.0`).
+Shipped: Shikidan 2.0 (tag `v2.0`, plan `docs/superpowers/plans/2026-09-24-v2-roadmap.md`), `shiki` 0.1.0 (tag `mctl-v0.1.0`).
 
 ## Later
 
-### Mission Control inside Claude Code (a mod)
+### Shikidan inside Claude Code (a mod)
 Parked 2026-10-04: not needed yet.
 
-A Claude Code mod (plugin of function hooks, Claude Code v2.1.287+) that brings the cockpit into the session. It talks to the Mission Control server over HTTP, so it can run Codex, Grok, GLM and Claude jobs headless from inside Claude Code.
+A Claude Code mod (plugin of function hooks, Claude Code v2.1.287+) that brings the cockpit into the session. It talks to the Shikidan server over HTTP, so it can run Codex, Grok, GLM and Claude jobs headless from inside Claude Code.
 
 - Status line: usage per provider and running jobs.
 - "Waiting on you" band above the prompt, only when something needs an answer, with Allow / Deny.

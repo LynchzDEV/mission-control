@@ -1,21 +1,21 @@
-# Mission Control
+# Shikidan
 
 **A simple cockpit for any AI coding agent, extensible with plugins.**
 
-Mission Control is a workspace that runs your AI coding agents from one chat. It isn't tied to one vendor: bring Claude Code, Codex, Grok, GLM (through any Anthropic-compatible endpoint), or any ACP, OpenCode or headless-CLI agent you add under **Studio → Manage AIs → Add an AI**. Extend it with plugin add-ons from a git marketplace, or write your own with the plugin SDK (see [Plugins](#plugins)).
+Shikidan is a workspace that runs your AI coding agents from one chat. It isn't tied to one vendor: bring Claude Code, Codex, Grok, GLM (through any Anthropic-compatible endpoint), or any ACP, OpenCode or headless-CLI agent you add under **Studio → Manage AIs → Add an AI**. Extend it with plugin add-ons from a git marketplace, or write your own with the plugin SDK (see [Plugins](#plugins)).
 
 You describe the work in a chat. The chat answers directly, or spins up agents in isolated git worktrees, has a *different* AI family review every change, and lands it on your branch. Live terminals, a workflow Studio and your whole history sit in the same window.
 
 **What you get:**
-- **A CLI for people and agents.** `mctl` drives a running Mission Control from a shell: `mctl status`, `mctl job new "…" --follow`, `mctl attention`, `mctl runs`, `mctl plugin add <git url>`. See [Command line](#command-line).
+- **A CLI for people and agents.** `shiki` drives a running Shikidan from a shell: `shiki status`, `shiki job new "…" --follow`, `shiki attention`, `shiki runs`, `shiki plugin add <git url>`. See [Command line](#command-line).
 - **Describe a workflow, get a draft.** In Studio, type what you want into **Describe your workflow** and an AI drafts the steps on an editable canvas. Or start from the default (plan → verify → execute → cross-family review), a template, or scratch.
-- **Skills set up for you.** On start, Mission Control links its bundled skills into `~/.claude/skills`, loads the agents, skills and flows that installed plugins contribute, and mirrors Claude's global instructions, skills and agents to Codex so both follow the same rules.
+- **Skills set up for you.** On start, Shikidan links its bundled skills into `~/.claude/skills`, loads the agents, skills and flows that installed plugins contribute, and mirrors Claude's global instructions, skills and agents to Codex so both follow the same rules.
 
 **Example default setup:** Claude Code leads the chat, GLM via z.ai handles cheaper fan-out work, and Codex CLI reviews from the outside. Swap any of them for the agents you already use.
 
 State lives in plain JSON files. No database, no build step.
 
-![Mission Control: one sentence in the chat, a team of AI agents does the work, and a different AI reviews it before it lands](docs/images/demo.gif)
+![Shikidan: one sentence in the chat, a team of AI agents does the work, and a different AI reviews it before it lands](docs/images/demo.gif)
 
 Video (MP4): [docs/images/demo.mp4](docs/images/demo.mp4)
 
@@ -30,13 +30,13 @@ Video (MP4): [docs/images/demo.mp4](docs/images/demo.mp4)
 - macOS or Linux. On Windows, use WSL2: see [Install on Windows](docs/install-windows.md).
 
 ```sh
-git clone https://github.com/LynchzDEV/mission-control.git
-cd mission-control
+git clone https://github.com/LynchzDEV/shiki.git
+cd shiki
 bun install
-bun start            # port taken? MISSION_CONTROL_PORT=7778 bun start
+bun start            # port taken? SKD_PORT=7778 bun start
 ```
 
-Open http://127.0.0.1:7777. On your first message, Mission Control asks **where your projects live**. Give it a folder under your home directory (for example `~/code`).
+Open http://127.0.0.1:7777. On your first message, Shikidan asks **where your projects live**. Give it a folder under your home directory (for example `~/code`).
 
 ### Connect your AIs
 | AI | Setup |
@@ -44,20 +44,20 @@ Open http://127.0.0.1:7777. On your first message, Mission Control asks **where 
 | Claude Code | Nothing more to do once `claude` is installed and signed in. It's the default chat AI. |
 | GLM | **Studio** (top right) → Manage AIs → GLM: paste the z.ai base URL `https://api.z.ai/api/anthropic` and your API key |
 | Codex | `codex login` once in any terminal |
-| Grok (Grok Build) | Install the `grok` CLI and sign in, then **Studio** → Manage AIs → **Add an AI** → **Grok Build** (preset: ACP agent · `grok`) → **Save connection**, then **Check connection**. Mission Control reads its model list and weekly usage. |
+| Grok (Grok Build) | Install the `grok` CLI and sign in, then **Studio** → Manage AIs → **Add an AI** → **Grok Build** (preset: ACP agent · `grok`) → **Save connection**, then **Check connection**. Shikidan reads its model list and weekly usage. |
 | Others | Studio → Manage AIs → Add an AI (ACP agent, OpenCode, or a headless CLI) |
 
-Check what's connected: `bun cli/mctl.ts status` (or `mctl status` after `bun link`, with `~/.bun/bin` on your PATH).
+Check what's connected: `bun cli/shiki.ts status` (or `shiki status` after `bun link`, with `~/.bun/bin` on your PATH).
 
 > If the first reply fails with `Claude Code native binary not found`, Claude Code isn't installed or isn't on PATH. Install it, or pick another AI with the AI chip.
 
 ### Just looking? Try it with no accounts
 ```sh
-MC_FAKE_ENGINES=1 MISSION_CONTROL_CONFIG_DIR=$(mktemp -d) bun start
+SKD_FAKE_ENGINES=1 SKD_CONFIG_DIR=$(mktemp -d) bun start
 ```
 This swaps every AI for harmless stand-ins so you can click through chat, agents, Flow and Studio.
 
-> Heads-up: Mission Control links a Claude Code skill into `~/.claude/skills/` and mirrors your Claude instructions into `~/.codex/` (backing up anything it replaces). State lives in `~/.config/mission-control`.
+> Heads-up: Shikidan links a Claude Code skill into `~/.claude/skills/` and mirrors your Claude instructions into `~/.codex/` (backing up anything it replaces). State lives in `~/.config/shikidan`.
 
 ## A tour
 
@@ -99,17 +99,17 @@ The sidebar on the left lists your chats and live terminals, grouped by Today, Y
 
 ### Plugins
 
-**Marketplace** (sidebar footer) adds plugins from git. Add a marketplace link (for example `https://github.com/LynchzDEV/mc-marketplace`), pick a plugin and install it; it then shows under **Plugins** at the top of the sidebar. The first plugin, **ClickUp board**, shows a ClickUp board and starts a chat or terminal on any task, with a dossier of the task (description, subtasks, comments, linked tasks, fields) attached for the AI to read first.
+**Marketplace** (sidebar footer) adds plugins from git. Add a marketplace link (for example `https://github.com/LynchzDEV/skd-marketplace`), pick a plugin and install it; it then shows under **Plugins** at the top of the sidebar. The first plugin, **ClickUp board**, shows a ClickUp board and starts a chat or terminal on any task, with a dossier of the task (description, subtasks, comments, linked tasks, fields) attached for the AI to read first.
 
 - **Isolated** plugins run under the macOS sandbox: they reach only the hosts they declared, read only their own bundle and data folder, never see your other secrets, and draw their screen in a locked frame. Isolated plugins that use the network need Bun 1.2.23 or newer (`bun upgrade`).
-- **Trusted** plugins load straight into Mission Control and get full access, so installing one asks you to confirm you trust it.
-- A plugin can open the launcher for a chat or terminal, never start one on its own. Its task context is saved in the session folder under `.mission-control/` (kept out of git through `.git/info/exclude`).
+- **Trusted** plugins load straight into Shikidan and get full access, so installing one asks you to confirm you trust it.
+- A plugin can open the launcher for a chat or terminal, never start one on its own. Its task context is saved in the session folder under `.shikidan/` (kept out of git through `.git/info/exclude`).
 
-Write your own: start from [mc-plugin-template](https://github.com/LynchzDEV/mc-plugin-template) and the [mc-plugin-sdk](https://github.com/LynchzDEV/mc-plugin-sdk) guide. Design: `docs/superpowers/specs/2026-10-04-plugins-marketplace-design.md`.
+Write your own: start from [skd-plugin-template](https://github.com/LynchzDEV/skd-plugin-template) and the [skd-plugin-sdk](https://github.com/LynchzDEV/skd-plugin-sdk) guide. Design: `docs/superpowers/specs/2026-10-04-plugins-marketplace-design.md`.
 
 ### History
 
-**All history** (bottom of the sidebar) and search open one searchable list: chats, live terminals, earlier Claude Code sessions (resume one in a terminal), and Claude or Codex sessions you started outside Mission Control. Only real sessions are listed: Mission Control's own agents, background helpers, MCP servers and non-interactive runs are left out.
+**All history** (bottom of the sidebar) and search open one searchable list: chats, live terminals, earlier Claude Code sessions (resume one in a terminal), and Claude or Codex sessions you started outside Shikidan. Only real sessions are listed: Shikidan's own agents, background helpers, MCP servers and non-interactive runs are left out.
 
 ### Usage
 
@@ -125,14 +125,14 @@ Reset times appear on hover.
 
 ## Configuration
 
-Mission Control needs no config file. These environment variables change its behaviour:
+Shikidan needs no config file. These environment variables change its behaviour:
 
 | Variable | Default | What it does |
 |---|---|---|
-| `MISSION_CONTROL_PORT` | `7777` | Port to listen on (always on `127.0.0.1`) |
-| `MISSION_CONTROL_CONFIG_DIR` | `~/.config/mission-control` | Where state, logs and credentials live |
-| `MC_LOG` | quiet | `verbose` logs every request, not just changes and errors |
-| `MC_FAKE_ENGINES` | off | `1` swaps the AI CLIs for harmless stand-ins, for development and tests |
+| `SKD_PORT` | `7777` | Port to listen on (always on `127.0.0.1`) |
+| `SKD_CONFIG_DIR` | `~/.config/shikidan` | Where state, logs and credentials live |
+| `SKD_LOG` | quiet | `verbose` logs every request, not just changes and errors |
+| `SKD_FAKE_ENGINES` | off | `1` swaps the AI CLIs for harmless stand-ins, for development and tests |
 
 ### Server log
 
@@ -145,60 +145,60 @@ Mission Control needs no config file. These environment variables change its beh
 12:06:02  GET /api/nope 404 1ms
 ```
 
-By default it logs jobs starting and finishing, requests that change something, and every failed request. The chat and sidebar poll in the background every few seconds, so ordinary reads stay quiet unless you run `MC_LOG=verbose bun start`. Request bodies and query strings are never printed.
+By default it logs jobs starting and finishing, requests that change something, and every failed request. The chat and sidebar poll in the background every few seconds, so ordinary reads stay quiet unless you run `SKD_LOG=verbose bun start`. Request bodies and query strings are never printed.
 
 ## Command line
 
-`mctl` drives a running Mission Control from a shell, for people and for AI agents. Install it once with `bun link` in the repo, then run `mctl` (banner, version and every command) or `mctl <group> --help`, e.g. `mctl job --help`. `mctl --version` prints the version. For the manual page, link it once with `mkdir -p ~/.local/share/man/man1 && ln -sfn "$PWD/man/mctl.1" ~/.local/share/man/man1/mctl.1`, then `man mctl`.
+`shiki` drives a running Shikidan from a shell, for people and for AI agents. Install it once with `bun link` in the repo, then run `shiki` (banner, version and every command) or `shiki <group> --help`, e.g. `shiki job --help`. `shiki --version` prints the version. For the manual page, link it once with `mkdir -p ~/.local/share/man/man1 && ln -sfn "$PWD/man/shiki.1" ~/.local/share/man/man1/shiki.1`, then `man shiki`.
 
 ```sh
-mctl status                          # up/down, usage per provider, role -> engine
-mctl jobs --limit 10                 # newest jobs
-mctl job new "Fix the flaky test" --cwd ~/code/app --follow
-mctl attention                       # what is waiting on you
-mctl runs                            # workflow runs
-mctl plugin add https://github.com/LynchzDEV/mc-plugin-clickup --yes
-mctl clickup board main              # the board, saved filters applied
-mctl clickup filter add main Assignee "is any of" --value Me
-mctl clickup start 86d4ccpu2 --board main   # chat with the task dossier attached
-mctl queue add clickup-board 86d4ccpu2 --repo ~/code/app   # build it when its turn comes
-mctl queue add clickup-board 86d4ccpu2 --repo ~/klangtech   # a folder of repos: the plan picks which (or pass --repos api,backoffice)
+shiki status                          # up/down, usage per provider, role -> engine
+shiki jobs --limit 10                 # newest jobs
+shiki job new "Fix the flaky test" --cwd ~/code/app --follow
+shiki attention                       # what is waiting on you
+shiki runs                            # workflow runs
+shiki plugin add https://github.com/LynchzDEV/skd-plugin-clickup --yes
+shiki clickup board main              # the board, saved filters applied
+shiki clickup filter add main Assignee "is any of" --value Me
+shiki clickup start 86d4ccpu2 --board main   # chat with the task dossier attached
+shiki queue add clickup-board 86d4ccpu2 --repo ~/code/app   # build it when its turn comes
+shiki queue add clickup-board 86d4ccpu2 --repo ~/klangtech   # a folder of repos: the plan picks which (or pass --repos api,backoffice)
 ```
 
 - `--json` prints the server's JSON as one document (NDJSON for `job follow` and `job new --follow`); every command supports it.
-- `--url` > `MC_URL` > `http://127.0.0.1:7777`. Local URLs need no token. For other URLs set `MC_TOKEN`; otherwise `apiToken` from `secrets.json` is used when present.
-- Exit codes: `0` ok, `1` API error (message on stderr), `2` usage error, `3` Mission Control isn't running.
+- `--url` > `SKD_URL` > `http://127.0.0.1:7777`. Local URLs need no token. For other URLs set `SKD_TOKEN`; otherwise `apiToken` from `secrets.json` is used when present.
+- Exit codes: `0` ok, `1` API error (message on stderr), `2` usage error, `3` Shikidan isn't running.
 
 ## The Claude Code skill
 
-`bun install` (and every server start) links `~/.claude/skills/mc-dispatch` to `skills/mc-dispatch` in this repo, so `git pull` keeps the skill current. With it, a Claude Code session can hand work to Mission Control: it plans, dispatches jobs to the right AI, and reviews them, while you watch the jobs in the Agents drawer and the Flow graph. An existing hand-written skill at that path is moved to `~/.claude/skills-backup/` first, never overwritten.
+`bun install` (and every server start) links `~/.claude/skills/skd-dispatch` to `skills/skd-dispatch` in this repo, so `git pull` keeps the skill current. With it, a Claude Code session can hand work to Shikidan: it plans, dispatches jobs to the right AI, and reviews them, while you watch the jobs in the Agents drawer and the Flow graph. An existing hand-written skill at that path is moved to `~/.claude/skills-backup/` first, never overwritten.
 
-On the same occasions, Mission Control translates Claude's global instructions, skills and agents for Codex, so both AIs follow the same rules. Codex-incompatible pieces are skipped, and any personal Codex files it replaces are kept under `~/.codex/backup/`.
+On the same occasions, Shikidan translates Claude's global instructions, skills and agents for Codex, so both AIs follow the same rules. Codex-incompatible pieces are skipped, and any personal Codex files it replaces are kept under `~/.codex/backup/`.
 
 ## Remote access
 
-Mission Control runs on any machine or server you can install Bun on: a laptop, a home server, a cloud VM, or WSL2 on Windows (for example, `bun start` inside WSL on port 7777). The server always binds `127.0.0.1`, so nothing is reachable from outside until you put something in front of it.
+Shikidan runs on any machine or server you can install Bun on: a laptop, a home server, a cloud VM, or WSL2 on Windows (for example, `bun start` inside WSL on port 7777). The server always binds `127.0.0.1`, so nothing is reachable from outside until you put something in front of it.
 
 The supported way in is [Tailscale Serve](https://tailscale.com/kb/1242/tailscale-serve), which keeps it inside your private tailnet over HTTPS:
 
 ```sh
-# on the machine running Mission Control
+# on the machine running Shikidan
 tailscale serve --bg 7777
 
-# tell Mission Control which Tailscale name and users to accept
-MISSION_CONTROL_ALLOWED_HOSTS=my-box.your-tailnet.ts.net \
-MISSION_CONTROL_ALLOWED_USERS=you@example.com \
+# tell Shikidan which Tailscale name and users to accept
+SKD_ALLOWED_HOSTS=my-box.your-tailnet.ts.net \
+SKD_ALLOWED_USERS=you@example.com \
 bun start
 ```
 
-Then open `https://my-box.your-tailnet.ts.net` from any device on your tailnet. Proxied requests are accepted only when the host is a `*.ts.net` name listed in `MISSION_CONTROL_ALLOWED_HOSTS`, the connection comes from loopback (Tailscale on the same machine), and the Tailscale login is listed in `MISSION_CONTROL_ALLOWED_USERS`. Anything else that arrives through a proxy is refused, so a generic reverse proxy (nginx, Caddy, etc.) won't work today, even with auth in front of it. Turn sharing off with `tailscale serve --https=443 off`.
+Then open `https://my-box.your-tailnet.ts.net` from any device on your tailnet. Proxied requests are accepted only when the host is a `*.ts.net` name listed in `SKD_ALLOWED_HOSTS`, the connection comes from loopback (Tailscale on the same machine), and the Tailscale login is listed in `SKD_ALLOWED_USERS`. Anything else that arrives through a proxy is refused, so a generic reverse proxy (nginx, Caddy, etc.) won't work today, even with auth in front of it. Turn sharing off with `tailscale serve --https=443 off`.
 
 > [!WARNING]
-> Mission Control gives **full terminal and agent access** to the machine it runs on: shells, your repos, and every credential the AIs use. Never expose it to the public internet, and never use `tailscale funnel` for it. Keep it on a private network, behind authentication you control, for users you trust.
+> Shikidan gives **full terminal and agent access** to the machine it runs on: shells, your repos, and every credential the AIs use. Never expose it to the public internet, and never use `tailscale funnel` for it. Keep it on a private network, behind authentication you control, for users you trust.
 
 ## Security
 
-- **Network binding.** The server binds `127.0.0.1` by default. A Host / Origin / Fetch-Metadata guard stops web pages from other origins from reading or driving it. Anyone who can open a local connection on this machine has full control, including other OS user accounts and the agent jobs Mission Control spawns.
+- **Network binding.** The server binds `127.0.0.1` by default. A Host / Origin / Fetch-Metadata guard stops web pages from other origins from reading or driving it. Anyone who can open a local connection on this machine has full control, including other OS user accounts and the agent jobs Shikidan spawns.
 - **Credentials** live in the config directory (`0700` folders, `0600` files) and reach the AIs only through their environment. The API token, for scripts and the skill, can be revealed or rotated from the lock button; it grants nothing extra to local callers.
 - **Folders.** Jobs and terminals only run in directories that resolve, after symlinks, under your home folder.
 - **Plugins.** Plugin routes accept loopback callers only and never accept the API token. Isolated plugins are confined by the OS sandbox and a per-plugin network proxy; trusted plugins have full access and install only after you confirm.
@@ -223,7 +223,7 @@ Transcripts come straight from each engine's own session logs (`~/.claude/projec
 bun test                    # full suite, offline, no AI CLIs needed
 bun test test/chat-view.test.ts
 bun run typecheck:studio    # Studio's React code
-MISSION_CONTROL_CONFIG_DIR=$(mktemp -d) MISSION_CONTROL_PORT=7790 MC_FAKE_ENGINES=1 bun server/index.ts
+SKD_CONFIG_DIR=$(mktemp -d) SKD_PORT=7790 SKD_FAKE_ENGINES=1 bun server/index.ts
 ```
 
 The last line runs a throwaway copy on another port with an empty config and fake AIs, which leaves your real instance and data alone.

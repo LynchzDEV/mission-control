@@ -1,4 +1,4 @@
-# Mission Control design preview
+# Shikidan design preview
 
 A disposable design study. Open the existing preview server at <http://127.0.0.1:47831/#a/terminals>.
 
