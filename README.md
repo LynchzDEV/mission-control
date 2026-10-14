@@ -19,8 +19,6 @@ State lives in plain JSON files. No database, no build step.
 
 Video (MP4): [docs/images/demo.mp4](docs/images/demo.mp4)
 
-## Quickstart` section)
-
 ## Quickstart
 
 **You need:**
