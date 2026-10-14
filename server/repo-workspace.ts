@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, sep } from 'node:path'
 
 import { addPathWorktree, git, isWorktreeOf, prepareWorktree, removePathWorktree, worktreeBranch } from './job-worktrees'
-import { SESSION_CONTEXT_DIR } from './plugins/context-files'
+import { LEGACY_SESSION_CONTEXT_DIR, SESSION_CONTEXT_DIR } from './plugins/context-files'
 import { writePrivate } from './queue-files'
 import { isRepoList } from './repo-names'
 import { probeRepo } from './repo-probe'
@@ -12,7 +12,7 @@ const REPOS_RECORD = 'repos.json'
 const MAX_RECORD_BYTES = 8192
 const BAR_WIDTH = 40
 
-const recordPath = (workspace: string): string => join(workspace, SESSION_CONTEXT_DIR, REPOS_RECORD)
+const recordPath = (workspace: string, folder = SESSION_CONTEXT_DIR): string => join(workspace, folder, REPOS_RECORD)
 
 async function writeReposRecord(workspace: string, repos: readonly string[]): Promise<void> {
   const folder = join(workspace, SESSION_CONTEXT_DIR)
@@ -26,6 +26,11 @@ const lstatOrNull = (path: string) => lstat(path).catch(() => null)
 async function isPlainDir(path: string): Promise<boolean> {
   const info = await lstatOrNull(path)
   return info !== null && info.isDirectory() && !info.isSymbolicLink()
+}
+
+async function sessionFolderName(workspace: string): Promise<string | null> {
+  for (const name of [SESSION_CONTEXT_DIR, LEGACY_SESSION_CONTEXT_DIR]) if (await isPlainDir(join(workspace, name))) return name
+  return null
 }
 
 async function isTrustedChild(folder: string, workspace: string, name: string): Promise<boolean> {
@@ -44,10 +49,11 @@ export async function workspaceRepos(dir: string): Promise<string[] | null> {
   try {
     const real = await realpath(dir)
     if (basename(dirname(real)) !== '.worktree') return null
-    if (!(await isPlainDir(join(real, SESSION_CONTEXT_DIR)))) return null
-    const record = await lstat(recordPath(real))
+    const session = await sessionFolderName(real)
+    if (session === null) return null
+    const record = await lstat(recordPath(real, session))
     if (!record.isFile() || record.size > MAX_RECORD_BYTES) return null
-    const { repos } = JSON.parse(await readFile(recordPath(real), 'utf8')) as { repos?: unknown }
+    const { repos } = JSON.parse(await readFile(recordPath(real, session), 'utf8')) as { repos?: unknown }
     if (!isRepoList(repos)) return null
     if (repos.length === 0) return (await ownsWorkspace(real)) ? repos : null
     const folder = dirname(dirname(real))

@@ -210,7 +210,7 @@ test('a reply image given as an absolute path outside the plugin folder is skipp
     expect(errors).toHaveBeenCalledTimes(1)
   } finally { errors.mockRestore() }
   const worktree = h.store.get(parked.id)!.worktree!
-  expect(existsSync(join(worktree, '.mission-control', 'queue', 'clickup-board', 'r1-0-shot.png'))).toBe(false)
+  expect(existsSync(join(worktree, '.shikidan', 'queue', 'clickup-board', 'r1-0-shot.png'))).toBe(false)
 })
 
 test('a malformed-reply failure from the source keeps the item waiting with its cursor', async () => {

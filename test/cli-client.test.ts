@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -48,6 +48,20 @@ describe('token resolution', () => {
     const h = harness({ SKD_CONFIG_DIR: undefined, MISSION_CONTROL_CONFIG_DIR: configDir })
     expect(await main(['models', '--json'], h.deps)).toBe(0)
     expect(h.calls[0]!.authorization).toBe('Bearer mct_from_legacy_dir')
+  })
+
+  test('reads ~/.config/shikidan first, then a not yet moved ~/.config/mission-control', async () => {
+    const home = configDir
+    await mkdir(join(home, '.config', 'mission-control'), { recursive: true })
+    await writeFile(join(home, '.config', 'mission-control', 'secrets.json'), JSON.stringify({ apiToken: 'mct_legacy_home' }))
+    const legacy = harness({ SKD_CONFIG_DIR: undefined, HOME: home })
+    await main(['models', '--json'], legacy.deps)
+    expect(legacy.calls[0]!.authorization).toBe('Bearer mct_legacy_home')
+    await mkdir(join(home, '.config', 'shikidan'), { recursive: true })
+    await writeFile(join(home, '.config', 'shikidan', 'secrets.json'), JSON.stringify({ apiToken: 'mct_new_home' }))
+    const current = harness({ SKD_CONFIG_DIR: undefined, HOME: home })
+    await main(['models', '--json'], current.deps)
+    expect(current.calls[0]!.authorization).toBe('Bearer mct_new_home')
   })
 
   test('falls back to apiToken in secrets.json under the config dir', async () => {

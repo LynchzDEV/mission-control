@@ -18,17 +18,17 @@ const mode = async (path: string): Promise<number> => (await stat(path)).mode & 
 
 test('writeQueueContext writes a private file under the queue folder of its source', async () => {
   const path = await writeQueueContext('clickup-board', { name: 'item-1', markdown: '# Task 1' }, repo, new Date(Date.UTC(2026, 9, 5, 1, 2, 3)))
-  expect(path).toBe(join(repo, '.mission-control', 'queue', 'clickup-board', '20261005-010203-item-1.md'))
+  expect(path).toBe(join(repo, '.shikidan', 'queue', 'clickup-board', '20261005-010203-item-1.md'))
   expect(path.startsWith(queueFolder(repo, 'clickup-board'))).toBe(true)
   expect(await readFile(path, 'utf8')).toBe('# Task 1')
   expect(await mode(path)).toBe(0o600)
-  expect(await mode(join(repo, '.mission-control', 'queue'))).toBe(0o700)
+  expect(await mode(join(repo, '.shikidan', 'queue'))).toBe(0o700)
   expect(await mode(queueFolder(repo, 'clickup-board'))).toBe(0o700)
 })
 
 test('writeQueueContext keeps the queue folder out of git', async () => {
   await writeQueueContext('clickup-board', { name: 'item-1', markdown: '# Task 1' }, repo)
-  expect(await readFile(join(repo, '.git', 'info', 'exclude'), 'utf8')).toContain('/.mission-control/\n')
+  expect(await readFile(join(repo, '.git', 'info', 'exclude'), 'utf8')).toContain('/.shikidan/\n')
 })
 
 test('writeQueueContext never sweeps old queue files', async () => {
@@ -52,7 +52,7 @@ test('writeQueueContext refuses context over the size limit', async () => {
 test('writeQueueContext refuses a queue folder that is a symlink', async () => {
   const elsewhere = join(repo, 'elsewhere')
   await mkdir(elsewhere)
-  await mkdir(join(repo, '.mission-control'), { recursive: true })
-  await symlink(elsewhere, join(repo, '.mission-control', 'queue'))
+  await mkdir(join(repo, '.shikidan'), { recursive: true })
+  await symlink(elsewhere, join(repo, '.shikidan', 'queue'))
   await expect(writeQueueContext('clickup-board', { name: 'item-1', markdown: '# Task 1' }, repo)).rejects.toThrow('not a private folder')
 })

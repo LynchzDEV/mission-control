@@ -34,7 +34,7 @@ export function readWorkflowDraft(log: string, agents: string[], approvedNodes: 
 }
 
 export function createWorkflowBuilder(deps: { manager: JobManager; resolver: EngineResolver; store: WorkflowStore; home?: string }) {
-  const root = join(deps.home ?? homedir(), '.cache', 'mission-control', 'workflow-designer')
+  const root = join(deps.home ?? homedir(), '.cache', 'shikidan', 'workflow-designer')
   const deadlines = new Map<string, ReturnType<typeof setTimeout>>()
   let starting = false
   async function cleanup(record: JobRecord) {

@@ -10,7 +10,7 @@ import { localRequestAllowed, peerAddress } from './local-access'
 import { quotaRoutes } from './routes/quota'
 import { historyRoutes } from './routes/history'
 import { createExternalSessionsCache, ownedPids } from './history'
-import { configDir, listenTarget } from './secrets'
+import { configDir, listenTarget, migrateConfigDir } from './secrets'
 import { createJobManager } from './jobs'
 import { attentionEvents } from './attention-events'
 import { createChatFlusher } from './chat-reports'
@@ -318,6 +318,7 @@ if (import.meta.main) {
     console.error(`mission-control: ${target.hostname}:${target.port} already answers — another instance is running, refusing to double-bind`)
     process.exit(1)
   }
+  if (readEnv('CONFIG_DIR') === undefined && await migrateConfigDir() === 'migrated') console.error('config: moved ~/.config/mission-control to ~/.config/shikidan, old path is a symlink')
   const app = await createApp()
   app.listen({ hostname: target.hostname, port: target.port, reusePort: false })
   console.log(`mission-control listening on http://${target.hostname}:${target.port}`)

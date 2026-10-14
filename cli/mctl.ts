@@ -108,21 +108,31 @@ function isGroup(word: string | undefined): boolean {
   return word !== undefined && COMMANDS.some((command) => command.path[0] === word)
 }
 
-function configDirFor(env: Record<string, string | undefined>): string {
+function configDirsFor(env: Record<string, string | undefined>): string[] {
   const override = readEnv('CONFIG_DIR', env)
-  if (override !== undefined) return override
-  return join(env.HOME ?? homedir(), '.config', 'mission-control')
+  if (override !== undefined) return [override]
+  const config = join(env.HOME ?? homedir(), '.config')
+  // ponytail: legacy ~/.config/mission-control read before the server has moved it, drop with migrateConfigDir
+  return [join(config, 'shikidan'), join(config, 'mission-control')]
+}
+
+async function readTokenFile(dir: string): Promise<string | null> {
+  try {
+    const parsed = JSON.parse(await readFile(join(dir, 'secrets.json'), 'utf8')) as { apiToken?: unknown }
+    return typeof parsed.apiToken === 'string' && parsed.apiToken !== '' ? parsed.apiToken : null
+  } catch {
+    return null
+  }
 }
 
 export async function resolveToken(env: Record<string, string | undefined>): Promise<string | null> {
   const token = readEnv('TOKEN', env)
   if (token !== undefined) return token
-  try {
-    const parsed = JSON.parse(await readFile(join(configDirFor(env), 'secrets.json'), 'utf8')) as { apiToken?: unknown }
-    return typeof parsed.apiToken === 'string' && parsed.apiToken !== '' ? parsed.apiToken : null
-  } catch {
-    return null
+  for (const dir of configDirsFor(env)) {
+    const found = await readTokenFile(dir)
+    if (found !== null) return found
   }
+  return null
 }
 
 function preParse(argv: string[]): { positionals: string[]; values: OptionValues } {

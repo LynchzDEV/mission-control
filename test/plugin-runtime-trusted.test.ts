@@ -232,10 +232,10 @@ describe('context route', () => {
       const response = await json('POST', '/api/plugins/fixture-plugin/context', { name: 'Task plan', markdown: '# Do it\n', cwd: session })
       expect(response.status).toBe(200)
       const { path } = await response.json()
-      expect(path).toContain(join(await realpath(session), '.mission-control', 'context', 'fixture-plugin'))
+      expect(path).toContain(join(await realpath(session), '.shikidan', 'context', 'fixture-plugin'))
       expect(path).toMatch(/task-plan\.md$/)
       expect(await readFile(path, 'utf8')).toBe('# Do it\n')
-      expect(await readFile(join(session, '.git', 'info', 'exclude'), 'utf8')).toContain('/.mission-control/')
+      expect(await readFile(join(session, '.git', 'info', 'exclude'), 'utf8')).toContain('/.shikidan/')
       expect(Bun.spawnSync(['git', '-C', session, 'status', '--porcelain']).stdout.toString()).toBe('')
     } finally {
       await rm(session, { recursive: true, force: true })
@@ -249,7 +249,7 @@ describe('context route', () => {
       const response = await json('POST', '/api/plugins/fixture-plugin/context', { name: 'Task plan', markdown: '# Plain\n', cwd: session })
       expect(response.status).toBe(200)
       const { path } = await response.json()
-      expect(path).toContain(join(await realpath(session), '.mission-control', 'context', 'fixture-plugin'))
+      expect(path).toContain(join(await realpath(session), '.shikidan', 'context', 'fixture-plugin'))
       expect(await readFile(path, 'utf8')).toBe('# Plain\n')
     } finally {
       await rm(session, { recursive: true, force: true })

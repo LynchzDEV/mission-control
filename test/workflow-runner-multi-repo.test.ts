@@ -175,7 +175,7 @@ test('a split path that needs a repo with no copy yet gets the copy before the f
   expect(done.status).toBe('done')
   expect(git(join(workspace, 'c'), 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('queue-split-1-a8c0')
   expect(await readFile(join(workspace, 'c', 'jobs.txt'), 'utf8')).toBe('x\n')
-  expect(JSON.parse(await readFile(join(workspace, '.mission-control', 'repos.json'), 'utf8'))).toEqual({ repos: ['a', 'b', 'c'] })
+  expect(JSON.parse(await readFile(join(workspace, '.shikidan', 'repos.json'), 'utf8'))).toEqual({ repos: ['a', 'b', 'c'] })
   expect(await readdir(join(parent, '.worktree'))).toEqual(['queue-split-1-a8c0'])
 })
 

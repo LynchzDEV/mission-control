@@ -137,7 +137,7 @@ test('a multi-repo item builds in one workspace with its context at the root, ou
   const workspace = join(parent, '.worktree', 'queue-task-7-7-a8c0')
   expect(built).toMatchObject({ state: 'building', repo: parent, repos: ['a', 'b'], worktree: workspace })
   expect(h.started[0]!.cwd).toBe(workspace)
-  expect(built.contextPath!.startsWith(join(workspace, '.mission-control', 'queue', 'clickup-board') + '/')).toBe(true)
+  expect(built.contextPath!.startsWith(join(workspace, '.shikidan', 'queue', 'clickup-board') + '/')).toBe(true)
   expect(h.started[0]!.request).toContain(`Copies ready now: ${join(workspace, 'a')}, ${join(workspace, 'b')}.`)
   for (const name of ['a', 'b']) expect(git(join(workspace, name), 'status', '--porcelain')).toBe('')
 })
