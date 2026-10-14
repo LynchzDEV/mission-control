@@ -69,7 +69,7 @@ describe('renameValue', () => {
 
 describe('dragKind', () => {
   test('tells a rail card from files from nothing', () => {
-    expect(dragKind(['text/x-mc-terminal'])).toBe('card')
+    expect(dragKind(['text/x-skd-terminal'])).toBe('card')
     expect(dragKind(['Files'])).toBe('files')
     expect(dragKind(['text/uri-list', 'text/plain'])).toBe('files')
     expect(dragKind(['text/plain'])).toBe('none')

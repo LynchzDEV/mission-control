@@ -350,7 +350,7 @@ describe('help', () => {
     expect(h.calls).toEqual([])
   })
 
-  test('no arguments shows the Mission Control banner, the version and help', async () => {
+  test('no arguments shows the Shikidan banner, the version and help', async () => {
     const h = harness()
     expect(await main([], h.deps)).toBe(0)
     expect(h.out()).toContain('███╗   ███╗')

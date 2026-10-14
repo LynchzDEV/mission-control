@@ -13,7 +13,7 @@ const DAYS: Day[] = ['Today', 'Yesterday']
 const CHAT_ICON = '<svg viewBox="0 0 20 20"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3h0A1.5 1.5 0 0 1 4 11.5z"/></svg>'
 const TERMINAL_ICON = '<svg><use href="#terminal-icon"/></svg>'
 const SHORTCUT_SLOTS = 9
-const HIDDEN_KEY = 'mc.sidebar.hidden'
+const HIDDEN_KEY = 'skd.sidebar.hidden'
 const keyOf = (item: HistoryItem): string => `${item.kind}:${item.id}`
 const isLiveTerminal = (item: HistoryItem): boolean => item.kind === 'terminal' && item.live
 
@@ -208,7 +208,7 @@ function startRename(item: HistoryItem, text: HTMLElement, onCommit?: (title: st
 
 function liveTerminalActions(item: HistoryItem, element: HTMLElement, text: HTMLElement | null): void {
   element.draggable = true
-  element.ondragstart = (event) => { event.dataTransfer?.setData('text/x-mc-terminal', item.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move' }
+  element.ondragstart = (event) => { event.dataTransfer?.setData('text/x-skd-terminal', item.id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move' }
   if (text) text.ondblclick = (event) => { event.preventDefault(); event.stopPropagation(); startRename(item, text) }
 }
 
@@ -265,7 +265,7 @@ function renameChat(item: HistoryItem, text: HTMLElement): void {
 
 function exportUrl(item: HistoryItem): string {
   let leaf: string | null = null
-  try { leaf = localStorage.getItem(`mc.chat.leaf.${item.id}`) } catch {}
+  try { leaf = localStorage.getItem(`skd.chat.leaf.${item.id}`) } catch {}
   return `/api/jobs/${encodeURIComponent(item.id)}/export.md${leaf ? `?leaf=${encodeURIComponent(leaf)}` : ''}`
 }
 

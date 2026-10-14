@@ -12,7 +12,7 @@ let file: string
 const entry: PastTerminal = { id: 't1', engine: 'claude', cwd: '/repo', title: 'Shell work', sessionId: 's1', createdAt: 1_000, endedAt: null }
 
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), 'mc-terminal-log-'))
+  dir = await mkdtemp(join(tmpdir(), 'skd-terminal-log-'))
   file = join(dir, 'terminals.jsonl')
 })
 afterEach(async () => {
@@ -49,7 +49,7 @@ describe('terminal registry with a log', () => {
   beforeEach(async () => {
     process.env.SKD_FAKE_ENGINES = '1'
     process.env.SKD_CONFIG_DIR = dir
-    repo = await mkdtemp(join(homedir(), 'mc-terminal-log-repo-'))
+    repo = await mkdtemp(join(homedir(), 'skd-terminal-log-repo-'))
   })
   afterEach(async () => {
     delete process.env.SKD_FAKE_ENGINES

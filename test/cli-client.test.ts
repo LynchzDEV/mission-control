@@ -134,13 +134,13 @@ describe('exit codes', () => {
   test('connection refused exits 3 with the start hint', async () => {
     const h = harness({ SKD_URL: 'http://127.0.0.1:1' }, () => { throw new TypeError('Unable to connect. Is the computer able to access the url?') })
     expect(await main(['status'], h.deps)).toBe(3)
-    expect(h.err()).toContain("Mission Control isn't running at http://127.0.0.1:1. Start it with: bun run start")
+    expect(h.err()).toContain("Shikidan isn't running at http://127.0.0.1:1. Start it with: bun run start")
   })
 
   test('a real refused connection exits 3', async () => {
     const h = harness({})
     h.deps.fetch = (request) => fetch(request)
     expect(await main(['--url', 'http://127.0.0.1:1', 'status'], h.deps)).toBe(3)
-    expect(h.err()).toContain("Mission Control isn't running at http://127.0.0.1:1")
+    expect(h.err()).toContain("Shikidan isn't running at http://127.0.0.1:1")
   })
 })

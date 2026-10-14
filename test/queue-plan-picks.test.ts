@@ -153,7 +153,7 @@ test('the request asks for every repo in one go and names the cap', async () => 
   await repos('a')
   const h = harness()
   await h.engine.add({ ...multi, repo: parent, repos: [] })
-  expect(h.started[0]!.request).toContain('Ask for every repo you need in one go: Mission Control makes the copies and starts a new run, and stops after 3 such asks.')
+  expect(h.started[0]!.request).toContain('Ask for every repo you need in one go: Shikidan makes the copies and starts a new run, and stops after 3 such asks.')
 })
 
 test('an ask written with backticks, a bullet or a capital is granted, and posts nothing', async () => {

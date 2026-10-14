@@ -89,7 +89,7 @@ function previewText(preview: Json): string {
   const lines = [
     `${cell(manifest.name)} ${cell(manifest.version)} (${cell(preview.runtime)})`,
     ...(preview.runtime === 'trusted'
-      ? ['Trusted: runs inside Mission Control with full access to your files, tokens and the internet.']
+      ? ['Trusted: runs inside Shikidan with full access to your files, tokens and the internet.']
       : ['Isolated. It will be able to:', ...permissionLines(preview.permissions).map((line) => `  - ${line}`)]),
     ...(contributions.length > 0
       ? ['It adds work to your engines, which runs with your full access:', ...contributions.map((line) => `  - ${line}`)]
@@ -113,7 +113,7 @@ async function addFromLink(ctx: Context): Promise<void> {
   const url = arg(ctx, 'link')
   const ref = stringOpt(ctx, 'ref')
   const result = await ctx.client.post('/api/plugins/add-link', { url, ...(ref === undefined ? {} : { ref }) })
-  if (!isRecord(result)) throw new Error('Mission Control answered without a result')
+  if (!isRecord(result)) throw new Error('Shikidan answered without a result')
   if (result.kind === 'marketplace') {
     emit(ctx, result, () => 'Marketplace added. List its plugins with: mctl plugin catalog\n')
     return
@@ -144,7 +144,7 @@ async function updatePlugin(ctx: Context): Promise<void> {
   const source = isRecord(plugin.source) ? plugin.source : {}
   const ref = await targetRef(ctx.client, plugin)
   const preview = await ctx.client.post('/api/plugins/preview', { repo: source.repo, ref })
-  if (!isRecord(preview)) throw new Error('Mission Control answered without a preview')
+  if (!isRecord(preview)) throw new Error('Shikidan answered without a preview')
   if (preview.commit === plugin.commit) {
     emit(ctx, { upToDate: true, version: plugin.version }, () => `${cell(plugin.name)} ${cell(plugin.version)} is up to date.\n`)
     return
@@ -157,7 +157,7 @@ async function updatePlugin(ctx: Context): Promise<void> {
   try {
     const updated = await ctx.client.post(pluginPath(id, '/update'), { ref, commit: preview.commit, ...(flag(ctx, 'accept') ? { accept: true } : {}), ...(flag(ctx, 'trust') ? { trust: true } : {}) })
     const next = isRecord(updated) && isRecord(updated.plugin) ? updated.plugin : {}
-    emit(ctx, updated, () => `Updated ${cell(next.name)} to ${cell(next.version)}.${next.restartRequired === true ? ' Restart Mission Control to finish updating.' : ''}\n`)
+    emit(ctx, updated, () => `Updated ${cell(next.name)} to ${cell(next.version)}.${next.restartRequired === true ? ' Restart Shikidan to finish updating.' : ''}\n`)
   } catch (error) {
     if (!(error instanceof ApiError) || !isRecord(error.body)) throw error
     if (error.body.needsConsent === true) {

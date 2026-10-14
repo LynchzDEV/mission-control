@@ -9,8 +9,8 @@ const queued = item({ key: 'queue:i1', kind: 'queue', title: 'Login copy', detai
 const loop = item({ key: 'loop:j2', kind: 'loop', title: 'Army export', detail: 'May be stuck: 81 turns in 20 min', chatId: null, jobId: 'j2' })
 
 test('tab title carries the count only when something waits', () => {
-  expect(tabTitle(0)).toBe('Mission Control')
-  expect(tabTitle(3)).toBe('(3) Mission Control')
+  expect(tabTitle(0)).toBe('Shikidan')
+  expect(tabTitle(3)).toBe('(3) Shikidan')
 })
 
 test('diff reports new keys as raised and missing keys as resolved', () => {

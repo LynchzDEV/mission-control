@@ -16,7 +16,7 @@ const ACTIONS: Record<AttentionItem['kind'], AlertOptions['actions']> = {
   queue: [],
 }
 
-export const tabTitle = (count: number): string => (count > 0 ? `(${count}) Mission Control` : 'Mission Control')
+export const tabTitle = (count: number): string => (count > 0 ? `(${count}) Shikidan` : 'Shikidan')
 
 export function diffItems(before: readonly AttentionItem[], after: readonly AttentionItem[]): { raised: AttentionItem[]; resolved: string[] } {
   const was = new Set(before.map(item => item.key))
@@ -60,7 +60,7 @@ export async function handleAlertClick(action: string, data: AlertData, deps: Cl
   if (request !== null) {
     const response = await deps.post(request.url, request.body).catch(() => ({ ok: false, status: 0 }))
     if (response.ok || response.status === 409) return
-    await deps.show(`Couldn't ${request.verb} · Open the chat`, { body: 'Answer it in Mission Control instead.', tag: `${data.key}:failed`, renotify: false, icon: '/favicon.svg', data: dataOf(data), actions: [] })
+    await deps.show(`Couldn't ${request.verb} · Open the chat`, { body: 'Answer it in Shikidan instead.', tag: `${data.key}:failed`, renotify: false, icon: '/favicon.svg', data: dataOf(data), actions: [] })
     return
   }
   const link = linkFor(data)

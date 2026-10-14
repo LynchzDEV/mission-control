@@ -88,7 +88,7 @@ describe('fillTemplate', () => {
 
   test('refuses an undeclared setting and an unknown mc value', () => {
     expect(fillTemplate('{{setting:nope}}', 'a.md', context)).toEqual({ ok: false, error: 'a.md:1: {{setting:nope}} is not a declared setting' })
-    expect(fillTemplate('{{mc:home}}', 'a.md', context)).toEqual({ ok: false, error: 'a.md:1: {{mc:home}} is not a value Mission Control fills' })
+    expect(fillTemplate('{{mc:home}}', 'a.md', context)).toEqual({ ok: false, error: 'a.md:1: {{mc:home}} is not a value Shikidan fills' })
   })
 })
 

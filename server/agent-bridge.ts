@@ -78,7 +78,7 @@ export async function runAgentBridge(raw: unknown): Promise<number> {
     }
     const terminals = new Map<string, ReturnType<typeof launch>>()
     let text = '', sessionId: string | undefined, replaying = false, announced = false
-    const app = acp.client({ name: 'mission-control' })
+    const app = acp.client({ name: 'shikidan' })
       .onRequest('session/request_permission', ({ params }) => {
         const option = !input.readOnly && connection.autoApprove ? params.options.find(option => option.kind === 'allow_once') : undefined
         if (!option) denied = true
@@ -133,7 +133,7 @@ export async function runAgentBridge(raw: unknown): Promise<number> {
     return await app.connectWith(stream, async agent => {
       const handshake = AbortSignal.timeout(30000)
       setupTimer = setTimeout(() => kill(running.child), 30000)
-      const init = await agent.request<'initialize'>('initialize', { protocolVersion: acp.PROTOCOL_VERSION, clientInfo: { name: 'Mission Control', version: '1' }, clientCapabilities: { fs: { readTextFile: !input.readOnly, writeTextFile: !input.readOnly }, terminal: !input.readOnly } }, { cancellationSignal: handshake })
+      const init = await agent.request<'initialize'>('initialize', { protocolVersion: acp.PROTOCOL_VERSION, clientInfo: { name: 'Shikidan', version: '1' }, clientCapabilities: { fs: { readTextFile: !input.readOnly, writeTextFile: !input.readOnly }, terminal: !input.readOnly } }, { cancellationSignal: handshake })
       if (connection.authMethod) {
         if (!init.authMethods?.some(method => method.id === connection.authMethod)) throw new Error('Configured authentication method is not advertised by this agent')
         await agent.request('authenticate', { methodId: connection.authMethod }, { cancellationSignal: handshake })

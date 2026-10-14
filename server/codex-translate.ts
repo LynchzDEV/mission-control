@@ -9,11 +9,11 @@ export const CLAUDE_ONLY_PATTERNS: RegExp[] = [
 ]
 
 export const CODEX_INSTRUCTIONS_HEADER = `# Codex Global Instructions
-Generated from ~/.claude/CLAUDE.md by Mission Control — edit the source, not this file.
+Generated from ~/.claude/CLAUDE.md by Shikidan — edit the source, not this file.
 - You run with approval_policy=never and sandbox_mode=danger-full-access: act, do not ask for permission.
 - No subagents here: do every step yourself in this thread. No hooks: nothing runs before or after your commands, so run tests and checks yourself.
 - Skills live in ~/.codex/skills/<name>/SKILL.md; read the one that matches the task before starting.
-- When launched by Mission Control (SKD_JOB_ID set) you are the worker: implement in this tree, never dispatch or post plans.
+- When launched by Shikidan (SKD_JOB_ID set) you are the worker: implement in this tree, never dispatch or post plans.
 `
 
 const SKIP = new Set([

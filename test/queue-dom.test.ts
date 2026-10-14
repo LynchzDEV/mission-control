@@ -56,7 +56,7 @@ beforeAll(async () => {
   dialogProto.showModal = function (this: HTMLDialogElement): void { this.open = true }
   dialogProto.close = function (this: HTMLDialogElement): void { if (!this.open) return; this.open = false; this.dispatchEvent(new window.Event('close')) }
   Object.assign(globalThis, { window, document: doc, EventSource: FakeSource, localStorage: window.localStorage, Element: window.Element, HTMLElement: window.HTMLElement, location: window.location })
-  window.localStorage.setItem('mc.term.recentCwd', JSON.stringify(['/Users/me/api', '/Users/me/web']))
+  window.localStorage.setItem('skd.term.recentCwd', JSON.stringify(['/Users/me/api', '/Users/me/web']))
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
     const call = { method: init?.method ?? 'GET', url: String(url), body: typeof init?.body === 'string' ? JSON.parse(init.body) as unknown : null }
     calls.push(call)
@@ -437,7 +437,7 @@ test('Git tree shows the branches, follows the stream and is remembered', async 
   expect(buttonNamed('List', section()).getAttribute('aria-pressed')).toBe('true')
   click(buttonNamed('Git tree', section()))
   await flush()
-  expect(window.localStorage.getItem('mc.queue.layout')).toBe('tree')
+  expect(window.localStorage.getItem('skd.queue.layout')).toBe('tree')
   expect(buttonNamed('Git tree', section()).getAttribute('aria-pressed')).toBe('true')
   expect(section().querySelector('.q-list')).toBeNull()
   expect([...section().querySelectorAll('.q-tree-tip .q-ref')].map(ref => ref.textContent)).toEqual(['queue/invoice-pdf-footer'])
@@ -447,7 +447,7 @@ test('Git tree shows the branches, follows the stream and is remembered', async 
   expect(treeCalls()).toHaveLength(2)
   click(buttonNamed('List', section()))
   await flush()
-  expect(window.localStorage.getItem('mc.queue.layout')).toBe('list')
+  expect(window.localStorage.getItem('skd.queue.layout')).toBe('list')
   expect(rows().map(row => row.dataset.id)).toEqual(all.map(entry => entry.id))
   send(all)
   await flush()

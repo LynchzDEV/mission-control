@@ -245,16 +245,16 @@ describe('chat permission mode choice', () => {
   const read = (values: Record<string, string>) => (key: string): string | null => values[key] ?? null
 
   test('a new chat reads the global choice and defaults to my settings', () => {
-    expect(chatModeChoice(null, read({ 'mc.shell.mode': 'plan' }))).toBe('plan')
+    expect(chatModeChoice(null, read({ 'skd.shell.mode': 'plan' }))).toBe('plan')
     expect(chatModeChoice(null, read({}))).toBe('settings')
   })
 
   test('an open chat reads its own choice, not the global one', () => {
-    expect(chatModeChoice('abc', read({ 'mc.chat.mode.abc': 'acceptEdits', 'mc.shell.mode': 'plan' }))).toBe('acceptEdits')
-    expect(chatModeChoice('abc', read({ 'mc.shell.mode': 'plan' }))).toBe('settings')
+    expect(chatModeChoice('abc', read({ 'skd.chat.mode.abc': 'acceptEdits', 'skd.shell.mode': 'plan' }))).toBe('acceptEdits')
+    expect(chatModeChoice('abc', read({ 'skd.shell.mode': 'plan' }))).toBe('settings')
   })
 
   test('an unknown stored value falls back to my settings', () => {
-    expect(chatModeChoice('abc', read({ 'mc.chat.mode.abc': 'yolo' }))).toBe('settings')
+    expect(chatModeChoice('abc', read({ 'skd.chat.mode.abc': 'yolo' }))).toBe('settings')
   })
 })

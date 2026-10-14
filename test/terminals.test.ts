@@ -27,13 +27,13 @@ let plain: string
 let registry: TerminalRegistry
 
 beforeEach(async () => {
-  configDir = await mkdtemp(join(tmpdir(), 'mc-terminals-config-'))
+  configDir = await mkdtemp(join(tmpdir(), 'skd-terminals-config-'))
   process.env.SKD_CONFIG_DIR = configDir
   process.env.SKD_FAKE_ENGINES = '1'
 
-  repo = await mkdtemp(join(homedir(), 'mc-terminals-scratch-'))
+  repo = await mkdtemp(join(homedir(), 'skd-terminals-scratch-'))
   await initScratchGitRepo(repo)
-  plain = await mkdtemp(join(homedir(), 'mc-terminals-plain-'))
+  plain = await mkdtemp(join(homedir(), 'skd-terminals-plain-'))
 
   registry = createTerminalRegistry()
 })
@@ -397,9 +397,9 @@ test('terminal instructions explain when to use a flow and how to relay approval
   if (!started.ok) return
   await waitFor(() => registry.replay(started.terminal.id).includes('Never approve without the user saying so'))
   const output = registry.replay(started.terminal.id)
-  for (const phrase of ['more than one step that changes code', '/approve', '"terminalId"', 'Never approve without the user saying so', '"graph" instead of "workflowId"', '/changes', 'Never mark scopeGrew false to avoid approval', 'kind "join"', 'its own git worktree', '"setup" commands', 'Keep fail edges inside their own path', '"In Session"', '/steps/', '/steps/<nodeId> returns its assignment', 'Mission Control runs the other steps.', 'keep a background command that exits when a step waits for you', 'until-loop']) expect(output).toContain(phrase)
+  for (const phrase of ['more than one step that changes code', '/approve', '"terminalId"', 'Never approve without the user saying so', '"graph" instead of "workflowId"', '/changes', 'Never mark scopeGrew false to avoid approval', 'kind "join"', 'its own git worktree', '"setup" commands', 'Keep fail edges inside their own path', '"In Session"', '/steps/', '/steps/<nodeId> returns its assignment', 'Shikidan runs the other steps.', 'keep a background command that exits when a step waits for you', 'until-loop']) expect(output).toContain(phrase)
   expect(output).not.toContain('pinned workflow')
-  expect(output).not.toContain('Mission Control owns the steps; do not also do them yourself')
+  expect(output).not.toContain('Shikidan owns the steps; do not also do them yourself')
   registry.kill(started.terminal.id)
 })
 

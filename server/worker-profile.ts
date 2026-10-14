@@ -7,8 +7,8 @@ import type { EngineName } from './engines'
 import { configDir } from './secrets'
 import { readEnv } from './env'
 
-export const WORKER_CLAUDE_MD = `# Mission Control worker
-You are a headless worker job spawned by Mission Control. The prompt is your whole spec.
+export const WORKER_CLAUDE_MD = `# Shikidan worker
+You are a headless worker job spawned by Shikidan. The prompt is your whole spec.
 - Implement directly in this working tree. Never dispatch jobs, post plans, or call any cockpit API.
 - Do not commit or push unless the prompt says so.
 - While iterating, run only the tests for files you touched. Run the full suite once, at the end.

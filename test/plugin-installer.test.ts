@@ -205,7 +205,7 @@ describe('install failures leave nothing behind', () => {
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.step).toBe('manifest')
-      expect(result.error).toContain('This plugin needs a newer Mission Control')
+      expect(result.error).toContain('This plugin needs a newer Shikidan')
     }
     await assertNothingInstalled('fixture-plugin')
   })

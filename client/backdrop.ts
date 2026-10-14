@@ -6,8 +6,8 @@ const DOT_ALPHA = 0.6
 const RIPPLE_SPEED = 0.45
 const RIPPLE_BAND = 36
 const RIPPLE_LIFE = 1100
-const PAUSED_KEY = 'mc.motion.paused'
-const INTERACTIVE = 'button, a, input, textarea, select, pre, .session-card, dialog, nav, header, .term-host, .composer, .mc-panes, .md'
+const PAUSED_KEY = 'skd.motion.paused'
+const INTERACTIVE = 'button, a, input, textarea, select, pre, .session-card, dialog, nav, header, .term-host, .composer, .skd-panes, .md'
 const isDark = (): boolean => document.documentElement.dataset.theme === 'dark'
 const dotColor = (mix: number): string => isDark() ? `rgb(${59 + mix * 106}, ${64 + mix * 75}, ${76 + mix * 150})` : `rgb(${250 - mix * 122}, ${251 - mix * 153}, ${255 - mix * 66})`
 

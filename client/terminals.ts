@@ -19,7 +19,7 @@ type Provider = { id: string; name: string; models: string[] }
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
 const canvas = document.querySelector('.canvas') as HTMLElement
-const savedKey = 'mc.quiet.terminal', recentKey = 'mc.term.recentCwd', engineKey = 'mc.shell.engine', modelKey = 'mc.shell.model'
+const savedKey = 'skd.quiet.terminal', recentKey = 'skd.term.recentCwd', engineKey = 'skd.shell.engine', modelKey = 'skd.shell.model'
 const POLL_MS = 5000, BUFFER_CHARS = 4000
 const launch = $('live-launch') as HTMLDialogElement
 const engineSelect = $('live-engine') as HTMLSelectElement
@@ -40,7 +40,7 @@ let models: Record<string, string[]> = {}
 let workflowsReady = false
 const landscape = createLandscape(() => activeId ? views.get(activeId) ?? null : null)
 const engineName = (engine: string | undefined): string => engine === 'claude' ? 'Claude Code' : providerName(engine ?? '')
-cwdInput.value = (window as { MC_WORKSPACE_DIR?: string }).MC_WORKSPACE_DIR ?? ''
+cwdInput.value = (window as { SKD_WORKSPACE_DIR?: string }).SKD_WORKSPACE_DIR ?? ''
 
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform)
 const barTemplate = ($('term-bar') as HTMLTemplateElement).content
@@ -347,7 +347,7 @@ dropStage.addEventListener('drop', (event) => {
   if (kind === 'none') return
   event.preventDefault()
   if (kind === 'files') { paintDropOver(null, false); const view = dropTarget(event); if (view) void dropFiles(event.dataTransfer, view); return }
-  const id = event.dataTransfer?.getData('text/x-mc-terminal') ?? ''
+  const id = event.dataTransfer?.getData('text/x-skd-terminal') ?? ''
   const plan = splitPlan(id, panes.shown(), dragZone)
   paintZones(null, false)
   const view = views.get(id)

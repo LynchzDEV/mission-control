@@ -56,9 +56,9 @@ const ABORT_GRACE_MS = 800
 const INFO_TIMEOUT_MS = 3_000
 const STDERR_TAIL_BYTES = 4_096
 const DENY_MESSAGES = {
-  declined: 'The user declined this in Mission Control.',
+  declined: 'The user declined this in Shikidan.',
   cancelled: 'Cancelled.',
-  restart: 'Mission Control restarted; approvals are unavailable for this reply',
+  restart: 'Shikidan restarted; approvals are unavailable for this reply',
   timeout: 'No answer within 10 minutes.',
 } as const
 

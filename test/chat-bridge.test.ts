@@ -236,7 +236,7 @@ describe('permission round trip through the fake engine', () => {
     expect(byType(h, 'mc_permission_resolved')[0]).toMatchObject({ decision: 'deny' })
     const toolResult = h.lines.find((line) => line.type === 'user' && JSON.stringify(line).includes('tool_result'))
     expect(JSON.stringify(toolResult)).toContain('"is_error":true')
-    expect(JSON.stringify(toolResult)).toContain('declined this in Mission Control')
+    expect(JSON.stringify(toolResult)).toContain('declined this in Shikidan')
   })
 
   test('suppressAlways treats allow_always as allow once', async () => {
@@ -254,7 +254,7 @@ describe('permission round trip through the fake engine', () => {
     await bridgeRun(baseLaunch({ prompt: 'fixture:permission' }), h, fakeQuery(FIXTURES))
     expect(byType(h, 'mc_permission_resolved')[0]).toMatchObject({ decision: 'cancelled', reason: 'restart' })
     const toolResult = h.lines.find((line) => line.type === 'user' && JSON.stringify(line).includes('tool_result'))
-    expect(JSON.stringify(toolResult)).toContain('Mission Control restarted')
+    expect(JSON.stringify(toolResult)).toContain('Shikidan restarted')
   })
 
   test('a ten minute silence cancels with reason timeout', async () => {

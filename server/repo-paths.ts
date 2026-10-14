@@ -40,7 +40,7 @@ export async function shapeRulesFor(workspace: string): Promise<string> {
 }
 
 function repoShapeRules(repos: readonly string[]): string {
-  return ` This run spans several repos side by side (${repos.join(', ')}): start every file with its repo folder, for example "${repos[0] ?? 'api'}/app/x.rb" or "${repos[0] ?? 'api'}/src". A path may list a repo of this folder that has no copy yet; Mission Control adds the copy before the split.`
+  return ` This run spans several repos side by side (${repos.join(', ')}): start every file with its repo folder, for example "${repos[0] ?? 'api'}/app/x.rb" or "${repos[0] ?? 'api'}/src". A path may list a repo of this folder that has no copy yet; Shikidan adds the copy before the split.`
 }
 
 export async function snapshotRepos(workspace: string, repos: readonly string[], message: string): Promise<Record<string, string>> {

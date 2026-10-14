@@ -287,7 +287,7 @@ describe('plugin module route', () => {
 })
 
 describe('trusted update needs a restart', () => {
-  test('keeps the old module until Mission Control restarts', async () => {
+  test('keeps the old module until Shikidan restarts', async () => {
     const source = await installTrusted('restart')
     expect(await (await call('version')).json()).toEqual({ result: 'v1' })
 

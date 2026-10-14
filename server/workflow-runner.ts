@@ -980,7 +980,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
         return null
       }
       const title = run.workflow.nodes.find(node => node.id === nodeId)!.title
-      const line = `Mission Control: the flow "${oneLine(run.label)}" is waiting for you at "${oneLine(title)}" (In Session). Read GET ${mcUrl()}/api/studio/runs/${run.id}/steps/${nodeId}, do it here with the user, then report it.`
+      const line = `Shikidan: the flow "${oneLine(run.label)}" is waiting for you at "${oneLine(title)}" (In Session). Read GET ${mcUrl()}/api/studio/runs/${run.id}/steps/${nodeId}, do it here with the user, then report it.`
       followResumedTerminals([run])
       if (!run.terminalId || !deps.terminals?.write?.(run.terminalId, line)) throw new RunActionError('The terminal that owns this flow is closed', 409)
       return run.terminalId

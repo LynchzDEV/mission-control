@@ -39,7 +39,7 @@ function statusText(url: string, doc: { quota: unknown; roles: unknown }): strin
   const usage = 'error' in quota ? [`  ${cell(quota.error)}`] : Object.keys(quota).filter((key) => key !== 'peak').map((key) => usageLine(key, quota[key]))
   const roles = isRecord(doc.roles) ? doc.roles : {}
   const roleLines = 'error' in roles ? [`  ${cell(roles.error)}`] : ROLE_NAMES.map((name) => roleLine(name, roles[name]))
-  return [`Mission Control: up at ${url}`, 'Usage:', ...usage, 'Roles:', ...roleLines, ...(typeof roles.autoReview === 'boolean' ? [`  auto-review ${roles.autoReview ? 'on' : 'off'}`] : [])].join('\n') + '\n'
+  return [`Shikidan: up at ${url}`, 'Usage:', ...usage, 'Roles:', ...roleLines, ...(typeof roles.autoReview === 'boolean' ? [`  auto-review ${roles.autoReview ? 'on' : 'off'}`] : [])].join('\n') + '\n'
 }
 
 function roleAssignment(value: unknown): RoleAssignment {
@@ -114,7 +114,7 @@ const MODEL_OPTION = { model: { type: 'string', description: 'model id', placeho
 export const systemCommands: Command[] = [
   {
     path: ['status'],
-    summary: 'Is Mission Control up, usage per provider, and who plays each role',
+    summary: 'Is Shikidan up, usage per provider, and who plays each role',
     run: async (ctx) => {
       const health = await ctx.client.get('/api/health')
       const [quota, roles] = await Promise.all([settle(ctx.client.get('/api/quota')), settle(ctx.client.get('/api/roles'))])

@@ -1,0 +1,2 @@
+// ponytail: legacy mc.* localStorage keys, drop once browsers have loaded a Shikidan build
+export const LEGACY_STORAGE_COPY = `try{if(localStorage.getItem('skd.legacyCopied')===null){const keys=[];for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key!==null&&key.startsWith('mc.'))keys.push(key)}for(const key of keys){const next='skd.'+key.slice(3);if(localStorage.getItem(next)===null)localStorage.setItem(next,localStorage.getItem(key))}localStorage.setItem('skd.legacyCopied','1')}}catch{}`

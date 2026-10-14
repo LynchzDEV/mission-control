@@ -50,7 +50,7 @@ export function fillTemplate(text: string, path: string, context: FillContext): 
   for (const [index, line] of lines.entries()) {
     for (const [placeholder, kind, key] of line.matchAll(PLACEHOLDER)) {
       const where = `${path}:${index + 1}: ${placeholder}`
-      if (kind === 'mc' && key !== 'mctl') return { ok: false, error: `${where} is not a value Mission Control fills` }
+      if (kind === 'mc' && key !== 'mctl') return { ok: false, error: `${where} is not a value Shikidan fills` }
       if (kind === 'setting' && !fields.has(key!)) return { ok: false, error: `${where} is not a declared setting` }
       if (kind === 'setting' && fields.get(key!)!.type === 'secret') return { ok: false, error: `${where} is a secret setting and is never written into a file` }
     }

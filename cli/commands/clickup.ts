@@ -150,7 +150,7 @@ async function startSession(ctx: Context): Promise<void> {
   const model = stringOpt(ctx, 'model')
   if (flag(ctx, 'terminal')) {
     const terminal = await ctx.client.post('/api/terminals', { engine, cwd, ...(model ? { model } : {}), initialPrompt: prompt, title: `ClickUp ${taskId}`.slice(0, 60) })
-    emit(ctx, terminal, (value) => `Terminal ${cell(isRecord(value) ? value.id : '')} opened in ${cwd} with the task context. Open it in Mission Control.\n`)
+    emit(ctx, terminal, (value) => `Terminal ${cell(isRecord(value) ? value.id : '')} opened in ${cwd} with the task context. Open it in Shikidan.\n`)
     return
   }
   const job = await ctx.client.post('/api/jobs', { engine, ...(model ? { model } : {}), cwd, prompt, purpose: 'chat' })

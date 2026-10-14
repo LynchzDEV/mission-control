@@ -6,7 +6,7 @@ import { el, icon, lineText, type QueueFlow, type QueueItemView, type QueuePlugi
 export type AddDialogSource = { plugins: QueuePlugin[]; flows: QueueFlow[]; items: QueueItemView[] }
 export type AddDialog = { open(): void }
 
-const RECENT_CWD_KEY = 'mc.term.recentCwd'
+const RECENT_CWD_KEY = 'skd.term.recentCwd'
 type Position = 'end' | 'next'
 
 export function parseItemRef(text: string): string {
@@ -70,7 +70,7 @@ export function createAddDialog(source: () => AddDialogSource, toast: (text: str
   const close = el('button', { type: 'submit', class: 'round', 'aria-label': 'Close' }, icon('close-icon'))
   const dialog = el('dialog', { class: 'access-dialog flat q-add', 'aria-labelledby': 'queue-add-title' },
     el('header', { class: 'dialog-heading' },
-      el('div', {}, el('h2', { id: 'queue-add-title' }, 'Add to queue'), el('p', { class: 'muted' }, 'Mission Control builds it in its own worktree.')),
+      el('div', {}, el('h2', { id: 'queue-add-title' }, 'Add to queue'), el('p', { class: 'muted' }, 'Shikidan builds it in its own worktree.')),
       el('form', { method: 'dialog' }, close)),
     form) as HTMLDialogElement
   let position: Position = 'end'

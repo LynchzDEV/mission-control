@@ -775,7 +775,7 @@ describe('chat jobs', () => {
     expect(job.edit).toBe(true)
     expect(seen[0]?.purpose).toBe('chat')
     expect(seen[0]?.edit).toBe(true)
-    expect(seen[0]?.coreRules).toContain('Mission Control chat')
+    expect(seen[0]?.coreRules).toContain('Shikidan chat')
     expect(seen[0]?.coreRules).toContain(`Chat id ${job.id}`)
   })
 

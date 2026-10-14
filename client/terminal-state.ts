@@ -63,7 +63,7 @@ export function renameValue(current: string, typed: string): string | null {
 export type DragKind = 'card' | 'files' | 'none'
 
 export function dragKind(types: readonly string[]): DragKind {
-  if (types.includes('text/x-mc-terminal')) return 'card'
+  if (types.includes('text/x-skd-terminal')) return 'card'
   if (types.includes('Files') || types.includes('text/uri-list')) return 'files'
   return 'none'
 }

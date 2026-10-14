@@ -32,7 +32,7 @@ export type MainDeps = {
 export const COMMANDS: Command[] = [...systemCommands, ...jobCommands, ...studioCommands, ...pluginCommands, ...clickupCommands, ...queueCommands]
 
 const GLOBAL_OPTIONS: Record<string, OptionSpec> = {
-  url: { type: 'string', description: `Mission Control URL (default: $SKD_URL, then ${DEFAULT_URL})`, placeholder: 'URL' },
+  url: { type: 'string', description: `Shikidan URL (default: $SKD_URL, then ${DEFAULT_URL})`, placeholder: 'URL' },
   json: { type: 'boolean', description: 'print the server JSON as one document (NDJSON for follow)' },
   help: { type: 'boolean', short: 'h', description: 'show help' },
   version: { type: 'boolean', short: 'v', description: 'print the mctl version' },
@@ -40,7 +40,7 @@ const GLOBAL_OPTIONS: Record<string, OptionSpec> = {
 
 const OUT_OF_SCOPE = 'Not covered here (use the browser): secrets reveal/rotate/write, connection create/delete, drafts, preview, studio default, workflow and policy editing, chat home and file pickers, job images, terminal drops, live event streams, attaching to a terminal.'
 
-const EXIT_CODES = 'Exit codes: 0 ok, 1 API error, 2 usage error, 3 Mission Control unreachable.'
+const EXIT_CODES = 'Exit codes: 0 ok, 1 API error, 2 usage error, 3 Shikidan unreachable.'
 
 const ENVIRONMENT = 'Environment: SKD_URL (server URL), SKD_TOKEN (API token; default: apiToken in secrets.json, needed only for non-local URLs).'
 
@@ -75,7 +75,7 @@ export function rootHelp(): string {
   return [
     'Usage: mctl <command> [options]',
     '',
-    'Mission Control from the command line.',
+    'Shikidan from the command line.',
     '',
     'Commands:',
     ...COMMANDS.map((command) => `  ${usageLine(command).padEnd(width)}  ${command.summary}`),

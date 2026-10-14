@@ -5,7 +5,7 @@ import { CHAT_MODES, chatModeChoice, chatModeKey } from './chat-view'
 import { customModelChoice, launchChoice, readRecentDirectories, type LaunchProvider } from './shell-launch'
 
 const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElement
-const engineKey = 'mc.shell.engine', modelKey = 'mc.shell.model', editKey = 'mc.shell.edit', projectKey = 'mc.shell.project', recentKey = 'mc.term.recentCwd'
+const engineKey = 'skd.shell.engine', modelKey = 'skd.shell.model', editKey = 'skd.shell.edit', projectKey = 'skd.shell.project', recentKey = 'skd.term.recentCwd'
 const group = $('chip-group')
 const projectChip = $('project-chip') as HTMLButtonElement
 const modelChip = $('model-chip') as HTMLButtonElement
@@ -43,7 +43,7 @@ function paintProject(): void {
 }
 
 const chatEngine = (): string | null => document.body.dataset.chatEngine ?? null
-const chatModelKey = (): string | null => (openChat === null ? null : `mc.chat.model.${openChat}`)
+const chatModelKey = (): string | null => (openChat === null ? null : `skd.chat.model.${openChat}`)
 
 function paintModel(): void {
   const chatKey = chatModelKey()

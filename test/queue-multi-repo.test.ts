@@ -167,7 +167,7 @@ test('a multi-repo item without a workspace preparer fails with a clear reason',
   await twoRepos()
   const h = queueHarness(scratch)
   const item = await h.engine.add({ ...multi, repo: parent, repos: ['a', 'b'] })
-  expect(h.store.get(item.id)).toMatchObject({ state: 'failed', error: 'This Mission Control cannot build multi-repo items' })
+  expect(h.store.get(item.id)).toMatchObject({ state: 'failed', error: 'This Shikidan cannot build multi-repo items' })
 })
 
 test('remove leaves worktrees and branches in place for multi-repo items, as it does for single-repo items', async () => {

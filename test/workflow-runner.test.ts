@@ -1458,7 +1458,7 @@ test('reminding a terminal types one line into it and presses Enter', async () =
   const reminded = await runner.remind(approved.id, 'plan')
   expect(reminded.id).toBe(approved.id)
   expect(writes).toEqual([
-    ['terminal-a', `Mission Control: the flow "fixture" is waiting for you at "Plan" (In Session). Read GET ${mcUrl()}/api/studio/runs/${approved.id}/steps/plan, do it here with the user, then report it.`],
+    ['terminal-a', `Shikidan: the flow "fixture" is waiting for you at "Plan" (In Session). Read GET ${mcUrl()}/api/studio/runs/${approved.id}/steps/plan, do it here with the user, then report it.`],
     ['terminal-a', '\r'],
   ])
   await expect(runner.remind(approved.id, 'verify-plan')).rejects.toMatchObject({ status: 409, message: 'That step is not waiting for the session' })

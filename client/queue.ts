@@ -9,7 +9,7 @@ export { readQueueItems, renderQueue } from './queue-view'
 
 const REFRESH_MS = 30_000
 const FOCUS_MS = 1600
-const LAYOUT_KEY = 'mc.queue.layout'
+const LAYOUT_KEY = 'skd.queue.layout'
 const ROW_SELECTOR = '.q-row, .q-notyet, .q-tree-tip'
 
 let items: QueueItemView[] = []
@@ -232,7 +232,7 @@ function start(section: HTMLElement): void {
     if (result.ok && checkedAt === null) showChecked(result.data.checkedAt)
     if (loaded) return
     if (result.ok) showItems(readQueueItems(result.data.items))
-    else section.replaceChildren(statusLine('Could not load the queue. Mission Control keeps trying.'))
+    else section.replaceChildren(statusLine('Could not load the queue. Shikidan keeps trying.'))
   }
 
   section.replaceChildren(statusLine('Loading the queue…'))

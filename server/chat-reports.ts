@@ -20,7 +20,7 @@ export type AgentReport = { message: string; needsYou: boolean }
 
 export type LogReader = (id: string) => Promise<string>
 
-export const RESTART_CATCH_UP = '[Mission Control restarted — catching up]'
+export const RESTART_CATCH_UP = '[Shikidan restarted — catching up]'
 
 export type ChatRunSource = {
   list(): WorkflowRun[]

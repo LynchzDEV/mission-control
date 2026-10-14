@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import { lintSpec } from '../server/spec-lint'
 
-const FULL = `You are a Mission Control worker job: implement directly in this tree.
+const FULL = `You are a Shikidan worker job: implement directly in this tree.
 ## Decisions
 1. Match semantics: exact string equality.
 ## Preserve

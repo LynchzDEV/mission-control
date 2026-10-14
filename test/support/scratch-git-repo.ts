@@ -11,7 +11,7 @@ export async function initScratchGitRepo(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true })
   await runGit(['init', '-q'], dir)
   await runGit(['config', 'user.email', 'mission-control-test@example.com'], dir)
-  await runGit(['config', 'user.name', 'Mission Control Test'], dir)
+  await runGit(['config', 'user.name', 'Shikidan Test'], dir)
   await writeFile(join(dir, 'README.md'), 'initial\n')
   await runGit(['add', '.'], dir)
   await runGit(['commit', '-q', '-m', 'initial'], dir)
