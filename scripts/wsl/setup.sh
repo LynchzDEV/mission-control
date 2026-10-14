@@ -5,8 +5,11 @@ set -euo pipefail
 MIN_BUN=1.2.23
 USERNS_KEY=kernel.apparmor_restrict_unprivileged_userns
 USERNS_PROC=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
-USERNS_CONF=/etc/sysctl.d/60-mission-control-userns.conf
-DEFAULT_CLONE_DIR="$HOME/mission-control"
+USERNS_CONF=/etc/sysctl.d/60-shikidan-userns.conf
+DEFAULT_CLONE_DIR="$HOME/shiki"
+# ponytail: sysctl file and clone folder from before Shikidan, drop once no install still has them
+LEGACY_USERNS_CONF=/etc/sysctl.d/60-mission-control-userns.conf
+LEGACY_CLONE_DIR="$HOME/mission-control"
 
 with_plugins=false
 install_cli=true
@@ -73,6 +76,7 @@ allow_plugin_sandbox() {
     warn "could not set $USERNS_KEY=0 now (read-only /proc/sys, e.g. inside Docker); isolated plugins may fail until it is set"
   fi
   printf '%s = 0\n' "$USERNS_KEY" | as_root tee "$USERNS_CONF" >/dev/null
+  if [[ -e $LEGACY_USERNS_CONF ]]; then as_root rm -f -- "$LEGACY_USERNS_CONF"; fi
   say "Persisted in $USERNS_CONF (remove that file to undo; it lowers a hardening default on Ubuntu 24.04)"
 }
 
@@ -138,6 +142,11 @@ ensure_login_path() {
 
 resolve_repo_dir() {
   if [[ -n $repo_url ]]; then
+    if [[ ! -e $DEFAULT_CLONE_DIR && -d "$LEGACY_CLONE_DIR/.git" ]]; then
+      say "$LEGACY_CLONE_DIR already exists; using it where it is" >&2
+      printf '%s\n' "$LEGACY_CLONE_DIR"
+      return
+    fi
     if [[ -d "$DEFAULT_CLONE_DIR/.git" ]]; then
       say "$DEFAULT_CLONE_DIR already exists; leaving it as is" >&2
     else
@@ -155,11 +164,11 @@ resolve_repo_dir() {
 
 check_repo_location() {
   local repo_dir="$1"
-  [[ -f "$repo_dir/package.json" ]] || die "$repo_dir does not look like a Mission Control checkout"
+  [[ -f "$repo_dir/package.json" ]] || die "$repo_dir does not look like a Shikidan checkout"
   case "$repo_dir" in
-    /mnt/*) die "$repo_dir is on the Windows drive; clone it inside your WSL home (e.g. ~/mission-control) instead" ;;
+    /mnt/*) die "$repo_dir is on the Windows drive; clone it inside your WSL home (e.g. ~/shiki) instead" ;;
     "$HOME"/*) ;;
-    *) warn "$repo_dir is outside $HOME; Mission Control only works with folders under your home directory" ;;
+    *) warn "$repo_dir is outside $HOME; Shikidan only works with folders under your home directory" ;;
   esac
 }
 

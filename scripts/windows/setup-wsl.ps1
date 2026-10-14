@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-    throw 'wsl.exe was not found. Mission Control needs Windows 10 version 2004+ or Windows 11.'
+    throw 'wsl.exe was not found. Shikidan needs Windows 10 version 2004+ or Windows 11.'
 }
 
 wsl.exe --status | Out-Null
@@ -31,6 +31,6 @@ if ($installed -contains $Distro) {
 
 Write-Host ''
 Write-Host 'Next, inside Ubuntu (Start menu -> Ubuntu 24.04), run:'
-Write-Host '  git clone https://github.com/LynchzDEV/mission-control.git ~/mission-control'
-Write-Host '  ~/mission-control/scripts/wsl/setup.sh --with-plugins'
+Write-Host '  git clone https://github.com/LynchzDEV/shiki.git ~/shiki'
+Write-Host '  ~/shiki/scripts/wsl/setup.sh --with-plugins'
 Write-Host 'Then follow the steps it prints. Full guide: docs/install-windows.md'
