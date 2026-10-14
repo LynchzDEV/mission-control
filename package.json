@@ -1,9 +1,9 @@
 {
-  "name": "mission-control",
+  "name": "shiki",
   "private": true,
   "type": "module",
   "bin": {
-    "mctl": "cli/mctl.ts"
+    "shiki": "cli/shiki.ts"
   },
   "scripts": {
     "start": "bun server/index.ts",

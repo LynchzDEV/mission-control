@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { main, VERSION, type MainDeps } from '../cli/mctl'
+import { main, VERSION, type MainDeps } from '../cli/shiki'
 
 let configDir: string
 
@@ -353,7 +353,7 @@ describe('help', () => {
   test('no arguments shows the Shikidan banner, the version and help', async () => {
     const h = harness()
     expect(await main([], h.deps)).toBe(0)
-    expect(h.out()).toContain('███╗   ███╗')
+    expect(h.out()).toContain('███████╗██╗  ██╗██╗██╗  ██╗')
     expect(h.out()).toContain(`v${VERSION}`)
     expect(h.out()).toContain('Usage')
     expect(h.calls).toEqual([])
@@ -369,7 +369,7 @@ describe('help', () => {
     for (const argv of [['--version'], ['-v'], ['jobs', '--version']]) {
       const h = harness()
       expect(await main(argv, h.deps)).toBe(0)
-      expect(h.out()).toBe(`mctl ${VERSION}\n`)
+      expect(h.out()).toBe(`shiki ${VERSION}\n`)
       expect(h.calls).toEqual([])
     }
   })

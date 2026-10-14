@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { Elysia } from 'elysia'
 
-import { main, type MainDeps } from '../cli/mctl'
+import { main, type MainDeps } from '../cli/shiki'
 import { createJobManager } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
 import { jobsRoutes } from '../server/routes/jobs'

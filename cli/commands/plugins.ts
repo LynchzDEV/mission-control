@@ -15,8 +15,8 @@ export async function callPlugin(client: Client, id: string, method: string, par
     const body = await client.post(pluginPath(id, '/call'), { method, params })
     return isRecord(body) ? body.result : body
   } catch (error) {
-    if (error instanceof ApiError && error.message === `No method ${method}`) throw new UsageError(`${id} is too old for this (it has no ${method}); update it with: mctl plugin update ${id} --yes`)
-    if (error instanceof ApiError && error.status === 404 && error.message === 'That plugin is not installed') throw new UsageError(`${id} is not installed; see: mctl plugin catalog`)
+    if (error instanceof ApiError && error.message === `No method ${method}`) throw new UsageError(`${id} is too old for this (it has no ${method}); update it with: shiki plugin update ${id} --yes`)
+    if (error instanceof ApiError && error.status === 404 && error.message === 'That plugin is not installed') throw new UsageError(`${id} is not installed; see: shiki plugin catalog`)
     throw error
   }
 }
@@ -37,7 +37,7 @@ function permissionLines(permissions: unknown): string[] {
 
 function pluginsText(value: unknown): string {
   const plugins = records(value, 'plugins')
-  if (plugins.length === 0) return 'No plugins installed. Add one with: mctl plugin add <link>\n'
+  if (plugins.length === 0) return 'No plugins installed. Add one with: shiki plugin add <link>\n'
   return table(plugins, [
     { header: 'ID', value: (plugin) => cell(plugin.id) },
     { header: 'VERSION', value: (plugin) => cell(plugin.version) },
@@ -49,7 +49,7 @@ function pluginsText(value: unknown): string {
 
 function catalogText(value: unknown): string {
   const entries = records(value, 'entries')
-  if (entries.length === 0) return 'No marketplaces yet. Add one with: mctl plugin add <marketplace link>\n'
+  if (entries.length === 0) return 'No marketplaces yet. Add one with: shiki plugin add <marketplace link>\n'
   return entries.map((entry) => {
     if (typeof entry.error === 'string') return `${cell(entry.marketplace)}\n  ${entry.error}\n`
     const plugins = Array.isArray(entry.plugins) ? entry.plugins.filter(isRecord) : []
@@ -115,7 +115,7 @@ async function addFromLink(ctx: Context): Promise<void> {
   const result = await ctx.client.post('/api/plugins/add-link', { url, ...(ref === undefined ? {} : { ref }) })
   if (!isRecord(result)) throw new Error('Shikidan answered without a result')
   if (result.kind === 'marketplace') {
-    emit(ctx, result, () => 'Marketplace added. List its plugins with: mctl plugin catalog\n')
+    emit(ctx, result, () => 'Marketplace added. List its plugins with: shiki plugin catalog\n')
     return
   }
   if (!flag(ctx, 'yes')) {

@@ -14,6 +14,7 @@ import { legacyNamed } from '../legacy-name'
 
 const SKILL_MARKER_FILE = '.mc-plugin'
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n/
+// ponytail: {{mc:mctl}} is the published plugin template placeholder, rename it together with skd-plugin-sdk
 const PLACEHOLDER = /\{\{(setting|mc):([^}]*)\}\}/g
 
 export type ContributionSource = {
@@ -22,10 +23,10 @@ export type ContributionSource = {
   contributes: PluginContributions
   settingsFields: SettingField[]
   settings: Record<string, string>
-  mctl: string
+  shiki: string
 }
 
-export type FillContext = Pick<ContributionSource, 'settingsFields' | 'settings' | 'mctl'>
+export type FillContext = Pick<ContributionSource, 'settingsFields' | 'settings' | 'shiki'>
 export type FillResult = { ok: true; text: string } | { ok: false; error: string }
 export type ApplyResult = { ok: true; written: string[] } | { ok: false; error: string }
 export type PluginFlow = WorkflowRevision & { plugin: string }
@@ -37,8 +38,8 @@ export function contributionTargets(): string[] {
   return [join(homedir(), '.claude'), workerProfileDirs().claude, chatProfileDirs().claude]
 }
 
-export function mctlCommand(): string {
-  return `bun ${resolve(import.meta.dir, '..', '..', 'cli', 'mctl.ts')}`
+export function cliCommand(): string {
+  return `bun ${resolve(import.meta.dir, '..', '..', 'cli', 'shiki.ts')}`
 }
 
 function agentMarker(pluginId: string): string {
@@ -57,7 +58,7 @@ export function fillTemplate(text: string, path: string, context: FillContext): 
     }
   }
   const filled = text.replace(PLACEHOLDER, (placeholder, kind: string, key: string) => {
-    if (kind === 'mc') return context.mctl
+    if (kind === 'mc') return context.shiki
     const value = context.settings[key]
     return value === undefined || value === '' ? placeholder : value
   })
@@ -193,7 +194,7 @@ export async function pluginFlows(plugins: InstalledPlugin[], folderOf: (id: str
   return flows
 }
 
-export type RefreshOptions = { targets?: string[]; mctl?: string; sync?: () => Promise<unknown> }
+export type RefreshOptions = { targets?: string[]; shiki?: string; sync?: () => Promise<unknown> }
 
 async function settingsOf(plugin: InstalledPlugin): Promise<Record<string, string>> {
   const values: Record<string, string> = {}
@@ -217,7 +218,7 @@ export async function syncContributions(plugin: InstalledPlugin, options: Refres
     contributes: plugin.contributes,
     settingsFields: plugin.settingsFields,
     settings: await settingsOf(plugin),
-    mctl: options.mctl ?? mctlCommand(),
+    shiki: options.shiki ?? cliCommand(),
   }, options.targets ?? contributionTargets(), previous)
 }
 

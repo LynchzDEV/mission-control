@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { main, type MainDeps } from '../cli/mctl'
+import { main, type MainDeps } from '../cli/shiki'
 
 let configDir: string
 
@@ -69,7 +69,7 @@ function harness(reply: Reply = clickupReply, stdin = '') {
 
 const methodsOf = (calls: Call[]) => calls.map(pluginCall).filter(Boolean).map((call) => call!.method)
 
-describe('mctl plugin', () => {
+describe('shiki plugin', () => {
   test('list shows installed plugins', async () => {
     const h = harness(() => Response.json({ plugins: [{ id: 'clickup-board', version: '1.3.0', runtime: 'isolated', enabled: true, state: 'ok', name: 'ClickUp board' }] }))
     expect(await main(['plugin', 'list'], h.deps)).toBe(0)
@@ -149,11 +149,11 @@ describe('mctl plugin', () => {
   test('a plugin too old for a command says how to update it', async () => {
     const h = harness((call) => (pluginCall(call)?.method === 'board.view' ? Response.json({ error: 'No method board.view' }, { status: 404 }) : clickupReply(call)))
     expect(await main(['clickup', 'board', 'main'], h.deps)).toBe(2)
-    expect(h.err()).toContain('mctl plugin update clickup-board --yes')
+    expect(h.err()).toContain('shiki plugin update clickup-board --yes')
   })
 })
 
-describe('mctl clickup', () => {
+describe('shiki clickup', () => {
   test('board finds the board by name and shows what the screen shows', async () => {
     const h = harness()
     expect(await main(['clickup', 'board', 'main', '--search', 'one'], h.deps)).toBe(0)

@@ -45,7 +45,7 @@ function source(overrides: Partial<ContributionSource> = {}): ContributionSource
       { key: 'token', label: 'Token', type: 'secret' },
     ],
     settings: { reposRoot: '/work/repos', commentFooter: '[bot]' },
-    mctl: 'bun /mc/cli/mctl.ts',
+    shiki: 'bun /mc/cli/shiki.ts',
     ...overrides,
   }
 }
@@ -72,10 +72,10 @@ afterEach(async () => {
 })
 
 describe('fillTemplate', () => {
-  const context = { settingsFields: source().settingsFields, settings: source().settings, mctl: 'bun /mc/cli/mctl.ts' }
+  const context = { settingsFields: source().settingsFields, settings: source().settings, shiki: 'bun /mc/cli/shiki.ts' }
 
-  test('fills text settings and the mctl command', () => {
-    expect(fillTemplate('a {{setting:reposRoot}} b {{mc:mctl}}', 'x.md', context)).toEqual({ ok: true, text: 'a /work/repos b bun /mc/cli/mctl.ts' })
+  test('fills text settings and the shiki command', () => {
+    expect(fillTemplate('a {{setting:reposRoot}} b {{mc:mctl}}', 'x.md', context)).toEqual({ ok: true, text: 'a /work/repos b bun /mc/cli/shiki.ts' })
   })
 
   test('leaves an empty setting as written', () => {
@@ -98,7 +98,7 @@ describe('applyContributions', () => {
     expect(result.ok).toBe(true)
     for (const target of targets) {
       const agent = await readFile(join(target, 'agents', 'biz-gate.md'), 'utf8')
-      expect(agent).toContain('Repos live in /work/repos. Run bun /mc/cli/mctl.ts plugin call x.')
+      expect(agent).toContain('Repos live in /work/repos. Run bun /mc/cli/shiki.ts plugin call x.')
       expect(agent).toContain('<!-- installed by shikidan plugin card-pipeline -->')
       expect(agent.startsWith('---\nname: biz-gate\n')).toBe(true)
       expect(await readFile(join(target, 'skills', 'card-refine', 'SKILL.md'), 'utf8')).toContain('Footer: [bot]')

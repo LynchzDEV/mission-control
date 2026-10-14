@@ -205,7 +205,7 @@ export const jobCommands: Command[] = [
   {
     path: ['job', 'permission'],
     args: ['id', 'decision'],
-    options: { request: { type: 'string', description: 'permission request id (required; see mctl attention)', placeholder: 'RID' } },
+    options: { request: { type: 'string', description: 'permission request id (required; see shiki attention)', placeholder: 'RID' } },
     summary: 'Answer a permission request: allow_once, allow_always or deny',
     run: async (ctx) => {
       const decision = oneOf(arg(ctx, 'decision'), PERMISSION_DECISIONS, 'decision')

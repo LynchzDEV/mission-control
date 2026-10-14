@@ -35,7 +35,7 @@ const GLOBAL_OPTIONS: Record<string, OptionSpec> = {
   url: { type: 'string', description: `Shikidan URL (default: $SKD_URL, then ${DEFAULT_URL})`, placeholder: 'URL' },
   json: { type: 'boolean', description: 'print the server JSON as one document (NDJSON for follow)' },
   help: { type: 'boolean', short: 'h', description: 'show help' },
-  version: { type: 'boolean', short: 'v', description: 'print the mctl version' },
+  version: { type: 'boolean', short: 'v', description: 'print the shiki version' },
 }
 
 const OUT_OF_SCOPE = 'Not covered here (use the browser): secrets reveal/rotate/write, connection create/delete, drafts, preview, studio default, workflow and policy editing, chat home and file pickers, job images, terminal drops, live event streams, attaching to a terminal.'
@@ -56,7 +56,7 @@ const ALL_OPTIONS: Record<string, OptionSpec> = Object.assign({}, GLOBAL_OPTIONS
 function usageLine(command: Command): string {
   const args = (command.args ?? []).map((name) => `<${name}>`)
   const options = Object.keys(command.options ?? {}).length > 0 ? ['[options]'] : []
-  return ['mctl', ...command.path, ...args, ...options].join(' ')
+  return ['shiki', ...command.path, ...args, ...options].join(' ')
 }
 
 function optionLines(specs: Record<string, OptionSpec>): string[] {
@@ -73,7 +73,7 @@ function globalLines(): string[] {
 export function rootHelp(): string {
   const width = Math.max(...COMMANDS.map((command) => usageLine(command).length))
   return [
-    'Usage: mctl <command> [options]',
+    'Usage: shiki <command> [options]',
     '',
     'Shikidan from the command line.',
     '',
@@ -160,14 +160,14 @@ async function dispatch(argv: string[], deps: MainDeps): Promise<number> {
   const pre = preParse(argv)
   const wantsHelp = pre.values.help === true
   if (pre.values.version === true) {
-    deps.stdout(`mctl ${VERSION}\n`)
+    deps.stdout(`shiki ${VERSION}\n`)
     return 0
   }
   const command = findCommand(pre.positionals)
 
   if (command === undefined) {
     if (pre.positionals.length === 0 && !wantsHelp) {
-      deps.stdout(`${BANNER}  mctl v${VERSION}\n\n${rootHelp()}`)
+      deps.stdout(`${BANNER}  shiki v${VERSION}\n\n${rootHelp()}`)
       return 0
     }
     if (pre.positionals.length === 0) return showHelp(deps, rootHelp(), true)
@@ -212,7 +212,7 @@ export async function main(argv: string[], deps: MainDeps): Promise<number> {
     return await dispatch(argv, deps)
   } catch (error) {
     if (error instanceof UsageError) {
-      deps.stderr(`mctl: ${error.message}\nRun 'mctl ${error.group === undefined ? '' : `${error.group} `}--help' for usage.\n`)
+      deps.stderr(`shiki: ${error.message}\nRun 'shiki ${error.group === undefined ? '' : `${error.group} `}--help' for usage.\n`)
       return 2
     }
     if (error instanceof UnreachableError) {

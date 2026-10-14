@@ -653,7 +653,7 @@ describe('contributed agents, skills and flows', () => {
     ...overrides,
   })
   const contributingFiles = { 'src/screen.ts': TRIVIAL_SCREEN, 'agents/biz-gate.md': AGENT, 'skills/card-refine/SKILL.md': SKILL, 'flows/card-pipeline.json': FLOW }
-  const contributingInstaller = () => createInstaller({ contributionTargets: () => targets, mctlCommand: () => 'mctl', syncEngineAssets: async () => { syncs += 1 } })
+  const contributingInstaller = () => createInstaller({ contributionTargets: () => targets, cliCommand: () => 'shiki', syncEngineAssets: async () => { syncs += 1 } })
 
   beforeEach(() => {
     targets = [join(configDir, 'home-claude'), join(configDir, 'worker-claude')]
@@ -676,7 +676,7 @@ describe('contributed agents, skills and flows', () => {
     if (!result.ok) throw new Error(JSON.stringify(result))
     for (const target of targets) {
       expect(await readFile(join(target, 'agents', 'biz-gate.md'), 'utf8')).toContain('<!-- installed by shikidan plugin fixture-plugin -->')
-      expect(await readFile(join(target, 'skills', 'card-refine', 'SKILL.md'), 'utf8')).toContain('Run mctl.')
+      expect(await readFile(join(target, 'skills', 'card-refine', 'SKILL.md'), 'utf8')).toContain('Run shiki.')
     }
     const saved = await getInstalled('fixture-plugin')
     expect(saved?.contributes).toEqual({ agents: ['agents/biz-gate.md'], skills: ['skills/card-refine'], flows: ['flows/card-pipeline.json'] })

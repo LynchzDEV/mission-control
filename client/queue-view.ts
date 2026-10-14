@@ -207,7 +207,7 @@ function emptyState(): HTMLElement {
     el('p', { class: 'muted' }, 'Items come from a source plugin. Add one and Shikidan plans it, builds it, and asks the requester when it needs them.'),
     el('div', { class: 'q-empty-ways' },
       way('store-icon', 'From a source plugin', 'Paste a task link from an enabled source plugin.', button('Add item', 'connection-button', { 'data-act': 'add' })),
-      way('terminal-icon', 'From the terminal', el('code', { class: 'q-code' }, 'mctl queue add <source> <id> --repo <dir>'), el('span'))))
+      way('terminal-icon', 'From the terminal', el('code', { class: 'q-code' }, 'shiki queue add <source> <id> --repo <dir>'), el('span'))))
 }
 
 export function renderQueue(items: readonly QueueItemView[], context: QueueContext): HTMLElement {
@@ -216,7 +216,7 @@ export function renderQueue(items: readonly QueueItemView[], context: QueueConte
   }
   const treeView = context.layout === 'tree' ? context.treeView : undefined
   if (treeView !== undefined) return el('div', { class: 'q-screen' }, heading(context), summary(items, 'tree'), treeView)
-  const hint = el('button', { type: 'button', class: 'connection-add q-hint', 'data-act': 'add' }, icon('plus-icon'), 'Add an item from a source plugin, or run ', el('code', {}, 'mctl queue add'))
+  const hint = el('button', { type: 'button', class: 'connection-add q-hint', 'data-act': 'add' }, icon('plus-icon'), 'Add an item from a source plugin, or run ', el('code', {}, 'shiki queue add'))
   return el('div', { class: 'q-screen' }, heading(context), summary(items, 'list'), el('div', { class: 'q-list' }, ...items.map(item => row(item, items, context))), hint)
 }
 

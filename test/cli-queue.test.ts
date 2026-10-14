@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { main, type MainDeps } from '../cli/mctl'
+import { main, type MainDeps } from '../cli/shiki'
 
 let configDir: string
 
@@ -43,7 +43,7 @@ function harness(reply: Reply = () => undefined, cwd = '/work/here') {
 
 const routesOf = (calls: Call[]) => calls.map((call) => `${call.method} ${call.path}`)
 
-describe('mctl queue', () => {
+describe('shiki queue', () => {
   test('list prints one row per item with its state and questions', async () => {
     const h = harness((call) => (call.method === 'GET' && call.path === '/api/queue'
       ? Response.json({ items: [{ id: 'a1', state: 'waiting-info', source: 'clickup-board', title: 'Login copy', questions: ['Which page?'], error: null }] })
@@ -63,7 +63,7 @@ describe('mctl queue', () => {
   test('list says how to add when the queue is empty', async () => {
     const h = harness(() => Response.json({ items: [] }))
     expect(await main(['queue', 'list'], h.deps)).toBe(0)
-    expect(h.out()).toBe('The queue is empty. Add an item with: mctl queue add <source> <id> --repo <dir>\n')
+    expect(h.out()).toBe('The queue is empty. Add an item with: shiki queue add <source> <id> --repo <dir>\n')
   })
 
   test('add posts source, id, repo, flow and position next', async () => {
@@ -100,8 +100,8 @@ describe('mctl queue', () => {
     for (const bad of ['x', '1.5']) {
       const rejected = harness()
       expect(await main(['queue', 'move', 'a1', bad], rejected.deps)).toBe(2)
-      expect(rejected.err()).toContain('mctl: to must be a whole number from 0')
-      expect(rejected.err()).toContain("mctl queue --help")
+      expect(rejected.err()).toContain('shiki: to must be a whole number from 0')
+      expect(rejected.err()).toContain("shiki queue --help")
       expect(rejected.calls).toEqual([])
     }
   })
@@ -139,15 +139,15 @@ describe('mctl queue', () => {
     expect(JSON.parse(h.out())).toEqual({ checked: 0, resumed: 0 })
   })
 
-  test('mctl help lists the queue group', async () => {
+  test('shiki help lists the queue group', async () => {
     const h = harness()
     expect(await main(['--help'], h.deps)).toBe(0)
-    expect(h.out()).toContain('mctl queue requeue <id>')
+    expect(h.out()).toContain('shiki queue requeue <id>')
     expect(h.out()).toContain('Put a failed, ready or waiting item back in line')
   })
 })
 
-describe('mctl queue with several repos', () => {
+describe('shiki queue with several repos', () => {
   test('add --repos sends the trimmed repo names with the folder', async () => {
     const h = harness(() => Response.json({ item: { id: 'a1', title: 'Login copy' } }))
     expect(await main(['queue', 'add', 'clickup-board', '86d3j4f8q', '--repo', '/home/me/klangtech', '--repos', 'api, backoffice'], h.deps)).toBe(0)
@@ -165,7 +165,7 @@ describe('mctl queue with several repos', () => {
     for (const [given, error] of cases) {
       const h = harness()
       expect(await main(['queue', 'add', 'clickup-board', '1', '--repo', '/k', '--repos', given], h.deps)).toBe(2)
-      expect(h.err()).toContain(`mctl: ${error}`)
+      expect(h.err()).toContain(`shiki: ${error}`)
       expect(h.calls).toEqual([])
     }
   })

@@ -120,7 +120,7 @@ test('empty queue shows how to add an item', () => {
   const empty = view.querySelector('.q-empty') as HTMLElement
   expect(empty.querySelector('h2')?.textContent).toBe('Nothing in the queue')
   expect(empty.textContent).toContain('Items come from a source plugin')
-  expect(empty.textContent).toContain('mctl queue add')
+  expect(empty.textContent).toContain('shiki queue add')
   expect(buttonNamed('Add item', view)).toBeDefined()
 })
 
