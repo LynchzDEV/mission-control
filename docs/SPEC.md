@@ -144,14 +144,14 @@ Every server start best-effort syncs `~/.claude` → `~/.codex` so Codex sees an
 `AGENTS.md` (translated from the handwritten portion of `CLAUDE.md`, minus Claude-only machinery),
 translated `SKILL.md`/agent `.toml` files for anything not too Claude-specific (a 30% Claude-residual
 threshold skips the rest), and moves aside anything it would overwrite under
-`~/.codex/backup/*.pre-mission-control-<timestamp>`. Failures are logged, never thrown.
+`~/.codex/backup/*.pre-shikidan-<timestamp>`. Failures are logged, never thrown.
 
 ### Skill install (`server/skill-install.ts`)
 
 Every server start also symlinks each directory under the repo's `skills/` (currently just
 `skd-dispatch`) into `~/.claude/skills/`, so the orchestration skill updates with a plain `git pull` —
 no separate install step. An existing non-symlink at the target is moved aside to
-`~/.claude/skills-backup/<name>.pre-mission-control-<timestamp>` first, and an already-correct symlink
+`~/.claude/skills-backup/<name>.pre-shikidan-<timestamp>` first, and an already-correct symlink
 is left alone.
 
 ## Quota, models, and providers

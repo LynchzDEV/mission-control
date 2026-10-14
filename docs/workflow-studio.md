@@ -16,7 +16,7 @@ Use **Add step** to search editable presets or select **Custom task**. Every ste
 
 **Who should do it?** offers **Use default** or one entry per connected AI. The helper text names the AI currently assigned by the step's planning, execution, or review default. Choosing an AI directly keeps that assignment when role defaults change.
 
-The **New terminal** form has a **Workflow** selector, shared with **Resume**. **Default workflow** selects your saved default; choose another saved workflow for that terminal alone. If your saved default is custom, **MC standard** still offers the original Plan → Verify → Execute → Review workflow. Each terminal shows its workflow name and version below its header, including in split views and after refreshing the page.
+The **New terminal** form has a **Workflow** selector, shared with **Resume**. **Default workflow** selects your saved default; choose another saved workflow for that terminal alone. If your saved default is custom, **Plan, verify, execute, review** still offers the original Plan → Verify → Execute → Review workflow. Each terminal shows its workflow name and version below its header, including in split views and after refreshing the page.
 
 Opening a terminal pins that workflow version; later blueprint edits or changes to the workspace default do not change existing terminals. Opening a terminal does not start a workflow run. Native agents receive the selection in their instructions. Terminal-originated workflow runs pass `terminalId`; the server enforces that terminal's workflow version and directory, and links every node job back to its terminal. The session's `SKD_URL` and configuration directory keep dispatches on its own Shikidan instance, including port 7778.
 

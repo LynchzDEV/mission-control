@@ -71,9 +71,9 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\install-autostart.ps1
 Start-ScheduledTask -TaskName 'Shikidan'
 ```
 
-It creates a task named "Shikidan" that runs at sign-in **hidden** (no window to close by accident): `conhost.exe --headless wsl.exe -d Ubuntu-24.04 -- bash -lc "{ cd ~/'shiki' && bun start; } >> ~/mission-control.log 2>&1"`. The task is set to retry up to 3 times, one minute apart, but Windows may not retry when Shikidan itself exits with an error — check `~/mission-control.log` and run `Start-ScheduledTask -TaskName 'Shikidan'` if it is down. It also runs on battery. Other distro or folder: add `-Distro <name>` or `-RepoPath <path>`.
+It creates a task named "Shikidan" that runs at sign-in **hidden** (no window to close by accident): `conhost.exe --headless wsl.exe -d Ubuntu-24.04 -- bash -lc "{ cd ~/'shiki' && bun start; } >> ~/shiki.log 2>&1"`. The task is set to retry up to 3 times, one minute apart, but Windows may not retry when Shikidan itself exits with an error — check `~/shiki.log` and run `Start-ScheduledTask -TaskName 'Shikidan'` if it is down. It also runs on battery. Other distro or folder: add `-Distro <name>` or `-RepoPath <path>`.
 
-- **See what it is doing**: in Ubuntu, `tail -f ~/mission-control.log`.
+- **See what it is doing**: in Ubuntu, `tail -f ~/shiki.log`.
 - **Stop / start**: in PowerShell, `Stop-ScheduledTask -TaskName 'Shikidan'` and `Start-ScheduledTask -TaskName 'Shikidan'`. If the cockpit still answers after stopping, run `wsl --shutdown`.
 - **Remove**: run the same script with `-Remove`.
 - **If the hidden mode does not work on your PC** (some Windows 10 builds handle `conhost --headless` badly: nothing starts, or a window shows anyway): re-run the script with `-ShowWindow`. A console window then opens at sign-in. Minimize it, do not close it, because closing it stops Shikidan.
@@ -121,7 +121,7 @@ Then open [http://localhost:7777](http://localhost:7777) on that device. Shikida
 |---|---|
 | `http://localhost:7777` does not load in Windows, but `curl http://127.0.0.1:7777/api/health` inside Ubuntu answers | Turn on mirrored networking (needs Windows 11 22H2 or newer; on older Windows, run `wsl --shutdown` and start Shikidan again instead): create or edit `%UserProfile%\.wslconfig` with the two lines `[wsl2]` and `networkingMode=mirrored`, run `wsl --shutdown` in PowerShell, then start Shikidan again. |
 | `cwd must be under $HOME` | The project or a repo you opened is outside your Ubuntu home (often under `/mnt/c`). Clone it into `~` inside Ubuntu instead. |
-| An isolated plugin (for example the ClickUp board) fails to start | Run `~/shiki/scripts/wsl/setup.sh --with-plugins`. It installs bubblewrap and socat and sets `kernel.apparmor_restrict_unprivileged_userns=0` (saved in `/etc/sysctl.d/60-mission-control-userns.conf`). Ubuntu 24.04 blocks the plugin sandbox without it; this is the setting the sandbox library's own README asks for. Delete that file to undo. |
+| An isolated plugin (for example the ClickUp board) fails to start | Run `~/shiki/scripts/wsl/setup.sh --with-plugins`. It installs bubblewrap and socat and sets `kernel.apparmor_restrict_unprivileged_userns=0` (saved in `/etc/sysctl.d/60-shikidan-userns.conf`). Ubuntu 24.04 blocks the plugin sandbox without it; this is the setting the sandbox library's own README asks for. Delete that file to undo. |
 | `another instance is running, refusing to double-bind` | Shikidan is already running (often the autostart task). Just open the browser. To restart it, stop the old copy first. |
 | `bun: command not found` after setup | Close and reopen the Ubuntu window, or run `source ~/.profile`. |
 | Jobs fail right away with a GLM or Codex error | Finish step 4 for that AI, or give its role to another AI in Studio → Manage AIs. |

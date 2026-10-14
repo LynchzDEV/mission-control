@@ -11,7 +11,7 @@ A Claude Code mod (plugin of function hooks, Claude Code v2.1.287+) that brings 
 
 - Status line: usage per provider and running jobs.
 - "Waiting on you" band above the prompt, only when something needs an answer, with Allow / Deny.
-- `/mc` command: start jobs and runs (`/mc run "..." --engine grok`); opens a side pane with jobs, runs and the waiting list, live output, Follow / Kill / Open in app.
+- `/skd` command: start jobs and runs (`/skd run "..." --engine grok`); opens a side pane with jobs, runs and the waiting list, live output, Follow / Kill / Open in app.
 - Toast when a job finishes or fails.
 - A tool Claude can call to hand work to another AI (for example "have Codex review this"); starts the job and returns its id, so Claude never blocks for minutes.
 
