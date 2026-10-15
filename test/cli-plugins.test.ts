@@ -3,17 +3,17 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { main, type MainDeps } from '../cli/mctl'
+import { main, type MainDeps } from '../cli/shiki'
 
 let configDir: string
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-cli-plugins-config-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
 })
 
@@ -39,7 +39,7 @@ function clickupReply(call: Call): Response | undefined {
   if (plugin?.method === 'board.view') return Response.json({ result: { board: BOARD, columns: [{ status: 'Open', tasks: [{ id: 't1', name: 'One', assignees: [{ initials: 'PV' }] }] }], shown: 1, total: 3 } })
   if (plugin?.method === 'boards.setFilters') return Response.json({ result: plugin.params.filters })
   if (plugin?.method === 'task.dossier') return Response.json({ result: { markdown: '# Dossier\n', tasksFetched: 1, truncated: false } })
-  if (call.path === '/api/plugins/clickup-board/context') return Response.json({ path: '/home/me/work/api/.mission-control/context/clickup-board/t.md' })
+  if (call.path === '/api/plugins/clickup-board/context') return Response.json({ path: '/home/me/work/api/.shikidan/context/clickup-board/t.md' })
   if (call.path === '/api/roles') return Response.json({ plan: { engine: 'claude', model: null } })
   if (call.path === '/api/jobs') return Response.json({ job: { id: 'job-9' } })
   if (call.path === '/api/terminals') return Response.json({ id: 'term-3' })
@@ -60,7 +60,7 @@ function harness(reply: Reply = clickupReply, stdin = '') {
     },
     stdout: (chunk) => { out += chunk },
     stderr: (chunk) => { err += chunk },
-    env: { MISSION_CONTROL_CONFIG_DIR: configDir },
+    env: { SKD_CONFIG_DIR: configDir },
     stdin: async () => stdin,
     cwd: '/work/here',
   }
@@ -69,7 +69,7 @@ function harness(reply: Reply = clickupReply, stdin = '') {
 
 const methodsOf = (calls: Call[]) => calls.map(pluginCall).filter(Boolean).map((call) => call!.method)
 
-describe('mctl plugin', () => {
+describe('shiki plugin', () => {
   test('list shows installed plugins', async () => {
     const h = harness(() => Response.json({ plugins: [{ id: 'clickup-board', version: '1.3.0', runtime: 'isolated', enabled: true, state: 'ok', name: 'ClickUp board' }] }))
     expect(await main(['plugin', 'list'], h.deps)).toBe(0)
@@ -149,11 +149,11 @@ describe('mctl plugin', () => {
   test('a plugin too old for a command says how to update it', async () => {
     const h = harness((call) => (pluginCall(call)?.method === 'board.view' ? Response.json({ error: 'No method board.view' }, { status: 404 }) : clickupReply(call)))
     expect(await main(['clickup', 'board', 'main'], h.deps)).toBe(2)
-    expect(h.err()).toContain('mctl plugin update clickup-board --yes')
+    expect(h.err()).toContain('shiki plugin update clickup-board --yes')
   })
 })
 
-describe('mctl clickup', () => {
+describe('shiki clickup', () => {
   test('board finds the board by name and shows what the screen shows', async () => {
     const h = harness()
     expect(await main(['clickup', 'board', 'main', '--search', 'one'], h.deps)).toBe(0)
@@ -184,14 +184,14 @@ describe('mctl clickup', () => {
     const h = harness()
     expect(await main(['clickup', 'start', '86d4ccpu2', '--board', 'Main', '--message', 'Plan it'], h.deps)).toBe(0)
     expect(h.calls.find((call) => call.path === '/api/plugins/clickup-board/context')?.body).toEqual({ name: 'task-86d4ccpu2', markdown: '# Dossier\n', cwd: join(homedir(), 'work/api') })
-    expect(h.calls.find((call) => call.path === '/api/jobs')?.body).toEqual({ engine: 'claude', cwd: join(homedir(), 'work/api'), prompt: 'Read the task context in /home/me/work/api/.mission-control/context/clickup-board/t.md before anything else.\n\nPlan it', purpose: 'chat' })
+    expect(h.calls.find((call) => call.path === '/api/jobs')?.body).toEqual({ engine: 'claude', cwd: join(homedir(), 'work/api'), prompt: 'Read the task context in /home/me/work/api/.shikidan/context/clickup-board/t.md before anything else.\n\nPlan it', purpose: 'chat' })
     expect(h.out()).toContain('Chat job-9 started')
   })
 
   test('start --terminal opens a terminal with the context as its first message', async () => {
     const h = harness()
     expect(await main(['clickup', 'start', '86d4ccpu2', '--terminal', '--cwd', '/srv/app', '--engine', 'codex'], h.deps)).toBe(0)
-    expect(h.calls.find((call) => call.path === '/api/terminals')?.body).toEqual({ engine: 'codex', cwd: '/srv/app', initialPrompt: 'Read the task context in /home/me/work/api/.mission-control/context/clickup-board/t.md before anything else.', title: 'ClickUp 86d4ccpu2' })
+    expect(h.calls.find((call) => call.path === '/api/terminals')?.body).toEqual({ engine: 'codex', cwd: '/srv/app', initialPrompt: 'Read the task context in /home/me/work/api/.shikidan/context/clickup-board/t.md before anything else.', title: 'ClickUp 86d4ccpu2' })
     expect(h.out()).toContain('Terminal term-3 opened in /srv/app')
   })
 })

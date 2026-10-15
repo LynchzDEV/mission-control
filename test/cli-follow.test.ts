@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { Elysia } from 'elysia'
 
-import { main, type MainDeps } from '../cli/mctl'
+import { main, type MainDeps } from '../cli/shiki'
 import { createJobManager } from '../server/jobs'
 import type { EngineResolver } from '../server/jobs-engine-iface'
 import { jobsRoutes } from '../server/routes/jobs'
@@ -19,14 +19,14 @@ let repo: string
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-cli-follow-config-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
 
   repo = await mkdtemp(join(homedir(), 'mc-cli-follow-scratch-'))
   await initScratchGitRepo(repo)
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
   await rm(repo, { recursive: true, force: true })
 })
@@ -39,7 +39,7 @@ function harness(resolver: EngineResolver) {
     fetch: (request) => app.handle(request),
     stdout: (chunk) => { out += chunk },
     stderr: (chunk) => { err += chunk },
-    env: { MISSION_CONTROL_CONFIG_DIR: configDir, MC_URL: 'http://localhost' },
+    env: { SKD_CONFIG_DIR: configDir, SKD_URL: 'http://localhost' },
     cwd: repo,
     pollMs: 30,
   }

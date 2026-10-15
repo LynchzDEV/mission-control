@@ -63,7 +63,7 @@ class Tab implements ITabRenderer {
 export function createPanes(root: HTMLElement): Panes {
   const tabs = new Map<string, Tab>()
   const api: DockviewApi = createDockview(root, {
-    className: 'mc-panes',
+    className: 'skd-panes',
     theme: { ...themeLight, gap: 14 },
     disableDnd: true,
     hideBorders: true,

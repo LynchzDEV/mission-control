@@ -5,16 +5,16 @@ import { join } from 'node:path'
 import { ContextTooLarge, safeContextName, sweepContextFiles, writeContextFile } from '../server/plugins/context-files'
 
 let dir: string
-const previous = process.env.MISSION_CONTROL_CONFIG_DIR
+const previous = process.env.SKD_CONFIG_DIR
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-context-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  process.env.SKD_CONFIG_DIR = dir
 })
 
 afterEach(async () => {
-  if (previous === undefined) delete process.env.MISSION_CONTROL_CONFIG_DIR
-  else process.env.MISSION_CONTROL_CONFIG_DIR = previous
+  if (previous === undefined) delete process.env.SKD_CONFIG_DIR
+  else process.env.SKD_CONFIG_DIR = previous
   await rm(dir, { recursive: true, force: true })
 })
 

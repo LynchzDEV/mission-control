@@ -1,23 +1,27 @@
 import { parse } from 'yaml'
 
+// ponytail: legacy mc-dispatch skill name still in ~/.claude docs and links, drop once none mention it
 export const CLAUDE_ONLY_PATTERNS: RegExp[] = [
   /AskUserQuestion/i, /\bAgent tool\b/i, /subagent(?:_type)?/i,
   /run_in_background/i, /superpowers/i, /ExitPlanMode|EnterPlanMode|plan mode/i,
   /TodoWrite/i, /claude-in-chrome/i, /mcp__[a-z]/i, /Skill tool/i,
   /\bhooks?\b/i, /PreToolUse|PostToolUse|SessionStart|settings\.json/i,
-  /mc-dispatch/i, /cockpit-first/i, /spawn an agent/i,
+  /(?:skd|mc)-dispatch/i, /cockpit-first/i, /spawn an agent/i,
 ]
 
+export const TRANSLATION_MARKER = '<!-- translated for Codex by Shikidan;'
+
 export const CODEX_INSTRUCTIONS_HEADER = `# Codex Global Instructions
-Generated from ~/.claude/CLAUDE.md by Mission Control — edit the source, not this file.
+Generated from ~/.claude/CLAUDE.md by Shikidan — edit the source, not this file.
 - You run with approval_policy=never and sandbox_mode=danger-full-access: act, do not ask for permission.
 - No subagents here: do every step yourself in this thread. No hooks: nothing runs before or after your commands, so run tests and checks yourself.
 - Skills live in ~/.codex/skills/<name>/SKILL.md; read the one that matches the task before starting.
-- When launched by Mission Control (MC_JOB_ID set) you are the worker: implement in this tree, never dispatch or post plans.
+- When launched by Shikidan (SKD_JOB_ID set) you are the worker: implement in this tree, never dispatch or post plans.
 `
 
+// ponytail: legacy mc-dispatch skill folder, drop once ~/.claude/skills has no mc-dispatch link
 const SKIP = new Set([
-  'mc-dispatch', 'configure-ecc', 'daily-retro', 'graphify', 'agent-sort',
+  'skd-dispatch', 'mc-dispatch', 'configure-ecc', 'daily-retro', 'graphify', 'agent-sort',
   'skill-scout', 'skill-stocktake', 'strategic-compact', 'iterative-retrieval',
   'continuous-learning', 'continuous-learning-v2',
 ])
@@ -82,7 +86,7 @@ export function translateSkill(skillMd: string): string | null {
   if (SKIP.has(name)) return null
   const body = rewrite(skillMd.slice(prefix.length))
   if (mostlyClaudeOnly(body)) return null
-  return `${prefix}${body.trimEnd()}\n\n<!-- translated for Codex by Mission Control; source ~/.claude/skills/${name} -->\n`
+  return `${prefix}${body.trimEnd()}\n\n${TRANSLATION_MARKER} source ~/.claude/skills/${name} -->\n`
 }
 
 export function translateAgentBody(body: string): string | null {

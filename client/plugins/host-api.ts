@@ -6,7 +6,7 @@ const NO_CHAT_PERMISSION = 'This plugin did not ask to start chats'
 const NO_TERMINAL_PERMISSION = 'This plugin did not ask to start terminals'
 const NO_SETTINGS_PERMISSION = 'This plugin did not ask to keep settings'
 
-const RECENT_CWD_KEY = 'mc.term.recentCwd'
+const RECENT_CWD_KEY = 'skd.term.recentCwd'
 
 export type LaunchOpener = (kind: SessionKind, plugin: { id: string; name: string }, request: SessionRequest) => Promise<void>
 

@@ -22,23 +22,23 @@ let savedUsers: string | undefined
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-remote-access-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
-  process.env.MC_FAKE_ENGINES = '1'
-  savedHosts = process.env.MISSION_CONTROL_ALLOWED_HOSTS
-  savedUsers = process.env.MISSION_CONTROL_ALLOWED_USERS
-  process.env.MISSION_CONTROL_ALLOWED_HOSTS = HOST
-  process.env.MISSION_CONTROL_ALLOWED_USERS = USER
+  process.env.SKD_CONFIG_DIR = dir
+  process.env.SKD_FAKE_ENGINES = '1'
+  savedHosts = process.env.SKD_ALLOWED_HOSTS
+  savedUsers = process.env.SKD_ALLOWED_USERS
+  process.env.SKD_ALLOWED_HOSTS = HOST
+  process.env.SKD_ALLOWED_USERS = USER
   registry = createTerminalRegistry()
 })
 
 afterEach(async () => {
   registry.shutdown()
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
-  delete process.env.MC_FAKE_ENGINES
-  if (savedHosts === undefined) delete process.env.MISSION_CONTROL_ALLOWED_HOSTS
-  else process.env.MISSION_CONTROL_ALLOWED_HOSTS = savedHosts
-  if (savedUsers === undefined) delete process.env.MISSION_CONTROL_ALLOWED_USERS
-  else process.env.MISSION_CONTROL_ALLOWED_USERS = savedUsers
+  delete process.env.SKD_CONFIG_DIR
+  delete process.env.SKD_FAKE_ENGINES
+  if (savedHosts === undefined) delete process.env.SKD_ALLOWED_HOSTS
+  else process.env.SKD_ALLOWED_HOSTS = savedHosts
+  if (savedUsers === undefined) delete process.env.SKD_ALLOWED_USERS
+  else process.env.SKD_ALLOWED_USERS = savedUsers
   await rm(dir, { recursive: true, force: true })
 })
 
@@ -114,7 +114,7 @@ describe('Tailscale access through the real app', () => {
       const wrongUserPage = await viaProxy(server.port, '/', { headers: { ...navigation, 'tailscale-user-login': 'someone@example.com' } })
       expect(wrongUserPage.status).toBe(403)
 
-      delete process.env.MISSION_CONTROL_ALLOWED_USERS
+      delete process.env.SKD_ALLOWED_USERS
       expect((await viaProxy(server.port, '/api/roles')).status).toBe(403)
       expect((await viaProxy(server.port, '/', { headers: navigation })).status).toBe(403)
     } finally {
@@ -151,7 +151,7 @@ describe('Tailscale access through the real app', () => {
   })
 
   test('localhost keeps working and keeps the local-only note when no host is allowed', async () => {
-    delete process.env.MISSION_CONTROL_ALLOWED_HOSTS
+    delete process.env.SKD_ALLOWED_HOSTS
     const app = await createApp()
     const page = await app.handle(new Request('http://localhost/'))
     expect(page.status).toBe(200)

@@ -11,7 +11,7 @@ export class ApiError extends Error {
 
 export class UnreachableError extends Error {
   constructor(readonly url: string) {
-    super(`Mission Control isn't running at ${url}. Start it with: bun run start`)
+    super(`Shikidan isn't running at ${url}. Start it with: bun run start`)
     this.name = 'UnreachableError'
   }
 }

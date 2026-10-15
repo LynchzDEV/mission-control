@@ -21,6 +21,7 @@ import { pathWorkspaceIntact, preparePathWorkspace, prepareRepoWorkspace, remove
 import { validateWorkspaceCwd } from './workspace'
 import { checkShape, readShape, shapeGraph, shapeNotes, shapeTarget, type FlowShape } from './flow-shape'
 import { atomicJson, composeWorkflowPrompt, draftRevision, forkSections, identifier, passTargets, sessionRules, type Outcome, type PolicyRevision, type WorkflowNode, type WorkflowRevision, type WorkflowStore } from './workflows'
+import { exportEnv } from './env'
 
 const jobId = z.string().min(1).max(200)
 const GIT_TIMEOUT = 120_000
@@ -72,10 +73,13 @@ export function covers(reviewPath: string, implementPath: string): boolean {
   return reviewPath === implementPath || reviewPath === 'main' || implementPath.startsWith(`${reviewPath}.`)
 }
 
+// ponytail: legacy MC_RESULT from agents prompted before Shikidan, drop once no run predates it
+const RESULT_LINE = /(?:^|\n)(?:SKD|MC)_RESULT\s+(\{[^\n]*\})\s*$/
+
 export function readNodeResult(log: string): NodeResult | null {
   const messages = parseThread(log).filter(event => event.kind === 'text' || event.kind === 'result').map(event => event.detail)
   for (const message of messages.reverse()) {
-    const match = /(?:^|\n)MC_RESULT\s+(\{[^\n]*\})\s*$/.exec(message.trim())
+    const match = RESULT_LINE.exec(message.trim())
     if (!match) continue
     try { return resultSchema.parse(JSON.parse(match[1]!)) } catch { return null }
   }
@@ -203,7 +207,7 @@ function detached(node: WorkflowNode): WorkflowNode {
 }
 
 const ENTER_DELAY_MS = 150
-export const NUDGE_PROMPT = 'Your last turn ended without the MC_RESULT line. Anything you left running in the background was stopped when your turn ended. Re-run what you need in the foreground. Give your complete final answer again (for a plan: the whole plan and any MC_SHAPE line), ending with exactly one MC_RESULT line.'
+export const NUDGE_PROMPT = 'Your last turn ended without the SKD_RESULT line. Anything you left running in the background was stopped when your turn ended. Re-run what you need in the foreground. Give your complete final answer again (for a plan: the whole plan and any SKD_SHAPE line), ending with exactly one SKD_RESULT line.'
 const NUDGEABLE_ENGINES: ReadonlySet<string> = new Set(['claude', 'glm'])
 const LAST_WORDS_CHARS = 200
 const OUTPUT_CHARS = 64000
@@ -439,7 +443,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   }
   function lastWords(output: string): string {
     const words = output.slice(-LAST_WORDS_CHARS).trim()
-    return words ? `Agent ended twice without MC_RESULT; last words: ${words}` : 'Agent ended twice without MC_RESULT'
+    return words ? `Agent ended twice without SKD_RESULT; last words: ${words}` : 'Agent ended twice without SKD_RESULT'
   }
   function heldJobs(run: WorkflowRun): JobRecord[] {
     return run.attempts.flatMap(attempt => {
@@ -456,7 +460,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     await persist(run)
     const node = run.workflow.nodes.find(node => node.id === attempt.nodeId)!
     const created = await deps.manager.createJob({ ...stepJob(run, node, attempt, token, NUDGE_PROMPT), resumeSessionId: sessionId }, deps.resolver)
-    if (!created.ok) return accept(run, attempt, token, { outcome: 'blocked', summary: `Agent ended without MC_RESULT and could not be resumed: ${created.error}`, evidence: [] })
+    if (!created.ok) return accept(run, attempt, token, { outcome: 'blocked', summary: `Agent ended without SKD_RESULT and could not be resumed: ${created.error}`, evidence: [] })
     attempt.jobId = created.job.id
     await persist(run)
     settleIfFinished(run, created.job.id)
@@ -514,7 +518,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
   type Command = WorkflowNode['checks'][number]
   type Finished = { exitCode: number | null; output: string; timedOut: boolean }
   function spawnKillable(run: WorkflowRun, key: number, cwd: string, command: Command): { pid?: number; done: Promise<Finished> } {
-    const proc = spawn(resolveBinary(command.command), command.args, { cwd, env: { ...process.env, MC_WORKFLOW_RUN_ID: run.id }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+    const proc = spawn(resolveBinary(command.command), command.args, { cwd, env: { ...process.env, ...exportEnv({ WORKFLOW_RUN_ID: run.id }) }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
     const completion = new Promise<number | null>((resolveExit, reject) => { proc.once('error', reject); proc.once('exit', resolveExit) })
     let output = '', timedOut = false
     const collect = (chunk: Buffer) => { output = (output + chunk.toString()).slice(-16000) }
@@ -560,7 +564,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
     }
     if (record.status === 'done' && !result && nudged) result = { outcome: 'blocked', summary: lastWords(own), evidence: [] }
     if (record.status !== 'done' && result?.outcome !== 'fail' && result?.outcome !== 'blocked') result = { outcome: 'blocked', summary: `Agent process failed (${record.exitCode ?? 'unknown exit'})`, evidence: [] }
-    if (!result || (result.outcome === 'pass' && !result.evidence.length)) result = { outcome: 'blocked', summary: 'Agent did not provide a valid MC_RESULT with evidence', evidence: [] }
+    if (!result || (result.outcome === 'pass' && !result.evidence.length)) result = { outcome: 'blocked', summary: 'Agent did not provide a valid SKD_RESULT with evidence', evidence: [] }
     if (result.outcome === 'pass' && kindOf(run, attempt) === 'plan') {
       const errors = await keepShape(run, attempt)
       if (errors.length) result = { ...result, evidence: [...result.evidence, `Flow shape ignored: ${errors.join('; ')}`] }
@@ -979,7 +983,7 @@ export function createWorkflowRunner(deps: { manager: JobManager; resolver: Engi
         return null
       }
       const title = run.workflow.nodes.find(node => node.id === nodeId)!.title
-      const line = `Mission Control: the flow "${oneLine(run.label)}" is waiting for you at "${oneLine(title)}" (In Session). Read GET ${mcUrl()}/api/studio/runs/${run.id}/steps/${nodeId}, do it here with the user, then report it.`
+      const line = `Shikidan: the flow "${oneLine(run.label)}" is waiting for you at "${oneLine(title)}" (In Session). Read GET ${mcUrl()}/api/studio/runs/${run.id}/steps/${nodeId}, do it here with the user, then report it.`
       followResumedTerminals([run])
       if (!run.terminalId || !deps.terminals?.write?.(run.terminalId, line)) throw new RunActionError('The terminal that owns this flow is closed', 409)
       return run.terminalId

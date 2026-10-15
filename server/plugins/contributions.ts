@@ -10,9 +10,11 @@ import { PluginBusyError, withPluginLock } from './locks'
 import type { PluginContributions, SettingField } from './manifest'
 import { getSetting } from './settings'
 import { getInstalled, listInstalled, pluginFolder, saveInstalled, type InstalledPlugin } from './store'
+import { legacyNamed } from '../legacy-name'
 
 const SKILL_MARKER_FILE = '.mc-plugin'
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n/
+// ponytail: {{mc:mctl}} is the published plugin template placeholder, rename it together with skd-plugin-sdk
 const PLACEHOLDER = /\{\{(setting|mc):([^}]*)\}\}/g
 
 export type ContributionSource = {
@@ -21,10 +23,10 @@ export type ContributionSource = {
   contributes: PluginContributions
   settingsFields: SettingField[]
   settings: Record<string, string>
-  mctl: string
+  shiki: string
 }
 
-export type FillContext = Pick<ContributionSource, 'settingsFields' | 'settings' | 'mctl'>
+export type FillContext = Pick<ContributionSource, 'settingsFields' | 'settings' | 'shiki'>
 export type FillResult = { ok: true; text: string } | { ok: false; error: string }
 export type ApplyResult = { ok: true; written: string[] } | { ok: false; error: string }
 export type PluginFlow = WorkflowRevision & { plugin: string }
@@ -36,12 +38,12 @@ export function contributionTargets(): string[] {
   return [join(homedir(), '.claude'), workerProfileDirs().claude, chatProfileDirs().claude]
 }
 
-export function mctlCommand(): string {
-  return `bun ${resolve(import.meta.dir, '..', '..', 'cli', 'mctl.ts')}`
+export function cliCommand(): string {
+  return `bun ${resolve(import.meta.dir, '..', '..', 'cli', 'shiki.ts')}`
 }
 
 function agentMarker(pluginId: string): string {
-  return `<!-- installed by mission-control plugin ${pluginId} -->`
+  return `<!-- installed by shikidan plugin ${pluginId} -->`
 }
 
 export function fillTemplate(text: string, path: string, context: FillContext): FillResult {
@@ -50,13 +52,13 @@ export function fillTemplate(text: string, path: string, context: FillContext): 
   for (const [index, line] of lines.entries()) {
     for (const [placeholder, kind, key] of line.matchAll(PLACEHOLDER)) {
       const where = `${path}:${index + 1}: ${placeholder}`
-      if (kind === 'mc' && key !== 'mctl') return { ok: false, error: `${where} is not a value Mission Control fills` }
+      if (kind === 'mc' && key !== 'mctl') return { ok: false, error: `${where} is not a value Shikidan fills` }
       if (kind === 'setting' && !fields.has(key!)) return { ok: false, error: `${where} is not a declared setting` }
       if (kind === 'setting' && fields.get(key!)!.type === 'secret') return { ok: false, error: `${where} is a secret setting and is never written into a file` }
     }
   }
   const filled = text.replace(PLACEHOLDER, (placeholder, kind: string, key: string) => {
-    if (kind === 'mc') return context.mctl
+    if (kind === 'mc') return context.shiki
     const value = context.settings[key]
     return value === undefined || value === '' ? placeholder : value
   })
@@ -120,7 +122,8 @@ async function ownedBy(pluginId: string, path: string): Promise<boolean> {
   if (info === null) return false
   if (info.isDirectory()) return (await readFile(join(path, SKILL_MARKER_FILE), 'utf8').catch(() => '')).trim() === pluginId
   if (!info.isFile()) return false
-  return (await readFile(path, 'utf8')).includes(agentMarker(pluginId))
+  const text = await readFile(path, 'utf8')
+  return text.includes(agentMarker(pluginId)) || text.includes(legacyNamed(agentMarker(pluginId)))
 }
 
 export async function applyContributions(source: ContributionSource, targets: string[], previous: string[]): Promise<ApplyResult> {
@@ -191,7 +194,7 @@ export async function pluginFlows(plugins: InstalledPlugin[], folderOf: (id: str
   return flows
 }
 
-export type RefreshOptions = { targets?: string[]; mctl?: string; sync?: () => Promise<unknown> }
+export type RefreshOptions = { targets?: string[]; shiki?: string; sync?: () => Promise<unknown> }
 
 async function settingsOf(plugin: InstalledPlugin): Promise<Record<string, string>> {
   const values: Record<string, string> = {}
@@ -215,7 +218,7 @@ export async function syncContributions(plugin: InstalledPlugin, options: Refres
     contributes: plugin.contributes,
     settingsFields: plugin.settingsFields,
     settings: await settingsOf(plugin),
-    mctl: options.mctl ?? mctlCommand(),
+    shiki: options.shiki ?? cliCommand(),
   }, options.targets ?? contributionTargets(), previous)
 }
 

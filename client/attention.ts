@@ -1,7 +1,7 @@
 import type { AttentionItem } from '../server/attention'
 import { ageText, alertFor, diffItems, QUEUE_HASH, requestFor, shouldAlert, tabTitle } from './attention-core'
 
-const MUTE_KEY = 'mc.alerts'
+const MUTE_KEY = 'skd.alerts'
 const AGE_REFRESH_MS = 60_000
 const ICONS: Record<AttentionItem['kind'], string> = { permission: 'code-icon', loop: 'auto-icon', needs: 'close-icon', queue: 'flow-icon' }
 const OFF_TEXT = 'Get an alert with buttons when something needs you, even with this tab hidden.'

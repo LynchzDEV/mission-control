@@ -21,7 +21,7 @@ export const fileExists = (path: string): Promise<boolean> => access(path).then(
 
 function prepareIn(deps: Preparers, item: Pick<QueueItem, 'repo' | 'repos'>, label: string): Promise<{ worktree: string }> {
   if (item.repos === undefined) return deps.prepareWorktree(item.repo, label)
-  if (deps.prepareWorkspace === undefined) return Promise.reject(new Error('This Mission Control cannot build multi-repo items'))
+  if (deps.prepareWorkspace === undefined) return Promise.reject(new Error('This Shikidan cannot build multi-repo items'))
   return deps.prepareWorkspace(item.repo, item.repos, label)
 }
 

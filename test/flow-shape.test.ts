@@ -10,19 +10,19 @@ const twoPaths: FlowShape = {
   ],
 }
 
-const line = (shape: unknown) => `MC_SHAPE ${JSON.stringify(shape)}`
+const line = (shape: unknown) => `SKD_SHAPE ${JSON.stringify(shape)}`
 
-test('the last MC_SHAPE line in the plan output is the shape', () => {
+test('the last SKD_SHAPE line in the plan output is the shape', () => {
   const other = { ...twoPaths, contract: 'older' }
-  expect(readShape(`Plan text\n${line(other)}\nrevised\n${line(twoPaths)}\nMC_RESULT {"outcome":"pass"}`)).toEqual({ shape: twoPaths })
+  expect(readShape(`Plan text\n${line(other)}\nrevised\n${line(twoPaths)}\nSKD_RESULT {"outcome":"pass"}`)).toEqual({ shape: twoPaths })
 })
 
-test('a plan without an MC_SHAPE line stays straight', () => {
-  expect(readShape('Plan text\nMC_RESULT {"outcome":"pass"}')).toBeNull()
+test('a plan without an SKD_SHAPE line stays straight', () => {
+  expect(readShape('Plan text\nSKD_RESULT {"outcome":"pass"}')).toBeNull()
 })
 
-test('a malformed MC_SHAPE line is reported, not ignored', () => {
-  expect(readShape('MC_SHAPE {not json')).toEqual({ errors: ['MC_SHAPE is not valid JSON'] })
+test('a malformed SKD_SHAPE line is reported, not ignored', () => {
+  expect(readShape('SKD_SHAPE {not json')).toEqual({ errors: ['SKD_SHAPE is not valid JSON'] })
   expect(readShape(line({ contract: 'x', paths: [twoPaths.paths[0]] }))!.errors!.join(' ')).toContain('paths')
 })
 
@@ -93,7 +93,7 @@ const nodeOf = (graph: Workflow, id: string) => graph.nodes.find(node => node.id
 test('the plan is told how to split only when the flow can take a shape', () => {
   const graph = defaultWorkflow()
   const notes = shapeNotes(graph, nodeOf(graph, 'plan'), [])
-  expect(notes.flowShapeRules).toContain('MC_SHAPE')
+  expect(notes.flowShapeRules).toContain('SKD_SHAPE')
   expect(composeWorkflowPrompt(policy, graph, nodeOf(graph, 'plan'), 'Add CSV export', [], [], notes)).toContain('flowShapeRules')
   expect(shapeNotes(graph, nodeOf(graph, 'execute'), [])).toEqual({})
   const forked = shapeGraph(graph, twoPaths)

@@ -14,7 +14,9 @@ export class ContextTooLarge extends Error {
 
 export type TaskContext = { name: string; markdown: string }
 
-export const SESSION_CONTEXT_DIR = '.mission-control'
+export const SESSION_CONTEXT_DIR = '.shikidan'
+// ponytail: legacy per-repo .mission-control folder, drop once workspaces made before Shikidan are gone
+export const LEGACY_SESSION_CONTEXT_DIR = '.mission-control'
 
 const contextRoot = (cwd?: string): string => cwd === undefined ? join(configDir(), 'context') : join(cwd, SESSION_CONTEXT_DIR, 'context')
 

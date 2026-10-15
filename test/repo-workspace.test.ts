@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -128,7 +128,7 @@ test('a workspace folder planted as a symlink is refused and nothing is written 
     await mkdir(join(parent, '.worktree'))
     await symlink(target, join(parent, '.worktree', 'queue-x-7-a8c0'))
     await expect(prepareRepoWorkspace(parent, ['a', 'b'], 'queue-x-7-a8c0')).rejects.toThrow('The workspace folder is a link, not a plain folder')
-    expect(existsSync(join(target, '.mission-control'))).toBe(false)
+    expect(existsSync(join(target, '.shikidan'))).toBe(false)
     expect(existsSync(join(target, 'a'))).toBe(false)
   } finally { await rm(target, { recursive: true, force: true }) }
 })
@@ -149,10 +149,25 @@ test('a child folder in the workspace planted as a symlink is refused', async ()
   await expect(prepareRepoWorkspace(parent, ['a', 'b'], 'queue-x-7-a8c0')).rejects.toThrow('The workspace folder is a link, not a plain folder')
 })
 
+test('a workspace recorded under the old .mission-control folder still reads', async () => {
+  await twoRepos()
+  const { worktree } = await prepareRepoWorkspace(parent, ['a', 'b'], 'queue-x-7-a8c0')
+  await rename(join(worktree, '.shikidan'), join(worktree, '.mission-control'))
+  expect(await workspaceRepos(worktree)).toEqual(['a', 'b'])
+})
+
+test('the .shikidan record wins over an old .mission-control record', async () => {
+  await twoRepos()
+  const { worktree } = await prepareRepoWorkspace(parent, ['a', 'b'], 'queue-x-7-a8c0')
+  await mkdir(join(worktree, '.mission-control'))
+  await writeFile(join(worktree, '.mission-control', 'repos.json'), JSON.stringify({ repos: ['a'] }))
+  expect(await workspaceRepos(worktree)).toEqual(['a', 'b'])
+})
+
 test('a hand-made repos record does not make a plain folder pass as a workspace', async () => {
   await twoRepos()
-  await mkdir(join(parent, '.mission-control'))
-  await writeFile(join(parent, '.mission-control', 'repos.json'), JSON.stringify({ repos: ['a', 'b'] }))
+  await mkdir(join(parent, '.shikidan'))
+  await writeFile(join(parent, '.shikidan', 'repos.json'), JSON.stringify({ repos: ['a', 'b'] }))
   expect(await workspaceRepos(parent)).toBeNull()
   expect(await validateWorkspaceCwd(parent)).toEqual({ ok: false, error: 'cwd is not a git repository' })
 })
@@ -160,8 +175,8 @@ test('a hand-made repos record does not make a plain folder pass as a workspace'
 test('a hand-made record under .worktree with plain repo copies instead of worktrees is not a workspace', async () => {
   await twoRepos()
   const fake = join(parent, '.worktree', 'queue-fake-1-a8c0')
-  await mkdir(join(fake, '.mission-control'), { recursive: true })
-  await writeFile(join(fake, '.mission-control', 'repos.json'), JSON.stringify({ repos: ['a', 'b'] }))
+  await mkdir(join(fake, '.shikidan'), { recursive: true })
+  await writeFile(join(fake, '.shikidan', 'repos.json'), JSON.stringify({ repos: ['a', 'b'] }))
   for (const name of ['a', 'b']) await cp(join(parent, name), join(fake, name), { recursive: true })
   expect(await workspaceRepos(fake)).toBeNull()
   expect(await validateWorkspaceCwd(fake)).toEqual({ ok: false, error: 'cwd is not a git repository' })

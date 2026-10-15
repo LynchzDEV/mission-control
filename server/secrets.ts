@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, readFile, rename, symlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { readEnv } from './env'
 
 export const DIR_MODE = 0o700
 export const FILE_MODE = 0o600
@@ -52,7 +53,7 @@ export type PublicSecretsView = {
 export type BindTarget = { hostname: '127.0.0.1'; port: number }
 
 export function listenTarget(): BindTarget {
-  const port = Number.parseInt(process.env.MISSION_CONTROL_PORT ?? '', 10)
+  const port = Number.parseInt(readEnv('PORT') ?? '', 10)
   return { hostname: '127.0.0.1', port: Number.isInteger(port) && port > 0 && port < 65536 ? port : 7777 }
 }
 
@@ -62,9 +63,24 @@ export function mcUrl(): string {
 }
 
 export function configDir(): string {
-  const override = process.env.MISSION_CONTROL_CONFIG_DIR
-  if (override !== undefined && override !== '') return override
-  return join(homedir(), '.config', 'mission-control')
+  const override = readEnv('CONFIG_DIR')
+  if (override !== undefined) return override
+  return join(homedir(), '.config', CONFIG_DIR_NAME)
+}
+
+export const CONFIG_DIR_NAME = 'shikidan'
+// ponytail: legacy ~/.config/mission-control, drop the move and its symlink once every install runs Shikidan
+export const LEGACY_CONFIG_DIR_NAME = 'mission-control'
+
+export async function migrateConfigDir(home = homedir()): Promise<'none' | 'migrated'> {
+  const target = join(home, '.config', CONFIG_DIR_NAME)
+  const legacy = join(home, '.config', LEGACY_CONFIG_DIR_NAME)
+  if (await lstat(target).catch(() => null) !== null) return 'none'
+  const found = await lstat(legacy).catch(() => null)
+  if (found === null || !found.isDirectory()) return 'none'
+  await rename(legacy, target)
+  await symlink(target, legacy, 'dir')
+  return 'migrated'
 }
 
 export function configPath(file: string): string {

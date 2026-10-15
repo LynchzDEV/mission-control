@@ -367,9 +367,16 @@ describe('engineArgs', () => {
 
 describe('permission messages', () => {
   const request = (requestId: string, input: Record<string, unknown> = { command: 'bun test' }, toolName = 'Bash'): string =>
-    JSON.stringify({ type: 'mc_permission_request', mc: true, requestId, toolUseID: 't1', toolName, title: 'Claude wants to run a command', description: 'To check the bridge', decisionReason: '', suppressAlways: false, input })
+    JSON.stringify({ type: 'skd_permission_request', skd: true, requestId, toolUseID: 't1', toolName, title: 'Claude wants to run a command', description: 'To check the bridge', decisionReason: '', suppressAlways: false, input })
   const resolved = (requestId: string, decision: string): string =>
-    JSON.stringify({ type: 'mc_permission_resolved', mc: true, requestId, decision })
+    JSON.stringify({ type: 'skd_permission_resolved', skd: true, requestId, decision })
+
+  test('a request and resolution logged under the legacy mc_ names still pair up', () => {
+    const legacy = (line: string) => line.replace('"skd_', '"mc_')
+    const events = parseThread([legacy(request('r1')), legacy(resolved('r1', 'deny'))].join('\n'))
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ kind: 'permission', state: 'deny' })
+  })
 
   test('a request plus its resolution is one message carrying the decision', () => {
     const events = parseThread([request('r1'), resolved('r1', 'allow_once')].join('\n'))

@@ -8,7 +8,7 @@ import { DIR_MODE, configDir, ensureConfigDir } from '../secrets'
 import { applyPrivateModes, findEscapingLink } from './checkout-tree'
 import { errorMessage } from './errors'
 import { PluginBusyError, withPluginLock } from './locks'
-import { checkFlows, contributionTargets, mctlCommand, removeContributions, syncContributions } from './contributions'
+import { checkFlows, contributionTargets, cliCommand, removeContributions, syncContributions } from './contributions'
 import { catalog } from './marketplaces'
 import { contributionsAdded, parseManifest, permissionsAdded, type PluginManifest, type PluginPermissions, type PluginRuntime } from './manifest'
 import { isAllowedRepoUrl } from './repo-url'
@@ -48,7 +48,7 @@ export type InstallerDeps = {
   saveInstalled: (plugin: InstalledPlugin) => Promise<void>
   marketplaceListing: (marketplace: string, pluginId: string) => Promise<MarketplaceListing | null>
   contributionTargets: () => string[]
-  mctlCommand: () => string
+  cliCommand: () => string
   syncEngineAssets: () => Promise<unknown>
 }
 
@@ -106,11 +106,11 @@ export function createInstaller(overrides: Partial<InstallerDeps> = {}) {
     saveInstalled,
     marketplaceListing: defaultMarketplaceListing,
     contributionTargets,
-    mctlCommand,
+    cliCommand,
     syncEngineAssets,
     ...overrides,
   }
-  const contributionOptions = () => ({ targets: deps.contributionTargets(), mctl: deps.mctlCommand() })
+  const contributionOptions = () => ({ targets: deps.contributionTargets(), shiki: deps.cliCommand() })
 
   async function contributionFailure(folder: string, manifest: PluginManifest): Promise<StepFailure | null> {
     const errors = await checkFlows(folder, manifest.contributes?.flows ?? [])

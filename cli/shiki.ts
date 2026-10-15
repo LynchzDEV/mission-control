@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
+import { readEnv } from '../server/env'
 import { BANNER } from './banner'
 import { ApiError, createClient, UnreachableError, type FetchLike } from './client'
 import { UsageError, type Command, type Context, type OptionSpec, type OptionValues } from './command'
@@ -31,17 +32,17 @@ export type MainDeps = {
 export const COMMANDS: Command[] = [...systemCommands, ...jobCommands, ...studioCommands, ...pluginCommands, ...clickupCommands, ...queueCommands]
 
 const GLOBAL_OPTIONS: Record<string, OptionSpec> = {
-  url: { type: 'string', description: `Mission Control URL (default: $MC_URL, then ${DEFAULT_URL})`, placeholder: 'URL' },
+  url: { type: 'string', description: `Shikidan URL (default: $SKD_URL, then ${DEFAULT_URL})`, placeholder: 'URL' },
   json: { type: 'boolean', description: 'print the server JSON as one document (NDJSON for follow)' },
   help: { type: 'boolean', short: 'h', description: 'show help' },
-  version: { type: 'boolean', short: 'v', description: 'print the mctl version' },
+  version: { type: 'boolean', short: 'v', description: 'print the shiki version' },
 }
 
 const OUT_OF_SCOPE = 'Not covered here (use the browser): secrets reveal/rotate/write, connection create/delete, drafts, preview, studio default, workflow and policy editing, chat home and file pickers, job images, terminal drops, live event streams, attaching to a terminal.'
 
-const EXIT_CODES = 'Exit codes: 0 ok, 1 API error, 2 usage error, 3 Mission Control unreachable.'
+const EXIT_CODES = 'Exit codes: 0 ok, 1 API error, 2 usage error, 3 Shikidan unreachable.'
 
-const ENVIRONMENT = 'Environment: MC_URL (server URL), MC_TOKEN (API token; default: apiToken in secrets.json, needed only for non-local URLs).'
+const ENVIRONMENT = 'Environment: SKD_URL (server URL), SKD_TOKEN (API token; default: apiToken in secrets.json, needed only for non-local URLs).'
 
 type ParseConfig = Parameters<typeof parseArgs>[0] & {}
 type ParseOptions = NonNullable<ParseConfig['options']>
@@ -55,7 +56,7 @@ const ALL_OPTIONS: Record<string, OptionSpec> = Object.assign({}, GLOBAL_OPTIONS
 function usageLine(command: Command): string {
   const args = (command.args ?? []).map((name) => `<${name}>`)
   const options = Object.keys(command.options ?? {}).length > 0 ? ['[options]'] : []
-  return ['mctl', ...command.path, ...args, ...options].join(' ')
+  return ['shiki', ...command.path, ...args, ...options].join(' ')
 }
 
 function optionLines(specs: Record<string, OptionSpec>): string[] {
@@ -72,9 +73,9 @@ function globalLines(): string[] {
 export function rootHelp(): string {
   const width = Math.max(...COMMANDS.map((command) => usageLine(command).length))
   return [
-    'Usage: mctl <command> [options]',
+    'Usage: shiki <command> [options]',
     '',
-    'Mission Control from the command line.',
+    'Shikidan from the command line.',
     '',
     'Commands:',
     ...COMMANDS.map((command) => `  ${usageLine(command).padEnd(width)}  ${command.summary}`),
@@ -107,20 +108,31 @@ function isGroup(word: string | undefined): boolean {
   return word !== undefined && COMMANDS.some((command) => command.path[0] === word)
 }
 
-function configDirFor(env: Record<string, string | undefined>): string {
-  const override = env.MISSION_CONTROL_CONFIG_DIR
-  if (override !== undefined && override !== '') return override
-  return join(env.HOME ?? homedir(), '.config', 'mission-control')
+function configDirsFor(env: Record<string, string | undefined>): string[] {
+  const override = readEnv('CONFIG_DIR', env)
+  if (override !== undefined) return [override]
+  const config = join(env.HOME ?? homedir(), '.config')
+  // ponytail: legacy ~/.config/mission-control read before the server has moved it, drop with migrateConfigDir
+  return [join(config, 'shikidan'), join(config, 'mission-control')]
 }
 
-export async function resolveToken(env: Record<string, string | undefined>): Promise<string | null> {
-  if (env.MC_TOKEN !== undefined && env.MC_TOKEN !== '') return env.MC_TOKEN
+async function readTokenFile(dir: string): Promise<string | null> {
   try {
-    const parsed = JSON.parse(await readFile(join(configDirFor(env), 'secrets.json'), 'utf8')) as { apiToken?: unknown }
+    const parsed = JSON.parse(await readFile(join(dir, 'secrets.json'), 'utf8')) as { apiToken?: unknown }
     return typeof parsed.apiToken === 'string' && parsed.apiToken !== '' ? parsed.apiToken : null
   } catch {
     return null
   }
+}
+
+export async function resolveToken(env: Record<string, string | undefined>): Promise<string | null> {
+  const token = readEnv('TOKEN', env)
+  if (token !== undefined) return token
+  for (const dir of configDirsFor(env)) {
+    const found = await readTokenFile(dir)
+    if (found !== null) return found
+  }
+  return null
 }
 
 function preParse(argv: string[]): { positionals: string[]; values: OptionValues } {
@@ -148,14 +160,14 @@ async function dispatch(argv: string[], deps: MainDeps): Promise<number> {
   const pre = preParse(argv)
   const wantsHelp = pre.values.help === true
   if (pre.values.version === true) {
-    deps.stdout(`mctl ${VERSION}\n`)
+    deps.stdout(`shiki ${VERSION}\n`)
     return 0
   }
   const command = findCommand(pre.positionals)
 
   if (command === undefined) {
     if (pre.positionals.length === 0 && !wantsHelp) {
-      deps.stdout(`${BANNER}  mctl v${VERSION}\n\n${rootHelp()}`)
+      deps.stdout(`${BANNER}  shiki v${VERSION}\n\n${rootHelp()}`)
       return 0
     }
     if (pre.positionals.length === 0) return showHelp(deps, rootHelp(), true)
@@ -174,7 +186,7 @@ async function dispatch(argv: string[], deps: MainDeps): Promise<number> {
   }
 
   const args = bindArgs(command, parsed.positionals.slice(command.path.length))
-  const url = typeof parsed.values.url === 'string' ? parsed.values.url : deps.env.MC_URL || DEFAULT_URL
+  const url = typeof parsed.values.url === 'string' ? parsed.values.url : readEnv('URL', deps.env) ?? DEFAULT_URL
   const client = createClient({ url, token: await resolveToken(deps.env), fetch: deps.fetch })
   const ctx: Context = {
     client,
@@ -200,7 +212,7 @@ export async function main(argv: string[], deps: MainDeps): Promise<number> {
     return await dispatch(argv, deps)
   } catch (error) {
     if (error instanceof UsageError) {
-      deps.stderr(`mctl: ${error.message}\nRun 'mctl ${error.group === undefined ? '' : `${error.group} `}--help' for usage.\n`)
+      deps.stderr(`shiki: ${error.message}\nRun 'shiki ${error.group === undefined ? '' : `${error.group} `}--help' for usage.\n`)
       return 2
     }
     if (error instanceof UnreachableError) {

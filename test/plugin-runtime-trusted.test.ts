@@ -16,12 +16,12 @@ let fixtureRoot: string
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-plugin-trusted-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
   fixtureRoot = await mkdtemp(join(tmpdir(), 'mc-plugin-trusted-repos-'))
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
   await rm(fixtureRoot, { recursive: true, force: true })
 })
@@ -232,10 +232,10 @@ describe('context route', () => {
       const response = await json('POST', '/api/plugins/fixture-plugin/context', { name: 'Task plan', markdown: '# Do it\n', cwd: session })
       expect(response.status).toBe(200)
       const { path } = await response.json()
-      expect(path).toContain(join(await realpath(session), '.mission-control', 'context', 'fixture-plugin'))
+      expect(path).toContain(join(await realpath(session), '.shikidan', 'context', 'fixture-plugin'))
       expect(path).toMatch(/task-plan\.md$/)
       expect(await readFile(path, 'utf8')).toBe('# Do it\n')
-      expect(await readFile(join(session, '.git', 'info', 'exclude'), 'utf8')).toContain('/.mission-control/')
+      expect(await readFile(join(session, '.git', 'info', 'exclude'), 'utf8')).toContain('/.shikidan/')
       expect(Bun.spawnSync(['git', '-C', session, 'status', '--porcelain']).stdout.toString()).toBe('')
     } finally {
       await rm(session, { recursive: true, force: true })
@@ -249,7 +249,7 @@ describe('context route', () => {
       const response = await json('POST', '/api/plugins/fixture-plugin/context', { name: 'Task plan', markdown: '# Plain\n', cwd: session })
       expect(response.status).toBe(200)
       const { path } = await response.json()
-      expect(path).toContain(join(await realpath(session), '.mission-control', 'context', 'fixture-plugin'))
+      expect(path).toContain(join(await realpath(session), '.shikidan', 'context', 'fixture-plugin'))
       expect(await readFile(path, 'utf8')).toBe('# Plain\n')
     } finally {
       await rm(session, { recursive: true, force: true })
@@ -287,7 +287,7 @@ describe('plugin module route', () => {
 })
 
 describe('trusted update needs a restart', () => {
-  test('keeps the old module until Mission Control restarts', async () => {
+  test('keeps the old module until Shikidan restarts', async () => {
     const source = await installTrusted('restart')
     expect(await (await call('version')).json()).toEqual({ result: 'v1' })
 
@@ -303,7 +303,7 @@ describe('trusted update needs a restart', () => {
     expect(listed.plugins[0].restartRequired).toBe(true)
 
     const child = Bun.spawn([process.execPath, join(import.meta.dir, 'support', 'plugin-call.ts'), 'fixture-plugin', 'version'], {
-      env: { ...process.env, MISSION_CONTROL_CONFIG_DIR: configDir },
+      env: { ...process.env, SKD_CONFIG_DIR: configDir },
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -331,7 +331,7 @@ describe('trusted update needs a restart', () => {
     expect(listed.plugins[0].restartRequired).toBe(true)
 
     const child = Bun.spawn([process.execPath, join(import.meta.dir, 'support', 'plugin-call.ts'), 'fixture-plugin', 'version'], {
-      env: { ...process.env, MISSION_CONTROL_CONFIG_DIR: configDir },
+      env: { ...process.env, SKD_CONFIG_DIR: configDir },
       stdout: 'pipe',
       stderr: 'pipe',
     })

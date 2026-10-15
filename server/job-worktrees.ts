@@ -3,7 +3,7 @@ import { mkdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-const IDENTITY = { name: 'Mission Control', email: 'mission-control@localhost' }
+const IDENTITY = { name: 'Shikidan', email: 'shikidan@localhost' }
 const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null']
 const IDENTITY_FLAGS = [...NO_HOOKS, '-c', `user.name=${IDENTITY.name}`, '-c', `user.email=${IDENTITY.email}`, '-c', 'commit.gpgsign=false']
 const IDENTITY_ENV = { GIT_AUTHOR_NAME: IDENTITY.name, GIT_AUTHOR_EMAIL: IDENTITY.email, GIT_COMMITTER_NAME: IDENTITY.name, GIT_COMMITTER_EMAIL: IDENTITY.email }

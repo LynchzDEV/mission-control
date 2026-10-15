@@ -41,6 +41,7 @@ import { chatEnv, ensureChatProfile } from './chat-profile'
 import { ensureWorkerProfiles } from './worker-profile'
 import type { BridgeLaunch } from './chat-bridge-core'
 import { join } from 'node:path'
+import { readEnv } from './env'
 
 export function engineArgs(engine: EngineName, prompt: string, resumeSessionId?: string, model?: string): string[] {
   if (engine === 'codex') {
@@ -65,7 +66,7 @@ async function chatProfileEnv(engine: EngineName): Promise<Record<string, string
 export const BRIDGE_ENGINES: readonly EngineName[] = ['claude', 'glm']
 
 export function chatUsesBridge(engine: string, purpose?: string): boolean {
-  return purpose === 'chat' && BRIDGE_ENGINES.includes(engine as EngineName) && (!fakeEnginesEnabled() || process.env.MC_FAKE_CHAT_BRIDGE === '1')
+  return purpose === 'chat' && BRIDGE_ENGINES.includes(engine as EngineName) && (!fakeEnginesEnabled() || readEnv('FAKE_CHAT_BRIDGE') === '1')
 }
 
 const BRIDGE_FIXTURES_DIR = join(import.meta.dir, '..', 'test', 'fixtures', 'chat-bridge')
@@ -91,7 +92,7 @@ async function chatBridgeSpawn(
   return {
     cmd: process.execPath,
     args: [join(import.meta.dir, 'chat-bridge.ts')],
-    env: fakeEnginesEnabled() ? { ...env, MC_BRIDGE_FAKE: BRIDGE_FIXTURES_DIR } : env,
+    env: fakeEnginesEnabled() ? { ...env, SKD_BRIDGE_FAKE: BRIDGE_FIXTURES_DIR } : env,
     stdin: JSON.stringify(launch),
     control: true,
   }

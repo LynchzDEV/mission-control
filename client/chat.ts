@@ -152,7 +152,7 @@ let threadVersions: Record<string, VersionEntry> = {}
 let branchPoints: BranchPoint[] = []
 let pendingFrom: { turnId: string; mode: 'replace' | 'after' } | null = null
 
-const leafKey = (): string | null => (root === null ? null : `mc.chat.leaf.${root}`)
+const leafKey = (): string | null => (root === null ? null : `skd.chat.leaf.${root}`)
 
 function storeLeaf(leaf: string): void {
   const key = leafKey()
@@ -835,7 +835,7 @@ function paint(turns: Turn[], project: string | null): void {
 async function refresh(): Promise<void> {
   if (!root) return
   const mine = ++generation
-  const storedLeaf = stored(`mc.chat.leaf.${root}`)
+  const storedLeaf = stored(`skd.chat.leaf.${root}`)
   const [thread, jobs, queue] = await Promise.all([getJson(`/api/jobs/${encodeURIComponent(root)}/thread${storedLeaf ? `?leaf=${encodeURIComponent(storedLeaf)}` : ''}`), getJson(`/api/jobs?chat=${encodeURIComponent(root)}`), getJson(`/api/jobs/${encodeURIComponent(root)}/queue`)])
   if (mine !== generation || !root) return
   if (!thread.ok) {
@@ -998,10 +998,10 @@ async function ensureHome(): Promise<string | null> {
 }
 
 async function createChat(options: { engine: string; model: string; cwd: string; prompt: string; images: string[]; mode: string | null; project: string | null }): Promise<void> {
-  const result = await postJson('/api/jobs', { engine: options.engine, ...(options.model ? { model: options.model } : {}), ...(options.mode === null ? {} : { permissionMode: options.mode }), cwd: options.cwd, prompt: options.prompt, label: titleFrom(options.prompt), purpose: 'chat', edit: stored('mc.shell.edit') === '1', ...(options.project ? { project: options.project } : {}), ...(options.images.length > 0 ? { images: options.images.map(path => ({ path })) } : {}) })
+  const result = await postJson('/api/jobs', { engine: options.engine, ...(options.model ? { model: options.model } : {}), ...(options.mode === null ? {} : { permissionMode: options.mode }), cwd: options.cwd, prompt: options.prompt, label: titleFrom(options.prompt), purpose: 'chat', edit: stored('skd.shell.edit') === '1', ...(options.project ? { project: options.project } : {}), ...(options.images.length > 0 ? { images: options.images.map(path => ({ path })) } : {}) })
   if (!result.ok) { chatError(errorText(result)); return }
   root = String(result.data.id)
-  if (options.model) keep(`mc.chat.model.${root}`, options.model)
+  if (options.model) keep(`skd.chat.model.${root}`, options.model)
   if (options.mode !== null) keep(chatModeKey(root), options.mode)
   document.body.dataset.chat = root
   document.body.dataset.chatEngine = options.engine
@@ -1015,9 +1015,9 @@ async function startChat(prompt: string, images: string[]): Promise<void> {
   const home = await ensureHome()
   if (!home) return
   await providersReady
-  const choice = launchChoice(providers, stored('mc.shell.engine'), stored('mc.shell.model'))
+  const choice = launchChoice(providers, stored('skd.shell.engine'), stored('skd.shell.model'))
   if (!choice.engine) { chatError('No AI is connected yet. Add one in Studio → Manage AIs.'); return }
-  const project = stored('mc.shell.project')
+  const project = stored('skd.shell.project')
   const mode = choice.engine === 'codex' ? null : chatModeChoice(null, stored)
   await createChat({ engine: choice.engine, model: choice.model, cwd: home, prompt, images, mode, project })
 }
@@ -1026,7 +1026,7 @@ addEventListener('quiet:start-chat', (event) => {
   const detail = (event as CustomEvent<{ engine: string; model?: string; cwd: string; prompt: string }>).detail
   show('conversation')
   const mode = detail.engine === 'codex' ? null : chatModeChoice(null, stored)
-  void createChat({ engine: detail.engine, model: detail.model ?? '', cwd: detail.cwd, prompt: detail.prompt, images: [], mode, project: stored('mc.shell.project') })
+  void createChat({ engine: detail.engine, model: detail.model ?? '', cwd: detail.cwd, prompt: detail.prompt, images: [], mode, project: stored('skd.shell.project') })
 })
 
 function restoreComposer(text: string, images: string[]): void {
@@ -1040,7 +1040,7 @@ async function sendMessage(prompt: string, images: string[] = []): Promise<void>
     message: prompt,
     ...(images.length > 0 ? { images: images.map(path => ({ path })) } : {}),
     ...replyChoices(),
-    ...(stored(`mc.chat.leaf.${root}`) ? { parentTurnId: stored(`mc.chat.leaf.${root}`) } : {}),
+    ...(stored(`skd.chat.leaf.${root}`) ? { parentTurnId: stored(`skd.chat.leaf.${root}`) } : {}),
     ...(pendingFrom === null ? {} : { from: pendingFrom }),
   })
   if (!result.ok) { chatError(errorText(result)); restoreComposer(prompt, images); return }
@@ -1053,7 +1053,7 @@ async function sendMessage(prompt: string, images: string[] = []): Promise<void>
 }
 
 function replyChoices(): { model?: string; permissionMode?: string } {
-  const model = stored(`mc.chat.model.${root}`)
+  const model = stored(`skd.chat.model.${root}`)
   const engine = document.body.dataset.chatEngine
   return {
     ...(model ? { model } : {}),

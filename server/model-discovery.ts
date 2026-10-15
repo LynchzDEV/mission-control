@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import type { AgentConnection } from './agent-connections'
 import { configDir } from './secrets'
 import { atomicJson, identifier } from './workflows'
+import { readEnv } from './env'
+import { logEvent } from './log-events'
 
 export type DiscoveryState = { models: string[]; current: string | null; checkedAt: number; error: string | null }
 export type BridgeEvent = Record<string, unknown>
@@ -110,7 +112,7 @@ export function createModelDiscovery({ base = configDir(), fetchImpl = fetch, no
   async function ask(connection: AgentConnection): Promise<{ models: string[]; current: string | null }> {
     if (connection.adapter === 'opencode' && connection.baseUrl) return { models: await endpoint(connection), current: null }
     const events = await bridge({ connection, prompt: '', discoverModels: true }, DISCOVERY_TIMEOUT_MS)
-    const reported = events.find(event => event.type === 'mc_models')
+    const reported = events.find(event => event.type === logEvent('models'))
     if (!reported) throw new Error('The agent did not report its models')
     return { models: Array.isArray(reported.models) ? reported.models.filter((model): model is string => typeof model === 'string') : [], current: typeof reported.current === 'string' ? reported.current : null }
   }
@@ -171,7 +173,7 @@ export function onDiscoveryUpdate(listener: () => void): void {
 export function modelDiscovery(base = configDir()): ModelDiscovery {
   const existing = shared.get(base)
   if (existing) return existing
-  const created = createModelDiscovery({ base, background: process.env.MC_MODEL_DISCOVERY !== 'off', onUpdate: () => { for (const listener of updateListeners) listener() } })
+  const created = createModelDiscovery({ base, background: readEnv('MODEL_DISCOVERY') !== 'off', onUpdate: () => { for (const listener of updateListeners) listener() } })
   shared.set(base, created)
   return created
 }

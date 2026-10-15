@@ -96,7 +96,7 @@ describe('createModelDiscovery', () => {
   let reply: () => Promise<Array<Record<string, unknown>>>
   const grok = connectionSchema.parse({ id: 'grok', name: 'Grok', adapter: 'acp', command: 'grok', args: ['agent', 'stdio'], models: ['grok-4.5', 'grok-custom'] })
   const cli = connectionSchema.parse({ id: 'mycli', name: 'My CLI', adapter: 'cli', command: 'agent', args: ['-p', '{{prompt}}'], models: ['x'] })
-  const reported = (models: string[], current: string | null = models[0] ?? null) => async () => [{ type: 'system' }, { type: 'mc_models', models, current }]
+  const reported = (models: string[], current: string | null = models[0] ?? null) => async () => [{ type: 'system' }, { type: 'skd_models', models, current }]
   const discovery = () => createModelDiscovery({ base: dir, now: () => clock, bridge: async () => { calls++; return reply() } })
   const settle = () => Bun.sleep(5)
 
@@ -147,7 +147,7 @@ describe('createModelDiscovery', () => {
 
   test('ensureFresh starts a check when nothing is known and returns at once', async () => {
     let release!: () => void
-    reply = () => new Promise(resolve => { release = () => resolve([{ type: 'mc_models', models: ['grok-4.7'], current: 'grok-4.7' }]) })
+    reply = () => new Promise(resolve => { release = () => resolve([{ type: 'skd_models', models: ['grok-4.7'], current: 'grok-4.7' }]) })
     const store = discovery()
     expect(await store.ensureFresh(grok)).toBeNull()
     await settle()
@@ -216,8 +216,8 @@ describe('createModelDiscovery', () => {
       seen.push(`${String(url)} ${new Headers(init?.headers).get('authorization')}`)
       return Response.json({ data: [{ id: 'llama3' }] })
     }, { preconnect: () => {} }) as unknown as typeof fetch
-    const opencode = connectionSchema.parse({ id: 'local', name: 'Local', adapter: 'opencode', command: 'opencode', args: ['acp'], baseUrl: 'http://localhost:11434/v1', apiKeyEnv: 'MC_DISCOVERY_TEST_KEY' })
-    const store = createModelDiscovery({ base: dir, now: () => clock, fetchImpl, env: { MC_DISCOVERY_TEST_KEY: 'k1' }, bridge: async () => { calls++; return [] } })
+    const opencode = connectionSchema.parse({ id: 'local', name: 'Local', adapter: 'opencode', command: 'opencode', args: ['acp'], baseUrl: 'http://localhost:11434/v1', apiKeyEnv: 'SKD_DISCOVERY_TEST_KEY' })
+    const store = createModelDiscovery({ base: dir, now: () => clock, fetchImpl, env: { SKD_DISCOVERY_TEST_KEY: 'k1' }, bridge: async () => { calls++; return [] } })
     expect(await store.refresh(opencode)).toEqual({ models: ['llama3'], current: null, checkedAt: clock, error: null })
     expect(seen).toEqual(['http://localhost:11434/v1/models Bearer k1'])
     expect(calls).toBe(0)
@@ -225,7 +225,7 @@ describe('createModelDiscovery', () => {
 
   test('discovery asks the bridge for models only, with a time limit', async () => {
     const inputs: unknown[] = []
-    const store = createModelDiscovery({ base: dir, now: () => clock, bridge: async (input, timeoutMs) => { inputs.push({ input, timeoutMs }); return [{ type: 'mc_models', models: ['m'], current: 'm' }] } })
+    const store = createModelDiscovery({ base: dir, now: () => clock, bridge: async (input, timeoutMs) => { inputs.push({ input, timeoutMs }); return [{ type: 'skd_models', models: ['m'], current: 'm' }] } })
     await store.refresh(grok)
     expect(inputs).toEqual([{ input: { connection: grok, prompt: '', discoverModels: true }, timeoutMs: 45_000 }])
   })

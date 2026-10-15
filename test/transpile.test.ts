@@ -60,8 +60,8 @@ describe('transpileClientModule', () => {
 describe('GET /js/:file', () => {
   test('serves shell-launch.js as javascript and 404s unknown names', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'mc-transpile-'))
-    const previous = process.env.MISSION_CONTROL_CONFIG_DIR
-    process.env.MISSION_CONTROL_CONFIG_DIR = dir
+    const previous = process.env.SKD_CONFIG_DIR
+    process.env.SKD_CONFIG_DIR = dir
     try {
       const { createApp } = await import('../server/index')
       const app = await createApp()
@@ -77,7 +77,7 @@ describe('GET /js/:file', () => {
       const traversal = await app.handle(new Request('http://localhost/js/..%2Fsecrets.js'))
       expect(traversal.status).not.toBe(200)
     } finally {
-      if (previous === undefined) delete process.env.MISSION_CONTROL_CONFIG_DIR; else process.env.MISSION_CONTROL_CONFIG_DIR = previous
+      if (previous === undefined) delete process.env.SKD_CONFIG_DIR; else process.env.SKD_CONFIG_DIR = previous
       await rm(dir, { recursive: true, force: true })
     }
   })

@@ -10,11 +10,11 @@ let configDir: string
 let project: string
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-chat-routes-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
   project = await mkdtemp(join(homedir(), 'mc-chat-home-'))
 })
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
   await rm(project, { recursive: true, force: true })
 })

@@ -162,7 +162,7 @@ function actions(item: QueueItemView, now: number): HTMLElement {
 function questionsThread(item: QueueItemView, now: number): HTMLElement {
   const asked = item.questions.map(question => el('div', { class: 'q-msg' },
     el('span', { class: 'mk-logo', style: '--s:28px' }, icon('spark-icon')),
-    el('div', { class: 'q-msg-meta' }, el('strong', {}, 'Mission Control'), el('span', {}, `asked on the source · ${ageText(item.updatedAt, now)}`)),
+    el('div', { class: 'q-msg-meta' }, el('strong', {}, 'Shikidan'), el('span', {}, `asked on the source · ${ageText(item.updatedAt, now)}`)),
     el('div', { class: 'q-bubble' }, el('p', {}, question))))
   const foot = el('div', { class: 'q-thread-foot' }, el('span', {}, 'Answer on the source, then Check replies picks it up and the build goes on.'))
   return el('div', { class: 'q-thread' }, ...asked, foot)
@@ -204,10 +204,10 @@ function emptyState(): HTMLElement {
   return el('div', { class: 'mk-empty q-empty' },
     el('span', { class: 'mk-logo', style: '--s:52px' }, icon('q-queue')),
     el('h2', {}, 'Nothing in the queue'),
-    el('p', { class: 'muted' }, 'Items come from a source plugin. Add one and Mission Control plans it, builds it, and asks the requester when it needs them.'),
+    el('p', { class: 'muted' }, 'Items come from a source plugin. Add one and Shikidan plans it, builds it, and asks the requester when it needs them.'),
     el('div', { class: 'q-empty-ways' },
       way('store-icon', 'From a source plugin', 'Paste a task link from an enabled source plugin.', button('Add item', 'connection-button', { 'data-act': 'add' })),
-      way('terminal-icon', 'From the terminal', el('code', { class: 'q-code' }, 'mctl queue add <source> <id> --repo <dir>'), el('span'))))
+      way('terminal-icon', 'From the terminal', el('code', { class: 'q-code' }, 'shiki queue add <source> <id> --repo <dir>'), el('span'))))
 }
 
 export function renderQueue(items: readonly QueueItemView[], context: QueueContext): HTMLElement {
@@ -216,7 +216,7 @@ export function renderQueue(items: readonly QueueItemView[], context: QueueConte
   }
   const treeView = context.layout === 'tree' ? context.treeView : undefined
   if (treeView !== undefined) return el('div', { class: 'q-screen' }, heading(context), summary(items, 'tree'), treeView)
-  const hint = el('button', { type: 'button', class: 'connection-add q-hint', 'data-act': 'add' }, icon('plus-icon'), 'Add an item from a source plugin, or run ', el('code', {}, 'mctl queue add'))
+  const hint = el('button', { type: 'button', class: 'connection-add q-hint', 'data-act': 'add' }, icon('plus-icon'), 'Add an item from a source plugin, or run ', el('code', {}, 'shiki queue add'))
   return el('div', { class: 'q-screen' }, heading(context), summary(items, 'list'), el('div', { class: 'q-list' }, ...items.map(item => row(item, items, context))), hint)
 }
 

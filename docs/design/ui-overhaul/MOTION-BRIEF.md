@@ -1,4 +1,4 @@
-# Mission Control — live motion study
+# Shikidan — live motion study
 
 ## Latest correction — preserve the working app
 
@@ -33,7 +33,7 @@ One refined Terminals screen at /motion.html on the existing preview server. The
 ## Visual direction
 
 - Near-black workspace, cool white text, one sparingly used orange accent, restrained fine borders, system grotesk navigation and Menlo terminal content. No pixel display font, giant headings, cards full of explanatory text, KPI strip, marketing hero, mascots, glows or rainbow gradients.
-- Compact top bar: Mission Control, Terminals, and a quiet Sample preview disclosure. Session tabs beneath. One large terminal pane on the left; a narrow right column divided into Agents and a quiet selected-agent detail. Main composition reads as joined panes, not detached dashboard cards. At desktop leave enough breathing room around and within the workspace for the background to be visible.
+- Compact top bar: Shikidan, Terminals, and a quiet Sample preview disclosure. Session tabs beneath. One large terminal pane on the left; a narrow right column divided into Agents and a quiet selected-agent detail. Main composition reads as joined panes, not detached dashboard cards. At desktop leave enough breathing room around and within the workspace for the background to be visible.
 - A single original rolling ASCII contour surface supplies the atmosphere: a broad oblique wave or ribbon across the lower/right canvas, large black gaps, shaded character density, slowly evolving crests. Use punctuation glyphs, not binary rain or a canned spinning donut. No Dragonfly logo, insect, imagery, or copied source. Keep primary text on sufficiently opaque surfaces; background motion must remain clearly perceptible in empty margins.
 - Body text 14px or greater, metadata 12px or greater. Main foreground roughly #ededed, secondary #a0a0a0, background #000000, panel #101012, rules #2b2b2e. Proposed study accent #f26a3d; these are new study tokens, not claims about the current brand palette.
 - Short 160–240ms pane/tab/detail transitions with subtle opacity/translation; no floating cards, repeated entrance sequences or continuous motion in the controls. Hover can gently influence the ASCII field, but never move text or hijack scrolling/cursor.

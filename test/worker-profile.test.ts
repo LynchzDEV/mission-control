@@ -23,7 +23,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(dir, { recursive: true, force: true })
 })
 
@@ -64,7 +64,7 @@ describe('ensureWorkerProfiles', () => {
   })
 
   test('falls back to the config dir from the environment', async () => {
-    process.env.MISSION_CONTROL_CONFIG_DIR = dir
+    process.env.SKD_CONFIG_DIR = dir
     const dirs = await ensureWorkerProfiles()
     expect(dirs).toEqual(workerProfileDirs())
     expect(dirs.claude.startsWith(dir)).toBe(true)
@@ -106,19 +106,19 @@ describe('workerEnv', () => {
   })
 
   test('with the full agent setup switch on, every engine keeps the user profile', () => {
-    const saved = process.env.MISSION_CONTROL_FULL_AGENT_SETUP
-    process.env.MISSION_CONTROL_FULL_AGENT_SETUP = '1'
+    const saved = process.env.SKD_FULL_AGENT_SETUP
+    process.env.SKD_FULL_AGENT_SETUP = '1'
     try {
       expect(workerEnv('glm', dirs)).toEqual({})
       expect(workerEnv('codex', dirs)).toEqual({})
       expect(chatEnv('glm', dirs)).toEqual({})
       expect(chatEnv('codex', dirs)).toEqual({})
-      process.env.MISSION_CONTROL_FULL_AGENT_SETUP = '0'
+      process.env.SKD_FULL_AGENT_SETUP = '0'
       expect(workerEnv('glm', dirs)).toEqual({ CLAUDE_CONFIG_DIR: dirs.claude })
       expect(chatEnv('codex', dirs)).toEqual({ CODEX_HOME: dirs.codex })
     } finally {
-      if (saved === undefined) delete process.env.MISSION_CONTROL_FULL_AGENT_SETUP
-      else process.env.MISSION_CONTROL_FULL_AGENT_SETUP = saved
+      if (saved === undefined) delete process.env.SKD_FULL_AGENT_SETUP
+      else process.env.SKD_FULL_AGENT_SETUP = saved
     }
   })
 })

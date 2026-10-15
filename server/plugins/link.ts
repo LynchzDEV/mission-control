@@ -7,7 +7,7 @@ import { isAllowedRepoUrl } from './repo-url'
 const GIT_TIMEOUT = 60_000
 const VERSION_TAG = /^v?\d+\.\d+\.\d+$/
 
-export const NOT_A_PLUGIN_OR_MARKETPLACE = "This repo isn't a Mission Control plugin or marketplace."
+export const NOT_A_PLUGIN_OR_MARKETPLACE = "This repo isn't a Shikidan plugin or marketplace."
 
 export type LinkResult =
   | { ok: true; kind: 'plugin'; ref: string; preview: Extract<PreviewResult, { ok: true }> }

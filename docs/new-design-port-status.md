@@ -29,21 +29,21 @@ The dev proxy only allows reads; every write above gets 405 until the design is 
 Code removed in the Phase 5 cleanup commit `chore(ui): remove the pre-2.0 pages, islands, stylesheets and preview tooling`; the old URL now redirects to `/`.
 Rule (user): "never use every feature under main page, get rid of everything that doesn't affect other pages' features".
 Removed: work list, filters, search, detail panel, "Archived plans" filter, Land / Mark reviewed buttons, Usage page.
-Kept (no UI): `/land`, `/reviewed`, plan `/run`, `/run/stop`, `/archive` endpoints — mc-dispatch uses them (`skills/mc-dispatch/SKILL.md:256,360,432`); quota data for the usage card.
-Its APIs stay (mc-dispatch still posts plans and starts runs via `/api/flow/:label/plan` and `/run`, `skills/mc-dispatch/SKILL.md:301,331`); only the page goes.
-- Plan Run / Stop: never had UI buttons; API-only, driven by mc-dispatch. Nothing to port.
+Kept (no UI): `/land`, `/reviewed`, plan `/run`, `/run/stop`, `/archive` endpoints — skd-dispatch uses them (`skills/skd-dispatch/SKILL.md:256,360,432`); quota data for the usage card.
+Its APIs stay (skd-dispatch still posts plans and starts runs via `/api/flow/:label/plan` and `/run`, `skills/skd-dispatch/SKILL.md:301,331`); only the page goes.
+- Plan Run / Stop: never had UI buttons; API-only, driven by skd-dispatch. Nothing to port.
 - Archive: only surfaced as the Main page's "Archived plans" filter; goes with the page.
 - Land / Mark reviewed: dropped, never used.
 - Usage: keep, as the usage card at the top right of the new design (see 6).
 
 ## 4. New job (Dispatch) — REMOVED
 Code removed in the Phase 5 cleanup commit `chore(ui): remove the pre-2.0 pages, islands, stylesheets and preview tooling`; the old URL now redirects to `/`.
-Decided: the manual New job form is dropped; the system chat and mc-dispatch start jobs. `POST /api/jobs` stays (both use it).
+Decided: the manual New job form is dropped; the system chat and skd-dispatch start jobs. `POST /api/jobs` stays (both use it).
 
 ## 5. Review — REMOVED
 Code removed in the Phase 5 cleanup commit `chore(ui): remove the pre-2.0 pages, islands, stylesheets and preview tooling`; the old URL now redirects to `/`.
-Decided: the Review page and its header count are dropped; "needs you" in History and on the Agents button replace them. `/reviewed` stays for mc-dispatch.
-- Decided: no manual review/land step. The chat (like mc-dispatch) lands automatically once the cross-family review passes; team cards show "Landed", History dots and the Agents count flag "needs you" and "landed".
+Decided: the Review page and its header count are dropped; "needs you" in History and on the Agents button replace them. `/reviewed` stays for skd-dispatch.
+- Decided: no manual review/land step. The chat (like skd-dispatch) lands automatically once the cross-family review passes; team cards show "Landed", History dots and the Agents count flag "needs you" and "landed".
 
 ## 6. Header
 - Decided: bring back the usage card (Claude, GLM, Codex, 5-hour and weekly) at the top right of the new design. The chat also reads this usage to route work.
@@ -55,7 +55,7 @@ Decided: the Review page and its header count are dropped; "needs you" in Histor
 ## 7. Settings
 - Work defaults (Plan / Execute / Review roles, Automatic review switch): REMOVED. The chat's AI chip picks the chat's AI and the chat picks every agent's AI; a new chat and the terminal launcher start with what you used last. Cross-family review is always on. The planned **Chat** role is dropped too.
 - Connections section (Claude status, Codex sign-in, GLM base URL/token): REMOVED. Provider setup lives in Studio → Manage AIs (+ Add a connection); no separate providers view.
-- Password system: REMOVED entirely (login page, setup, `/api/login`, `/api/setup`, session cookies). Mission Control is locked to this machine: always listens on `127.0.0.1`, bind address setting removed, server keeps the local-access guards (peer, Host, Origin, Fetch Metadata) against other sites, embedded pages and DNS rebinding. API token stays (mc-dispatch uses it); copy / rotate still to be wired.
+- Password system: REMOVED entirely (login page, setup, `/api/login`, `/api/setup`, session cookies). Shikidan is locked to this machine: always listens on `127.0.0.1`, bind address setting removed, server keeps the local-access guards (peer, Host, Origin, Fetch Metadata) against other sites, embedded pages and DNS rebinding. API token stays (skd-dispatch uses it); copy / rotate still to be wired.
 - Decided: add **Chat home** (default = deepest folder shared by known projects, never `~`).
 
 ## 8. Studio — PORTED 2026-09-24 (Phase 4, a27c8a6..HEAD)

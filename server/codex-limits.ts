@@ -43,7 +43,7 @@ export async function readCodexLimits(
 ): Promise<UsageLimits> {
   try {
     return parseCodexLimits(await requestOverStdio(launch, {
-      initialize: { method: 'initialize', params: { clientInfo: { name: 'mission-control-quota', version: '1.0.0' }, capabilities: { experimentalApi: true } } },
+      initialize: { method: 'initialize', params: { clientInfo: { name: 'shikidan-quota', version: '1.0.0' }, capabilities: { experimentalApi: true } } },
       afterInitialize: { method: 'initialized' },
       request: { method: 'account/rateLimits/read', params: {} },
     }, timeoutMs))

@@ -9,12 +9,12 @@ import { engineArgs, realEngineResolver } from '../server/jobs-engine-iface'
 import { writeSecrets } from '../server/secrets'
 
 let dir: string
-beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'mc-chat-profile-')); process.env.MISSION_CONTROL_CONFIG_DIR = dir; process.env.MC_FAKE_ENGINES = '1'; process.env.MC_FAKE_CHAT_BRIDGE = '1' })
-afterEach(async () => { delete process.env.MISSION_CONTROL_CONFIG_DIR; delete process.env.MC_FAKE_ENGINES; delete process.env.MC_FAKE_CHAT_BRIDGE; await rm(dir, { recursive: true, force: true }) })
+beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'mc-chat-profile-')); process.env.SKD_CONFIG_DIR = dir; process.env.SKD_FAKE_ENGINES = '1'; process.env.SKD_FAKE_CHAT_BRIDGE = '1' })
+afterEach(async () => { delete process.env.SKD_CONFIG_DIR; delete process.env.SKD_FAKE_ENGINES; delete process.env.SKD_FAKE_CHAT_BRIDGE; await rm(dir, { recursive: true, force: true }) })
 
 describe('chat rules', () => {
   test('name the API, the retry cap, the review rule and the landing call', () => {
-    for (const phrase of ['POST $MC_URL/api/jobs', 'MC_CHAT_ID', 'different AI family', '/land', 'Never push', '/api/quota', 'copy them exactly, never invent them']) expect(CHAT_RULES).toContain(phrase)
+    for (const phrase of ['POST $SKD_URL/api/jobs', 'SKD_CHAT_ID', 'different AI family', '/land', 'Never push', '/api/quota', 'copy them exactly, never invent them']) expect(CHAT_RULES).toContain(phrase)
     expect(CHAT_RULES.split('3 attempts per step in total (the server refuses a 4th)')).toHaveLength(3)
   })
   test('carry the chat context', () => {
@@ -27,11 +27,11 @@ describe('chat rules', () => {
     expect(chatRules({ chatId: 'r', home: '/h', project: null, edit: true, memory: '' })).toContain('may edit files directly')
   })
   test('chat rules explain when to use a flow and how to relay approval', () => {
-    for (const phrase of ['more than one step that changes code', 'GET $MC_URL/api/studio/workflows', '"status":"awaiting-approval"', '/approve {"chat":"$MC_CHAT_ID"}', 'Never approve without the owner saying so']) expect(CHAT_RULES).toContain(phrase)
+    for (const phrase of ['more than one step that changes code', 'GET $SKD_URL/api/studio/workflows', '"status":"awaiting-approval"', '/approve {"chat":"$SKD_CHAT_ID"}', 'Never approve without the owner saying so']) expect(CHAT_RULES).toContain(phrase)
     expect(CHAT_RULES).not.toContain('Naming a Studio workflow is optional')
   })
   test('chat rules say to design the flow when Studio reports design mode', () => {
-    expect(CHAT_RULES).toContain(`When GET $MC_URL/api/studio/workflows returns "design": true, ${flowDesignRules('$MC_URL')}`)
+    expect(CHAT_RULES).toContain(`When GET $SKD_URL/api/studio/workflows returns "design": true, ${flowDesignRules('$SKD_URL')}`)
   })
   test('chat rules explain how to draft a flow and change a running one', () => {
     for (const phrase of ['"graph" instead of "workflowId"', '/changes', 'Never mark scopeGrew false to avoid approval']) expect(CHAT_RULES).toContain(phrase)
@@ -40,7 +40,7 @@ describe('chat rules', () => {
     for (const phrase of ['kind "join"', 'its own git worktree', '"setup" commands', 'Keep fail edges inside their own path']) expect(CHAT_RULES).toContain(phrase)
   })
   test('chat rules explain In Session steps and how to report them, without a background watcher', () => {
-    for (const phrase of ['"In Session"', 'POST $MC_URL/api/studio/runs/<id>/steps/<nodeId>', 'GET $MC_URL/api/studio/runs/<id>/steps/<nodeId> returns its assignment', 'A failed plan check sends the plan back to you']) expect(CHAT_RULES).toContain(phrase)
+    for (const phrase of ['"In Session"', 'POST $SKD_URL/api/studio/runs/<id>/steps/<nodeId>', 'GET $SKD_URL/api/studio/runs/<id>/steps/<nodeId> returns its assignment', 'A failed plan check sends the plan back to you']) expect(CHAT_RULES).toContain(phrase)
     expect(CHAT_RULES).not.toContain('background watcher')
   })
   test('state the chat\'s own engine and model', () => {
@@ -77,7 +77,7 @@ describe('resolver for a chat', () => {
     const spawn = await realEngineResolver({ engine: 'claude', prompt: 'hi', purpose: 'chat', edit: false, coreRules: 'RULES' })
     expect(spawn.control).toBe(true)
     expect(spawn.args[0]).toContain('chat-bridge.ts')
-    expect(spawn.env.MC_BRIDGE_FAKE).toContain('test/fixtures/chat-bridge')
+    expect(spawn.env.SKD_BRIDGE_FAKE).toContain('test/fixtures/chat-bridge')
     const launch = await launchOf({ engine: 'claude', prompt: 'hi', purpose: 'chat', edit: false, coreRules: 'RULES' })
     expect(launch.appendSystemPrompt).toBe('RULES')
     expect(launch.disallowedTools).toEqual(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
@@ -97,11 +97,11 @@ describe('resolver for a chat', () => {
     expect(editing.env.CLAUDE_CONFIG_DIR).toContain('chat-claude')
   })
   test('without the bridge flag a fake-engine chat keeps the CLI stub path', async () => {
-    delete process.env.MC_FAKE_CHAT_BRIDGE
+    delete process.env.SKD_FAKE_CHAT_BRIDGE
     const spawn = await realEngineResolver({ engine: 'claude', prompt: 'hi', purpose: 'chat', edit: false, coreRules: 'RULES' })
     expect(spawn.control).toBeUndefined()
     expect(spawn.args).toContain('--append-system-prompt')
-    process.env.MC_FAKE_CHAT_BRIDGE = '1'
+    process.env.SKD_FAKE_CHAT_BRIDGE = '1'
   })
   test('a codex chat takes the worker Codex profile and no Claude tool flags', async () => {
     const spawn = await realEngineResolver({ engine: 'codex', prompt: 'hi', purpose: 'chat', edit: false, coreRules: 'RULES' })

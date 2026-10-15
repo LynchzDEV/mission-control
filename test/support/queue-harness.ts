@@ -43,7 +43,7 @@ export function queueHarness(dir: string, over: Partial<QueueEngineDeps> = {}, s
       await writeFile(join(worktree, '.git'), 'gitdir: elsewhere')
       return { worktree }
     },
-    writeContext: async (pluginId, context, cwd) => { const folder = join(cwd, '.mission-control', 'queue', pluginId); await mkdir(folder, { recursive: true }); const path = join(folder, `${context.name}.md`); await writeFile(path, context.markdown); return path },
+    writeContext: async (pluginId, context, cwd) => { const folder = join(cwd, '.shikidan', 'queue', pluginId); await mkdir(folder, { recursive: true }); const path = join(folder, `${context.name}.md`); await writeFile(path, context.markdown); return path },
     pluginFiles: pluginId => join(dir, 'plugin-data', pluginId, 'files'),
     backupDir: itemId => join(dir, 'queue-files', itemId),
     needsYou: (item, reason) => { alerts.push({ title: item.title, reason, state: item.state }) },

@@ -3,11 +3,13 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { atomicJson, identifier, SESSION_ENGINE } from './workflows'
 import { configDir } from './secrets'
+import { envNames } from './env'
 
 export const BUILTIN_AGENTS = ['claude', 'glm', 'codex'] as const
 export { SESSION_ENGINE }
 const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
-const targetEnvName = envName.refine(name => !['MC_JOB_ID', 'MC_TERMINAL_ID', 'MISSION_CONTROL_CONFIG_DIR'].includes(name), 'Mission Control identity cannot be overridden')
+const IDENTITY_ENV = ['JOB_ID', 'TERMINAL_ID', 'CONFIG_DIR'].flatMap(envNames)
+const targetEnvName = envName.refine(name => !IDENTITY_ENV.includes(name), 'Shikidan identity cannot be overridden')
 export const connectionSchema = z.object({
   id: identifier, name: z.string().trim().min(1).max(100),
   adapter: z.enum(['acp', 'opencode', 'cli']), command: z.string().trim().min(1).max(1024),

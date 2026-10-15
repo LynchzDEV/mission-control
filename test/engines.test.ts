@@ -21,17 +21,17 @@ let dir: string
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-engines-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
-  delete process.env.MC_FAKE_ENGINES
-  delete process.env.MC_FAKE_ENGINE_CMD
+  process.env.SKD_CONFIG_DIR = dir
+  delete process.env.SKD_FAKE_ENGINES
+  delete process.env.SKD_FAKE_ENGINE_CMD
   delete process.env.ANTHROPIC_BASE_URL
   delete process.env.ANTHROPIC_AUTH_TOKEN
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
-  delete process.env.MC_FAKE_ENGINES
-  delete process.env.MC_FAKE_ENGINE_CMD
+  delete process.env.SKD_CONFIG_DIR
+  delete process.env.SKD_FAKE_ENGINES
+  delete process.env.SKD_FAKE_ENGINE_CMD
   await rm(dir, { recursive: true, force: true })
 })
 
@@ -136,13 +136,13 @@ describe('worker profile env', () => {
   })
 
   test('the job resolver hands glm jobs the isolated worker profile', async () => {
-    process.env.MC_FAKE_ENGINES = '1'
+    process.env.SKD_FAKE_ENGINES = '1'
     await writeSecrets({ zaiAuthToken: TOKEN })
     try {
       const spawn = await realEngineResolver({ engine: 'glm', prompt: 'p' })
       expect(spawn.env.CLAUDE_CONFIG_DIR).toBe(workerProfileDirs().claude)
     } finally {
-      delete process.env.MC_FAKE_ENGINES
+      delete process.env.SKD_FAKE_ENGINES
     }
   })
 })
@@ -152,7 +152,7 @@ describe('workflow step jobs', () => {
   const stepVarsOf = (env: Record<string, string>) => Object.fromEntries(stepVars.flatMap(key => key in env ? [[key, env[key]]] : []))
 
   beforeEach(() => {
-    process.env.MC_FAKE_ENGINES = '1'
+    process.env.SKD_FAKE_ENGINES = '1'
     for (const key of stepVars) delete process.env[key]
   })
 
@@ -193,14 +193,14 @@ describe('secrets never reach argv', () => {
   })
 })
 
-describe('MC_FAKE_ENGINES', () => {
+describe('SKD_FAKE_ENGINES', () => {
   test('is off by default', () => {
     expect(fakeEnginesEnabled()).toBe(false)
     expect(resolveEngine('claude')).toBe(ENGINES.claude)
   })
 
   test('swaps every engine cmd for /bin/echo when set to 1', async () => {
-    process.env.MC_FAKE_ENGINES = '1'
+    process.env.SKD_FAKE_ENGINES = '1'
     expect(fakeEnginesEnabled()).toBe(true)
     for (const name of ENGINE_NAMES) {
       expect(resolveEngine(name).cmd).toBe('/bin/echo')
@@ -208,22 +208,22 @@ describe('MC_FAKE_ENGINES', () => {
   })
 
   test('other values do not enable fake mode', () => {
-    process.env.MC_FAKE_ENGINES = 'true'
+    process.env.SKD_FAKE_ENGINES = 'true'
     expect(fakeEnginesEnabled()).toBe(false)
   })
 
   test('fake glm still requires a configured token and still overlays the same env', async () => {
-    process.env.MC_FAKE_ENGINES = '1'
+    process.env.SKD_FAKE_ENGINES = '1'
     await writeSecrets({ zaiAuthToken: TOKEN })
     const env = await buildEnv('glm')
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe(TOKEN)
     expect(resolveEngine('glm').cmd).toBe('/bin/echo')
   })
 
-  test('MC_FAKE_ENGINE_CMD overrides the stub cmd, read fresh at resolve time', () => {
-    process.env.MC_FAKE_ENGINES = '1'
+  test('SKD_FAKE_ENGINE_CMD overrides the stub cmd, read fresh at resolve time', () => {
+    process.env.SKD_FAKE_ENGINES = '1'
     expect(resolveEngine('glm').cmd).toBe('/bin/echo')
-    process.env.MC_FAKE_ENGINE_CMD = '/x/y'
+    process.env.SKD_FAKE_ENGINE_CMD = '/x/y'
     expect(resolveEngine('glm').cmd).toBe('/x/y')
   })
 })

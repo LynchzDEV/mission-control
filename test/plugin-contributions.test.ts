@@ -45,7 +45,7 @@ function source(overrides: Partial<ContributionSource> = {}): ContributionSource
       { key: 'token', label: 'Token', type: 'secret' },
     ],
     settings: { reposRoot: '/work/repos', commentFooter: '[bot]' },
-    mctl: 'bun /mc/cli/mctl.ts',
+    shiki: 'bun /mc/cli/shiki.ts',
     ...overrides,
   }
 }
@@ -72,10 +72,10 @@ afterEach(async () => {
 })
 
 describe('fillTemplate', () => {
-  const context = { settingsFields: source().settingsFields, settings: source().settings, mctl: 'bun /mc/cli/mctl.ts' }
+  const context = { settingsFields: source().settingsFields, settings: source().settings, shiki: 'bun /mc/cli/shiki.ts' }
 
-  test('fills text settings and the mctl command', () => {
-    expect(fillTemplate('a {{setting:reposRoot}} b {{mc:mctl}}', 'x.md', context)).toEqual({ ok: true, text: 'a /work/repos b bun /mc/cli/mctl.ts' })
+  test('fills text settings and the shiki command', () => {
+    expect(fillTemplate('a {{setting:reposRoot}} b {{mc:mctl}}', 'x.md', context)).toEqual({ ok: true, text: 'a /work/repos b bun /mc/cli/shiki.ts' })
   })
 
   test('leaves an empty setting as written', () => {
@@ -88,7 +88,7 @@ describe('fillTemplate', () => {
 
   test('refuses an undeclared setting and an unknown mc value', () => {
     expect(fillTemplate('{{setting:nope}}', 'a.md', context)).toEqual({ ok: false, error: 'a.md:1: {{setting:nope}} is not a declared setting' })
-    expect(fillTemplate('{{mc:home}}', 'a.md', context)).toEqual({ ok: false, error: 'a.md:1: {{mc:home}} is not a value Mission Control fills' })
+    expect(fillTemplate('{{mc:home}}', 'a.md', context)).toEqual({ ok: false, error: 'a.md:1: {{mc:home}} is not a value Shikidan fills' })
   })
 })
 
@@ -98,8 +98,8 @@ describe('applyContributions', () => {
     expect(result.ok).toBe(true)
     for (const target of targets) {
       const agent = await readFile(join(target, 'agents', 'biz-gate.md'), 'utf8')
-      expect(agent).toContain('Repos live in /work/repos. Run bun /mc/cli/mctl.ts plugin call x.')
-      expect(agent).toContain('<!-- installed by mission-control plugin card-pipeline -->')
+      expect(agent).toContain('Repos live in /work/repos. Run bun /mc/cli/shiki.ts plugin call x.')
+      expect(agent).toContain('<!-- installed by shikidan plugin card-pipeline -->')
       expect(agent.startsWith('---\nname: biz-gate\n')).toBe(true)
       expect(await readFile(join(target, 'skills', 'card-refine', 'SKILL.md'), 'utf8')).toContain('Footer: [bot]')
       expect(await readFile(join(target, 'skills', 'card-refine', 'docs', 'notes.md'), 'utf8')).toBe('Folder /work/repos\n')
@@ -115,6 +115,14 @@ describe('applyContributions', () => {
     expect(result).toEqual({ ok: false, error: `${join(targets[1]!, 'agents', 'biz-gate.md')} already exists and was not installed by this plugin` })
     expect(await readFile(join(targets[1]!, 'agents', 'biz-gate.md'), 'utf8')).toBe('my own agent\n')
     expect(await exists(join(targets[0]!, 'agents', 'biz-gate.md'))).toBe(false)
+  })
+
+  test('an agent installed before Shikidan still counts as its own', async () => {
+    await mkdir(join(targets[1]!, 'agents'), { recursive: true })
+    await writeFile(join(targets[1]!, 'agents', 'biz-gate.md'), '---\nname: biz-gate\n---\n<!-- installed by mission-control plugin card-pipeline -->\nold\n')
+    const result = await applyContributions(source(), targets, [])
+    expect(result.ok).toBe(true)
+    expect(await readFile(join(targets[1]!, 'agents', 'biz-gate.md'), 'utf8')).toContain('<!-- installed by shikidan plugin card-pipeline -->')
   })
 
   test('re-applying replaces its own files and removes ones no longer contributed', async () => {

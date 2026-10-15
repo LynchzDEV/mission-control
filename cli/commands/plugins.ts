@@ -15,8 +15,8 @@ export async function callPlugin(client: Client, id: string, method: string, par
     const body = await client.post(pluginPath(id, '/call'), { method, params })
     return isRecord(body) ? body.result : body
   } catch (error) {
-    if (error instanceof ApiError && error.message === `No method ${method}`) throw new UsageError(`${id} is too old for this (it has no ${method}); update it with: mctl plugin update ${id} --yes`)
-    if (error instanceof ApiError && error.status === 404 && error.message === 'That plugin is not installed') throw new UsageError(`${id} is not installed; see: mctl plugin catalog`)
+    if (error instanceof ApiError && error.message === `No method ${method}`) throw new UsageError(`${id} is too old for this (it has no ${method}); update it with: shiki plugin update ${id} --yes`)
+    if (error instanceof ApiError && error.status === 404 && error.message === 'That plugin is not installed') throw new UsageError(`${id} is not installed; see: shiki plugin catalog`)
     throw error
   }
 }
@@ -37,7 +37,7 @@ function permissionLines(permissions: unknown): string[] {
 
 function pluginsText(value: unknown): string {
   const plugins = records(value, 'plugins')
-  if (plugins.length === 0) return 'No plugins installed. Add one with: mctl plugin add <link>\n'
+  if (plugins.length === 0) return 'No plugins installed. Add one with: shiki plugin add <link>\n'
   return table(plugins, [
     { header: 'ID', value: (plugin) => cell(plugin.id) },
     { header: 'VERSION', value: (plugin) => cell(plugin.version) },
@@ -49,7 +49,7 @@ function pluginsText(value: unknown): string {
 
 function catalogText(value: unknown): string {
   const entries = records(value, 'entries')
-  if (entries.length === 0) return 'No marketplaces yet. Add one with: mctl plugin add <marketplace link>\n'
+  if (entries.length === 0) return 'No marketplaces yet. Add one with: shiki plugin add <marketplace link>\n'
   return entries.map((entry) => {
     if (typeof entry.error === 'string') return `${cell(entry.marketplace)}\n  ${entry.error}\n`
     const plugins = Array.isArray(entry.plugins) ? entry.plugins.filter(isRecord) : []
@@ -89,7 +89,7 @@ function previewText(preview: Json): string {
   const lines = [
     `${cell(manifest.name)} ${cell(manifest.version)} (${cell(preview.runtime)})`,
     ...(preview.runtime === 'trusted'
-      ? ['Trusted: runs inside Mission Control with full access to your files, tokens and the internet.']
+      ? ['Trusted: runs inside Shikidan with full access to your files, tokens and the internet.']
       : ['Isolated. It will be able to:', ...permissionLines(preview.permissions).map((line) => `  - ${line}`)]),
     ...(contributions.length > 0
       ? ['It adds work to your engines, which runs with your full access:', ...contributions.map((line) => `  - ${line}`)]
@@ -113,9 +113,9 @@ async function addFromLink(ctx: Context): Promise<void> {
   const url = arg(ctx, 'link')
   const ref = stringOpt(ctx, 'ref')
   const result = await ctx.client.post('/api/plugins/add-link', { url, ...(ref === undefined ? {} : { ref }) })
-  if (!isRecord(result)) throw new Error('Mission Control answered without a result')
+  if (!isRecord(result)) throw new Error('Shikidan answered without a result')
   if (result.kind === 'marketplace') {
-    emit(ctx, result, () => 'Marketplace added. List its plugins with: mctl plugin catalog\n')
+    emit(ctx, result, () => 'Marketplace added. List its plugins with: shiki plugin catalog\n')
     return
   }
   if (!flag(ctx, 'yes')) {
@@ -144,7 +144,7 @@ async function updatePlugin(ctx: Context): Promise<void> {
   const source = isRecord(plugin.source) ? plugin.source : {}
   const ref = await targetRef(ctx.client, plugin)
   const preview = await ctx.client.post('/api/plugins/preview', { repo: source.repo, ref })
-  if (!isRecord(preview)) throw new Error('Mission Control answered without a preview')
+  if (!isRecord(preview)) throw new Error('Shikidan answered without a preview')
   if (preview.commit === plugin.commit) {
     emit(ctx, { upToDate: true, version: plugin.version }, () => `${cell(plugin.name)} ${cell(plugin.version)} is up to date.\n`)
     return
@@ -157,7 +157,7 @@ async function updatePlugin(ctx: Context): Promise<void> {
   try {
     const updated = await ctx.client.post(pluginPath(id, '/update'), { ref, commit: preview.commit, ...(flag(ctx, 'accept') ? { accept: true } : {}), ...(flag(ctx, 'trust') ? { trust: true } : {}) })
     const next = isRecord(updated) && isRecord(updated.plugin) ? updated.plugin : {}
-    emit(ctx, updated, () => `Updated ${cell(next.name)} to ${cell(next.version)}.${next.restartRequired === true ? ' Restart Mission Control to finish updating.' : ''}\n`)
+    emit(ctx, updated, () => `Updated ${cell(next.name)} to ${cell(next.version)}.${next.restartRequired === true ? ' Restart Shikidan to finish updating.' : ''}\n`)
   } catch (error) {
     if (!(error instanceof ApiError) || !isRecord(error.body)) throw error
     if (error.body.needsConsent === true) {

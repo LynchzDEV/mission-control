@@ -66,7 +66,7 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 const buttonNamed = (text: string): HTMLButtonElement => [...document.querySelectorAll<HTMLButtonElement>('#flow-banner button, .flow-actions button')].find(button => button.textContent === text)!
 const bannerText = (): string => document.querySelector('#flow-banner p')!.textContent ?? ''
 const openStream = (): FakeSource => {
-  window.localStorage.setItem('mc.motion.paused', 'true')
+  window.localStorage.setItem('skd.motion.paused', 'true')
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: true }))
   return streams.at(-1)!
 }
@@ -208,7 +208,7 @@ test('following the working step never animates under reduced motion, and does w
   const stream = openStream()
   stream.send({ runs: [chain('reduced', 8, 0)], jobs: [] })
   const fitted = canvas().style.transform
-  window.localStorage.setItem('mc.motion.paused', 'false')
+  window.localStorage.setItem('skd.motion.paused', 'false')
   Object.assign(globalThis, { matchMedia: () => ({ matches: true }) })
   stream.send({ runs: [{ ...chain('reduced', 8, 7), updatedAt: 41 }], jobs: [] })
   expect(canvas().style.transform).not.toBe(fitted)
@@ -217,7 +217,7 @@ test('following the working step never animates under reduced motion, and does w
   stream.send({ runs: [{ ...chain('reduced', 8, 0), updatedAt: 42 }], jobs: [] })
   expect(canvas().style.transform).toBe(fitted)
   expect(frames).toHaveLength(1)
-  window.localStorage.setItem('mc.motion.paused', 'true')
+  window.localStorage.setItem('skd.motion.paused', 'true')
   Reflect.deleteProperty(canvas(), 'animate')
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })
@@ -529,7 +529,7 @@ const watchedJobs = (): unknown[] => {
 }
 const term = (): HTMLElement => document.getElementById('flow-term')!
 const watchRun = (detail: { runId: string; jobId?: string }): FakeSource => {
-  window.localStorage.setItem('mc.motion.paused', 'true')
+  window.localStorage.setItem('skd.motion.paused', 'true')
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: true }))
   dispatchEvent(new CustomEvent('quiet:flow-watch', { detail }))
   return streams.at(-1)!
@@ -581,7 +581,7 @@ test('watching with a job named shows that job first', () => {
   dispatchEvent(new CustomEvent('quiet:flow-open', { detail: false }))
 })
 
-test('a watched job that was resumed after ending without MC_RESULT follows to the resumed job', () => {
+test('a watched job that was resumed after ending without SKD_RESULT follows to the resumed job', () => {
   stageSize.width = 1000
   const shown = watchedJobs()
   const stream = watchRun({ runId: 'W5', jobId: 'job-build' })

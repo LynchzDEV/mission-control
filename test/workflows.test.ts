@@ -40,7 +40,7 @@ test('prompt composition keeps mandatory rules, resolved workflow and task separ
   const graph = defaultWorkflow()
   const rendered = composeWorkflowPrompt(policy, graph, graph.nodes[0]!, 'Inspect project', [])
   expect(rendered).toContain('Never dispatch')
-  expect(rendered).toContain('MC_RESULT')
+  expect(rendered).toContain('SKD_RESULT')
   expect(rendered).toContain('Inspect project')
   expect(rendered).not.toContain('{{workflow}}')
   await expect(store.savePolicy('Only {{assignment}}')).rejects.toThrow('core_rules')
@@ -197,7 +197,7 @@ test('with no saved choice the AI designs each flow on top of the built-in steps
 
 test('worker rules keep long commands in the foreground because a headless session ends with its turn', () => {
   const lines = CORE_RULES.split('\n')
-  const foreground = lines.findIndex(line => line.includes('foreground') && line.includes('background') && line.includes('MC_RESULT'))
+  const foreground = lines.findIndex(line => line.includes('foreground') && line.includes('background') && line.includes('SKD_RESULT'))
   expect(foreground).toBeGreaterThan(-1)
   expect(foreground).toBeLessThan(lines.findIndex(line => line.startsWith('End your final response')))
 })

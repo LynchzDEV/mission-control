@@ -119,13 +119,13 @@ describe('listModels', () => {
 
   test('a connection reports discovered models first and starts a check when it has none', async () => {
     const base = await mkdtemp(join(tmpdir(), 'mc-models-connections-'))
-    const previous = process.env.MISSION_CONTROL_CONFIG_DIR
-    process.env.MISSION_CONTROL_CONFIG_DIR = base
+    const previous = process.env.SKD_CONFIG_DIR
+    process.env.SKD_CONFIG_DIR = base
     try {
       await createConnectionStore(base).save({ id: 'grok', name: 'Grok', adapter: 'acp', command: 'grok', args: ['agent', 'stdio'], models: ['grok-custom'] })
       await createConnectionStore(base).save({ id: 'qwen', name: 'Qwen', adapter: 'acp', command: 'qwen', args: ['--acp'], models: ['qwen3-coder'] })
       const asked: string[] = []
-      const discovery = createModelDiscovery({ base, now: () => 1000, bridge: async input => { asked.push((input as { connection: { id: string } }).connection.id); return [{ type: 'mc_models', models: ['qwen-max'], current: null }] } })
+      const discovery = createModelDiscovery({ base, now: () => 1000, bridge: async input => { asked.push((input as { connection: { id: string } }).connection.id); return [{ type: 'skd_models', models: ['qwen-max'], current: null }] } })
       await discovery.write('grok', { models: ['grok-4.7'], current: 'grok-4.7', checkedAt: 1000, error: null })
       const lists = await listModels({ discovery, secrets: async () => ({ zaiAuthToken: null, zaiBaseUrl: 'https://api.example.com', apiToken: null }) })
       expect(lists.grok).toEqual(['grok-4.7', 'grok-custom'])
@@ -133,8 +133,8 @@ describe('listModels', () => {
       await Bun.sleep(5)
       expect(asked).toEqual(['qwen'])
     } finally {
-      if (previous === undefined) delete process.env.MISSION_CONTROL_CONFIG_DIR
-      else process.env.MISSION_CONTROL_CONFIG_DIR = previous
+      if (previous === undefined) delete process.env.SKD_CONFIG_DIR
+      else process.env.SKD_CONFIG_DIR = previous
       await rm(base, { recursive: true, force: true })
     }
   })

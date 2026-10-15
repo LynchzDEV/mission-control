@@ -35,7 +35,7 @@ test('a multi-repo item with no repos ticked builds in an empty workspace and te
   const h = harness()
   const item = await h.engine.add({ ...multi, repo: parent, repos: [] })
   expect(h.store.get(item.id)).toMatchObject({ state: 'building', repos: [], worktree: workspace() })
-  expect(JSON.parse(await readFile(join(workspace(), '.mission-control', 'repos.json'), 'utf8'))).toEqual({ repos: [] })
+  expect(JSON.parse(await readFile(join(workspace(), '.shikidan', 'repos.json'), 'utf8'))).toEqual({ repos: [] })
   expect(existsSync(join(workspace(), 'a'))).toBe(false)
   expect(h.started[0]!.cwd).toBe(workspace())
   const request = h.started[0]!.request
@@ -153,7 +153,7 @@ test('the request asks for every repo in one go and names the cap', async () => 
   await repos('a')
   const h = harness()
   await h.engine.add({ ...multi, repo: parent, repos: [] })
-  expect(h.started[0]!.request).toContain('Ask for every repo you need in one go: Mission Control makes the copies and starts a new run, and stops after 3 such asks.')
+  expect(h.started[0]!.request).toContain('Ask for every repo you need in one go: Shikidan makes the copies and starts a new run, and stops after 3 such asks.')
 })
 
 test('an ask written with backticks, a bullet or a capital is granted, and posts nothing', async () => {
@@ -213,8 +213,8 @@ test('settling the same blocked run twice makes the copy once and counts the rer
 
 test('an empty workspace record only counts for a workspace a queue item owns', async () => {
   const planted = join(parent, 'other', '.worktree', 'evil')
-  await mkdir(join(planted, '.mission-control'), { recursive: true })
-  await writeFile(join(planted, '.mission-control', 'repos.json'), JSON.stringify({ repos: [] }))
+  await mkdir(join(planted, '.shikidan'), { recursive: true })
+  await writeFile(join(planted, '.shikidan', 'repos.json'), JSON.stringify({ repos: [] }))
   expect(await validateWorkspaceCwd(planted)).toEqual({ ok: false, error: 'cwd is not a git repository' })
   const store = createQueueStore(join(scratch, 'owned.json'))
   registerQueueWorkspaces(path => store.list().some(item => item.repos !== undefined && item.worktree === path))
@@ -270,8 +270,8 @@ test('a repo the run recorded that is not a real repo of the folder fails the it
   const h = harness()
   const item = await h.engine.add({ ...multi, repo: parent, repos: ['a'] })
   git(join(parent, 's'), 'worktree', 'add', '-q', join(workspace(), 's'), '-b', 'evil')
-  await rm(join(workspace(), '.mission-control', 'repos.json'))
-  await writeFile(join(workspace(), '.mission-control', 'repos.json'), JSON.stringify({ repos: ['a', 's'] }))
+  await rm(join(workspace(), '.shikidan', 'repos.json'))
+  await writeFile(join(workspace(), '.shikidan', 'repos.json'), JSON.stringify({ repos: ['a', 's'] }))
   await h.engine.onRunSettled(h.settle('run-1', { status: 'done' }))
   expect(h.store.get(item.id)).toMatchObject({ state: 'failed', repos: ['a'], error: `The run recorded s, which is not a repo in ${parent}` })
 })

@@ -29,8 +29,8 @@ for await (const line of lines) {
       continue
     }
     const prompt = message.params.prompt.map((part: {text?:string}) => part.text ?? '').join('\n')
-    let text = 'MC_RESULT {"outcome":"pass","summary":"Fixture ran","evidence":["fixture assertion"]}'
-    if (prompt.startsWith('You are the Mission Control workflow designer.')) {
+    let text = 'SKD_RESULT {"outcome":"pass","summary":"Fixture ran","evidence":["fixture assertion"]}'
+    if (prompt.startsWith('You are the Shikidan workflow designer.')) {
       const raw = /Current workflow: ([^\n]+)/.exec(prompt)?.[1]
       const current = raw ? JSON.parse(raw) : null
       const workflow = current ?? {...defaultWorkflow(),id:'draft',name:'AI browser workflow'}

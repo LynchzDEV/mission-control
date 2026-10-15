@@ -106,7 +106,7 @@ export function parseManifest(raw: unknown): ParseManifestResult {
   if (!PLUGIN_ID_PATTERN.test(value.id)) add('id must be 3-40 characters of lowercase letters, digits and dashes')
   if (!SUPPORTED_PLUGIN_APIS.includes(value.pluginApi)) {
     add(value.pluginApi > Math.max(...SUPPORTED_PLUGIN_APIS)
-      ? 'This plugin needs a newer Mission Control'
+      ? 'This plugin needs a newer Shikidan'
       : `pluginApi ${value.pluginApi} is not supported`)
   }
   for (const field of ['icon', 'server', 'screen'] as const) {

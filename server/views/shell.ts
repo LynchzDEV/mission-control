@@ -1,3 +1,4 @@
+import { LEGACY_STORAGE_COPY } from './legacy-storage'
 import { remoteAccessEnabled } from '../local-access'
 
 export type ShellProps = { workspaceDir: string }
@@ -215,7 +216,7 @@ const BODY = `
   </dialog>
 
   <template id="assistant-row">
-    <div class="msg assistant"><span class="avatar"><svg><use href="#spark-icon"/></svg></span><div class="msg-body"><div class="msg-meta"><strong>Mission Control</strong><time>now</time></div></div></div>
+    <div class="msg assistant"><span class="avatar"><svg><use href="#spark-icon"/></svg></span><div class="msg-body"><div class="msg-meta"><strong>Shikidan</strong><time>now</time></div></div></div>
   </template>
   <template id="team-card">
     <article class="team-card"><header><strong>Team for this task</strong><span class="muted"></span><button type="button" class="text-button" data-open-agents>Open in Agents <svg><use href="#open-icon"/></svg></button></header><ol></ol><div class="team-progress" hidden><span></span></div></article>
@@ -233,14 +234,15 @@ export function ShellPage(props: ShellProps): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mission Control</title>
+  <title>Shikidan</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <script>try{if(localStorage.getItem('mc.theme')==='dark')document.documentElement.dataset.theme='dark'}catch{}</script>
+  <script>${LEGACY_STORAGE_COPY}</script>
+  <script>try{if(localStorage.getItem('skd.theme')==='dark')document.documentElement.dataset.theme='dark'}catch{}</script>
   <link rel="stylesheet" href="/vendor/xterm.css">
   <link rel="stylesheet" href="/quiet.css">
   <link rel="stylesheet" href="/plugins.css">
   <link rel="stylesheet" href="/js/studio.css">
-  <script>window.MC_WORKSPACE_DIR=${JSON.stringify(props.workspaceDir)}</script>
+  <script>window.SKD_WORKSPACE_DIR=${JSON.stringify(props.workspaceDir)}</script>
   <script src="/js/shell.js" type="module" defer></script>
   <script src="/js/shell-composer.js" type="module" defer></script>
   <script src="/js/sidebar.js" type="module" defer></script>

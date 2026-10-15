@@ -20,7 +20,7 @@ const messageInput = $('plugin-launch-message') as HTMLInputElement
 const messageHint = $('plugin-launch-message-hint')
 const start = $('plugin-launch-start') as HTMLButtonElement
 
-const RECENT_CWD_KEY = 'mc.term.recentCwd', ENGINE_KEY = 'mc.shell.engine', MODEL_KEY = 'mc.shell.model'
+const RECENT_CWD_KEY = 'skd.term.recentCwd', ENGINE_KEY = 'skd.shell.engine', MODEL_KEY = 'skd.shell.model'
 const CONTEXT_NOTE = 'Read the task context in'
 
 const stored = (key: string): string | null => { try { return localStorage.getItem(key) } catch { return null } }
@@ -112,7 +112,7 @@ export function expandHome(path: string, home: string): string {
 }
 
 async function beginLaunch(open: OpenState, given: { engine: string; model?: string; cwd: string; firstMessage: string }): Promise<void> {
-  const choice = { ...given, cwd: expandHome(given.cwd, (window as { MC_WORKSPACE_DIR?: string }).MC_WORKSPACE_DIR ?? '') }
+  const choice = { ...given, cwd: expandHome(given.cwd, (window as { SKD_WORKSPACE_DIR?: string }).SKD_WORKSPACE_DIR ?? '') }
   try {
     let contextPath: string | null = null
     if (open.request.context !== undefined) {

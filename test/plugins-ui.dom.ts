@@ -326,13 +326,13 @@ test('a marketplace link is added and its listing loads; a bad link says why', a
   await flush(4)
   expect(sent.map(request => request.url)).toContain('/api/plugins/catalog')
   expect(byId('marketplace').querySelector('input[aria-label="Plugin or marketplace link"]')).toBeNull()
-  addLinkReply = { status: 400, body: { error: "This repo isn't a Mission Control plugin or marketplace." } }
+  addLinkReply = { status: 400, body: { error: "This repo isn't a Shikidan plugin or marketplace." } }
   buttonNamed('Add from a link', byId('marketplace')).click()
   await flush()
   ;(byId('marketplace').querySelector('input[aria-label="Plugin or marketplace link"]') as HTMLInputElement).value = 'https://github.com/someone/notes'
   buttonNamed('Add', byId('marketplace')).click()
   await flush(4)
-  expect(byId('marketplace').textContent).toContain("This repo isn't a Mission Control plugin or marketplace.")
+  expect(byId('marketplace').textContent).toContain("This repo isn't a Shikidan plugin or marketplace.")
   addLinkReply = { status: 200, body: { kind: 'marketplace' } }
 })
 

@@ -160,7 +160,7 @@ function runNote(runtime: 'trusted' | 'isolated'): HTMLElement {
   note.className = 'connection-note'
   note.textContent = runtime === 'isolated'
     ? 'Isolated: it runs in its own locked-down space. macOS blocks it from your files, your other secrets and every website except the ones above.'
-    : 'Trusted: it runs inside Mission Control with full access to your files, your tokens and the internet.'
+    : 'Trusted: it runs inside Shikidan with full access to your files, your tokens and the internet.'
   wrap.append(note)
   return wrap
 }
@@ -391,7 +391,7 @@ function installDialog(): HTMLElement {
   } else {
     const warn = document.createElement('div')
     warn.className = 'mk-warn'
-    warn.innerHTML = `${icon('mk-warn')}<div><strong>This plugin gets full access.</strong> It runs inside Mission Control, so it can read your files, your saved tokens, and reach any website. Only install it if you trust who made it.</div>`
+    warn.innerHTML = `${icon('mk-warn')}<div><strong>This plugin gets full access.</strong> It runs inside Shikidan, so it can read your files, your saved tokens, and reach any website. Only install it if you trust who made it.</div>`
     card.append(warn)
     const trust = document.createElement('label')
     trust.className = 'switch-label'
@@ -600,7 +600,7 @@ function updateArea(plugin: InstalledPlugin): HTMLElement | null {
     return wrap
   }
   if (state.status === 'restarting') {
-    wrap.append(Object.assign(document.createElement('p'), { className: 'connection-note', textContent: 'Restart Mission Control to finish updating.' }))
+    wrap.append(Object.assign(document.createElement('p'), { className: 'connection-note', textContent: 'Restart Shikidan to finish updating.' }))
     return wrap
   }
   if (state.status === 'consent') {
@@ -677,7 +677,7 @@ function installedDetail(plugin: InstalledPlugin): HTMLElement {
   if (plugin.restartRequired === true) {
     const restart = document.createElement('div')
     restart.className = 'mk-warn'
-    restart.innerHTML = `${icon('mk-warn')}<div>Restart Mission Control to finish updating.</div>`
+    restart.innerHTML = `${icon('mk-warn')}<div>Restart Shikidan to finish updating.</div>`
     pane.append(restart)
   }
   pane.append(settingsSection(plugin))

@@ -26,9 +26,9 @@ export async function shapeRepoProblems(shape: FlowShape, workspace: string): Pr
   const listing = await listFolderRepos(folder)
   const available = listing.ok ? listing.repos : []
   const wrong = shape.paths.flatMap(path => path.files).filter(file => !available.includes(repoOf(file)))
-  if (wrong.length > 0) return wrong.map(file => `MC_SHAPE file ${file} must start with one of the repos in ${folder}: ${available.join(', ')}`)
+  if (wrong.length > 0) return wrong.map(file => `SKD_SHAPE file ${file} must start with one of the repos in ${folder}: ${available.join(', ')}`)
   const all = new Set([...repos, ...shapeRepoNames(shape)])
-  return all.size > MAX_QUEUE_REPOS ? [`MC_SHAPE needs more than ${MAX_QUEUE_REPOS} repos`] : []
+  return all.size > MAX_QUEUE_REPOS ? [`SKD_SHAPE needs more than ${MAX_QUEUE_REPOS} repos`] : []
 }
 
 export async function shapeRulesFor(workspace: string): Promise<string> {
@@ -40,7 +40,7 @@ export async function shapeRulesFor(workspace: string): Promise<string> {
 }
 
 function repoShapeRules(repos: readonly string[]): string {
-  return ` This run spans several repos side by side (${repos.join(', ')}): start every file with its repo folder, for example "${repos[0] ?? 'api'}/app/x.rb" or "${repos[0] ?? 'api'}/src". A path may list a repo of this folder that has no copy yet; Mission Control adds the copy before the split.`
+  return ` This run spans several repos side by side (${repos.join(', ')}): start every file with its repo folder, for example "${repos[0] ?? 'api'}/app/x.rb" or "${repos[0] ?? 'api'}/src". A path may list a repo of this folder that has no copy yet; Shikidan adds the copy before the split.`
 }
 
 export async function snapshotRepos(workspace: string, repos: readonly string[], message: string): Promise<Record<string, string>> {

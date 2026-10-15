@@ -15,12 +15,12 @@ let fixtureRoot: string
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-plugins-routes-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
   fixtureRoot = await mkdtemp(join(tmpdir(), 'mc-plugins-repos-'))
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
   await rm(fixtureRoot, { recursive: true, force: true })
 })
@@ -81,7 +81,7 @@ describe('installed plugins', () => {
     const fixture = await makeFixture('future', isolatedManifest({ pluginApi: 3 }))
     const response = await json('POST', '/api/plugins/preview', { repo: fixture.url, ref: 'v1.0.0' })
     expect(response.status).toBe(400)
-    expect(await response.text()).toContain('This plugin needs a newer Mission Control')
+    expect(await response.text()).toContain('This plugin needs a newer Shikidan')
   })
 
   test('PATCH flips enabled, DELETE keeps data by default', async () => {
@@ -285,7 +285,7 @@ describe('add from a link', () => {
     const source = await createPluginRepo(join(fixtureRoot, 'link-neither'), { hello: 'world' }, { manifestName: 'something.json' })
     const response = await json('POST', '/api/plugins/add-link', { url: fileUrl(source) })
     expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({ error: "This repo isn't a Mission Control plugin or marketplace." })
+    expect(await response.json()).toEqual({ error: "This repo isn't a Shikidan plugin or marketplace." })
     expect((await readConfig()).marketplaces).toEqual([])
   })
 

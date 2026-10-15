@@ -25,7 +25,7 @@ async function parked(replies: () => Promise<SourceReplies>, overrides: Partial<
     runner: { start: async input => { requests.push(input.request); const id = `run-${++next}`; runs.set(id, { id, status: 'running', error: null, attempts: [] }); return { id } }, get: id => runs.get(id) },
     source: () => source,
     prepareWorktree: async (_repo, label) => { const worktree = join(dir, 'wt', label); await mkdir(worktree, { recursive: true }); return { worktree } },
-    writeContext: async (pluginId, context, cwd) => { const folder = join(cwd, '.mission-control', 'queue', pluginId); await mkdir(folder, { recursive: true }); const path = join(folder, `${context.name}.md`); await writeFile(path, context.markdown); return path },
+    writeContext: async (pluginId, context, cwd) => { const folder = join(cwd, '.shikidan', 'queue', pluginId); await mkdir(folder, { recursive: true }); const path = join(folder, `${context.name}.md`); await writeFile(path, context.markdown); return path },
     pluginFiles: () => files,
     backupDir: itemId => join(dir, 'queue-files', itemId),
     needsYou: (_item, reason) => { alerts.push(reason) },
@@ -44,7 +44,7 @@ function silencedErrors() {
 }
 
 async function contextFiles(worktree: string): Promise<string[]> {
-  return (await readdir(join(worktree, '.mission-control', 'queue', 'clickup-board'))).sort()
+  return (await readdir(join(worktree, '.shikidan', 'queue', 'clickup-board'))).sort()
 }
 
 test('no replies keeps the item waiting', async () => {
@@ -81,7 +81,7 @@ test('reply images are copied into the worktree context folder and listed', asyn
   await writeFile(join(h.files, 'replies', 'shot.png'), 'png-bytes')
   await h.engine.checkReplies()
   const item = h.store.get(h.item.id)!
-  const copied = join(item.worktree!, '.mission-control', 'queue', 'clickup-board', 'r1-0-shot.png')
+  const copied = join(item.worktree!, '.shikidan', 'queue', 'clickup-board', 'r1-0-shot.png')
   expect(await readFile(copied, 'utf8')).toBe('png-bytes')
   expect((await stat(copied)).mode & 0o777).toBe(0o600)
   expect(await readFile(item.answerPaths[0]!, 'utf8')).toContain(`- ${copied}`)
@@ -98,7 +98,7 @@ test('images outside the plugin data folder are skipped', async () => {
     errors.mockRestore()
   }
   const item = h.store.get(h.item.id)!
-  await expect(stat(join(item.worktree!, '.mission-control', 'queue', 'clickup-board', 'r1-0-key'))).rejects.toThrow()
+  await expect(stat(join(item.worktree!, '.shikidan', 'queue', 'clickup-board', 'r1-0-key'))).rejects.toThrow()
   expect(await readFile(item.answerPaths[0]!, 'utf8')).not.toContain('## Images')
 })
 
@@ -146,7 +146,7 @@ test('two images with the same name in one reply are both kept', async () => {
   await writeFile(join(h.files, 'a', 'shot.png'), 'first')
   await writeFile(join(h.files, 'b', 'shot.png'), 'second')
   await h.engine.checkReplies()
-  const folder = join(h.store.get(h.item.id)!.worktree!, '.mission-control', 'queue', 'clickup-board')
+  const folder = join(h.store.get(h.item.id)!.worktree!, '.shikidan', 'queue', 'clickup-board')
   expect(await readFile(join(folder, 'r1-0-shot.png'), 'utf8')).toBe('first')
   expect(await readFile(join(folder, 'r1-1-shot.png'), 'utf8')).toBe('second')
 })
@@ -210,7 +210,7 @@ test('an image over the size cap is not copied', async () => {
   }
   const item = h.store.get(h.item.id)!
   expect(await contextFiles(item.worktree!)).toEqual(['answers-1.md', 'item-1.md', 'r1-1-edge.png'])
-  expect((await stat(join(item.worktree!, '.mission-control', 'queue', 'clickup-board', 'r1-1-edge.png'))).size).toBe(3_932_160)
+  expect((await stat(join(item.worktree!, '.shikidan', 'queue', 'clickup-board', 'r1-1-edge.png'))).size).toBe(3_932_160)
 })
 
 test('a normal image is copied byte for byte', async () => {
@@ -219,7 +219,7 @@ test('a normal image is copied byte for byte', async () => {
   await mkdir(h.files, { recursive: true })
   await writeFile(join(h.files, 'shot.png'), bytes)
   await h.engine.checkReplies()
-  const copied = await readFile(join(h.store.get(h.item.id)!.worktree!, '.mission-control', 'queue', 'clickup-board', 'r1-0-shot.png'))
+  const copied = await readFile(join(h.store.get(h.item.id)!.worktree!, '.shikidan', 'queue', 'clickup-board', 'r1-0-shot.png'))
   expect(copied.equals(bytes)).toBe(true)
 })
 
@@ -320,7 +320,7 @@ test('a link planted at the copy target name is never followed and the image is 
   await writeFile(join(h.files, 'shot.png'), 'png-bytes')
   await writeFile(join(dir, 'victim'), 'original')
   await chmod(join(dir, 'victim'), 0o644)
-  const folder = join(h.store.get(h.item.id)!.worktree!, '.mission-control', 'queue', 'clickup-board')
+  const folder = join(h.store.get(h.item.id)!.worktree!, '.shikidan', 'queue', 'clickup-board')
   await symlink(join(dir, 'victim'), join(folder, 'r1-0-shot.png'))
   const errors = silencedErrors()
   try {
@@ -339,7 +339,7 @@ test('a regular file already at the copy target is replaced with a private copy'
   const h = await parked(async () => ({ replies: [{ id: 'r1', author: 'Ploy', text: 'x', images: [{ name: 'shot.png', path: 'shot.png' }] }], lastId: 'r1' }))
   await mkdir(h.files, { recursive: true })
   await writeFile(join(h.files, 'shot.png'), 'png-bytes')
-  const folder = join(h.store.get(h.item.id)!.worktree!, '.mission-control', 'queue', 'clickup-board')
+  const folder = join(h.store.get(h.item.id)!.worktree!, '.shikidan', 'queue', 'clickup-board')
   await writeFile(join(folder, 'r1-0-shot.png'), 'stale', { mode: 0o644 })
   await h.engine.checkReplies()
   expect(await readFile(join(folder, 'r1-0-shot.png'), 'utf8')).toBe('png-bytes')
@@ -366,7 +366,7 @@ test('a queue folder planted as a link to outside the worktree gets no image cop
   await writeFile(join(h.files, 'shot.png'), 'png-bytes')
   const outside = join(dir, 'outside')
   await mkdir(outside)
-  const queue = join(h.store.get(h.item.id)!.worktree!, '.mission-control', 'queue')
+  const queue = join(h.store.get(h.item.id)!.worktree!, '.shikidan', 'queue')
   await rm(queue, { recursive: true, force: true })
   await symlink(outside, queue)
   const errors = silencedErrors()

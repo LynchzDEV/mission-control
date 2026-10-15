@@ -13,7 +13,7 @@ import { initScratchGitRepo } from './support/scratch-git-repo'
 let dir: string, app: Elysia, manager: JobManager, runner: WorkflowRunner, repos: string[]
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-studio-api-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  process.env.SKD_CONFIG_DIR = dir
   repos = []
   const store = createWorkflowStore(dir)
   manager = createJobManager()
@@ -24,7 +24,7 @@ afterEach(async () => {
   for (const run of runner.list()) if (LIVE_STATUSES.has(run.status)) await runner.stop(run.id)
   for (const job of manager.listJobs()) if (job.status === 'running') await manager.killJob(job.id)
   for (let i = 0; i < 200 && manager.listJobs().some(job => job.status === 'running'); i++) await Bun.sleep(20)
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(dir, { recursive: true, force: true })
   for (const repo of repos) await rm(repo, { recursive: true, force: true })
 })
@@ -82,13 +82,13 @@ test('users can duplicate the default, save revisions and select a pinned defaul
 })
 
 test('custom agent setup exposes references, never the referenced credential value', async () => {
-  process.env.MC_FIXTURE_KEY = 'sensitive-test-value'
+  process.env.SKD_FIXTURE_KEY = 'sensitive-test-value'
   try {
-    expect((await request('/connections', { id: 'qwen', name: 'Qwen', adapter: 'acp', command: 'qwen', args: ['--acp'], env: { API_KEY: 'MC_FIXTURE_KEY' } })).status).toBe(200)
+    expect((await request('/connections', { id: 'qwen', name: 'Qwen', adapter: 'acp', command: 'qwen', args: ['--acp'], env: { API_KEY: 'SKD_FIXTURE_KEY' } })).status).toBe(200)
     const body = await (await request('/connections')).text()
-    expect(body).toContain('MC_FIXTURE_KEY')
+    expect(body).toContain('SKD_FIXTURE_KEY')
     expect(body).not.toContain('sensitive-test-value')
-  } finally { delete process.env.MC_FIXTURE_KEY }
+  } finally { delete process.env.SKD_FIXTURE_KEY }
 })
 
 test('a saved connection can be removed while built-ins stay', async () => {

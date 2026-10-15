@@ -57,7 +57,7 @@ function FlowEdge({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPo
   </>
 }
 const edgeTypes = { flow: FlowEdge }
-const motionPaused = () => { try { return localStorage.getItem('mc.motion.paused') === 'true' } catch { return false } }
+const motionPaused = () => { try { return localStorage.getItem('skd.motion.paused') === 'true' } catch { return false } }
 const syncMotion = () => document.documentElement.toggleAttribute('data-motion-paused', motionPaused())
 syncMotion()
 document.getElementById('motion')?.addEventListener('change', () => setTimeout(syncMotion))

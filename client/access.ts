@@ -16,7 +16,7 @@ const tokenNote = $('access-token-note')
 const flowApproval = $('access-flow-approval') as HTMLInputElement
 const flowNote = $('access-flow-note')
 const themeDark = $('theme-dark') as HTMLInputElement
-const THEME_KEY = 'mc.theme'
+const THEME_KEY = 'skd.theme'
 let copiedTimer = 0
 
 function label(text: string, copied = false): void {

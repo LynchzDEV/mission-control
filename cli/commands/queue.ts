@@ -7,7 +7,7 @@ import { repoNamesProblem } from '../../server/repo-names'
 
 type Json = Record<string, unknown>
 
-const EMPTY_QUEUE = 'The queue is empty. Add an item with: mctl queue add <source> <id> --repo <dir>\n'
+const EMPTY_QUEUE = 'The queue is empty. Add an item with: shiki queue add <source> <id> --repo <dir>\n'
 
 const itemPath = (ctx: Context, suffix = ''): string => `/api/queue/${segment(arg(ctx, 'id'))}${suffix}`
 const field = (value: unknown, key: string): unknown => (value !== null && typeof value === 'object' ? (value as Json)[key] : undefined)

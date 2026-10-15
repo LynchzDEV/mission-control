@@ -40,7 +40,7 @@ describe('parseManifest', () => {
   test('refuses a pluginApi the host does not speak', () => {
     const result = parseManifest({ ...CLICKUP_MANIFEST, pluginApi: 3 })
     expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.errors).toContain('This plugin needs a newer Mission Control')
+    if (!result.ok) expect(result.errors).toContain('This plugin needs a newer Shikidan')
   })
 
   test('refuses an invalid id', () => {

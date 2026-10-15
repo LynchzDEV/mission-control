@@ -3,6 +3,7 @@ import type { ChildProcess } from 'node:child_process'
 import { mkdir } from 'node:fs/promises'
 
 import { SandboxManager, type SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
+import { exportEnv } from '../env'
 
 const DEFAULT_KILL_GRACE_MS = 2000
 
@@ -16,19 +17,17 @@ function requiredEnv(name: string): string {
 }
 
 function graceMsFromEnv(): number {
-  const raw = Number.parseInt(process.env.MC_PLUGIN_KILL_GRACE_MS ?? '', 10)
+  const raw = Number.parseInt(process.env.SKD_PLUGIN_KILL_GRACE_MS ?? '', 10)
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_KILL_GRACE_MS
 }
 
 const killGraceMs = graceMsFromEnv()
-const sandboxConfig: SandboxRuntimeConfig = JSON.parse(requiredEnv('MC_PLUGIN_SANDBOX_CONFIG'))
-const pluginCommand = requiredEnv('MC_PLUGIN_COMMAND')
-const pluginCwd = requiredEnv('MC_PLUGIN_CWD')
+const sandboxConfig: SandboxRuntimeConfig = JSON.parse(requiredEnv('SKD_PLUGIN_SANDBOX_CONFIG'))
+const pluginCommand = requiredEnv('SKD_PLUGIN_COMMAND')
+const pluginCwd = requiredEnv('SKD_PLUGIN_CWD')
 // The wrapped command already bakes the sandbox vars (proxy, TMPDIR, SANDBOX_RUNTIME); the child gets exactly this list, never the supervisor's env.
 const childEnv: Record<string, string> = {
-  MC_PLUGIN_RUNTIME: 'isolated',
-  MC_PLUGIN_ID: requiredEnv('MC_PLUGIN_ID'),
-  MC_PLUGIN_DATA: requiredEnv('MC_PLUGIN_DATA'),
+  ...exportEnv({ PLUGIN_RUNTIME: 'isolated', PLUGIN_ID: requiredEnv('SKD_PLUGIN_ID'), PLUGIN_DATA: requiredEnv('SKD_PLUGIN_DATA') }),
   BUN_TMPDIR: requiredEnv('BUN_TMPDIR'),
 }
 

@@ -10,7 +10,7 @@ import { localRequestAllowed, peerAddress } from './local-access'
 import { quotaRoutes } from './routes/quota'
 import { historyRoutes } from './routes/history'
 import { createExternalSessionsCache, ownedPids } from './history'
-import { configDir, listenTarget } from './secrets'
+import { CONFIG_DIR_NAME, configDir, LEGACY_CONFIG_DIR_NAME, listenTarget, migrateConfigDir } from './secrets'
 import { createJobManager } from './jobs'
 import { attentionEvents } from './attention-events'
 import { createChatFlusher } from './chat-reports'
@@ -55,6 +55,7 @@ import { syncEngineAssets } from './engine-assets'
 import { listedPluginFlows, refreshAllContributions } from './plugins/contributions'
 import { ShellPage } from './views/shell'
 import { jobLine, log, requestLine, shouldLogRequest } from './server-log'
+import { readEnv } from './env'
 
 const ROOT = resolve(import.meta.dir, '..')
 const CLIENT_DIR = join(ROOT, 'client')
@@ -147,7 +148,7 @@ async function publicDirExists(): Promise<boolean> {
   }
 }
 
-// Health is deliberately public: probes (mc-dispatch skill, double-bind check) read liveness only.
+// Health is deliberately public: probes (skd-dispatch skill, double-bind check) read liveness only.
 function healthApi() {
   return new Elysia().get('/api/health', () => ({ ok: true }))
 }
@@ -159,7 +160,7 @@ export async function createApp(): Promise<Elysia> {
   if (assets.linked.length > 0 || assets.written.length > 0 || assets.movedAside.length > 0) {
     console.error(`codex assets — linked ${assets.linked.length}, written ${assets.written.length}, moved aside ${assets.movedAside.length}, skipped ${assets.skipped.length}`)
   }
-  if (skills.linked.length > 0 || skills.movedAside.length > 0) {
+  if (skills.linked.length > 0 || skills.movedAside.length > 0 || skills.removed.length > 0) {
     console.error(`skills: ${describeSkillInstall(skills)} -> ${claudeSkillsDir()}`)
   }
   const workflowStore = createWorkflowStore(undefined, { pluginFlows: listedPluginFlows })
@@ -251,7 +252,7 @@ export async function createApp(): Promise<Elysia> {
   void outcomeLedger.prune(OUTCOME_RETENTION_MS).catch(error => console.error('Outcome prune failed', error))
 
   const requestStarts = new WeakMap<Request, number>()
-  const verboseLog = process.env.MC_LOG === 'verbose'
+  const verboseLog = readEnv('LOG') === 'verbose'
   const app = new Elysia()
     .onRequest(({ request }) => { requestStarts.set(request, performance.now()) })
     .onAfterResponse(({ request, set }) => {
@@ -314,10 +315,11 @@ if (import.meta.main) {
   const occupied = await fetch(`http://${target.hostname}:${target.port}/api/health`, { signal: AbortSignal.timeout(800) })
     .then(() => true, () => false)
   if (occupied) {
-    console.error(`mission-control: ${target.hostname}:${target.port} already answers — another instance is running, refusing to double-bind`)
+    console.error(`shiki: ${target.hostname}:${target.port} already answers — another instance is running, refusing to double-bind`)
     process.exit(1)
   }
+  if (readEnv('CONFIG_DIR') === undefined && await migrateConfigDir() === 'migrated') console.error(`config: moved ~/.config/${LEGACY_CONFIG_DIR_NAME} to ~/.config/${CONFIG_DIR_NAME}, old path is a symlink`)
   const app = await createApp()
   app.listen({ hostname: target.hostname, port: target.port, reusePort: false })
-  console.log(`mission-control listening on http://${target.hostname}:${target.port}`)
+  console.log(`shiki listening on http://${target.hostname}:${target.port}`)
 }

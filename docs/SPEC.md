@@ -1,4 +1,4 @@
-# Mission Control 2.0 — Multi-Engine AI Command Center
+# Shikidan 2.0 — Multi-Engine AI Command Center
 
 One continuous chat to the three-engine setup — Claude Code (Anthropic), GLM lane (z.ai coding plan via
 an Anthropic-compatible endpoint), Codex CLI (ChatGPT Pro plan) — plus live terminals, a workflow
@@ -16,7 +16,7 @@ read this for mechanics).
   hand-rolled `ReadableStream` (`createLogStreamResponse` in `server/routes/jobs.ts`).
 - Terminals: `bun-pty` (`spawn`/`IPty`), not `node-pty` directly, even though `node-pty` is still a
   listed dependency.
-- No database. JSON / JSONL files under `~/.config/mission-control/` (see **Data**), mode 0700 for
+- No database. JSON / JSONL files under `~/.config/shikidan/` (see **Data**), mode 0700 for
   the directory, 0600 for files.
 - No password, no session cookie. Access is gated by request origin (`server/local-access.ts`) plus
   an optional Bearer API token for a scoped subset of endpoints (see **Security model**).
@@ -29,12 +29,12 @@ read this for mechanics).
 ## Directory layout
 
 ```
-mission-control/
+shiki/
   server/
     index.ts              # Elysia bootstrap: route mounting, retired-page redirects, /js transpiler
     auth.ts                # requireLocal guard + allowToken (Bearer scope) + verifyBearerToken
     local-access.ts        # origin/host checks requireLocal and the terminal WS build on
-    secrets.ts             # ~/.config/mission-control/{secrets,config}.json, API token
+    secrets.ts             # ~/.config/shikidan/{secrets,config}.json, API token
     workspace.ts           # validateWorkspaceCwd: must resolve under $HOME (+ optional git check)
     engines.ts             # claude/glm/codex definitions, env builders, binary resolution
     jobs.ts                # JobManager: spawn, persist (jobs.jsonl), log tail, worktree land
@@ -54,7 +54,7 @@ mission-control/
   server/views/shell.ts    # the one HTML shell; <script> tags name the client islands
   client/                  # browser islands, TypeScript (+ 2 .tsx files for Studio)
   public/                  # quiet.css, neumo-ui.css, vendor/ (xterm, textmode, anime), fonts, provider svgs
-  skills/mc-dispatch/      # orchestration skill shipped with the repo, symlinked into ~/.claude/skills
+  skills/skd-dispatch/      # orchestration skill shipped with the repo, symlinked into ~/.claude/skills
   docs/
     SPEC.md
     decisions/system-chat.md   # product source of truth for the chat
@@ -76,7 +76,7 @@ from:
   the path+method is in the Bearer-token allowlist (`allowToken`) and the request carries
   `Authorization: Bearer <token>` matching the token in `secrets.json` (`verifyBearerToken`, constant-time
   compare). Otherwise `403 { error: 'local access only' }`.
-- `allowToken(pathname, method)` scopes what a script (the mc-dispatch skill, a chat agent's `curl`)
+- `allowToken(pathname, method)` scopes what a script (the skd-dispatch skill, a chat agent's `curl`)
   may reach with only the token, no browser origin: GET or POST anywhere under `/api/jobs*` (not
   PATCH/DELETE — this is how a chat's own spawned agents and the chat itself call back into the
   cockpit for everything except renaming itself or deleting a queued message), GET-only on
@@ -96,18 +96,18 @@ from:
   (`server/workspace.ts` `validateWorkspaceCwd`); jobs additionally require a git repository unless
   `purpose === 'chat'`. Secrets are never passed as CLI argv (only via `env`); job logs are redacted
   on every read (`server/log-redaction.ts`) against the z.ai token and the API token.
-- Server binds `127.0.0.1` only; the port is `MISSION_CONTROL_PORT` or `7777`
+- Server binds `127.0.0.1` only; the port is `SKD_PORT` or `7777`
   (`server/secrets.ts` `listenTarget`). Startup probes that port and refuses to run if something
   already answers `/api/health` (no double-bind).
 
 ## Config and secrets (`server/secrets.ts`)
 
-`~/.config/mission-control/secrets.json` (0600): `{ zaiAuthToken, zaiBaseUrl, apiToken }`. The API
+`~/.config/shikidan/secrets.json` (0600): `{ zaiAuthToken, zaiBaseUrl, apiToken }`. The API
 token (`mct_<48 hex>`) is generated on first read (`readApiToken`) and never echoed except through
 `POST /api/secrets/api-token/reveal`; API responses otherwise report only `configured: boolean`
 flags (`publicView`).
 
-`~/.config/mission-control/config.json`: `{ roles: EngineRoles, autoReview: boolean, chatHome:
+`~/.config/shikidan/config.json`: `{ roles: EngineRoles, autoReview: boolean, chatHome:
 string | null }`. `EngineRoles` is `{ plan, execute, review }`, each `{ engine, model }` — the three
 named roles Studio's default workflow and auto-review read (`DEFAULT_ROLES`: plan → claude, execute →
 glm, review → codex). `GET/POST /api/roles` reads and writes this.
@@ -124,7 +124,7 @@ never leaks that session's identity to what it spawns), applies the engine overl
 `worker: true` (headless jobs only, not terminals) — layers in the isolated worker profile env
 (`CLAUDE_CONFIG_DIR`/`CODEX_HOME`, see **Worker profiles**). `resolveBinary` falls back to
 `mise`/homebrew/`~/.bun/bin`/`~/.local/bin` when the launching environment's `PATH` is thin
-(launchd, cron). `MC_FAKE_ENGINES=1` substitutes `/bin/echo`/`/bin/sh` stubs for tests and UI dev.
+(launchd, cron). `SKD_FAKE_ENGINES=1` substitutes `/bin/echo`/`/bin/sh` stubs for tests and UI dev.
 
 ### Worker profiles (`server/worker-profile.ts`)
 
@@ -144,14 +144,14 @@ Every server start best-effort syncs `~/.claude` → `~/.codex` so Codex sees an
 `AGENTS.md` (translated from the handwritten portion of `CLAUDE.md`, minus Claude-only machinery),
 translated `SKILL.md`/agent `.toml` files for anything not too Claude-specific (a 30% Claude-residual
 threshold skips the rest), and moves aside anything it would overwrite under
-`~/.codex/backup/*.pre-mission-control-<timestamp>`. Failures are logged, never thrown.
+`~/.codex/backup/*.pre-shikidan-<timestamp>`. Failures are logged, never thrown.
 
 ### Skill install (`server/skill-install.ts`)
 
 Every server start also symlinks each directory under the repo's `skills/` (currently just
-`mc-dispatch`) into `~/.claude/skills/`, so the orchestration skill updates with a plain `git pull` —
+`skd-dispatch`) into `~/.claude/skills/`, so the orchestration skill updates with a plain `git pull` —
 no separate install step. An existing non-symlink at the target is moved aside to
-`~/.claude/skills-backup/<name>.pre-mission-control-<timestamp>` first, and an already-correct symlink
+`~/.claude/skills-backup/<name>.pre-shikidan-<timestamp>` first, and an already-correct symlink
 is left alone.
 
 ## Quota, models, and providers
@@ -196,8 +196,8 @@ report has gone into a chat turn; see **The chat**).
   prepares a worktree (`server/job-worktrees.ts`: `.worktree/<sanitized-label>` on a branch off
   current `HEAD`), spawns via the `EngineResolver`, and persists a `JobRecord` (append to
   `jobs.jsonl`, compacted back to one line per id once the file passes 5000 lines).
-- Every process gets `MC_JOB_ID`; chat processes additionally get `MC_URL`, `MC_TOKEN` (the API
-  token), `MC_CHAT_ID` (`threadRoot`), `MISSION_CONTROL_CONFIG_DIR`.
+- Every process gets `SKD_JOB_ID`; chat processes additionally get `SKD_URL`, `SKD_TOKEN` (the API
+  token), `SKD_CHAT_ID` (`threadRoot`), `SKD_CONFIG_DIR`.
 - A non-chat `POST /api/jobs` prompt targeting the configured **execute** role's engine is checked by
   `server/spec-lint.ts` (`lintSpec`): it must have `## Decisions`/`## Preserve`/`## Steps` headings (or
   an `execute tasks N..M of <plan file>` line), an explicit "Done means all of these hold" acceptance
@@ -250,8 +250,8 @@ resumable. Product intent is in `docs/decisions/system-chat.md`; this section is
   states: no plan step unless asked; what needs no permission (read/search/answer, spawn/reply-to/
   stop its own agents, retry a failed step up to 3 attempts total, land reviewed work); what always
   needs the owner's click (push, deploy, anything touching production, deleting outside a worktree —
-  and it is told never to push); the cockpit API surface it may call with `$MC_URL`/`$MC_TOKEN`/
-  `$MC_CHAT_ID`/`$MC_JOB_ID` (all injected into its env, never invented); the fixed rule that any code
+  and it is told never to push); the cockpit API surface it may call with `$SKD_URL`/`$SKD_TOKEN`/
+  `$SKD_CHAT_ID`/`$SKD_JOB_ID` (all injected into its env, never invented); the fixed rule that any code
   change gets a cross-family review before landing; retry cap and title-renaming instructions. This
   is prompt text, not server-enforced logic, except where noted (the retry cap and the resume
   requirement ARE enforced server-side in `jobs.ts`).
@@ -295,14 +295,14 @@ resumable. Product intent is in `docs/decisions/system-chat.md`; this section is
 - **Restart catch-up** (`recoverAll`, run once at startup, non-blocking): kicks every chat that has
   queued messages or unreported settled agents. The flusher only knows an agent "settled while this
   process was down" if it was never told about it via `onAgentSettled` — those reports are prefixed
-  with `[Mission Control restarted — catching up]` in the turn they end up in.
+  with `[Shikidan restarted — catching up]` in the turn they end up in.
 - **Landing**: identical to any other job — the chat calls `POST /api/jobs/:id/land` on a reviewed,
   worktree-backed agent once review passes, and a `landedAt` on a job with a `chatId` triggers a
   "Landed" notification.
 - **Naming a Studio workflow** (`CHAT_RULES` "## Studio workflows"): naming one is optional. When the
   owner names one, the chat looks it up with `GET /api/studio/workflows` (matched case-insensitively)
   and starts it with `POST /api/studio/runs {workflowId, revision, cwd, label, request, chat:
-  $MC_CHAT_ID, chatTurn: $MC_JOB_ID, engine, model?}` instead of spawning agents itself.
+  $SKD_CHAT_ID, chatTurn: $SKD_JOB_ID, engine, model?}` instead of spawning agents itself.
   `chatDefaultFor`/`agentsFor` in `workflow-runner.ts` then resolve any node whose `agent.engine` is
   unset (a "Chat decides" step) to that `chat`/`model`, leaving explicitly pinned nodes untouched, and
   still refuses a run whose cross-family review would end up on the same model family as the
@@ -327,7 +327,7 @@ ring buffer replays on reattach) until the server exits or `DELETE /api/terminal
 `WS /ws/terminal/:id` bridges pty ↔ xterm.js: binary/UTF-8 data frames, `{type:'resize',cols,rows}`
 control frames. Dropping a file onto a pane (`POST /api/terminals/drops`, `server/drops.ts`) resolves
 to the original path via a Spotlight match (name+size+mtime), or saves a copy under
-`~/.config/mission-control/drops/`, so the pty gets a shell-quoted real path. `GET
+`~/.config/shikidan/drops/`, so the pty gets a shell-quoted real path. `GET
 /api/terminals/sessions?cwd=` lists resumable Claude sessions found
 under `~/.claude/projects/<slug>/`. `GET /api/terminals/:id/thread` renders a running terminal's own
 transcript file (Claude JSONL or Codex rollout, `server/session-transcript.ts`) the same shape as a
@@ -341,7 +341,7 @@ each with an `agent` role/engine/model, optional `skills` (Markdown files), `mcp
 (shell commands), `maxVisits`) and outcome-labelled edges (`pass|fail|blocked`). `validateWorkflow`
 requires unique node ids, a reachable entry, at most one edge per node+outcome, and a reachable
 "finished" endpoint. Revisions are content-hashed and stored immutably under
-`~/.config/mission-control/workflows/<id>/<revision>.json`, with `latest.json` pointing at the
+`~/.config/shikidan/workflows/<id>/<revision>.json`, with `latest.json` pointing at the
 current one (`createWorkflowStore`); a policy template (shared preamble text) is versioned the same
 way under `policies/`. The one built-in `default` workflow is plan → verify-plan → execute → review.
 
@@ -349,7 +349,7 @@ way under `policies/`. The one built-in `default` workflow is plan → verify-pl
   matching `EngineRoles` entry (or, when started from a chat, to that chat's own engine/model — see
   **The chat** → "Naming a Studio workflow"), snapshots the node's skill files and the workspace's git
   state before each attempt, spawns a job per node (its own worktree, standard `createJob` path),
-  waits for the job's final message to end in an `MC_RESULT {"outcome",...}` line, runs the node's
+  waits for the job's final message to end in an `SKD_RESULT {"outcome",...}` line, runs the node's
   `checks`, and follows the matching outcome edge — retrying the same node up to `maxVisits` times on
   `fail`, and blocking the run outright if a plan is unverified before an `implement` node or a review
   would share a model family with the implementation it's reviewing. `POST /api/studio/runs` starts
@@ -358,7 +358,7 @@ way under `policies/`. The one built-in `default` workflow is plan → verify-pl
   checks, status); `.../:id/stop` and `.../:id/retry` control it.
 - **One run per folder.** A run claims its folder; while it runs, other jobs in that folder are refused (409). Chat turns are exempt both ways: a chat turn neither blocks a run from starting nor is blocked by one, so a chat can run a workflow in its own project.
 - **Designing one in English** (`createWorkflowBuilder`): `POST /api/studio/drafts` spawns a
-  throwaway, read-only job (a separate temp git-free worktree under `~/.cache/mission-control/
+  throwaway, read-only job (a separate temp git-free worktree under `~/.cache/shikidan/
   workflow-designer/`, killed after 180s) whose only job is to emit a JSON workflow draft; the
   server validates the draft the same way (`validateWorkflow`) and additionally rejects any node
   proposing a tool/skill/check the human hasn't already approved.
@@ -370,7 +370,7 @@ way under `policies/`. The one built-in `default` workflow is plan → verify-pl
   isn't one of the three built-ins (it speaks ACP/OpenCode/raw-CLI to the connection, sandboxes every
   tool file path to the job's own workspace, and redacts the connection's own secret env values out of
   its JSON output), and `POST /api/studio/connections/:id/probe` spawns it in a `probe: true` mode to
-  ask a protocol connection what it can do (`mc_capabilities`). Either way it enforces a 60-minute
+  ask a protocol connection what it can do (`skd_capabilities`). Either way it enforces a 60-minute
   hard deadline (SIGTERM, then SIGKILL a second later).
 
 ## Flow, plans, and runs — the session side panel
@@ -390,7 +390,7 @@ live derived state with stored plans and filters out archived labels unless `inc
 transcript files under every known directory plus Chat home (`server/transcripts.ts`
 `listSessions`, capped at 20 per folder, 10s-cached), and "outside" sessions — `claude`/`codex`
 processes on the machine not owned by this server (`server/quota.ts`
-`GET /api/sessions/external`, via a `ps` scan). `ownedPids` excludes anything Mission Control itself
+`GET /api/sessions/external`, via a `ps` scan). `ownedPids` excludes anything Shikidan itself
 spawned (jobs, terminals) from that outside-sessions list.
 
 ## Frontend
@@ -424,7 +424,7 @@ wrapper and graph-editing helpers). Styling is `public/quiet.css` plus `public/v
 
 ## Data
 
-Everything lives under `~/.config/mission-control/` (override: `MISSION_CONTROL_CONFIG_DIR`),
+Everything lives under `~/.config/shikidan/` (override: `SKD_CONFIG_DIR`),
 directory mode 0700, files mode 0600:
 
 | Path | Owner | Contents |
@@ -540,7 +540,7 @@ at all (never returns anything secret).
 | GET | `/api/studio/connections` | — | `{builtins, connections, presets, models, roles}` | no |
 | POST | `/api/studio/connections` | `AgentConnection` | saved connection | no |
 | DELETE | `/api/studio/connections/:id` | — | `{ok:true}` | no |
-| POST | `/api/studio/connections/:id/probe` | — | `mc_capabilities` event or `400` | no |
+| POST | `/api/studio/connections/:id/probe` | — | `skd_capabilities` event or `400` | no |
 | GET | `/api/studio/runs` | — | `{runs: summary[]}` | yes |
 | POST | `/api/studio/runs` | `{terminalId?, workflowId?, revision?, cwd, request, label, chat?, chatTurn?, engine?, model?}` | `WorkflowRun` | yes |
 | GET | `/api/studio/runs/:id` | — | `WorkflowRun` or `404` | yes |
@@ -552,6 +552,6 @@ at all (never returns anything secret).
 `bun test` across 68 files under `test/`, one file per server module plus one `*-routes.test.ts` per
 route file, named and structured to match the module/route file it covers (e.g.
 `test/chat-reports.test.ts` against `server/chat-reports.ts`, `test/jobs-routes.test.ts` against
-`server/routes/jobs.ts`). `MC_FAKE_ENGINES=1` (`server/engines.ts` `fakeEnginesEnabled`) substitutes
+`server/routes/jobs.ts`). `SKD_FAKE_ENGINES=1` (`server/engines.ts` `fakeEnginesEnabled`) substitutes
 `/bin/echo`/`/bin/sh` stubs so the suite and local UI dev run without the real `claude`/`codex`
 binaries. `test/setup.ts` and `test/fixtures`/`test/support` hold shared harness code.

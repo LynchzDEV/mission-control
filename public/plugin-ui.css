@@ -1,4 +1,4 @@
-/* Mission Control plugin UI stylesheet. Tokens mirror the host's quiet.css; the
+/* Shikidan plugin UI stylesheet. Tokens mirror the host's quiet.css; the
    neumorphic shadow chain from the host's vendor sheet is resolved inline so this
    file is self-contained inside an isolated plugin frame. The host copies this
    file to public/plugin-ui.css. */

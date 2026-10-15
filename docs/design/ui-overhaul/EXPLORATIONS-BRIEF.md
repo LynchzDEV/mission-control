@@ -1,4 +1,4 @@
-# Twenty Mission Control design explorations
+# Twenty Shikidan design explorations
 
 ## Objective
 

@@ -44,7 +44,7 @@ async function boards(ctx: Context): Promise<Json[]> {
 async function findBoard(ctx: Context, wanted: string): Promise<Json> {
   const all = await boards(ctx)
   const board = all.find((candidate) => candidate.id === wanted) ?? all.find((candidate) => plain(String(candidate.name)) === plain(wanted))
-  if (board === undefined) throw new UsageError(`no board "${wanted}"; see: mctl clickup boards`)
+  if (board === undefined) throw new UsageError(`no board "${wanted}"; see: shiki clickup boards`)
   return board
 }
 
@@ -150,12 +150,12 @@ async function startSession(ctx: Context): Promise<void> {
   const model = stringOpt(ctx, 'model')
   if (flag(ctx, 'terminal')) {
     const terminal = await ctx.client.post('/api/terminals', { engine, cwd, ...(model ? { model } : {}), initialPrompt: prompt, title: `ClickUp ${taskId}`.slice(0, 60) })
-    emit(ctx, terminal, (value) => `Terminal ${cell(isRecord(value) ? value.id : '')} opened in ${cwd} with the task context. Open it in Mission Control.\n`)
+    emit(ctx, terminal, (value) => `Terminal ${cell(isRecord(value) ? value.id : '')} opened in ${cwd} with the task context. Open it in Shikidan.\n`)
     return
   }
   const job = await ctx.client.post('/api/jobs', { engine, ...(model ? { model } : {}), cwd, prompt, purpose: 'chat' })
   const id = isRecord(job) ? (isRecord(job.job) ? job.job.id : job.id) : ''
-  emit(ctx, job, () => `Chat ${cell(id)} started in ${cwd} with the task context. Follow it with: mctl job follow ${cell(id)}\n`)
+  emit(ctx, job, () => `Chat ${cell(id)} started in ${cwd} with the task context. Follow it with: shiki job follow ${cell(id)}\n`)
 }
 
 async function addBoard(ctx: Context): Promise<void> {
@@ -204,7 +204,7 @@ export const clickupCommands: Command[] = [
     summary: 'List your saved ClickUp boards',
     run: async (ctx) => emit(ctx, await boards(ctx), (value) => {
       const list = Array.isArray(value) ? value.filter(isRecord) : []
-      if (list.length === 0) return 'No boards yet. Add one with: mctl clickup board add --link <url> --folder <dir>\n'
+      if (list.length === 0) return 'No boards yet. Add one with: shiki clickup board add --link <url> --folder <dir>\n'
       return table(list, [
         { header: 'ID', value: (board) => cell(board.id) },
         { header: 'NAME', value: (board) => cell(board.name) },
@@ -231,7 +231,7 @@ export const clickupCommands: Command[] = [
     path: ['clickup', 'board', 'add'],
     options: {
       link: { type: 'string', description: 'ClickUp list or board view link', placeholder: 'URL' },
-      list: { type: 'string', description: 'ClickUp list id (see: mctl clickup tree)', placeholder: 'ID' },
+      list: { type: 'string', description: 'ClickUp list id (see: shiki clickup tree)', placeholder: 'ID' },
       name: { type: 'string', description: 'board name (default: the list or view name)', placeholder: 'NAME' },
       folder: { type: 'string', description: 'folder chats and terminals open in', placeholder: 'DIR' },
     },
@@ -297,7 +297,7 @@ export const clickupCommands: Command[] = [
   {
     path: ['clickup', 'filter', 'remove'],
     args: ['board', 'number'],
-    summary: 'Remove filter number N (see: mctl clickup filters <board>)',
+    summary: 'Remove filter number N (see: shiki clickup filters <board>)',
     run: async (ctx) => {
       const board = await findBoard(ctx, arg(ctx, 'board'))
       const group = filtersOf(board)

@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk'
 
 import { fakeQuery, runBridge, type BridgeControl, type BridgeLaunch, type BridgeQuery } from './chat-bridge-core'
+import { readEnv } from './env'
 
 function writeLine(line: object): void {
   writeSync(1, `${JSON.stringify(line)}\n`)
@@ -61,7 +62,7 @@ async function main(): Promise<number> {
   const controller = new AbortController()
   process.on('SIGTERM', () => controller.abort())
   process.on('SIGINT', () => controller.abort())
-  const fakeDir = process.env.MC_BRIDGE_FAKE
+  const fakeDir = readEnv('BRIDGE_FAKE')
   return await runBridge(launch, {
     query: fakeDir === undefined || fakeDir === '' ? realQuery : fakeQuery(fakeDir),
     write: writeLine,

@@ -83,7 +83,7 @@ test('the first snapshot fills the bell and the tab title without alerting', asy
   expect(FakeSource.last.url).toBe('/api/attention/stream')
   expect($('attention-count').hidden).toBe(false)
   expect($('attention-count').textContent).toBe('2')
-  expect(doc.title).toBe('(2) Mission Control')
+  expect(doc.title).toBe('(2) Shikidan')
   expect(shown).toHaveLength(0)
 })
 
@@ -186,7 +186,7 @@ test('nothing waiting shows the empty state, hides the badge and resets the titl
   await flush()
   expect($('attention-empty').hidden).toBe(false)
   expect($('attention-count').hidden).toBe(true)
-  expect(doc.title).toBe('Mission Control')
+  expect(doc.title).toBe('Shikidan')
 })
 
 test('with alerts not yet allowed, the banner offers Turn on and asks the browser', async () => {

@@ -12,19 +12,19 @@ let app: Elysia
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-shell-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  process.env.SKD_CONFIG_DIR = dir
   app = await createApp()
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(dir, { recursive: true, force: true })
 })
 
 describe('quiet shell', () => {
   test('/ renders the composer, toolbar controls and the usage card mount', async () => {
     const markup = await (await app.handle(new Request('http://localhost/'))).text()
-    for (const marker of ['id="composer"', 'id="new-chat"', 'id="chip-group"', 'id="project-chip"', 'id="model-chip"', 'id="edit-chip"', 'id="project-menu"', 'id="model-menu"', 'id="open-agents"', 'id="toggle-flow"', 'id="usage-track"', 'id="live-launch" class="access-dialog flat"', 'id="live-stage"', 'list="live-cwd-recents"', 'id="live-cwd-recents"','id="drop-stage"', 'id="term-park"', 'id="drop-over"', 'id="toast"', 'id="term-bar"', 'id="find-input"', 'id="backdrop"', 'id="motion"', 'id="messages"', 'id="queued"', 'id="chat-home"', 'id="team-card"', '/js/chat.js', '/js/sidebar.js', 'id="history-list"', 'id="agents-count"', 'id="agent-reply"', 'id="studio"', 'id="studio-root"', '/js/studio.js', 'href="/quiet.css"', 'id="open-studio"', 'id="session-icon"', 'window.MC_WORKSPACE_DIR=', 'id="flow-stage"', 'id="flow-banner"', 'id="flow-quick"', '/js/flow-drawer.js']) expect(markup).toContain(marker)
+    for (const marker of ['id="composer"', 'id="new-chat"', 'id="chip-group"', 'id="project-chip"', 'id="model-chip"', 'id="edit-chip"', 'id="project-menu"', 'id="model-menu"', 'id="open-agents"', 'id="toggle-flow"', 'id="usage-track"', 'id="live-launch" class="access-dialog flat"', 'id="live-stage"', 'list="live-cwd-recents"', 'id="live-cwd-recents"','id="drop-stage"', 'id="term-park"', 'id="drop-over"', 'id="toast"', 'id="term-bar"', 'id="find-input"', 'id="backdrop"', 'id="motion"', 'id="messages"', 'id="queued"', 'id="chat-home"', 'id="team-card"', '/js/chat.js', '/js/sidebar.js', 'id="history-list"', 'id="agents-count"', 'id="agent-reply"', 'id="studio"', 'id="studio-root"', '/js/studio.js', 'href="/quiet.css"', 'id="open-studio"', 'id="session-icon"', 'window.SKD_WORKSPACE_DIR=', 'id="flow-stage"', 'id="flow-banner"', 'id="flow-quick"', '/js/flow-drawer.js']) expect(markup).toContain(marker)
     for (const gone of ['id="show-history"', 'data-dialog="session"', 'id="session"', 'id="live-recents"', 'id="new-conversation"', 'id="rail', 'with-rail', 'Design preview', 'id="live-flow']) expect(markup).not.toContain(gone)
     expect(markup).not.toContain('id="tabs"')
     expect(markup).not.toContain('Design preview')
@@ -107,8 +107,10 @@ describe('quiet shell', () => {
     expect(settings).toContain('<input id="theme-dark" type="checkbox" role="switch">Dark theme')
     expect(settings).toContain('<input id="motion" type="checkbox" role="switch">Background motion')
     const head = markup.slice(0, markup.indexOf('</head>'))
-    expect(head.indexOf("localStorage.getItem('mc.theme')")).toBeGreaterThan(0)
-    expect(head.indexOf("localStorage.getItem('mc.theme')")).toBeLessThan(head.indexOf('href="/quiet.css"'))
+    expect(head.indexOf("localStorage.getItem('skd.theme')")).toBeGreaterThan(0)
+    expect(head.indexOf("localStorage.getItem('skd.theme')")).toBeLessThan(head.indexOf('href="/quiet.css"'))
+    expect(head.indexOf('skd.legacyCopied')).toBeGreaterThan(0)
+    expect(head.indexOf('skd.legacyCopied')).toBeLessThan(head.indexOf("localStorage.getItem('skd.theme')"))
   })
 
   test('dark theme overrides the palette tokens on the root', async () => {
@@ -142,7 +144,7 @@ describe('queue screen', () => {
 })
 
 describe('attention delivery', () => {
-  test('/ links the Mission Control favicon and the attention island', async () => {
+  test('/ links the Shikidan favicon and the attention island', async () => {
     const markup = await (await app.handle(new Request('http://localhost/'))).text()
     expect(markup).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">')
     expect(markup).not.toContain('href="data:,"')

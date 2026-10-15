@@ -14,13 +14,13 @@ import { git, repoAt } from './support/git-repos'
 setDefaultTimeout(30_000)
 
 let dir: string, parent: string, workspace: string, manager: JobManager, runner: WorkflowRunner
-const passing = (text = '') => JSON.stringify({ type: 'result', result: `${text}MC_RESULT ${JSON.stringify({ outcome: 'pass', summary: 'Completed fixture', evidence: ['fixture assertion'] })}` })
+const passing = (text = '') => JSON.stringify({ type: 'result', result: `${text}SKD_RESULT ${JSON.stringify({ outcome: 'pass', summary: 'Completed fixture', evidence: ['fixture assertion'] })}` })
 const echo: EngineResolver = () => ({ cmd: '/bin/echo', args: [passing()], env: {} })
 
 beforeEach(async () => {
   dir = await mkdtemp(join(homedir(), 'mc-multi-runner-config-'))
   parent = await mkdtemp(join(homedir(), 'mc-multi-runner-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  process.env.SKD_CONFIG_DIR = dir
   for (const name of ['a', 'b', 'c']) await repoAt(join(parent, name))
   workspace = (await prepareRepoWorkspace(parent, ['a', 'b'], 'queue-split-1-a8c0')).worktree
 })
@@ -28,7 +28,7 @@ afterEach(async () => {
   for (const run of runner?.list() ?? []) if (run.status === 'running') await runner.stop(run.id)
   for (const job of manager?.listJobs() ?? []) if (job.status === 'running') await manager.killJob(job.id)
   for (let i = 0; i < 200 && manager?.listJobs().some(job => job.status === 'running'); i++) await Bun.sleep(20)
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(dir, { recursive: true, force: true })
   await rm(parent, { recursive: true, force: true })
 })
@@ -131,7 +131,7 @@ test('a path workspace deleted by hand while stopped is restored on retry and th
 const shapeOf = (paths: Array<{ id: string; files: string[] }>) => ({ contract: 'Shared names are in the plan', paths: paths.map(path => ({ ...path, title: path.id.toUpperCase(), steps: [{ title: `Build ${path.id}`, instructions: `Build ${path.id}` }] })) })
 const planner = (shape: unknown, seen: string[] = []): EngineResolver => ({ prompt }) => {
   seen.push(prompt)
-  if (prompt.includes('flowShapeRules')) return { cmd: '/bin/echo', args: [passing(`MC_SHAPE ${JSON.stringify(shape)}\n`)], env: {} }
+  if (prompt.includes('flowShapeRules')) return { cmd: '/bin/echo', args: [passing(`SKD_SHAPE ${JSON.stringify(shape)}\n`)], env: {} }
   const owned = /Only change these files: ([^\n\\"]+)/.exec(prompt)?.[1]?.split(', ') ?? []
   const write = owned.map(file => `mkdir -p "$(dirname ${file})" && echo x > ${file}`).join(' && ')
   return { cmd: '/bin/sh', args: ['-c', `${write ? `${write}; ` : ''}echo '${passing()}'`], env: {} }
@@ -154,8 +154,8 @@ test('the plan of a multi-repo run is told to prefix files with their repo, and 
 test('a split whose prefixed files overlap, lack a repo or name an unknown repo stays straight and says why', async () => {
   const cases: Array<[Array<{ id: string; files: string[] }>, string]> = [
     [[{ id: 'api', files: ['a/app'] }, { id: 'web', files: ['a/app/x.rb'] }], 'Flow shape ignored: API and WEB both own a/app/x.rb'],
-    [[{ id: 'api', files: ['app/x.rb'] }, { id: 'web', files: ['b/web.txt'] }], `Flow shape ignored: MC_SHAPE file app/x.rb must start with one of the repos in ${parent}: a, b, c`],
-    [[{ id: 'api', files: ['zzz/x.rb'] }, { id: 'web', files: ['b/web.txt'] }], `Flow shape ignored: MC_SHAPE file zzz/x.rb must start with one of the repos in ${parent}: a, b, c`],
+    [[{ id: 'api', files: ['app/x.rb'] }, { id: 'web', files: ['b/web.txt'] }], `Flow shape ignored: SKD_SHAPE file app/x.rb must start with one of the repos in ${parent}: a, b, c`],
+    [[{ id: 'api', files: ['zzz/x.rb'] }, { id: 'web', files: ['b/web.txt'] }], `Flow shape ignored: SKD_SHAPE file zzz/x.rb must start with one of the repos in ${parent}: a, b, c`],
   ]
   for (const [paths, reason] of cases) {
     build(planner(shapeOf(paths)))
@@ -175,7 +175,7 @@ test('a split path that needs a repo with no copy yet gets the copy before the f
   expect(done.status).toBe('done')
   expect(git(join(workspace, 'c'), 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('queue-split-1-a8c0')
   expect(await readFile(join(workspace, 'c', 'jobs.txt'), 'utf8')).toBe('x\n')
-  expect(JSON.parse(await readFile(join(workspace, '.mission-control', 'repos.json'), 'utf8'))).toEqual({ repos: ['a', 'b', 'c'] })
+  expect(JSON.parse(await readFile(join(workspace, '.shikidan', 'repos.json'), 'utf8'))).toEqual({ repos: ['a', 'b', 'c'] })
   expect(await readdir(join(parent, '.worktree'))).toEqual(['queue-split-1-a8c0'])
 })
 
@@ -261,7 +261,7 @@ test('a split that would need more than 8 repos stays straight and says why', as
   const started = await runner.start({ cwd: workspace, request: 'Split it', label: 'shape', graph: straight() })
   const done = await finished(started.id)
   expect(nodeIds(done)).toEqual(['plan', 'verify-plan', 'execute', 'review'])
-  expect(done.attempts[0]!.result!.evidence).toContain('Flow shape ignored: MC_SHAPE needs more than 8 repos')
+  expect(done.attempts[0]!.result!.evidence).toContain('Flow shape ignored: SKD_SHAPE needs more than 8 repos')
 })
 
 test('a split path is told it holds a copy of each repo side by side', async () => {

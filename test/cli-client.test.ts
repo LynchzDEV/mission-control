@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { main, type MainDeps } from '../cli/mctl'
+import { main, type MainDeps } from '../cli/shiki'
 
 let configDir: string
 
@@ -28,18 +28,40 @@ function harness(env: Record<string, string | undefined>, respond: (request: Req
     },
     stdout: (text) => { out += text },
     stderr: (text) => { err += text },
-    env: { MISSION_CONTROL_CONFIG_DIR: configDir, ...env },
+    env: { SKD_CONFIG_DIR: configDir, ...env },
     cwd: configDir,
   }
   return { deps, calls, out: () => out, err: () => err }
 }
 
 describe('token resolution', () => {
-  test('MC_TOKEN wins over secrets.json', async () => {
+  test('SKD_TOKEN wins over secrets.json', async () => {
     await writeFile(join(configDir, 'secrets.json'), JSON.stringify({ apiToken: 'mct_from_file' }))
-    const h = harness({ MC_TOKEN: 'mct_from_env' })
+    const h = harness({ SKD_TOKEN: 'mct_from_env' })
     expect(await main(['models', '--json'], h.deps)).toBe(0)
     expect(h.calls[0]!.authorization).toBe('Bearer mct_from_env')
+  })
+
+  test('still reads the legacy MC_TOKEN and MISSION_CONTROL_CONFIG_DIR', async () => {
+    expect(await main(['models', '--json'], harness({ MC_TOKEN: 'mct_legacy' }).deps)).toBe(0)
+    await writeFile(join(configDir, 'secrets.json'), JSON.stringify({ apiToken: 'mct_from_legacy_dir' }))
+    const h = harness({ SKD_CONFIG_DIR: undefined, MISSION_CONTROL_CONFIG_DIR: configDir })
+    expect(await main(['models', '--json'], h.deps)).toBe(0)
+    expect(h.calls[0]!.authorization).toBe('Bearer mct_from_legacy_dir')
+  })
+
+  test('reads ~/.config/shikidan first, then a not yet moved ~/.config/mission-control', async () => {
+    const home = configDir
+    await mkdir(join(home, '.config', 'mission-control'), { recursive: true })
+    await writeFile(join(home, '.config', 'mission-control', 'secrets.json'), JSON.stringify({ apiToken: 'mct_legacy_home' }))
+    const legacy = harness({ SKD_CONFIG_DIR: undefined, HOME: home })
+    await main(['models', '--json'], legacy.deps)
+    expect(legacy.calls[0]!.authorization).toBe('Bearer mct_legacy_home')
+    await mkdir(join(home, '.config', 'shikidan'), { recursive: true })
+    await writeFile(join(home, '.config', 'shikidan', 'secrets.json'), JSON.stringify({ apiToken: 'mct_new_home' }))
+    const current = harness({ SKD_CONFIG_DIR: undefined, HOME: home })
+    await main(['models', '--json'], current.deps)
+    expect(current.calls[0]!.authorization).toBe('Bearer mct_new_home')
   })
 
   test('falls back to apiToken in secrets.json under the config dir', async () => {
@@ -70,14 +92,20 @@ describe('url resolution', () => {
     expect(h.calls[0]!.url).toBe('http://127.0.0.1:7777/api/models')
   })
 
-  test('MC_URL overrides the default', async () => {
-    const h = harness({ MC_URL: 'http://localhost:9000' })
+  test('SKD_URL overrides the default', async () => {
+    const h = harness({ SKD_URL: 'http://localhost:9000' })
     await main(['models'], h.deps)
     expect(h.calls[0]!.url).toBe('http://localhost:9000/api/models')
   })
 
-  test('--url overrides MC_URL, with or without a trailing slash', async () => {
-    const h = harness({ MC_URL: 'http://localhost:9000' })
+  test('still reads the legacy MC_URL', async () => {
+    const h = harness({ MC_URL: 'http://localhost:9001' })
+    await main(['models'], h.deps)
+    expect(h.calls[0]!.url).toBe('http://localhost:9001/api/models')
+  })
+
+  test('--url overrides SKD_URL, with or without a trailing slash', async () => {
+    const h = harness({ SKD_URL: 'http://localhost:9000' })
     await main(['--url', 'http://example.test:1234/', 'models'], h.deps)
     expect(h.calls[0]!.url).toBe('http://example.test:1234/api/models')
   })
@@ -104,15 +132,15 @@ describe('exit codes', () => {
   })
 
   test('connection refused exits 3 with the start hint', async () => {
-    const h = harness({ MC_URL: 'http://127.0.0.1:1' }, () => { throw new TypeError('Unable to connect. Is the computer able to access the url?') })
+    const h = harness({ SKD_URL: 'http://127.0.0.1:1' }, () => { throw new TypeError('Unable to connect. Is the computer able to access the url?') })
     expect(await main(['status'], h.deps)).toBe(3)
-    expect(h.err()).toContain("Mission Control isn't running at http://127.0.0.1:1. Start it with: bun run start")
+    expect(h.err()).toContain("Shikidan isn't running at http://127.0.0.1:1. Start it with: bun run start")
   })
 
   test('a real refused connection exits 3', async () => {
     const h = harness({})
     h.deps.fetch = (request) => fetch(request)
     expect(await main(['--url', 'http://127.0.0.1:1', 'status'], h.deps)).toBe(3)
-    expect(h.err()).toContain("Mission Control isn't running at http://127.0.0.1:1")
+    expect(h.err()).toContain("Shikidan isn't running at http://127.0.0.1:1")
   })
 })

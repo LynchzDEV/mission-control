@@ -18,6 +18,8 @@ import { workspaceDiffStat, workspaceRepos } from './repo-workspace'
 import { validateWorkspaceCwd } from './workspace'
 import { git, prepareWorktree, worktreeBranch } from './job-worktrees'
 import type { EngineResolver, EngineResolverParams, EngineSpawn } from './jobs-engine-iface'
+import { exportEnv } from './env'
+import { isLogEvent, mentionsLogEvent } from './log-events'
 
 export const JOBS_FILE = 'jobs.jsonl'
 export const LOGS_DIR = 'logs'
@@ -342,14 +344,14 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const record = jobs.get(id)
     if (record === undefined || options.onPermissionRequest === undefined) return
     for (const line of chunk.split('\n')) {
-      if (!line.includes('"mc_permission_request"')) continue
+      if (!mentionsLogEvent(line, 'permission_request')) continue
       let parsed: Record<string, unknown>
       try {
         parsed = JSON.parse(line) as Record<string, unknown>
       } catch {
         continue
       }
-      if (parsed.type !== 'mc_permission_request' || typeof parsed.requestId !== 'string' || parsed.requestId === '') continue
+      if (!isLogEvent(parsed.type, 'permission_request') || typeof parsed.requestId !== 'string' || parsed.requestId === '') continue
       const key = `${id}:${parsed.requestId}`
       if (notifiedPermissions.has(key)) continue
       notifiedPermissions.add(key)
@@ -514,10 +516,10 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const log = await readLogFile(logPath(id))
     const children: Array<{ pid: number; startedAt: number | null }> = []
     for (const line of log.split('\n')) {
-      if (!line.includes('"mc_child"')) continue
+      if (!mentionsLogEvent(line, 'child')) continue
       try {
         const parsed = JSON.parse(line) as { type?: string; pid?: unknown; startedAt?: unknown }
-        if (parsed.type === 'mc_child' && typeof parsed.pid === 'number' && parsed.pid > 0) {
+        if (isLogEvent(parsed.type, 'child') && typeof parsed.pid === 'number' && parsed.pid > 0) {
           children.push({ pid: parsed.pid, startedAt: typeof parsed.startedAt === 'number' && Number.isFinite(parsed.startedAt) ? parsed.startedAt : null })
         }
       } catch {
@@ -571,10 +573,10 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
     const log = await readLogFile(logPath(record.id))
     const found: string[] = []
     for (const line of log.split('\n')) {
-      if (!line.includes('"mc_permission_resolved"')) continue
+      if (!mentionsLogEvent(line, 'permission_resolved')) continue
       try {
         const parsed = JSON.parse(line) as { type?: string; decision?: unknown; rules?: unknown }
-        if (parsed.type === 'mc_permission_resolved' && parsed.decision === 'allow_always' && Array.isArray(parsed.rules)) {
+        if (isLogEvent(parsed.type, 'permission_resolved') && parsed.decision === 'allow_always' && Array.isArray(parsed.rules)) {
           for (const rule of parsed.rules) if (typeof rule === 'string' && rule !== '') found.push(rule)
         }
       } catch {
@@ -714,12 +716,12 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
 
   async function chatSpawnEnv(params: CreateJobParams, id: string): Promise<Record<string, string>> {
     if (params.purpose !== 'chat') return {}
-    return {
-      MC_URL: `http://127.0.0.1:${listenTarget().port}`,
-      MC_TOKEN: await readApiToken(),
-      MC_CHAT_ID: params.threadRoot ?? id,
-      MISSION_CONTROL_CONFIG_DIR: dir,
-    }
+    return exportEnv({
+      URL: `http://127.0.0.1:${listenTarget().port}`,
+      TOKEN: await readApiToken(),
+      CHAT_ID: params.threadRoot ?? id,
+      CONFIG_DIR: dir,
+    })
   }
 
   function chatRecordFields(params: CreateJobParams, edit: boolean | undefined): Partial<JobRecord> {
@@ -785,7 +787,7 @@ export function createJobManager(options: JobManagerOptions = {}): JobManager {
       try {
         proc = Bun.spawn([spawnSpec.cmd, ...spawnSpec.args], {
           cwd,
-          env: { ...process.env, ...spawnSpec.env, MC_JOB_ID: id, ...chatEnv },
+          env: { ...process.env, ...spawnSpec.env, ...exportEnv({ JOB_ID: id }), ...chatEnv },
           stdin: spawnSpec.control === true || spawnSpec.stdin !== undefined ? 'pipe' : 'ignore',
           stdout: logFd,
           stderr: logFd,

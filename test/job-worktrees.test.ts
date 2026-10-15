@@ -30,7 +30,7 @@ test('snapshotCommit records the whole workspace without touching the index, bra
   expect(await git(repo, 'diff', '--cached')).toBe('')
   expect((await git(repo, 'ls-tree', '-r', '--name-only', snapshot)).split('\n')).toEqual(['README.md', 'notes.txt'])
   expect(await git(repo, 'rev-parse', `${snapshot}^`)).toBe(head)
-  expect(await git(repo, 'log', '-1', '--format=%an <%ae>', snapshot)).toBe('Mission Control <mission-control@localhost>')
+  expect(await git(repo, 'log', '-1', '--format=%an <%ae>', snapshot)).toBe('Shikidan <shikidan@localhost>')
   expect(await git(repo, 'branch', '--contains', snapshot)).toBe('')
 })
 
@@ -41,7 +41,7 @@ test('commitPath commits changes with the internal identity and reports a clean 
   expect(await commitPath(dir, 'fixture: nothing')).toBe(false)
   await writeFile(join(dir, 'a.txt'), 'a\n')
   expect(await commitPath(dir, 'fixture: A')).toBe(true)
-  expect(await git(dir, 'log', '-1', '--format=%an %s')).toBe('Mission Control fixture: A')
+  expect(await git(dir, 'log', '-1', '--format=%an %s')).toBe('Shikidan fixture: A')
   expect(await git(dir, 'status', '--porcelain')).toBe('')
   await removePathWorktree(repo, dir, 'flow-test-p1', false)
 })

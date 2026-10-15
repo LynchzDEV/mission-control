@@ -22,19 +22,19 @@ let repo: string
 let registry: TerminalRegistry
 
 beforeEach(async () => {
-  configDir = await mkdtemp(join(tmpdir(), 'mc-terminals-routes-config-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
-  process.env.MC_FAKE_ENGINES = '1'
+  configDir = await mkdtemp(join(tmpdir(), 'skd-terminals-routes-config-'))
+  process.env.SKD_CONFIG_DIR = configDir
+  process.env.SKD_FAKE_ENGINES = '1'
 
-  repo = await mkdtemp(join(homedir(), 'mc-terminals-routes-scratch-'))
+  repo = await mkdtemp(join(homedir(), 'skd-terminals-routes-scratch-'))
   await initScratchGitRepo(repo)
   registry = createTerminalRegistry()
 })
 
 afterEach(async () => {
   registry.shutdown()
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
-  delete process.env.MC_FAKE_ENGINES
+  delete process.env.SKD_CONFIG_DIR
+  delete process.env.SKD_FAKE_ENGINES
   await rm(configDir, { recursive: true, force: true })
   await rm(repo, { recursive: true, force: true })
 })

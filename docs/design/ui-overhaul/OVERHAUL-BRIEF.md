@@ -1,4 +1,4 @@
-# Mission Control — complete workspace redesign
+# Shikidan — complete workspace redesign
 
 ## The actual brief
 

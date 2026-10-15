@@ -31,7 +31,7 @@ export async function grantRepos(deps: Pick<QueueEngineDeps, 'prepareWorkspace'>
   if (current.length + fresh.length > MAX_QUEUE_REPOS) return { fail: `The plan asked for more than ${MAX_QUEUE_REPOS} repos` }
   const unknown = await unknownName(item.repo, fresh)
   if (unknown !== undefined) return { fail: `The plan asked for ${unknown}, which is not a repo in ${item.repo}` }
-  if (deps.prepareWorkspace === undefined || item.worktree === null) return { fail: 'This Mission Control cannot build multi-repo items' }
+  if (deps.prepareWorkspace === undefined || item.worktree === null) return { fail: 'This Shikidan cannot build multi-repo items' }
   const repos = [...current, ...fresh]
   try {
     await deps.prepareWorkspace(item.repo, repos, basename(item.worktree))

@@ -376,7 +376,7 @@ export function rowDetail(run: RunView, now: number): RowDetail {
 }
 
 function motionAllowed(): boolean {
-  try { return localStorage.getItem('mc.motion.paused') !== 'true' } catch { return true }
+  try { return localStorage.getItem('skd.motion.paused') !== 'true' } catch { return true }
 }
 
 function mountFlowDrawer(): void {

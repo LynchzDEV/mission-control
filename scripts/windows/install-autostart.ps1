@@ -1,15 +1,24 @@
-# Usage: .\install-autostart.ps1 [-Distro Ubuntu-24.04] [-RepoPath ~/mission-control] [-ShowWindow] [-Remove]
+# Usage: .\install-autostart.ps1 [-Distro Ubuntu-24.04] [-RepoPath ~/shiki] [-ShowWindow] [-Remove]
 [CmdletBinding()]
 param(
     [string]$Distro = 'Ubuntu-24.04',
-    [string]$RepoPath = '~/mission-control',
+    [string]$RepoPath = '~/shiki',
     [switch]$ShowWindow,
     [switch]$Remove
 )
 
 $ErrorActionPreference = 'Stop'
-$TaskName = 'Mission Control'
-$LogPath = '~/mission-control.log'
+$TaskName = 'Shikidan'
+$LogPath = '~/shiki.log'
+# ponytail: task name and clone folder from before Shikidan, drop once no PC still has them
+$LegacyTaskName = 'Mission Control'
+$LegacyRepoPath = '~/mission-control'
+
+function Remove-TaskIfPresent([string]$Name) {
+    if (-not (Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue)) { return $false }
+    Unregister-ScheduledTask -TaskName $Name -Confirm:$false | Out-Null
+    return $true
+}
 
 function ConvertTo-BashPath([string]$Path) {
     if ($Path -match '["$`\\%]') {
@@ -22,9 +31,9 @@ function ConvertTo-BashPath([string]$Path) {
 }
 
 if ($Remove) {
-    if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-        Write-Host "Removed the '$TaskName' task. Mission Control will no longer start at log on."
+    $removed = @($TaskName, $LegacyTaskName) | Where-Object { Remove-TaskIfPresent $_ }
+    if ($removed) {
+        Write-Host "Removed the $(($removed | ForEach-Object { "'$_'" }) -join ' and ') task. Shikidan will no longer start at log on."
     } else {
         Write-Host "No '$TaskName' task found; nothing to remove."
     }
@@ -34,6 +43,18 @@ if ($Remove) {
 $installed = (wsl.exe --list --quiet) -replace "`0", '' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
 if ($installed -notcontains $Distro) {
     throw "WSL distro '$Distro' is not installed. Run scripts\windows\setup-wsl.ps1 first, or pass -Distro <name>."
+}
+
+if (-not $PSBoundParameters.ContainsKey('RepoPath')) {
+    wsl.exe -d $Distro -- bash -lc "test ! -d ~/shiki && test -d $LegacyRepoPath" | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        $RepoPath = $LegacyRepoPath
+        Write-Host "Using the existing clone at $LegacyRepoPath."
+    }
+}
+
+if (Remove-TaskIfPresent $LegacyTaskName) {
+    Write-Host "Removed the old '$LegacyTaskName' task so Shikidan starts only once."
 }
 
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -52,7 +73,7 @@ Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Pr
 
 Write-Host "Registered '$TaskName': at log on it runs $($action.Execute) $($action.Arguments)"
 if ($ShowWindow) {
-    Write-Host 'A console window opens at sign-in. Minimize it; closing it stops Mission Control.'
+    Write-Host 'A console window opens at sign-in. Minimize it; closing it stops Shikidan.'
 } else {
     Write-Host "It runs hidden. Output goes to $LogPath inside $Distro."
 }

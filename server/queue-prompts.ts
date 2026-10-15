@@ -35,8 +35,8 @@ function reposLines(item: Pick<QueueItem, 'repo' | 'worktree'> & { repos: readon
   return [
     `This item spans several repos in ${item.repo}. The real repos there are READ-ONLY: read them to plan, never change them: ${available.map(name => join(item.repo, name)).join(', ')}.`,
     `Work only in the repo copies in this workspace, at ${item.worktree}/<name>. Copies ready now: ${copies}. Each copy is its own git worktree; make, test and inspect changes inside it.`,
-    'To get a copy of another repo, end the step with MC_RESULT blocked and one evidence item per repo in exactly the form `repo: <name>`. Any other evidence item is a question for the requester.',
-    'Ask for every repo you need in one go: Mission Control makes the copies and starts a new run, and stops after 3 such asks.',
+    'To get a copy of another repo, end the step with SKD_RESULT blocked and one evidence item per repo in exactly the form `repo: <name>`. Any other evidence item is a question for the requester.',
+    'Ask for every repo you need in one go: Shikidan makes the copies and starts a new run, and stops after 3 such asks.',
   ]
 }
 
@@ -46,7 +46,7 @@ export function runRequest(item: Pick<QueueItem, 'title' | 'url' | 'contextPath'
     ...(item.repos === undefined ? [] : reposLines({ ...item, repos: item.repos }, available)),
     `Read the task context in ${item.contextPath}.`,
     ...(item.answerPaths.length > 0 ? [`The requester answered your earlier questions: read ${item.answerPaths.join(', ')}.`] : []),
-    'If information you need is missing and you cannot decide it yourself, end the step with MC_RESULT blocked and put each question for the requester as one evidence item.',
+    'If information you need is missing and you cannot decide it yourself, end the step with SKD_RESULT blocked and put each question for the requester as one evidence item.',
   ].join('\n')
 }
 

@@ -27,7 +27,7 @@ test('isWorktreeOf accepts a worktree of the repo', async () => {
 test('isWorktreeOf refuses a missing folder, a plain folder inside the repo and another repo\'s worktree', async () => {
   expect(await isWorktreeOf(repo, join(repo, '.worktree', 'gone'))).toBe(false)
   const plain = join(repo, '.worktree', 'plain')
-  await mkdir(join(plain, '.mission-control'), { recursive: true })
+  await mkdir(join(plain, '.shikidan'), { recursive: true })
   expect(await isWorktreeOf(repo, plain)).toBe(false)
   const { worktree } = await prepareWorktree(other, 'queue-task-1-a8c0')
   expect(await isWorktreeOf(repo, worktree)).toBe(false)

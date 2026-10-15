@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { readSecrets, type Secrets } from './secrets'
 import { ensureWorkerProfiles, workerEnv } from './worker-profile'
+import { readEnv } from './env'
 
 export type EngineName = 'claude' | 'glm' | 'codex'
 
@@ -44,10 +45,10 @@ export const ENGINES: Record<EngineName, EngineDefinition> = {
   codex: { cmd: 'codex', envFor: () => ({}) },
 }
 
-// MC_FAKE_ENGINES=1 swaps real CLIs for /bin/echo stubs so tests/dev run without the real binaries.
-// MC_FAKE_ENGINE_CMD overrides the stub, e.g. for an end-to-end run with scripts/fake-pass-engine.sh.
+// SKD_FAKE_ENGINES=1 swaps real CLIs for /bin/echo stubs so tests/dev run without the real binaries.
+// SKD_FAKE_ENGINE_CMD overrides the stub, e.g. for an end-to-end run with scripts/fake-pass-engine.sh.
 function fakeEngineCmd(): string {
-  return process.env.MC_FAKE_ENGINE_CMD || '/bin/echo'
+  return readEnv('FAKE_ENGINE_CMD') || '/bin/echo'
 }
 
 export const FAKE_ENGINES: Record<EngineName, EngineDefinition> = {
@@ -57,7 +58,7 @@ export const FAKE_ENGINES: Record<EngineName, EngineDefinition> = {
 }
 
 export function fakeEnginesEnabled(): boolean {
-  return process.env.MC_FAKE_ENGINES === '1'
+  return readEnv('FAKE_ENGINES') === '1'
 }
 
 export function resolveEngine(name: EngineName): EngineDefinition {

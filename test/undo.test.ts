@@ -51,7 +51,7 @@ async function settledChat(resolver: EngineResolver, label: string): Promise<str
 
 beforeEach(async () => {
   configDir = await mkdtemp(join(tmpdir(), 'mc-undo-config-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = configDir
+  process.env.SKD_CONFIG_DIR = configDir
   repo = await mkdtemp(join(homedir(), 'mc-undo-scratch-'))
   await initScratchGitRepo(repo)
   await mkdir(join(repo, 'demo'), { recursive: true })
@@ -60,7 +60,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(configDir, { recursive: true, force: true })
   await rm(repo, { recursive: true, force: true })
 })

@@ -12,11 +12,11 @@ let dir: string
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'mc-auto-review-'))
-  process.env.MISSION_CONTROL_CONFIG_DIR = dir
+  process.env.SKD_CONFIG_DIR = dir
 })
 
 afterEach(async () => {
-  delete process.env.MISSION_CONTROL_CONFIG_DIR
+  delete process.env.SKD_CONFIG_DIR
   await rm(dir, { recursive: true, force: true })
 })
 
