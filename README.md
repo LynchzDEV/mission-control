@@ -4,7 +4,7 @@
 
 Shikidan is a workspace that runs your AI coding agents from one chat. It isn't tied to one vendor: bring Claude Code, Codex, Grok, GLM (through any Anthropic-compatible endpoint), or any ACP, OpenCode or headless-CLI agent you add under **Studio → Manage AIs → Add an AI**. Extend it with plugin add-ons from a git marketplace, or write your own with the plugin SDK (see [Plugins](#plugins)).
 
-You describe the work in a chat. The chat answers directly, or spins up agents in isolated git worktrees, has a *different* AI family review every change, and lands it on your branch. Live terminals, a workflow Studio and your whole history sit in the same window.
+You describe the work in a chat. The chat answers directly, or spins up agents in isolated git worktrees, has a *different* AI family review each code change it makes, and lands it on your branch. (Jobs you start outside the chat, for example with `mctl job new`, skip that automatic review.) Live terminals, a workflow Studio and your whole history sit in the same window.
 
 **What you get:**
 - **A CLI for people and agents.** `shiki` drives a running Shikidan from a shell: `shiki status`, `shiki job new "…" --follow`, `shiki attention`, `shiki runs`, `shiki plugin add <git url>`. See [Command line](#command-line).
