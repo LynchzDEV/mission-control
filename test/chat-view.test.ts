@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chatModeChoice, chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, mentionMarks, mentionToken, parseAgentReport, runningLabel, slashQuery, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
+import { chatModeChoice, chatSignal, costText, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, mentionMarks, mentionToken, parseAgentReport, runningLabel, slashQuery, stepText, teamRows, titleFrom, turnsFrom, workedLine } from '../client/chat-view'
 
 const thread = [
   { role: 'user', kind: 'prompt', jobId: 't1', ts: 1000, text: 'Fix login' },
@@ -256,5 +256,17 @@ describe('chat permission mode choice', () => {
 
   test('an unknown stored value falls back to my settings', () => {
     expect(chatModeChoice('abc', read({ 'skd.chat.mode.abc': 'yolo' }))).toBe('settings')
+  })
+})
+
+describe('costText', () => {
+  test('follows the context percent with a separator', () => {
+    expect(costText(42, 7.084)).toBe(' · $7.08 so far')
+  })
+  test('stands alone without a leading separator when the percent is unknown', () => {
+    expect(costText(null, 7.084)).toBe('$7.08 so far')
+  })
+  test('is empty when there is no cost', () => {
+    expect(costText(42, null)).toBe('')
   })
 })

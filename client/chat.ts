@@ -3,7 +3,7 @@ import { MORPH_EASE, MORPH_MS, blendColor, morph, reveal, rollText } from './mor
 import { copyButton, errorText, getJson, postJson, readArray } from './shared'
 import { launchChoice, type LaunchProvider } from './shell-launch'
 import { createOutcomeStrip } from './outcome-strip'
-import { chatModeChoice, chatModeKey, chatSignal, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, mentionMarks, mentionToken, parseAgentReport, runningLabel, slashQuery, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type ChatCommand, type HistoryItem, type PermissionView, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
+import { chatModeChoice, chatModeKey, chatSignal, costText, filterSlashCommands, historyAction, historyDay, historyLabel, historyOpen, mentionMarks, mentionToken, parseAgentReport, runningLabel, slashQuery, teamRows, titleFrom, turnsFrom, workedLine, type AgentJob, type ChatCommand, type HistoryItem, type PermissionView, type TeamRow, type ThreadMessage, type Turn, type TurnJob } from './chat-view'
 import { ansiHtml, capOutput, type ToolCard, type ToolCardKind } from './tool-cards'
 import { collectRowStates, rowScrollOf, setRowScroll, trackRowScroll, type RowState } from './tool-row-scroll'
 import { createLiveFeed, steadyLiveText, type LiveFeed } from './live-text'
@@ -889,7 +889,8 @@ function paintContextMeter(usage: { contextPercent: number | null; costUsd: numb
     value.textContent = `${Math.round(percent)}%`
     text.append(value, ' context')
   }
-  if (cost !== null) text.append(` · $${cost.toFixed(2)} so far`)
+  text.append(costText(percent, cost))
+  meter.querySelector<SVGElement>('svg')!.style.display = percent === null ? 'none' : ''
 }
 
 function schedule(): void {
@@ -1077,8 +1078,8 @@ function paintHistory(items: HistoryItem[]): void {
     const signal = item.kind === 'chat' ? chatSignal(item.running, item.agents) : item.kind === 'terminal' && item.live ? { state: 'running' as const, count: 0 } : { state: null, count: 0 }
     const card = document.createElement('details'); card.className = 'history-item'; card.dataset.item = key; card.dataset.kind = item.kind; card.open = item.kind !== 'chat' && (openIds.size ? openIds.has(key) : index === 0)
     const summary = document.createElement('summary')
-    const title = document.createElement('span')
     if (item.kind === 'chat') summary.onclick = (event) => { event.preventDefault(); openChat(item.id) }
+    const title = document.createElement('span')
     if (signal.state) { const dot = document.createElement('span'); dot.className = 'live-dot'; dot.dataset.state = signal.state; dot.title = signal.count ? `${signal.count} ${signal.state === 'running' ? 'running' : signal.state === 'needs-you' ? 'need you' : 'landed'}` : signal.state; title.append(dot); if (signal.count > 1) { const count = document.createElement('small'); count.className = 'dot-count'; count.textContent = String(signal.count); title.append(count) } }
     title.append(item.title)
     const dot = title.querySelector<HTMLElement>('.live-dot')

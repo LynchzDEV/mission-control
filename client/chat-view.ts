@@ -225,3 +225,8 @@ export function historyAction(item: HistoryItem): string | null {
   if (item.kind === 'terminal' && item.live) return 'Open terminal'
   return historyOpen(item) === null ? null : 'Resume in a terminal'
 }
+
+export function costText(percent: number | null, cost: number | null): string {
+  if (cost === null) return ''
+  return `${percent === null ? '' : ' · '}$${cost.toFixed(2)} so far`
+}
