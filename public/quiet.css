@@ -110,6 +110,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .stage { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--scroll, #dfe1e6) transparent; padding: 20px 28px; display: flex; }
 .stage :is(p, li, h1, h2, h3, strong, em, small, time, summary, td, th) { text-shadow: 0 0 2px var(--hi), 0 0 6px var(--paper); }
 .content-width { width: min(100%, 760px); margin-inline: auto; }
+.stage:has(> .conversation:not([hidden])) { mask-image: linear-gradient(transparent, #000 18px, #000 calc(100% - 18px), transparent); }
 .welcome { align-self: center; width: 100%; text-align: center; margin: -20px 0 0; padding-bottom: 38px; }
 .welcome-mark { display: grid; place-items: center; width: 42px; height: 42px; margin: 0 auto 20px; border: 1px solid transparent; border-radius: var(--r-md); corner-shape: var(--corner); color: var(--accent); background: var(--paper); box-shadow: var(--raised); }
 .welcome-mark svg { width: 22px; height: 22px; }
@@ -132,6 +133,7 @@ h1, h2, p { margin-top: 0; }
 .attach-remove:hover { color: var(--danger); }
 .composer .round { width: 34px; min-height: 34px; flex-basis: 34px; }
 .composer textarea { resize: none; border: 0; outline: none; padding: 8px 0; flex: 1; min-width: 0; max-height: 138px; font-size: 16px; line-height: 1.5; background: transparent; }
+.composer textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 textarea::placeholder { color: var(--muted); }
 .send { color: var(--accent); }
 .muted, time { color: var(--muted); }
@@ -141,7 +143,8 @@ textarea::placeholder { color: var(--muted); }
 .history h1 span { color: var(--ink-faint, #666b75); }
 .search-field { display: flex; align-items: center; gap: 10px; border: 1px solid transparent; border-radius: var(--r-button); corner-shape: var(--corner); padding: 0 14px; color: var(--muted); width: 310px; max-width: 60%; background: var(--paper); box-shadow: var(--inset); }
 .search-field input { width: 100%; min-width: 0; border: 0; background: transparent; padding: 12px 0; font-size: 14px; outline: none; }
-.history-item { border: 1px solid transparent; border-radius: var(--r-md); corner-shape: var(--corner); margin-bottom: 22px; background: var(--paper); box-shadow: var(--raised); }
+.history-item { border: 1px solid transparent; border-radius: var(--r-md); corner-shape: var(--corner); margin-bottom: 12px; background: var(--paper); box-shadow: var(--raised); }
+.history-item > summary { padding: 15px 20px; }
 summary { display: flex; justify-content: space-between; align-items: center; gap: 18px; list-style: none; padding: 20px; font-size: 15px; font-weight: 500; }
 summary::-webkit-details-marker { display: none; }
 summary time { font-size: 13px; font-weight: 400; white-space: nowrap; }
@@ -602,7 +605,7 @@ body[data-live="true"] #agents > .activity-empty, body[data-live="true"] #agents
 .md li::marker { color: var(--accent); }
 .md code { font-family: Menlo, monospace; font-size: 13px; padding: 2px 7px; border-radius: var(--r-xs); corner-shape: var(--corner); background: var(--field); color: var(--accent); }
 .md pre { padding: 14px 16px; border-radius: var(--r-md); corner-shape: var(--corner); box-shadow: var(--inset); overflow-x: auto; }
-.md pre code { padding: 0; background: none; font-size: 12.5px; line-height: 1.65; color: inherit; }
+.md pre code { display: block; padding: 0; background: none; font-size: 12.5px; line-height: 1.65; color: inherit; }
 .md blockquote { padding: 2px 0 2px 14px; border-left: 2px solid #c9c0e3; color: var(--muted); }
 .code-card { border-radius: var(--r-md); corner-shape: var(--corner); box-shadow: var(--inset); margin: 0 0 12px; }
 .code-head { display: flex; align-items: center; gap: 10px; padding: 7px 14px; border-bottom: 1px solid var(--line); font-size: 12px; }
@@ -640,7 +643,7 @@ body[data-live="true"] #agents > .activity-empty, body[data-live="true"] #agents
 .team-progress span { display: block; height: 100%; background: var(--accent); opacity: .6; transition: width 240ms cubic-bezier(.2, .8, .2, 1); }
 @media (max-width: 600px) { .chat .msg.assistant { grid-template-columns: minmax(0, 1fr); } .avatar { display: none; } #project-name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; } }
 
-.usage-card { --item: 104px; --gap: 18px; width: calc(var(--item) * 3 + var(--gap) * 2 + 28px); padding: 6px 14px; margin-right: 6px; border-radius: var(--r-md); corner-shape: var(--corner); overflow: hidden; }
+.usage-card { --item: 110px; --gap: 18px; width: calc(var(--item) * 3 + var(--gap) * 2 + 28px); padding: 6px 14px; margin-right: 6px; border-radius: var(--r-md); corner-shape: var(--corner); overflow: hidden; mask-image: linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 14px), transparent); }
 .usage-track { display: flex; gap: var(--gap); width: max-content; }
 .usage-item { --brand: var(--accent); width: var(--item); flex: 0 0 var(--item); min-width: 0; font-variant-numeric: tabular-nums; }
 .usage-head { display: flex; align-items: center; gap: 5px; line-height: 18px; white-space: nowrap; font-size: 11px; }
@@ -1439,7 +1442,7 @@ a.q-src:hover { color: var(--accent); }
 html, body { max-width: 100%; }
 body { overflow-x: clip; }
 .sb-shell, .canvas, .workspace, .chat-container, .stage, .studio, .content-width, .composer-area, .composer, .conversation, .chat, .msg-body, .md, .q-screen, .q-list, .live-workspace, .live-main, .drop-stage, .inline-flow, .history, .toolbar, .tool-card, .diff-card { min-width: 0; max-width: 100%; }
-.stage > * { min-width: 0; max-width: 100%; width: 100%; }
+.stage > :not(.content-width) { min-width: 0; max-width: 100%; width: 100%; }
 .md :is(pre, table), .diff-body, .term-out, .ag-log, .workflow-scroll, .mk-cols { max-width: 100%; }
 .md table { display: block; overflow-x: auto; }
 .diff-head, .tool-row > summary, .q-row, .q-acts { min-width: 0; }
@@ -1471,6 +1474,8 @@ dialog, .access-dialog, .confirm-dialog { max-width: calc(100vw - 32px); max-hei
   .nt-panel { right: 8px; left: auto; width: min(392px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); }
   .history h1, .stage, .welcome, .studio, .md, .q-main { overflow-wrap: anywhere; }
   .stage { flex-direction: column; }
+  .welcome { margin-block: auto; }
+  .composer .ctx-meter { order: 1; flex-basis: 100%; justify-content: flex-end; padding: 0 4px; }
   .tool-card { overflow-x: auto; }
 }
 

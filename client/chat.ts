@@ -1075,9 +1075,10 @@ function paintHistory(items: HistoryItem[]): void {
   list.replaceChildren(...items.map((item, index) => {
     const key = `${item.kind}:${item.id}`
     const signal = item.kind === 'chat' ? chatSignal(item.running, item.agents) : item.kind === 'terminal' && item.live ? { state: 'running' as const, count: 0 } : { state: null, count: 0 }
-    const card = document.createElement('details'); card.className = 'history-item'; card.dataset.item = key; card.dataset.kind = item.kind; card.open = openIds.size ? openIds.has(key) : index === 0
+    const card = document.createElement('details'); card.className = 'history-item'; card.dataset.item = key; card.dataset.kind = item.kind; card.open = item.kind !== 'chat' && (openIds.size ? openIds.has(key) : index === 0)
     const summary = document.createElement('summary')
     const title = document.createElement('span')
+    if (item.kind === 'chat') summary.onclick = (event) => { event.preventDefault(); openChat(item.id) }
     if (signal.state) { const dot = document.createElement('span'); dot.className = 'live-dot'; dot.dataset.state = signal.state; dot.title = signal.count ? `${signal.count} ${signal.state === 'running' ? 'running' : signal.state === 'needs-you' ? 'need you' : 'landed'}` : signal.state; title.append(dot); if (signal.count > 1) { const count = document.createElement('small'); count.className = 'dot-count'; count.textContent = String(signal.count); title.append(count) } }
     title.append(item.title)
     const dot = title.querySelector<HTMLElement>('.live-dot')

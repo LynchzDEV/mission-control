@@ -41,6 +41,45 @@ describe('shipped layout at phone width', () => {
     expect(pluginsNarrow).toContain('.mk-dialog > section { width: min(520px, calc(100vw - 32px)); }')
     expect(pluginUiNarrow).toContain('.mk-dialog > section { width: min(520px, calc(100vw - 32px)); }')
   })
+
+  test('the phone welcome centres vertically once the stage stacks as a column', () => {
+    expect(quietNarrow).toContain('.stage { flex-direction: column; }')
+    expect(quietNarrow).toContain('.welcome { margin-block: auto; }')
+  })
+
+  test('the context meter drops under the phone composer instead of squeezing the message box', () => {
+    expect(quietNarrow).toContain('.composer .ctx-meter { order: 1; flex-basis: 100%; justify-content: flex-end; padding: 0 4px; }')
+  })
+})
+
+describe('chat reading layout', () => {
+  test('conversation, history and composer keep one 760px column instead of the stage-wide reset', () => {
+    expect(quiet).toContain('.content-width { width: min(100%, 760px); margin-inline: auto; }')
+    expect(quiet).toContain('.stage > :not(.content-width) { min-width: 0; max-width: 100%; width: 100%; }')
+    expect(quiet).not.toContain('.stage > * { min-width: 0; max-width: 100%; width: 100%; }')
+  })
+
+  test('an open conversation fades at its scroll edges instead of cutting lines in half', () => {
+    expect(quiet).toContain('.stage:has(> .conversation:not([hidden])) { mask-image: linear-gradient(transparent, #000 18px, #000 calc(100% - 18px), transparent); }')
+  })
+
+  test('history rows sit closer together', () => {
+    expect(quiet).toMatch(/\.history-item \{[^}]*margin-bottom: 12px;/)
+    expect(quiet).toContain('.history-item > summary { padding: 15px 20px; }')
+  })
+
+  test('the composer hint stays on one line on a narrow composer', () => {
+    expect(quiet).toContain('.composer textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }')
+  })
+
+  test('code inside a fenced block takes its own line height', () => {
+    expect(quiet).toContain('.md pre code { display: block;')
+  })
+
+  test('usage meters fit the Codex label and fade at the ticker edges', () => {
+    expect(quiet).toContain('.usage-card { --item: 110px;')
+    expect(quiet).toMatch(/\.usage-card \{[^}]*mask-image: linear-gradient\(to right/)
+  })
 })
 
 const widths = [
